@@ -1,0 +1,1253 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/rlmc_isca08.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/rlmc_isca08.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+    Self-Optimizing Memory Controllers: A Reinforcement Learning Approach
+
+                      Engin İpek1,2            Onur Mutlu2            José F. Martı́nez1                                                              Rich Caruana1
+                                            1
+                                             Cornell University, Ithaca, NY 14850 USA
+                                        2
+                                            Microsoft Research, Redmond, WA 98052 USA
+
+
+
+ABSTRACT
+                                                                                                       1                                                1000                                 2
+Efficiently utilizing off-chip DRAM bandwidth is a critical is-
+
+
+
+
+                                                                               Data Bus Utilization
+
+
+
+
+                                                                                                                                   L2 LD Miss Penalty
+sue in designing cost-effective, high-performance chip multipro-                                      0.8                                               800                                 1.5
+
+
+
+
+                                                                                                                                                                                  Speedup
+cessors (CMPs). Conventional memory controllers deliver rela-                                         0.6                                               600
+tively low performance in part because they often employ fixed,                                       0.4                                               400
+                                                                                                                                                                                             1
+rigid access scheduling policies designed for average-case appli-                                                                                                                           0.5
+                                                                                                      0.2                                               200
+cation behavior. As a result, they cannot learn and optimize
+the long-term performance impact of their scheduling decisions,                                        0                                                  0                                  0
+and cannot adapt their scheduling policies to dynamic workload                                              FR-FCFS   Optimistic                           FR-FCFS   Optimistic                   FR-FCFS   Optimistic
+behavior.
+   We propose a new, self-optimizing memory controller design                               Figure 1: Bandwidth, latency, and execution time comparison
+that operates using the principles of reinforcement learning (RL)                           of a state-of-the-art memory controller (employing the FR-FCFS
+to overcome these limitations. Our RL-based memory controller                               scheduling policy) vs. an optimistic memory controller that can
+observes the system state and estimates the long-term perfor-                               sustain 100% of the peak bandwidth (provided enough demand)
+mance impact of each action it can take. In this way, the con-                              for the SCALPARC application.
+troller learns to optimize its scheduling policy on the fly to maxi-
+mize long-term performance. Our results show that an RL-based                               architecture employed can be found in Section 4.) With an op-
+memory controller improves the performance of a set of paral-                               timistic scheduler, SCALPARC utilizes over 85% of the memory
+lel applications run on a 4-core CMP by 19% on average (up                                  bandwidth effectively. When running with the realistic sched-
+to 33%), and it improves DRAM bandwidth utilization by 22%                                  uler, however, the application’s data bus utilization falls to 46%.
+compared to a state-of-the-art controller.                                                  The middle plot in Figure 1 shows the impact of this scheduling
+                                                                                            inefficiency on average L2 load miss penalty: while the optimistic
+                                                                                            scheduler attains an average load miss penalty of 482 cycles, the
+1. INTRODUCTION                                                                             realistic scheduler experiences an 801-cycle average penalty. The
+   Chip Multiprocessors (CMPs) are attractive alternatives to                               end result is a 55% performance loss compared to the optimistic
+monolithic cores due to their power, performance, and complex-                              scheduler (rightmost plot).
+ity advantages. Current industry projections indicate that scal-                               A potential limiting factor to higher performance in current
+ing CMPs to higher numbers of cores will be the primary mecha-                              memory controller designs is that they are largely ad hoc. Typi-
+nism to reap the benefits of Moore’s Law in the billion-transistor                          cally, a human expert chooses a few attributes that are likely to
+era. If CMOS scaling continues to follow Moore’s Law, CMPs                                  be relevant to optimizing a particular performance target (e.g.,
+could deliver as much as twice the number of cores and the avail-                           the average waiting time of a request in FR-FCFS) based on
+able on-chip cache space every 18 months. Unfortunately, the                                prior experience. With these in mind, the expert devises a (fixed)
+benefits of Moore’s Law are unavailable to conventional pack-                               scheduling policy incorporating these attributes, and evaluates
+aging technologies, and consequently, both the speed and the                                such a policy in a simulation model. The resulting controller
+number of signaling pins grow at a much slower rate (pin count                              usually lacks two important functionalities: First, it cannot an-
+increases by roughly 10% each year) [18]. As a result, off-chip                             ticipate the long-term consequences of its scheduling decisions
+bandwidth may soon present a serious impediment to CMP scal-                                (i.e., it cannot do long-term planning). Second, it cannot gener-
+ability [40].                                                                               alize and use the experience obtained through scheduling deci-
+   Yet providing adequate peak bandwidth is only part of the                                sions made in the past to act successfully in new system states
+problem. In practice, delivering a large fraction of this theoreti-                         (i.e., it cannot learn). As we will show, this rigidity and lack of
+cal peak to real-life workloads demands a memory controller that                            adaptivity can manifest itself as severe performance degradation
+can effectively utilize the off-chip interface. DRAM scheduling                             in many applications.
+is a complex problem, requiring a delicate balance between cir-                                This paper proposes the use of machine learning technology
+cumventing access scheduling constraints, prioritizing requests                             in designing a self-optimizing, adaptive memory controller capa-
+properly, and adapting to a dynamically changing memory ref-                                ble of planning, learning, and continuously adapting to changing
+erence stream. When confronted with this challenge, existing                                workload demands. We formulate memory access scheduling as
+memory controllers tend to sustain only a small fraction of the                             a reinforcement learning problem [42]. Reinforcement learning
+peak bandwidth [27, 37]. The end result is either a significant                             (RL) is a field of machine learning that studies how autonomous
+performance hit, or an over-provisioned (and therefore expen-                               agents situated in stochastic environments can learn optimal con-
+sive) memory system [13, 22, 23].                                                           trol policies through interaction with their environment. RL pro-
+   Figure 1 shows an example of potential performance loss due to                           vides a general framework for high-performance, self-optimizing
+access scheduling constraints with an existing DRAM controller.                             controller design.
+The leftmost graph shows the sustained DRAM bandwidth of                                       Key idea: We propose to design the memory controller as an
+an example parallel application (SCALPARC [20]) with both a                                 RL agent whose goal is to learn automatically an optimal memory
+realistic, contemporary controller design (using the FR-FCFS                                scheduling policy via interaction with the rest of the system.
+scheduling policy [37, 49]), and an optimistic (and unrealizable)                              An RL-based memory controller takes as input parts of the
+design that is able to sustain 100% of the controller’s peak band-                          system state and considers the long-term performance impact of
+                                                                                            each action it can take. The controller’s job is to (1) associate
+width, provided enough demand.1 (A detailed description of the                              system states and actions with long-term reward values, (2) take
+1
+                                                                                            the action (i.e., schedule the command) that is estimated to pro-
+ We accomplish this by lifting all timing constraints except DRAM data
+bus conflicts (i.e., CAS-to-CAS delays), and then servicing requests on                     and Write (tWL ) latencies, as well as bus contention, are included in the
+a first-come-first-serve basis in our simulation environment. CAS (tCL )                    memory access latency.
+
+
+                                                                           1
+
+
+===== Page 2 =====
+
+vide the highest long-term reward (i.e., performance) value at               First, the controller needs to obey all DRAM timing
+a given system state, and (3) continuously update long-term re-           constraints to provide correct functionality. DRAM chips
+ward values associated with state-action pairs, based on feedback         have a large number of timing constraints that specify when a
+from the system, in order to adapt to changes in workloads and            command can be legally issued. There are two kinds of timing
+memory reference streams. In contrast to conventional memory              constraints: local (per-bank) and global (across banks due to
+controllers, an RL-based memory controller:                               shared resources between banks). An example local constraint is
+                                                                          the activate to read/write delay, tRCD , which specifies the min-
+   • Anticipates the long-term consequences of its scheduling             imum amount of time the controller needs to wait to issue a
+     decisions, and continuously optimizes its scheduling policy          read/write command to a bank after issuing an activate com-
+     based on this anticipation.                                          mand to that bank. An example global constraint is the write to
+   • Utilizes experience learned in previous system states to             read delay, tWTR , which specifies the minimum amount of time
+     make good scheduling decisions in new, previously unob-              that needs to pass to issue a read command to any bank after
+     served states.                                                       issuing a write command to any bank. State-of-the-art DDR2
+   • Adapts to dynamically changing workload demands and                  SDRAM chips often have a large number of timing constraints
+     memory reference streams.                                            that must be obeyed when scheduling commands (e.g., over 50
+                                                                          timing constraints in [26]).
+   An RL-based design approach allows the hardware designer to               Second, the controller must intelligently prioritize
+focus on what performance target the controller should accom-             DRAM commands from different memory requests to
+plish and what system variables might be useful to ultimately             optimize system performance. Different orderings and inter-
+derive a good scheduling policy, rather than devising a fixed pol-        leavings of DRAM commands result in different levels of DRAM
+icy that describes exactly how the controller should accomplish           throughput and latency [37]. Finding a good schedule is not an
+that target. This not only eliminates much of the human design            easy task as scheduling decisions have long-term consequences:
+effort involved in traditional controller design, but also (as our        not only can issuing a DRAM command prevent servicing other
+evaluation shows) yields higher-performing controllers.                   requests in subsequent DRAM cycles (due to timing constraints),
+   We evaluate our self-optimizing memory controller using a va-          but also the interleaving of requests from different cores (and
+riety of parallel applications from the SPEC OpenMP [4], NAS              therefore the future contents of the memory reference stream) is
+OpenMP [5], Nu-MineBench [33], and SPLASH-2 [46] bench-                   heavily influenced by which core’s blocking requests get serviced
+mark suites. On a 4-core CMP with a single-channel DDR2-800               next (possibly unblocking the instruction window or the fetch
+memory subsystem (6.4GB/s peak bandwidth in our setup), the               unit of the requesting core, allowing it to generate new memory
+RL-based memory controller improves performance by 19% on                 requests). Moreover, the ultimate benefit provided by a schedul-
+average (up to 33%) over a state-of-the-art FR-FCFS scheduler.            ing decision is heavily influenced by the future behavior of the
+This effectively cuts in half the performance gap between the             processors, which certainly is not under the scheduler’s control.
+single-channel configuration and a more expensive dual-channel               Current memory controllers use relatively simple policies to
+DDR2-800 subsystem with twice the peak bandwidth. When                    schedule DRAM accesses. Rixner et al. [37] show that none of
+applied to the dual-channel subsystem, the RL-based scheduler             the fixed policies studied provide the best performance for all
+delivers an additional 14% performance improvement on average.            workloads and under all circumstances. However, the FR-FCFS
+Overall, our results show that self-optimizing memory controllers         (first-ready first-come first-serve) policy [36, 37] provides the best
+can help utilize the available memory bandwidth in a CMP more             average performance. Among all ready commands, FR-FCFS
+efficiently.                                                              prioritizes (1) column (CAS) commands (i.e., read or write com-
+                                                                          mands) over row (RAS) commands (i.e., activate and precharge)
+2. BACKGROUND AND MOTIVATION                                              in order to maximize the number of accesses to open rows, and
+   We briefly review the operation of the memory controller in            (2) older commands over younger commands. Hence, FR-FCFS
+modern DRAM systems to motivate the need for intelligent                  gives the highest priority to the oldest ready column command
+DRAM schedulers, and provide background on reinforcement                  in the transaction queue. The goal of the FR-FCFS policy is to
+learning as applicable to DRAM scheduling. Detailed descrip-              maximize DRAM throughput and minimize average request la-
+tions are beyond the scope of this paper. Interested readers can          tency. However, FR-FCFS does not consider the long-term per-
+find more detailed descriptions in [11, 12, 37] on DRAM systems           formance impact of either (1) prioritizing a column command
+and in [6, 28, 42] on reinforcement learning.                             over a row command, or (2) prioritizing an older command over
+                                                                          a younger command.
+2.1    Memory Controllers: Why are They Difficult
+       to Optimize?                                                       2.2    Reinforcement Learning and Its Applicability
+   Modern DRAM systems consist of dual in-line memory mod-                       to DRAM Scheduling
+ules (DIMMs), which are composed of multiple DRAM chips put                  Machine learning is the study of computer programs and al-
+together to obtain a wide data interface. Each DRAM chip is               gorithms that learn about their environment and improve au-
+organized as multiple independent memory banks. Each bank is              tomatically with experience. Within this larger framework, Re-
+a two-dimensional array organized as rows × columns.                      inforcement Learning (RL), sometimes called “learning from in-
+   Only a single row can be accessed in each bank at any given            teraction,” studies how autonomous agents situated in stochas-
+time. Each bank contains a row buffer that stores the row that            tic environments can learn to maximize the cumulative sum of
+can be accessed. To access a location in a DRAM bank, the                 a numerical reward signal received over their lifetimes through
+memory controller must first make sure that the row is in the             interaction with their environment [6, 42].
+row buffer. An activate command brings the row whose address                 Figure 2(a) depicts the agent-environment interface that de-
+is indicated by the address bus from the memory array into the            fines the operation of RL agents. The agent interacts with its
+row buffer. Once the row is in the row buffer, the controller can         environment over a discrete set of time steps. At each step, the
+issue read or write commands to access a column whose address             agent senses the current state of its environment, and executes
+is indicated by the address bus. Each read or write command               an action. This results in a change in the state of the environ-
+transfers multiple columns of data, specified by a programmable           ment (which the agent can sense in the next time step), and
+burst length parameter. To access a different row, the controller         produces an immediate reward. The agent’s goal is to maximize
+must first issue a precharge command so that the data in the row          its long-term cumulative reward by learning an optimal policy
+buffer is written back to the memory array. After the precharge,          that maps states to actions.
+the controller can issue an activate command to open the new                 Figure 2(b) shows how a self-optimizing DRAM controller fits
+row it needs to access.                                                   within this framework. The agent represents the DRAM com-
+   The memory controller accepts cache misses and write-back              mand scheduler, while the environment comprises the rest of the
+requests from the processor(s) and buffers them in a memory               system: cores, caches, buses, DRAM banks, and the scheduling
+transaction queue. The controller’s function is to satisfy such re-       queue are all part of the agent’s environment. Each time step cor-
+quests by issuing appropriate DRAM commands while preserving              responds to a DRAM clock cycle, during which the agent can ob-
+the integrity of the DRAM chips. To do so, it tracks the state            serve the system state and execute an action. Relevant attributes
+of each DRAM bank (including the row buffer), each DRAM                   for describing the environment’s state can include the number of
+bus, and each memory request. The memory controller’s task is             reads, writes, or load misses in the transaction queue, the criti-
+complicated due to two major reasons.                                     cality of each request (e.g., based on the requester’s relative in-
+
+
+                                                                      2
+
+
+===== Page 3 =====
+
+                                                                                                              (0.9, 15)
+                            ENVIRONMENT
+                                                                                   (0.1, 3)
+                                                                                              A0
+
+                                                Reward r(t)
+        Action a(t+1)          Agent            State s(t)                                    S0        (1, 0)            A0      S1
+
+
+                                                                                              A1                                  A1 (0.5, 8)
+                              SYSTEM
+                                                                                 (1, 0.1)
+                                                                                                              (0.5, 10)
+
+                                           Data Bus Utilization (t)        Figure 3: Example of a non-deterministic Markov Decision Pro-
+  Scheduled Command (t+1)    Scheduler     State Attributes (t)            cess (MDP).
+
+Figure 2: (a) Intelligent agent based on reinforcement learning
+principles; (b) DRAM scheduler as an RL-agent                              s0 |st = s, at = a) that assigns the probability of each possible
+                                                                           next state s0 for each state s and action a, and a reward function
+                                                                           R = E[rt+1 |st = s, at = a, st+1 = s0 ] that defines the expected
+struction sequence number), whether a given request would hit in           value of the next reward received when action a is executed in
+the row buffer if serviced next, or the total number of reads and          state s, followed by a transition to state s0 . Together, the tran-
+writes pending for each row and bank. The actions available to             sition probability distribution and reward function completely
+the agent cover the legal DRAM commands that can be issued in              describe the dynamics of the environment. Figure 3 shows the
+the following DRAM cycle (precharge, activate, read, or write).            transition graph of an example non-deterministic MDP. The en-
+Note that the set of available actions can change from one time            vironment described by the MDP has two states S0 and S1, and
+step to the next depending on the system state; in particular,             there are two actions A0 and A1 available to the agent in both
+the agent may have no actions available in states where timing             states. Executing action A0 in state S0 causes the agent to re-
+constraints prevent issuing any commands. Finally, rewards can             main in state S0 and receive a reward of 3 with a probability
+be designed in several different ways depending on optimization            of 0.1, and causes a transition to state S1 and a reward of 15
+goals; for instance, to have the agent learn how to maximize data          with a probability of 0.9. The goal of the agent is to learn an
+bus utilization, the agent can be given a reward of one each time          effective policy π that maps states to actions to maximize its
+it issues a command that utilizes the data bus (i.e., a read or            cumulative long-term rewards. Note that the next state is non-
+write command), and a reward of zero at all other times.                   deterministic from the viewpoint of the agent because the next
+Three major challenges facing an RL agent are:                             state is not solely a function of the action but rather a function
+Temporal credit assignment. The agent needs to learn how                   of both the action and the environment (i.e. the system’s be-
+to assign credit and blame to past actions for each observed               havior). For example, in DRAM scheduling, the next state of
+immediate reward. In some cases, a seemingly desirable ac-                 the system depends partly on the command scheduled by the
+tion that yields high immediate reward may drive the system                DRAM scheduler, and partly on the system’s behavior in that
+towards undesirable, stagnant states that offer no rewards; at             cycle, which is not under the scheduler’s control (but may be
+other times, executing an action with no immediate reward may              part of a function that can be learned).
+be critical to reaching desirable future states. For example, a                Cumulative Rewards: Memory access scheduling is most
+write command that fills an otherwise unused DRAM data bus                 naturally formulated as an infinite-horizon (i.e., continuing) task,
+cycle might result in several future cycles where DRAM band-               where the agent (scheduler) constantly navigates the MDP by
+width is underutilized, whereas a precharge command that does              scheduling DRAM commands, accumulating rewards along the
+not result in any immediate data bus utilization might facilitate          MDP edges as specified by the MDP’s reward function. One is-
+better bandwidth utilization in future cycles. Hence, acting op-           sue that comes up in an infinite-horizon MDP is the convergence
+timally requires planning: the agent must anticipate the future            of the cumulative rewards. Since the agent’s lifetime is infinite
+consequences of its actions and act accordingly to maximize its            (at least for all practical purposes), all policies would lead to
+long-term cumulative payoffs.                                              infinite reward over the agent’s lifetime, leading to an ill-defined
+Exploration vs. exploitation. The agent needs to explore its               objective function for optimization. Instead, in infinite-horizon
+environment sufficiently (and collect training data) before it can         problems, optimizing for a discounted cumulative reward func-
+learn a high-performance control policy, but it also needs to ex-          tion at each time step t is more appropriate:
+ploit the best policy it has found at any point in time. Too little
+                                                                                                         ∞
+exploration of the environment can cause the agent to commit                                             X
+to suboptimal policies early on, whereas excessive exploration                                        E[    γ t · rt+i ]                     (1)
+can result in long periods during which the agent executes sub-                                         i=0
+optimal actions to explore its environment. Furthermore, the                 Here, rt is the immediate reward observed at time step t, and
+agent needs to continue exploring its environment and improv-              γ is a discount rate parameter between zero and one (0 ≤ γ <
+ing its policy (life-long learning) to accommodate changes in its          1). Discounting causes the sum of future rewards to act as a
+environment (e.g., due to phase changes or context switches).              geometric series, and guarantees convergence [6]. Intuitively, γ
+Generalization. Because the size of the state space is expo-               can be seen as a knob that controls how important future rewards
+nential in the number of attributes considered, the agent’s en-            are compared to immediate rewards. Larger values of γ lead to
+vironment may be represented by an overwhelming number of                  agents with greater foresight and better planning capabilities,
+possible states. In such cases, it is exceedingly improbable for           but require longer training times. As γ is reduced, the agent
+the agent to experience the same state more than once over its             becomes increasingly myopic; in the extreme case where γ is set
+lifetime. Consequently, the only way to learn a mapping from               to zero, the agent learns only to choose actions that maximize
+states to actions is to generalize and apply the experience gath-          the immediate rewards it receives from its environment.
+ered over previously encountered (but different) system states to
+act successfully in new states.                                            2.2.2    Rewarding Control Actions: Q-values
+   In the rest of this section, we describe briefly the formal mech-          An elegant way of addressing the temporal credit assignment
+anisms behind reinforcement learning, and we illustrate its po-            problem is through the notion of Q-values [28, 42], which form
+tential to successfully characterize and optimize memory access            the basis of many reinforcement learning algorithms. In an
+scheduling.                                                                infinite-horizon non-deterministic MDP, the Q-value of a state-
+                                                                           action pair (s,a) under policy π (denoted by Qπ(s,a) ) represents
+2.2.1 Markov Decision Processes                                            the expected value of the cumulative discounted future reward
+  In reinforcement learning, the agent’s environment is described          that is obtained when action a is executed in state s, and policy
+by an abstraction called a Markov Decision Process (MDP). For-             π is followed thereafter. In the context of DRAM scheduling, a
+mally, an MDP consists of a set S of system states, a set A                Q-value describes the long-term value of scheduling a command
+of actions, a transition probability distribution T = P (st+1 =            in a given system state. If a Q-value for the optimal policy π*
+
+
+                                                                       3
+
+
+===== Page 4 =====
+
+                                       State         Action                     tion, the scheduler will learn to pick that command (as opposed
+                                                           Command
+                                                                                to another one with an immediate reward value of 1).
+                                                                                States. For each candidate command, there are six attributes3
+
+
+
+
+                                               Scheduler
+                Transaction Queue
+                                                                                of the system state that the scheduler considers, all of which are
+
+
+
+
+                                                                     DRAM
+                                                           Address              locally available in the controller’s transaction queue. These six
+                                                                                attributes are:
+                                                              Data              1. Number of reads (load/store misses) in the transaction queue.4
+                                    Request
+                                                                                2. Number of writes (writebacks) in the transaction queue.
+        Valid Bank Row   Col   Data             Reward
+                                     State                                      3. Number of reads in the transaction queue that are load misses.
+                                                                                4. If the command is related to a load miss by core C in the transaction
+    Figure 4: High-level overview of an RL-based scheduler.                     queue, the load’s order in C’s dynamic instruction stream relative
+                                                                                to other loads by C with requests in the transaction queue. (This
+is learned and stored for each state-action pair, then, at a given              is determined by comparing sequence numbers, which are assigned
+state the agent can simply choose the action with the largest                   dynamically at rename time, similarly to Alpha 21264’s inum [21],
+Q-value in order to maximize its cumulative long-term rewards.                  and piggybacked in the request to the controller.)5
+In other words, determining the Q-values associated with the                    5. Number of writes in the transaction queue waiting for the row
+optimal policy π* is equivalent to deriving π* itself. In subse-                referenced by the command under consideration.6
+quent sections, we explain how an RL-based DRAM scheduler                       6. Number of load misses in the transaction queue waiting for the row
+can learn to estimate the Q-values (i.e., long-term cumulative                  referenced by the command under consideration which have the oldest
+reward values) associated with its scheduling decisions.                        sequence number among all load misses in the transaction queue from
+                                                                                their respective cores.
+                                                                                   The first two attributes are intended to help the RL controller
+3. RL-BASED DRAM SCHEDULERS:                                                    learn how to optimize the balance of reads and writes in the
+                                                                                transaction queue. For example, the controller might learn to
+   STRUCTURE, OPERATION, AND                                                    reduce write buffer stalls by balancing the rate at which writes
+   IMPLEMENTATION                                                               and reads are serviced. The third attribute can allow the con-
+   We first provide an overview of the structure of our RL-based                troller to detect states that lead to low levels of request concur-
+controller along with the rewards, actions, and system state that               rency in the transaction queue (i.e., states where many cores are
+are available to it (Section 3.1). We then describe how the con-                blocked due to a high number of load misses), and to avoid such
+troller operates, makes scheduling decisions, and learns better                 situations in advance by prioritizing load misses (possibly at the
+scheduling policies (Section 3.2), along with its implementation                expense of other inefficiencies due to timing constrains). The
+(Section 3.3). Our discussion explains the operation of our RL-                 fourth attribute can facilitate learning how to prioritize among
+based command scheduler when optimizing DRAM data bus uti-                      load misses. The fifth attribute might help the controller learn
+lization. Intuitively, optimizing data bus utilization makes sense              how to amortize write-to-read delays (i.e., tWTR ) by satisfying
+because of the high degree of correlation between effective data                writes in bursts. The sixth attribute is intended to approximate
+bus utilization and high system performance The performance                     the number of critical (i.e., core-blocking) requests that are likely
+and data bus utilization figures in our evaluation (Section 5)                  to block the instruction windows of their cores; opening a row
+support this choice.                                                            with many critical requests can improve performance by unblock-
+                                                                                ing multiple cores and allowing them to make forward progress.
+                                                                                   Note that, with an integrated memory controller (which is
+3.1 Overview of the RL-Based Memory Controller                                  the industry trend as seen in IBM POWER5 [17, 39], Sun Nia-
+  Figure 4 shows an overview of the proposed RL-based mem-                      gara [22], AMD Athlon/Opteron [1], and Intel Nehalem [3]), it is
+ory controller. Each DRAM cycle, the scheduler (agent) exam-                    relatively easy to communicate sequence numbers and whether
+ines valid transaction queue entries, each one of which requires                a request is due to a load or store miss from the processor to
+a Precharge, Activate, Read, or Write command to be scheduled                   the controller. If the memory controller is off chip, extra pins
+next. The scheduler’s goal is to maximize DRAM utilization by                   would be needed to accomplish this communication. Our design
+choosing the legal command with the highest expected long-term                  assumes an integrated on-chip memory controller.
+performance benefit under the optimal policy. To do this, the                   Actions. There are up to six different actions available to the
+scheduler first derives a state-action pair for each candidate com-             scheduler from each state. These are: (1) issue a precharge com-
+mand under the current system state, and subsequently uses this                 mand, (2) issue an activate command, (3) issue a write com-
+information to calculate the corresponding Q-values. The sched-                 mand, (4) issue a read command to satisfy a load miss, (5) issue
+uler implements its control policy by scheduling the command                    a read command to satisfy a store miss, and (6) issue a NOP.
+with the highest Q-value each DRAM cycle.                                       The NOP action is used to update the scheduler’s internal Q-
+                                                                                value estimates in cases where timing or resource constraints
+3.1.1 Formulation of the RL-Based DRAM Scheduler                                prevent the scheduler from issuing any legal commands, so that
+   As we explained in Section 2.2.1, DRAM command scheduling                    the scheduler can learn to associate actions leading to such states
+is naturally formulated as an infinite-horizon discounted MDP,                  with low long-term cumulative rewards. Distinguishing between
+where the scheduler issues DRAM commands to transition from                     reads that satisfy load and store misses allows the scheduler to
+one system state to the next, collecting rewards along the MDP                  learn to prioritize load misses when it helps performance.
+edges based on the data bus utilization it achieves. To complete
+this formulation, we need to specify an appropriate reward struc-               3.2    Our RL-based DRAM Command Scheduling
+ture, as well as a set of states and actions that the scheduler can
+use to reason about its scheduling decisions.                                          Algorithm
+Reward structure. To learn to maximize long-term data bus                         Algorithm 1 shows our RL-based scheduling algorithm. In its
+utilization, the scheduler is given an immediate reward of 1 each               simplest form, the scheduler operates on a table that records Q-
+time it schedules a Read or Write command (which are the only
+commands that lead to data bus utilization), and a reward of 0                  3
+                                                                                  We selected these six attributes from a set of 226 candidates through an
+at all other times.2 Note that providing an immediate reward of                 automated feature selection process (see Section 3.4). It is possible to use
+                                                                                more state attributes at the expense of increased hardware complexity in
+0 for Precharge and Activate commands does not mean that the                    the controller.
+scheduler will not issue those commands when there is a legal                   4
+                                                                                  For scheduling purposes, here we treat instruction misses as load misses.
+command with an immediate reward value of 1. The scheduler                      5
+                                                                                  Sequence numbers are generated using a counter that is incremented by
+learns to maximize long-term rewards (i.e., the long-term value                 one each time a new instruction is renamed. No special actions are taken
+of data bus utilization). Hence, if scheduling a command that                   upon counter overflow, and the counter need not be checkpointed across
+provides an immediate reward of 0 ultimately brings about the                   branches: from the controller’s point of view, such inaccuracies in the se-
+                                                                                quence numbers constitute a small amount of “noise” which the RL sched-
+highest cumulative reward by enabling better data bus utiliza-                  uler can readily accommodate. We assign the minimum sequence number
+                                                                                to all instruction misses.
+2                                                                               6
+ This includes DRAM cycles in which Precharge and Activate commands               Naturally, precharge commands reference the row currently in the row
+are issued, as well as cycles during which timing constraints prevent the       buffer, not the row that will eventually be activated to satisfy the corre-
+scheduler from issuing any commands.                                            sponding request.
+
+
+                                                                            4
+
+
+===== Page 5 =====
+
+values for all possible state-action pairs. Initially, all table entries                     In our implementation, we set  to 0.05. This guarantees that the
+are optimistically reset7 to the highest possible Q-value ( 1−γ    1
+                                                                      ).                     scheduler continues to try different actions in each state, while
+Each DRAM cycle, the scheduler observes the transaction queue                                following the best policy it has found the majority of the time.
+to find all DRAM commands that can be legally issued without
+violating timing constraints (line 6). Occasionally, the scheduler                           3.2.3        Generalization: Enabling Across-State Learning
+issues a random legal command to explore its environment and                                              while Reducing the Number of Q-values
+to adapt its policy to dynamic changes (lines 9-10). We describe                                A practical problem with RL-based controllers is that the num-
+this random exploration in detail in Section 3.2.2. Normally,                                ber of Q-values that need to be maintained grows exponentially
+the scheduler picks the command with the highest Q-value for                                 with the number of attributes used in state representation. Con-
+scheduling (lines 11-12). To do so, for each candidate command,                              sequently, a naive implementation that keeps a table entry for
+the scheduler estimates the corresponding Q-value by accessing                               every possible Q-value is infeasible beyond a very small num-
+its internal Q-value table. The scheduler selects the command                                ber of attributes.8 Not only do the storage requirements of the
+with the highest Q-value for scheduling in the next cycle (line                              Q-values grow to impractical sizes with the number of states,
+12).                                                                                         but also building hardware that implements the derived policy
+   Note that command selection takes a full DRAM clock cycle                                 while simultaneously meeting latency and power requirements
+(often equivalent to multiple CPU cycles–ten in our experimental                             becomes much more difficult.
+setup). The selected command is issued at the clock edge (i.e.,                                 Coarse-grain vs. fine-grain quantization: One way of
+at the beginning of the next cycle). After issuing the command                               overcoming this limitation is to quantize the state space into
+selected in the previous cycle (line 6), the scheduler records the                           a small number of cells. By aggregating all states within each
+reward of the action it took (line 7). In a given cycle, the Q-                              cell and representing them by a single Q-value (Figure 5(a) and
+value associated with the previous cycle’s state-action pair is                              (b)), dramatic reductions in storage requirements can be accom-
+updated as shown in lines 15 and 18. The update of the Q-value                               plished. However, this quantization approach requires a com-
+is affected by the immediate reward, along with the Q-values of                              promise between resolution and generalization that is hard to
+the previous and current state-action pairs. As this is critical to                          optimize statically. On the one hand, a fine-grain quantization
+learning a high-performance policy, we next describe the Q-value                             (Figure 5(a)) may result in too many cells and make it hard
+update in detail.                                                                            to generalize from scheduling decisions executed in similar, past
+                                                                                             system states. On the other hand, a coarse-grain quantization
+3.2.1 Learning Q-values: Solving the Temporal Credit                                         (Figure 5(b)) with large cells may not offer enough resolution to
+      Assignment Problem                                                                     accurately represent the Q-values over the state space.
+   To learn the Q-values, the scheduler continuously updates its
+estimates based on the state transitions and rewards it expe-
+riences as it issues commands. Specifically, after taking action
+aprev in state sprev , the scheduler observes an immediate reward                                                Q-value                                   Q-value
+r, transitions to state scurrent , and executes action acurrent (i.e.,
+schedules the selected command cmd). The Q-value associated                                               64                                        64
+with executing aprev in state sprev is then updated according to                                  # of                                      # of
+an update rule known as the SARSA update [42]) (line 18):
+                                                                                                 Writes                                    Writes
+    Q(sprev , aprev ) ← (1 − α)Q(sprev , aprev ) + α[r + γQ(scurrent , acurrent )] (2)
+                                                                                                          32                                        32
+
+   Here, α is a learning rate parameter that facilitates conver-
+gence to the true Q-values in the presence of noisy or stochastic                                          0      32   64                            0      32   64
+rewards and state transitions [42]. Recall that γ is a discount                                                   # of                                      # of
+rate parameter for future rewards as explained in Section 2.2.1.                                                 Reads                                     Reads
+In our implementation of an RL-based memory controller, we                                                        (a)                                      (b)
+empirically observe that α = 0.1 and γ = 0.95 work quite well.                                                                 Three
+The quantity r + γQ(scurrent , acurrent ) intuitively represents the                                                        Overlapping
+sum of the immediate reward obtained by executing action aprev                                                              Coarse-Grain
+in state sprev , plus the discounted sum of all future rewards when                                                           Tables                                  C
+the current policy is followed from that point on. Hence, the up-
+date can be interpreted as taking a sample estimate of the true                                   # of                                      # of
+                                                                                                                                                           D
+Q-value Qπ (sprev , aprev ) = r + γQπ (scurrent , acurrent ) of the cur-                         Writes                                    Writes
+rent policy π, and then moving the estimated Q-value towards                                                                                                      A
+                                                                                                                                                                  B
+this sample by a small step size α. For non-deterministic MDPs
+with stationary reward and transition probability distributions,
+SARSA is guaranteed to find the optimal scheduling policy with                                                  # of                                      # of
+probability 1 in the limit where each table entry is visited in-                                               Reads                                     Reads
+finitely often [6].                                                                                               (c)                                       (d)
+
+3.2.2 Balancing Exploration vs. Exploitation
+   The table-based RL algorithm we have discussed in Section 3.2                             Figure 5:    (a) Fine-grain quantization, (b) Coarse-grain quan-
+depends critically on the assumption that the scheduler has a                                tization, (c) CMAC using three overlapping coarse-grain tables
+non-zero probability of visiting each table entry; if the scheduler                          (for adaptive resolution), (d) CMAC example. Each table entry
+never chooses to schedule certain commands in a given state,                                 represents one Q value. Each table index is a function of the
+it would be unable to learn the associated Q-values. Even if                                 state attributes. This example uses only two state attributes to
+the scheduler has already learned an optimal policy, changes in                              simplify the figures.
+the dynamic behavior of the environment (e.g., due to context
+switches or phase changes) could render the already-learned pol-                               CMAC: Balancing Generalization and Resolution A
+icy obsolete. To avoid these problems, the scheduler must con-                               computationally efficient way of balancing generalization and
+tinuously explore its environment throughout its lifetime, while                             resolution at runtime is a learning model known as CMAC [41].
+at the same time utilizing the best policy it has found at each                              When integrated with an RL-based memory controller, the CMAC
+point in time.                                                                               replaces the scheduler’s internal table holding all possible Q-
+   To strike a balance between exploration and exploitation, we                              values (Section 3.2). A CMAC consists of multiple coarse-grain
+implement a simple yet effective exploration mechanism known                                 Q-value tables, each of which is shifted by a random (but con-
+as -greedy action selection [42]. Each DRAM cycle, the sched-                               stant) amount with respect to one another, as shown in Fig-
+uler randomizes its scheduling decision by picking a random (but                             8
+legal) command with a small probability  (line 7 in Algorithm 1).                            The  number   of  state-action  pairs  is  O(NumberOfStates ∗
+                                                                                             NumberOfActions) = O(TransactionQueueEntries NumberOfAttributes ∗
+7
+ Optimistic initialization encourages high levels of exploration in the early                NumberOfActions). This would lead to over 1 billion Q-values in our
+stages of the execution [42].                                                                case.
+
+
+                                                                                         5
+
+
+===== Page 6 =====
+
+Algorithm 1 RL-Based DRAM Scheduling Algorithm
+                               1
+1: Initialize all Q-values to 1−γ
+2: Initialize C ← get legal command set() //Get all legal commands from the transaction queue
+3: Initialize cmd ← select random command(C) //Select a random legal command from the set of all legal commands
+4: Initialize Qprev ← get Q-value from table(SystemState, cmd) //Get the Q-value associated with the current state and command
+ 5: for all DRAM cycles
+ 6:   issue command(cmd) //Issue command selected in the previous cycle
+ 7:   r ← observe reward() //Collect immediate reward associated with the issued command
+ 8:   C ← get legal command set() //Get all legal commands from the transaction queue
+ 9:   if (rand() < ) then
+10:       cmd ← select random command(C) //With  probability, select a random legal command to explore (Section 3.2.2)
+11:    else
+12:       cmd ← select command with max Q-value(C) //Otherwise, select the legal command with the highest Q value
+13:    end if
+14:    Qselected ← get Q-value from table(SystemState, cmd) //Get Q-value associated with the current state and selected command
+15:    update Q-value(Qprev , r, Qselected ) //SARSA update (Section 3.2.1)
+16:    Qprev ← Qselected //Record the selected Q-value for use in the Q-value update of next cycle
+17: end for
+    Function update Q-value(Qprev ,r,Qselected )
+18: Qprev ← (1 − α)Qprev + α(r + γQselected ) //Update Q-value of previous state action pair in the table
+
+
+ure 5(c). Shifting is done by simply adding to each index a fixed                scheduler to compromise the integrity of the DRAM chips and
+number, set randomly at design time (as shown in Figure 6(c)).                   corrupt data by violating any timing or resource constraints.
+   For a given state, a Q-value estimate is obtained by accessing                Nevertheless, care must be taken to ensure that the system is
+all of the coarse-grain tables with the appropriate index, reading               guaranteed to make forward progress regardless of the scheduler’s
+the value in that location, and summing the values read from                     decisions.
+all tables. Each table entry is updated (trained) based on the                      Specifically, an RL-based memory controller implements three
+SARSA update explained in Section 3.2.1. Because the tables                      provisions to ensure forward progress at all times. First, as ex-
+overlap, nearby points in the state space tend to share the same                 plained in Section 3.1.1, the scheduler is not permitted to select
+entry in most tables, whereas distant points will occupy differ-                 NOPs when other legal commands are available. Second, the
+ent entries in different tables. As a result, a SARSA update to a                scheduler is only allowed to activate rows due to pending requests
+given point in the state space will heavily influence the Q-value                in the transaction queue (i.e., the scheduler cannot choose to ac-
+estimates of nearby points, whereas distant points will not be                   tivate an arbitrary row with no pending requests). Consequently,
+influenced as heavily; the magnitude of this change is commen-                   any new row that is brought into a row buffer is guaranteed to
+surate with the number of tables in which the two points in space                have at least one pending request. Finally, the scheduler is not
+share the same entry.                                                            allowed to precharge a newly activated row until it issues a read
+   Figure 5(d) shows an example that illustrates this point. A                   or write command to it. As a result, the scheduler cannot prevent
+two-dimensional state space is quantized with three different                    progress by constantly precharging and activating rows without
+coarse-grain tables, each one of which consists of four entries.9                issuing any intervening Read or Write commands.
+Points A and B are close-by in the state space, and consequently,                   A second correctness issue for existing out-of-order command
+they share the same entry (i.e., index) in all three tables. Hence,              schedulers as well as our RL-based scheduler is the possibility
+the model will provide the same Q-value estimate for both of                     of starvation. Consider, for instance, the case of a core waiting
+these points, and an update to A will be reflected fully in the Q-               on a spinlock. Although unlikely in practice, it is nevertheless
+value estimate for B. On the other hand, point D is further away                 possible for this core to generate a continuous stream of DRAM
+from A; in particular, A and D share only a single entry in one of               accesses while spinning on the lock variable. Consider now a sit-
+the three tables. Consequently, the model will be able to repre-                 uation in which the lock owner also has to satisfy a DRAM access
+sent these two points with different Q-values, but an update to A                before it can release the lock. If the scheduler indefinitely keeps
+will nevertheless influence D’s Q-value through the value stored                 satisfying the continuous stream of requests originating from the
+in the single entry they share. In this way, a CMAC model pro-                   spin loop, the owner cannot perform the lock release and star-
+vides the ability to generalize between relatively distant points,               vation ensues. Like existing schedulers, an RL-based command
+while also retaining the capacity to distinguish points that are                 scheduler solves this problem by implementing a timeout policy:
+relatively close-by.                                                             any request that has been pending for a fixed (but large - in our
+   Hashing: Another important technique used in CMAC-                            case 10,000) number of cycles is completed in its entirety before
+learning of Q-values is hashing. The index of each CMAC table is                 other commands can be considered for scheduling.
+calculated by passing the “state attributes” through a hash func-                   Finally, as DRAM refresh is an operation that is essential to
+tion (as we will show in Figure 6(b)). Through hashing, dramatic                 correctness, we do not allow the RL controller to dictate the
+savings in storage requirements are possible because the storage                 refresh schedule. Instead, at the end of a refresh interval, the
+requirements are no longer exponential in the number of state                    RL scheduler is disabled, the appropriate rows are refreshed,
+attributes considered. Similarly to destructive aliasing in branch               and then control is returned to the RL scheduler.
+or value prediction, hashing can result in collisions and thus lead
+to interference across Q-values. In practice this turns out not to               3.3    Hardware Implementation
+be a major problem because (a) while the full MDP is far larger                     Figure 6(a) shows an overview of the scheduler’s Q-value es-
+than the storage capacity of the hash-based CMAC tables, the                     timation pipeline. While DRAM commands are issued every
+scheduler tends to navigate a small, localized region of the state               DRAM cycle, the on-chip memory controller’s five-stage pipeline
+space at any point in time (which reduces the likelihood of inter-               itself is clocked at the processor core frequency. We describe
+ference), and (b) RL algorithms readily accommodate stochastic                   below the operation of a pipeline that can calculate and com-
+rewards, and such interference can be viewed as a small source                   pare two Q-values every processor clock cycle. The width of the
+of noise in the scheduler’s Q-value estimates.                                   pipeline can be tuned for different types of systems depending
+                                                                                 on the DRAM and processor clock speeds, and the size of the
+3.2.4 Ensuring Correct Operation                                                 transaction queue.
+  Since the scheduler’s decisions are restricted to picking among                   In the first pipe stage, the scheduler gets the set of legal com-
+the set of legal commands each cycle, it is not possible for the                 mands along with the current state attributes from the trans-
+9                                                                                action queue,10 and generates a state-action pair for each can-
+ Note that the CMAC tables are actually implemented as SRAM arrays. In
+Figure 5, we show them as two-dimensional tables to illustrate the concept       10
+of adaptive resolution more clearly. Figure 6 shows the implementation of          The state attributes are obtained in the previous DRAM cycle and stored
+the CMAC SRAM arrays and how they are indexed.                                   in the transaction queue.
+
+
+                                                                             6
+
+
+===== Page 7 =====
+
+       Candidate Command A              Transaction Queue           Candidate Command B
+                                                                                                                    For a 4GHz chip attached to a DDR2-800 system (typical of
+                                                                                                                today’s high-end desktop and workstation systems), the sched-
+                                                                                                                uler’s pipe can be clocked ten times per DRAM cycle. With a
+                                                                                                  Stage 1
+                                                                                                                throughput of two Q-values per cycle, and four initial cycles to
+                                                                                                                fill the pipe, an RL-based scheduler can consider up to 12 com-
+                                                                                                                mands for scheduling every DRAM clock. For the applications
+                  <Action, State>                                 <Action, State>
+                                                                                                                we studied, we have empirically observed that the number of le-
+                                                                                                                gal commands in a DRAM cycle very rarely exceeds this value in
+                  Index Generation                                Index Generation
+                                                                                                                a 64-entry transaction queue, resulting in negligible performance
+                                                                                                                loss (less than 0.3% on average) compared to a scheduler that
+        Index 0                       Index N           Index 0                      Index N
+                                                                                                  Stage 2       can consider up to 64 commands. Nevertheless, the number of
+                                                                                                                considered candidates can be increased by increasing the pipe
+         CMAC                         CMAC               CMAC                        CMAC                       width if needed.
+         Array0                       ArrayN             Array0                      ArrayN
+                                                                                                                    Hardware Overhead: The hardware overhead of the RL-
+                                                                                                                based scheduler consists primarily of three portions: 1) logic
+                          +                                              +                        Stage 3
+                                                                                                                required to compute state attributes; 2) logic required to esti-
+                                 Q-value                   Q-value
+                                                                                                                mate and update Q-values; and 3) SRAM arrays required to
+                                 Estimate                  Estimate                               Stage 4       store Q-values. The logic for computing state attributes con-
+                                                                                                                sists of counters that are updated every DRAM cycle. Q-values
+                                                                                                                are stored in 16-bit fixed point format. We have already de-
+                                                 MAX                                                            scribed the logic for estimating them. Q-value updates are made
+                                                                                                  Stage 5       using fixed point arithmetic, according to the SARSA update de-
+                                                Q-Max                                                           scribed in section 3.2.1. To perform this update, we use a single,
+                                                                                                                pipelined 16-bit fixed-point multiplier. Note that the predictor
+                         (a) 2-wide Q-value Estimation Pipeline
+                                                                                                                update is not on the critical path of making scheduling decisions,
+                                                                                                                and can be performed in multiple DRAM cycles (i.e., many tens
+                                 (b) CMAC Index Generation Logic
+                                                                                                                of processor cycles) without significantly affecting the accuracy
+                                                                                                                of Q-values. In our experiments, we maintain a total of 8192
+                    Attribute0                  Attribute1               Attribute2                             distinct Q-values across all CMAC arrays in each of the two
+                                                                                                                command pipes, resulting in 32kB of on-chip storage.11
+                            Offset0
+
+
+
+                                                                              Initial Index
+                                                                                                                3.4    Design Effort
+             Randomly Generated
+                                                                                        CMAC
+                                                                                                                   RL-based memory controllers are attractive from a design com-
+              Constant Number
+            (based on action type)
+                                                     XOR               HASH
+                                                                                        Index                   plexity standpoint because they alleviate the hardware designer’s
+                                                                                                                burden of scheduling policy design. The hardware designer can
+                                                                                                                treat the RL-based controller as a black box, which, given a per-
+                             (c) CMAC Indexing using Attribute Shifting                                         formance target, relevant state attributes, and a set of actions
+                                                        CMAC Array 0                                            to choose from, automatically learns to map system states to
+                                                                                                                actions to optimize a long-term performance target. Thus, the
+                       Attr. 0                                                                                  architect’s job at design time is centered on (1) selecting a re-
+                       Attr.1             CMAC
+                                          Index
+                                                                                                                ward structure that reflects the desired optimization target, and
+                                         Generator                                                              (2) selecting a set of relevant state attributes and actions to be
+                      Attr. N                                                                                   used by the controller.
+                                                                                                                   In practice, there may be hundreds of available attributes that
+                                                                                                                might be used as inputs to the controller. Typically, however,
+                                                                               +               Q-value
+                                                      CMAC Array N
+                                                                                                                training RL-based controllers on a carefully selected subset of the
+                                                                                                                available attributes yields better-performing schedulers. Feature
+                    (Attr. 0) + 2                                                                               selection is the automated process of finding the best subset of
+                    (Attr.1) + 3          CMAC                                                                  state attributes to use as inputs to the controller. There has been
+                                          Index
+                                         Generator                                                              substantial prior work on how to perform (near-) optimal feature
+                    (Attr. N) + 1                                                                               selection [9]. We conduct a thorough review of system attributes
+                                                                                                                and identify 226 candidates, based on our intuition of whether
+                                                                                                                they could possibly be useful to guide memory scheduling. Then
+Figure 6: (a) RL-based scheduler’s Q-value estimation pipeline,                                                 we use feature selection to systematically trim them down to six
+(b) CMAC array index generator, (c) CMAC array indexing                                                         attributes. At a high level, the forward stepwise feature selection
+                                                                                                                algorithm we use can be seen as a greedy search (via simulation
+didate command (using the states and actions described in Sec-                                                  experiments) through the attribute space to find the best set of
+tion 3.1.1). This information is used to access the scheduler’s                                                 state attributes.
+CMAC arrays in the second pipeline stage. To index the CMAC                                                        Specifically, given N candidate attributes, forward selection
+arrays, the high order bits of each state attribute are concate-                                                initially evaluates N RL-based schedulers in simulation, each
+nated. For each state attribute, the granularity of quantization                                                using a different one of these N candidates. Once the best single-
+determines how many low-order bits are skipped. This initial in-                                                attribute scheduler is determined, forward selection evaluates
+dex is then XOR-ed with a randomly-generated constant number                                                    N − 1 two-attribute schedulers, each of which uses the best at-
+depending on the type of action to avoid generalization across Q-                                               tribute found earlier, plus one of the remaining N − 1 candidate
+values corresponding to different types of commands. The final                                                  attributes. This process is repeated N times by incorporating
+CMAC index is formed by hashing this index to reduce storage                                                    at each turn the attribute that yields the best-performing RL-
+requirements. The hardware used for generating the index of                                                     based scheduler when combined with the attributes selected so
+a CMAC array is shown in Figure 6(b). Each CMAC array is                                                        far. When this greedy search terminates (i.e, after N iterations),
+indexed differently using shifted attributes to obtain adaptive                                                 the best set of attributes found among all sets that were evalu-
+resolution, as shown in Figure 6(c).                                                                            ated are selected as inputs to be used by the RL-based controller
+   In the third and fourth pipe stages, the Q-value of each can-                                                at runtime.
+didate command is computed by adding the estimates from all
+of the corresponding CMAC arrays. In a two-wide pipe, there
+are two sets of CMAC arrays, one for each Q-value. In the final
+stage, the maximum Q-value found so far is compared to the
+two Q-values leaving the pipeline, and the maximum Q-value                                                      11
+                                                                                                                 Each CMAC array is an SRAM array of 256 Q-values with 1 read port
+found so far is updated along with the corresponding candidate                                                  and 1 write port. There are a total of 32 CMAC arrays in each of the two
+command.                                                                                                        ways of the two-wide command pipe.
+
+
+                                                                                                            7
+
+
+===== Page 8 =====
+
+                       Processor Parameters                                           Benchmark             Description               Problem size
+                Frequency                      4.0 GHz                                                         Data Mining
+             Number of cores                        4                                 SCALPARC              Decision Tree         125k pts., 32 attributes
+       Number of SMT Contexts                 2 per core
+       Fetch/issue/commit width                  4/4/4                                                        NAS OpenMP
+        Int/FP/Ld/St/Br Units                 2/2/2/2/2                                  MG               Multigrid Solver                Class A
+           Int/FP Multipliers                     1/1                                    CG             Conjugate Gradient                Class A
+        Int/FP issue queue size             32/32 entries                                                    SPEC OpenMP
+     ROB (reorder buffer) entries                  96                                 SWIM-OMP          Shallow water model          MinneSpec-Large
+             Int/FP registers                   96 / 96                              EQUAKE-OMP          Earthquake model            MinneSpec-Large
+           Ld/St queue entries                   24/24                                 ART-OMP          Self-Organizing Map          MinneSpec-Large
+           Max. unresolved br.                     24                                                            Splash-2
+          Br. mispred. penalty              9 cycles min.                              OCEAN             Ocean movements              514×514 ocean
+               Br. predictor         Alpha 21264 (tournament)                           FFT            Fast Fourier transform           1M points
+               RAS entries                         32                                  RADIX             Integer radix sort            2M integers
+                 BTB size            512 entries, direct-mapped
+               iL1/dL1 size                      32 kB
+            iL1/dL1 block size                 32B/32B                                 Table 3: Simulated applications and their input sizes.
+      iL1/dL1 round-trip latency      2/3 cycles (uncontended)
+              iL1/dL1 ports                      1/2
+         iL1/dL1 MSHR entries                    16/16                          tion level. Each application is simulated to completion. We se-
+          iL1/dL1 associativity         direct-mapped/4-way                     lect state attributes by conducting feature selection experiments
+        Memory Disambiguation                   Perfect
+           Coherence protocol                    MESI                           (Section 3.4) on the four fastest applications to simulate (MG,
+           Consistency model             Release consistency                    FFT, RADIX, SWIM). We observe no qualitative differences be-
+                                                                                tween final performance results obtained on these applications
+                    Table 1: Core Parameters.                                   and the remaining ones that were not used in feature selection.
+                   Shared L2 Cache Subsystem
+            Shared L2 Cache
+            L2 MSHR entries
+                                 4MB, 64B block, 8-way
+                                             64
+                                                                                5. EVALUATION
+          L2 round-trip latency  32 cycles (uncontended)                          Figure 7 compares the performance of in-order, FR-FCFS, and
+              Write buffer               64 entries                             RL-based scheduling policies along with the performance of an
+               DDR2-800 SDRAM Subsystem [26]                                    optimistic (and unrealizable) controller, which serves as an upper
+           Transaction Queue             64 entries                             bound (described in Section 1). The data is normalized to the
+             Peak Data Rate               6.4GB/s
+          DRAM bus frequency             400 MHz                                performance of FR-FCFS. On average, the RL-based memory
+          Number of Channels               1, 2, 4                              controller (RL) improves performance by 19%, thereby achiev-
+          DIMM Configuration            Single rank                             ing 27% of the performance improvement that can be provided
+            Number of Chips      4 DRAM chips per rank
+            Number of Banks         4 per DRAM chip                             by making DRAM scheduling ideally efficient. RL’s performance
+             Row Buffer Size                2KB                                 improvement is greater than 5% for all applications, with a max-
+            Address Mapping         Page Interleaving                           imum of 33% for SCALPARC and a minimum of 7% for FFT.
+               Row Policy               Open Page                               Note that the conventional in-order controller significantly un-
+                 tRCD                 5 DRAM cycles
+                   tCL                5 DRAM cycles                             derperforms the baseline FR-FCFS controller, in line with pre-
+                   tWL                4 DRAM cycles                             vious research results [37].
+                 tCCD                 4 DRAM cycles                               Figure 8 provides insight into the performance improvement
+                 tWTR                 3 DRAM cycles
+                  tWR                 6 DRAM cycles                             obtained using our RL-based controller by showing the DRAM
+                  tRTP                3 DRAM cycles                             data bus utilization (i.e., sustained DRAM bandwidth). The av-
+                   tRP                5 DRAM cycles                             erage bus utilization of the optimistic controller is 80%, which
+                 tRRD                 3 DRAM cycles
+                  tRAS               18 DRAM cycles                             means that aplications can utilize 80% of the 6.4GB/s peak
+                   tRC               22 DRAM cycles                             DRAM bandwidth if the memory controller can provide it. In-
+              Burst Length                    8                                 order and FR-FCFS controllers can sustain only 26% and 46% of
+                                                                                the peak DRAM bandwidth.13 On average, RL improves DRAM
+     Table 2: Shared L2 and DRAM subsystem parameters.                          data bus utilization from 46% to 56%. All applications experi-
+                                                                                ence increases in data bus utilization, which is strongly correlated
+                                                                                with the performance improvement we showed in Figure 7. The
+4. EXPERIMENTAL SETUP                                                           two applications that see the highest speedups with RL, SCAL-
+   We evaluate the performance of our RL-based memory con-                      PARC (33%) and MG (30%) also see the largest increases in bus
+troller by comparing it to three different schedulers: (1) Rixner               utilization. Note that there is still a large gap between RL’s
+et al.’s FR-FCFS scheduling policy, which was shown to be the                   and the optimistic controller’s bus utilization. This is due to
+best-performing policy on average [36, 37], (2) a conventional in-              two major reasons: (1) RL requires time to adapt its policy to
+order memory controller [37], and (3) an optimistic (i.e., ideally              changes in workload behavior whereas the optimistic controller
+efficient) scheduler that can sustain 100% of the peak DRAM                     does not suffer from such a scheduling inefficiency, (2) RL can-
+throughput if there is enough demand (this optimistic scheduler                 not overcome timing constraints and bank conflicts whereas the
+was described in Section 1). We simulate nine memory-intensive                  optimistic controller can always sustain the peak bandwidth if
+parallel applications with eight threads, running on a CMP with                 the application demands it. Hence, the optimistic controller is
+four two-way simultaneously multithreaded (SMT) cores, 4MB                      an unachievable upper bound, but provides a good measure of
+of L2 cache, and a DDR2-800 memory system. Table 1 shows the                    the application’s DRAM bandwidth demand.
+microarchitectural parameters of the processor cores we model,
+using a heavily modified version of the SESC simulation environ-                5.1      Performance Analysis
+ment [35]. Our CMP model is loosely based on Intel’s Nehalem                      An RL-based memory controller enjoys several advantages over
+processor [3], which integrates four 2-way SMT cores with an                    a conventional memory controller design. In this section, we
+on-chip memory controller. Table 2 shows the parameters of the                  identify important sources of RL’s performance potential, and
+shared L2 cache and the SDRAM memory subsystem modeled                          conduct experiments to provide further insight into the band-
+after Micron’s DDR2-800 SDRAM [26].                                             width and performance improvements reported earlier.
+   Our parallel workloads represent a mix of scalable scientific
+applications (three applications from the SPLASH-2 suite [46],                   5.1.1     Queue Occupancy and Load Miss Penalty
+three applications from the SPEC OpenMP suite [4], and two
+parallel NAS benchmarks [5]), and a parallelized data mining                      Figure 9 shows the average transaction queue occupancy and
+                                                                                the average L2 load miss penalty under FR-FCFS and RL-based
+application SCALPARC from Nu-MineBench [33].12 The input                        command schedulers. Recall that the RL-based scheduler’s per-
+sets we use are listed in Table 3. All applications are com-                    formance target is to optimize data bus utilization in the long
+piled using the gcc and Fortran compilers at the O3 optimiza-
+                                                                                13
+                                                                                 Even though it might seem low, the data bus utilization in our FR-FCFS
+12                                                                              baseline is consistent with what is reported in previous research [37] and by
+  These are the only applications from the SPEC OpenMP, NAS OpenMP,
+and Nu-MineBench suites that our simulation infrastructure currently sup-       DRAM manufacturers [27]. Rixner [37] reported an average utilization of
+ports. In the case of SPLASH-2, we chose these applications as they are         approximately 35% for a different set of applications. Due to the difficulty
+the only ones that result in an average transaction queue occupancy of 1        of DRAM scheduling, Micron considers an average data bus utilization of
+in the baseline, providing an opportunity for DRAM scheduling.                  45% to be “high” [27].
+
+
+                                                                            8
+
+
+===== Page 9 =====
+
+                                                        2.20
+
+
+
+
+                                 Speedup over FR-FCFS
+                                                        2.00
+                                                        1.80                                                                                                                                         1.70
+                                                        1.60
+                                                        1.40                                                                                                                                     1.19
+                                                        1.20                                                                                                                                   1.00
+                                                        1.00
+                                                        0.80                                                                                                                                  0.58
+                                                        0.60
+                                                        0.40
+                                                               ART             CG    EQUAKE   FFT             MG                                 OCEAN   RADIX      SCALPARC       SWIM         G-MEAN
+                                                   In-Order    FR-FCFS     RL   Optimistic
+              Figure 7: Performance comparison of in-order, FR-FCFS, RL-based, and optimistic memory controllers
+                                                                       and (3) more critical load misses over less critical ones, based on
+   1.00                                                                sequence numbers (Section 3.1.1). We combine these with the
+   Data Bus Utilization
+
+
+
+
+                                                                 0.80
+   0.80                                                                two preference relationships already utilized in FR-FCFS (prior-
+                                                              0.56
+   0.60                                                     0.46
+   0.40                                                                itizing CAS commands over RAS commands, and older requests
+                                                            0.26
+   0.20                                                                over younger requests) to derive a family of scheduling policies,
+   0.00                                                                each of which corresponds to a different order in which pref-
+                                                                       erence relationships are applied to prioritize legal commands.
+                                                                       We exhaustively evaluate all possible policies within this family,
+                                                                       and report the performance of the best policy we find.14 (We
+                    In-Order FR-FCFS RL Optimistic                     have also evaluted an augmented version of this policy that is-
+                                                                       sues writes in bursts to amortize write-to-read delays (tWTR ),
+Figure 8: DRAM data bus utilization (sustained DRAM band- but found its performance to be inferior.) Figure 10 shows                   the
+width) of in-order, FR-FCFS, RL-based, and optimistic memory
+                                                                       results.
+controllers
+
+
+
+
+                                                                                                                   Speedup over FR-FCFS
+                                                                                                                                          1.40
+                                                                                                                                          1.30                                                                   1.19
+term. To improve data bus utilization, a scheduler needs to ex-                                                                           1.20
+ploit row buffer locality and maximize bank-level parallelism,                                                                            1.10                                                                1.05
+                                                                                                                                                                                                            1.00
+both of which can be better exploited with higher transaction                                                                             1.00
+                                                                                                                                          0.90
+queue occupancy. The plot at the top of Figure 9 shows that the
+RL-based scheduler is indeed able to keep the transaction queue
+much busier than the baseline FR-FCFS system; on average,
+the RL-based scheduler has 28 requests active in its transaction
+queue, while FR-FCFS has only 10. A higher transaction queue                                                                                                     FR-FCFS   Family-BEST   RL
+occupancy is possible if cores supply requests to the memory
+controller at a faster rate. A core can issue its memory requests                                                  Figure 10: Performance comparison between RL-based sched-
+faster if its instruction window is blocked less due to L2 load                                                    uler and an extended FR-FCFS based scheduler using the same
+misses, i.e., if the average L2 load miss penalty is lower. As                                                     state information
+shown in the plot at the bottom of Figure 9, the RL-based com-                                                        Incorporating the additional state information into FR-FCFS
+mand scheduler achieves an average L2 load miss penalty of 562                                                     results in modest performance improvements, with an average
+cycles, while FR-FCFS sustains an 824-cycle penalty. Hence, by                                                     of 5%. Compared to FR-FCFS and its derivatives, an RL-based
+learning to optimize data bus utilization, the RL-based scheduler                                                  scheduler enjoys two key advantages. First, an RL-based mem-
+reduces average L2 load miss latency and improves execution                                                        ory controller encoding its policy in a CMAC array exhibits much
+time.                                                                                                              higher representational power than a conventional controller: the
+                                                                                                                   number of possible policies that can be expressed by a CMAC
+                           60                                                                                      array are typically much larger than the number of policies that
+Transaction Queue
+
+
+
+
+                           40                                                                            28        can be expressed via preference relationships. Hence, many poli-
+    Occupancy
+     Average
+
+
+
+
+                           20                                                                       10             cies that can be formulated by our RL-based controller are fun-
+                            0                                                                                      damentally obscured to conventional controllers based on less
+                                                                                                                   expressive representations. Second, online learning allows an
+                                                                                                                   RL-based controller to adapt its scheduling policy to changes
+                                                                                                                   in workload demands (e.g., due to phase changes) and memory
+                          1500                                                                                     reference streams at runtime, while FR-FCFS and its derivatives
+ Load Miss Penalty
+
+
+
+
+                          1000                                                                      824
+                                                                                                                   are fixed scheduling policies that cannot change their mapping
+    Average L2
+
+
+
+
+                                                                                                       562         of system states to actions. Consequently, an RL-based memory
+                           500                                                                                     controller achieves considerably higher speedups than FR-FCFS
+                             0                                                                                     derivatives utilizing the same state information.
+                                                                                                                             5.1.3                  Performance Impact of Runtime Adaptation
+                                                                                                                      To gauge the importance of runtime adaptation to our RL-
+                                                                     FR-FCFS    RL                                 based memory controller, we make performance comparisons
+                                                                                                                   against a static policy found by an offline version of our CMAC-
+Figure 9: Average transaction queue occupancy (top) and aver-                                                      based RL algorithm. We train this offline RL algorithm on train-
+age L2 load miss penalty (bottom) under FR-FCFS and RL-based                                                       ing data collected from all of our benchmarks. Once training is
+schedulers                                                                                                         over, we install the learned policy in our simulation environment
+                                                                                                                   by hard-coding the final Q-value estimates in the controller’s
+  5.1.2 Performance Impact of Selected Attributes                                                                  CMAC array, and evaluate the performance of this hard-coded
+   Some of the state attributes used in our RL-based memory                                                        policy on all of our benchmarks. Figure 11 shows the results.
+controller (Section 3.1.1) require additional information not uti-                                                    On average, offline RL provides a speedup of 8% over FR-
+lized by the baseline FR-FCFS scheduler (whether a request is                                                      FCFS, and significantly underperforms its online, adaptive ver-
+a read or a write, whether a read is due to a load or a store                                                      sion. This is due to two main reasons. First, online RL can ac-
+miss, and the relative order among load misses based on their                                                      commodate changes in workload demands by adapting its control
+sequence numbers). To understand how much of the speedups                                                          policy at runtime, whereas offline RL calculates a fixed schedul-
+can be credited to this additional information alone, we create                                                    ing policy that cannot adequately cater to the different needs
+a family of scheduling policies, each of which extends FR-FCFS                                                    14
+                                                                                                                     The best policy we found among FR-FCFS derivatives prioritizes (1) CAS
+by incorporating the extra state information used by the RL                                                        commands over RAS commands, (2) reads over writes (new to FR-FCFS),
+controller into its scheduling decisions.                                                                          (3) load misses over store misses (new), (4) more critical load misses over
+   Specifically, we define three new preference relationships pri-                                                 less critical ones, based on sequence numbers (new), and (5) older requests
+oritizing (1) reads over writes, (2) load misses over store misses,                                                over younger ones.
+
+
+                                                                                                              9
+
+
+===== Page 10 =====
+
+                        1.40
+
+Speedup over FR-FCFS
+                                                                                                                                                                                4
+
+
+
+
+                                                                                                                                                       Normalized to 4-Core
+                        1.30                                                                                                                                                                                                                 FFT
+                                                                                                                       1.19
+                        1.20
+                                                                                                                    1.08
+                                                                                                                                                                              3.5                                                            CG
+
+
+
+
+                                                                                                                                                          Performance
+                        1.10
+                        1.00                                                                                      1.00                                                          3                                                            RADIX
+
+
+
+
+                                                                                                                                                            FR-FCFS
+                                                                                                                                                                                                                                             OCEAN
+                        0.90                                                                                                                                                  2.5                                                            SWIM
+                                                                                                                                                                                2                                                            MG
+                                                                                                                                                                                                                                             SCALPARC
+                                                                                                                                                                              1.5                                                            ART
+                                                                                                                                                                                1                                                            EQUAKE
+                                                     FR-FCFS      Offline RL                          Online RL
+                                                                                                                                                                                    4         8           12                16
+     Figure 11: Performance comparison against a static, RL-based
+     scheduler trained offline.
+                                                                                                                                                                                                  Number of Cores
+                                                                                                                                   Figure 13: Application performance normalized to the 4-core
+                                                                                                                                   FR-FCFS baseline.
+     of all phases within a program. Second, offline RL algorithms
+     can have difficulty finding high-performance control policies for                                                             and independent DDR2 channels, we also scale the number of L2
+     non-stationary environments where the state transition probabil-                                                              MSHR entries. We keep all other microarchitectural parameters
+     ity distribution characterizing the dynamics of the environment                                                               unchanged. Figure 13 shows the performance of all applications
+     (Section 2) changes over time. In contrast, due to its ability to                                                             on our 8- and 16-core baselines, normalized to the 4-core baseline
+     sample training data from the actual distribution at runtime,                                                                 performance.
+     online RL more readily accommodates non-stationarity. Over-                                                                      In all three systems, we observe that Q-values converge suc-
+     all, these results suggest that online learning is essential to our                                                           cessfully. To check the need for explicit coordination among
+     RL-based memory controller.                                                                                                   schedulers, we repeat the feature selection process (Section 3.4)
+                                                                                                                                   with additional attributes summarizing the states of other mem-
+               5.1.4 Sensitivity to Controller Parameters                                                                          ory controllers to each controller. We find that such state at-
+        The plot on the left side of Figure 12 shows speedups with                                                                 tributes are not selected as they do not provide significant per-
+     respect to FR-FCFS for different values of the discount rate γ.                                                               formance improvements. These results lead us to conclude that
+     Recall that γ is effectively a knob that controls how important                                                               any potential interactions among the controllers are second-order
+     future rewards are compared to immediate rewards. In the ex-                                                                  effects, and that explicit coordination mechanisms among RL-
+     treme case where γ is set to zero, the scheduler learns to maxi-                                                              based DRAM schedulers are not needed. Figure 14 shows the
+     mize only its immediate rewards, and suffers a significant perfor-                                                            results.
+     mance loss compared to schedulers with better planning capabil-                                                                                       1.40
+                                                                                                                                    Speedup over FR-FCFS
+     ities (achieved by setting γ to larger values). At the opposite ex-                                                                                                                                                           1.19 1.18
+                                                                                                                                                           1.30                                                                      1.15 1.16
+     treme, setting γ to one causes convergence problems in Q-values:                                                                                      1.20                                                                         1.14 1.16
+     the resulting scheduler fails to converge to a high-performance                                                                                       1.10
+                                                                                                                                                           1.00
+     control policy, and achieves relatively poor performance com-                                                                                         0.90
+     pared to more balanced schedulers. The optimum value of γ is
+     achieved at 0.95 for this set of benchmarks, at which point the
+     scheduler converges to a high-performance control policy.
+                                              1.20                                                    1.20                                                              4 Cores - 1 Channel   8 Cores - 2 Channels   16 Cores - 4 Channels
+                                                                               Speedup over FR-FCFS
+                       Speedup over FR-FCFS
+
+
+
+
+                                              1.15             g=0                                    1.15             e=0
+                                                               g = 0.5                                                 e = 0.05
+                                                                                                                                   Figure 14: RL’s speedup over FR-FCFS in 4-, 8-, and 16-core
+                                              1.10                                                    1.10                         systems with 1, 2, and 4 memory controllers, respectively.
+                                                               g = 0.95                                                e = 0.1
+                                              1.05                                                    1.05
+                                                               g = 0.99                                                e = 0.2        On average, RL-based memory controllers improve performance
+                                              1.00             g=1                                    1.00             e=1         by 15% and 14% over FR-FCFS in systems with two and four in-
+                                              0.95                                                    0.95
+                                                                                                                                   dependent channels. Across applications, there is no clear trend
+                                                                                                                                   indicating a deterioration of performance potential as the num-
+     Figure 12: Performance sensitivity to discount rate γ (left) and                                                              ber of controllers is increased from one to four. ART is an outlier,
+     exploration parameter  (right)
+                                                                                                                                   where speedups over FR-FCFS drop from 24% to 2% as the sys-
+                                                                                                                                   tem is scaled from four to sixteen cores. We found that this
+        The plot on the right side of Figure 12 shows speedups with                                                                application’s data set size is too small to scale beyond four cores
+     respect to FR-FCFS for different values of the exploration pa-                                                                effectively, leading to heavy load imbalance in systems with 8
+     rameter . For this set of benchmarks, lower values of  work bet-                                                            and 16 cores, and artificially reducing the performance poten-
+     ter, and setting  to zero does not affect performance adversely.                                                             tial for DRAM scheduling by restricting the number of in-flight
+     Note, however, that maintaining exploration could still be neces-                                                             requests in the transaction queue. In all three CMP configura-
+     sary to accommodate drastic changes in the scheduler’s environ-                                                               tions, the average speedups over all remaining applications are
+     ment, e.g., due to context switches. As expected, large amounts                                                               within 2% of one another (denoted as G-MEAN’ in Figure 14),
+     of random exploration lead to severe performance degradation.                                                                 suggesting that our RL-based memory controller can be readily
+                                                                                                                                   incorporated in a system with multiple memory controllers (i.e.,
+     5.2 Scaling to Multiple Memory Controllers                                                                                    a multi-agent configuration) without further modifications.
+        A common way of increasing peak DRAM bandwidth for larger-
+     scale CMP platforms is to integrate multiple memory controllers                                                               5.3                             Bandwidth Efficiency Analysis
+     on chip [22], where each controller serves a different set of phys-                                                              Figure 15 compares the performance of FR-FCFS and RL-
+     ical addresses through an independent DRAM channel. In our                                                                    based schedulers in 4-core systems with 6.4GB/s and 12.8GB/s
+     case, this necessitates the integration of multiple autonomous                                                                peak DRAM bandwidth. The latter is a dual-channel DDR2-
+     schedulers (i.e., agents), each of which optimizes its own long-                                                              800 SDRAM sub-system with two integrated memory controllers.
+     term cumulative performance target. One question that arises in                                                               Results are normalized to the performance of the 6.4GB/s FR-
+     such a distributed RL setting with multiple schedulers is whether                                                             FCFS baseline.
+     Q-values can successfully converge in the presence of potential                                                                  The RL-based 6.4GB/s system delivers half of the speedups
+     interactions between the schedulers (mainly by unblocking cores                                                               that can be achieved by a more expensive, 12.8GB/s configu-
+     and thereby affecting the level of parallelism/occupancy in each                                                              ration with FR-FCFS scheduling. Single-channel RL-based and
+     other’s transaction queues), and whether there is a need for ex-                                                              dual-channel FR-FCFS-based systems achieve speedups of 19%
+     plicit coordination among the controllers.                                                                                    and 39% over a single-channel FR-FCFS-based system, respec-
+        To answer these questions, we experiment with two larger-                                                                  tively. While the dual-channel FR-FCFS system offers higher
+     scale CMP configurations: an 8-core CMP with two memory                                                                       peak throughput, the RL-based controller uses its single 6.4GB/s
+     controllers, and a 16-core CMP with four memory controllers.                                                                  channel more efficiently. Hence, by improving DRAM utiliza-
+     Each memory controller is attached to an independent DDR2                                                                     tion, a self-optimizing memory controller can deliver 50% of the
+     channel with 6.4GB/s of peak bandwidth, for aggregate band-                                                                   speedup of an over-provisioned system, at a lower system cost.
+     width values of 12.8GB/s and 25.6GB/s in the case of 8- and                                                                      Figure 15 also shows that the RL-based scheduler can uti-
+     16-core systems, respectively. Aside from the number of cores                                                                 lize a dual-channel, 12.8GB/s interface much more effectively
+
+
+                                                                                                                              10
+
+
+===== Page 11 =====
+
+                                          2.20
+
+
+
+
+                      1-Channel FR-FCFS
+                                          2.00
+
+
+
+
+                        Speedup over
+                                          1.80
+                                          1.60                                                                                                                      1.58
+                                                                                                                                                             1.39
+                                          1.40
+                                          1.20                                                                                                            1.19
+                                          1.00                                                                                                          1.00
+                                          0.80
+                                                 ART         CG        EQUAKE      FFT           MG         OCEAN      RADIX    SCALPARC         SWIM      G-MEAN
+                                                       FR-FCFS - 1 Channel      RL - 1 Channel        FR-FCFS - 2 Channels     RL - 2 Channels
+   Figure 15: Performance comparison of FR-FCFS and RL-based memory controllers on systems with 6.4GB/s and 12.8GB/s peak
+   DRAM bandwidth
+
+than the FR-FCFS scheduler. Consequently, the RL-based dual-                                              RL-based controller, their scheme (1) cannot learn a new schedul-
+channel system outperforms the other three configurations by                                              ing policy that is not already implemented by the hardware de-
+significant margins. In ART and SCALPARC, for instance, a                                                 signer, (2) cannot learn the long-term performance impact of its
+dual-channel system with an RL-based scheduler outperforms                                                scheduling decisions, (3) does not consider the scheduling of row
+the baseline single-channel system by 85% and 83%, respectively.                                          commands (i.e., precharge and activate), and therefore does not
+With an FR-FCFS scheduler, however, the same system achieves                                              completely address the trade-offs involved in DRAM command
+speedups of only 47% and 37% over the single-channel baseline.                                            scheduling. We have adapted their scheduler to our baseline
+Thus, RL-based memory controllers are also an attractive de-                                              controller organization, but found its performance impact to be
+sign option for more expensive (and higher performance) CMP                                               negligible (less than 0.3% improvement over FR-FCFS on aver-
+memory systems.                                                                                           age) in our more aggressive setup.
+                                                                                                             Rixner et al. [36, 37] examine various DRAM command schedul-
+5.4               Comparison to QoS-Aware Schedulers                                                      ing policies and propose the FR-FCFS policy. Hong et al. [16]
+   Most memory controller proposals [17, 25, 30, 36, 37, 38, 48,                                          and McKee et al. [25] describe policies that reorder accesses
+49], including ours, aim at increasing overall system performance                                         from different streams in stream-based computations. Zhu and
+by delivering higher DRAM throughput and/or lower access la-                                              Zhang [48] present modifications to existing scheduling policies
+tency. With the proliferation of CMPs, however, there is growing                                          to improve system throughput in simultaneous multithreading
+interest in hardware platforms that can provide performance iso-                                          processors. QoS-aware memory controllers were recently pro-
+lation across applications in a multiprogrammed environment. In                                           posed [29, 31, 34] to provide fair access to threads sharing the
+particular, several QoS-aware memory controller proposals have                                            DRAM system. Shao and Davis [38] describe an access reorder-
+been published lately [29, 31, 34].                                                                       ing based burst scheduling policy to utilize the DRAM burst
+   Providing QoS guarantees in a multiprogrammed environment                                              mode more effectively. Natarajan et al. [30] examine the impact
+using an RL design is beyond the scope of our paper and is left for                                       of different policy decisions in the memory controller in a mul-
+future work. Nevertheless, in the context of executing a parallel                                         tiprocessor environment and find that better policies that more
+application, it is conceivable that a QoS-aware scheduler could                                           efficiently utilize DRAM bandwidth could provide the same per-
+help performance in a variety of ways, for example by reducing                                            formance as doubling the DRAM bandwidth. Ahn et al. [2] study
+starvation. To understand whether the speedups delivered by our                                           the effect of DRAM scheduling policies and DRAM organization
+RL-based memory controller could also be achieved by simply                                               on the performance of data-parallel memory systems. All these
+addressing any potential fairness problems across threads, we                                             previously proposed policies are fixed, rigid, non-adaptive, and
+evaluate Nesbit et al.’s Fair Queueing scheduler [31]. Figure 16                                          unable to learn the long-term effects of their scheduling decisions
+shows the results.                                                                                        on performance. In contrast to these, an RL-based controller
+               1.40                                                                                       learns and employs new and adaptive scheduling policies based
+Speedup over
+
+
+
+
+               1.30                                                                                       on system and workload behavior.
+                                                                                              1.19
+  FR-FCFS
+
+
+
+
+               1.20
+                                                                                          1.02
+                                                                                                             Other work has proposed techniques for intelligent address
+               1.10                                                                                       remapping [8], eliminating bank conflicts [44, 47], and refresh
+               1.00                                                                      1.00
+               0.90                                                                                       scheduling [15] in DRAM controllers. These approaches are or-
+                                                                                                          thogonal to our proposal.
+
+                                                                                                          6.2   Applications of RL in Computer Systems
+                                                   FR-FCFS   FQ   RL
+                                                                                                             Reinforcement learning [6, 28, 42] has been successfully ap-
+Figure 16: Performance comparison of Fair Queueing and RL-                                                plied to a broad class of problems, including autonomous naviga-
+based memory controllers                                                                                  tion and flight, helicopter control, pole balancing, board games
+   The fair queueing scheduler provides significant speedups over                                         with non-deterministic outcomes (e.g., backgammon), elevator
+the baseline FR-FCFS scheduler for two applications (SCAL-                                                scheduling, dynamic channel assignment in cellular networks [32],
+PARC and SWIM); the average speedup across all nine appli-                                                processor and memory allocation in data centers [43, 45], routing
+cations is 2%. While the RL-scheduler is designed specifically                                            in ad-hoc networks [10], and the control of pricing decisions in
+to optimize long-term system performance via runtime interac-                                             shopbots. Its application to microarchitecture has been limited.
+tion with the system, the fair queueing scheduler addresses only                                             Tesauro et al. [43] explore a reinforcement learning approach
+one potential source of performance loss (load imbalance) as a                                            to make autonomic resource allocation decisions in data centers.
+by-product of improving fairness.                                                                         They focus on assigning processors and memory to applications.
+                                                                                                          The proposed algorithm delivers significant speedups over a va-
+                                                                                                          riety of existing queueing-theoretic allocation policies.
+6. RELATED WORK                                                                                              McGovern and Moss [24] apply reinforcement learning and
+                                                                                                          Monte Carlo roll-outs to code scheduling, finding that the learned
+6.1 DRAM Scheduling                                                                                       scheduling policies outperform commercial compilers when com-
+  None of the previous work in DRAM scheduling provides a                                                 piling for the Alpha 21064 microprocessor.
+scheduler that can learn the long-term impact of its scheduling                                              Other machine learning techniques have been used in the con-
+decisions and plan accordingly to optimize a given performance                                            text of branch prediction. Calder et al. [7] use neural networks
+metric. To our knowledge, this paper is the first to propose such                                         and decision trees to predict conditional branch directions stat-
+a scheduler along with a rigorous methodology to designing self-                                          ically, using static program features. Jimenez and Lin [19] pro-
+optimizing DRAM controllers.                                                                              pose the perceptron branch predictor, which outperforms table-
+  Hur and Lin [17] propose a history-based memory scheduler                                               based prediction schemes by significant margins. Emer and
+that adapts to the mix of read and write requests from the pro-                                           Gloy [14] propose the use of genetic programming for automatic
+cessor. They target inefficiencies arising in a lower-performing                                          derivation of hardware predictors at design time. They do not
+memory controller organization than our baseline. Their sched-                                            consider the derivation of on-line architectural control policies.
+uler chooses among multiple hard-coded scheduling policies based                                          Genetic programming does not utilize the properties of the un-
+on the history of read and write requests it receives. Unlike an                                          derlying Markov Decision Processes, and may require a very large
+
+
+                                                                                                     11
+
+
+===== Page 12 =====
+
+number of repeated evaluations on a given set of benchmarks be-            [20] M. Joshi, G. Karypis, and V. Kumar. ScalParC: A new scalable and
+fore delivering a high-performance policy. In contrast, reinforce-              efficient parallel classification algorithm for mining large datasets. In
+                                                                                IPPS, 1998.
+ment learning methods can learn and generalize from individual             [21] R. E. Kessler. The Alpha 21264 microprocessor. IEEE Micro,
+decisions, explicitly balance exploration and exploitation, and                 9(2):24–36, Mar. 1999.
+thus are suitable for on-chip learning at run-time.                        [22] P. Kongetira, K. Aingaran, and K. Olukotun. Niagara: A 32-way
+                                                                                multithreaded sparc processor. IEEE Micro, 25(2):21–29, 2005.
+7. CONCLUSIONS                                                             [23] J. D. McCalpin. Sustainable Memory Bandwidth in Current High
+   We have presented a new approach to designing memory con-                    Performance Computers.
+                                                                                http://home.austin.rr.com/mccalpin/papers/bandwidth/.
+trollers that operate using the principles of reinforcement learn-         [24] A. McGovern and E. Moss. Scheduling straight line code using
+ing (RL). An RL-based, self-optimizing memory controller con-                   reinforcement learning and rollouts. In Advances in Neural
+tinuously and automatically adapts its DRAM command schedul-                    Information Processing Systems, 1999.
+ing policy based on its interaction with the system to opti-               [25] S. A. McKee et al. Dynamic access ordering for streamed
+                                                                                computations. IEEE Transactions on Computers,
+mize performance. As a result, it can utilize DRAM bandwidth                    49(11):1255–1271, Nov. 2000.
+more efficiently than a traditional controller that employs a fixed        [26] Micron. 512Mb DDR2
+scheduling policy. Our approach also reduces the human design                   SDRAM Component Data Sheet: MT47H128M4B6-25, March 2006.
+effort for the memory controller because the hardware designer                  http://download.micron.com/pdf/datasheets/dram/ddr2/512MbDDR2.pdf.
+does not need to devise a scheduling policy that works well under          [27] Micron. Technical Note TN-47-04: Calculating Memory System
+                                                                                Power for DDR2, June 2006.
+all circumstances.                                                              http://download.micron.com/pdf/technotes/ddr2/TN4704.pdf.
+   On a 4-core CMP with a single-channel DDR2-800 memory                   [28] T. Mitchell. Machine Learning. McGraw-Hill, Boston, MA, 1997.
+subsystem (6.4GB/s peak bandwidth in our setup), the RL-                   [29] O. Mutlu and T. Moscibroda. Stall-time fair memory access
+based memory controller improves the performance of a set of                    scheduling for chip multiprocessors. In MICRO-40, 2007.
+parallel applications by 19% on average (up to 33%) and DRAM               [30] C. Natarajan, B. Christenson, and F. Briggs. A study of
+bandwidth utilization by 22% on average, over a state-of-the-art                performance impact of memory controller features in multi-processor
+                                                                                server environment. In WMPI, 2004.
+FR-FCFS scheduler. This improvement effectively cuts in half               [31] K. J. Nesbit, N. Aggarwal, J. Laudon, and J. E. Smith. Fair queuing
+the performance gap between the single-channel configuration                    memory systems. In MICRO-39, 2006.
+and a more expensive dual-channel DDR2-800 subsystem with                  [32] J. Nie and S. Haykin. A Q-learning-based dynamic channel
+twice peak bandwidth. When applied to the dual-channel sub-                     assignment technique for mobile communication systems. In IEE
+                                                                                Transactions on Vehicular Technology, Sept. 1999.
+system, the RL-based scheduler delivers an additional 14% per-             [33] J. Pisharath, Y. Liu, W. Liao, A. Choudhary, G. Memik, and
+formance on average (up to 34%). We conclude that RL-based                      J. Parhi. NU-MineBench 2.0. Technical report, Northwestern
+self-optimizing memory controllers provide a promising way to                   University, August 2005. Tech. Rep. CUCIS-2005-08-01.
+efficiently utilize the DRAM memory bandwidth available in a               [34] N. Rafique, W.-T. Lim, and M. Thottethodi. Effective management
+                                                                                of DRAM bandwidth in multicore processors. In PACT, 2007.
+CMP.                                                                       [35] J. Renau, B. Fraguela, J. Tuck, W. Liu, M. Prvulovic, L. Ceze,
+                                                                                S. Sarangi, P. Sack, K. Strauss, and P. Montesinos. SESC simulator,
+                                                                                January 2005. http://sesc.sourceforge.net.
+ACKNOWLEDGMENTS                                                            [36] S. Rixner. Memory controller optimizations for web servers. In
+The authors would like to thank the anonymous reviewers for                     MICRO-37, 2004.
+                                                                           [37] S. Rixner, W. J. Dally, U. J. Kapasi, P. Mattson, and J. D. Owens.
+useful feedback. This work was supported in part by NSF awards                  Memory access scheduling. In ISCA-27, 2000.
+CNS-0509404, CNS-0720773, and CAREER CCF-0545995, as                       [38] J. Shao and B. T. Davis. A burst scheduling access reordering
+well as gifts from Intel and Microsoft.                                         mechanism. In HPCA-13, 2007.
+                                                                           [39] B. Sinharoy, R. N. Kalla, J. M. Tendler, R. J. Eickemeyer, and J. B.
+                                                                                Joyner. POWER5 system microarchitecture. IBM Journal of
+                                                                                Research and Development, 49(4/5):505–521, 2005.
+8. REFERENCES                                                              [40] L. Spracklen and S. G. Abraham. Chip multithreading:
+ [1] Advanced Micro Devices, Inc. AMD Athlon(T M ) XP Processor                 Opportunities and challenges. In HPCA-11, 2005.
+     Model 10 Data Sheet, Feb. 2003.                                       [41] R. Sutton. Generalization in reinforcement learning: Successful
+ [2] J. H. Ahn, M. Erez, and W. J. Dally. The design space of                   examples using sparse coarse coding. In Neural Information
+     data-parallel memory systems. In SC, 2006.                                 Processing Systems Conference, Denver, CO, June 1996.
+ [3] Anandtech. Intel Developer Forum 2007.                                [42] R. Sutton and A. Barto. Reinforcement Learning. MIT Press,
+     http://www.anandtech.com/cpuchipsets/intel/showdoc.aspx?i=3102.            Cambridge, MA, 1998.
+ [4] V. Aslot and R. Eigenmann. Quantitative performance analysis of       [43] G. Tesauro et al. Online resource allocation using decompositional
+     the SPEC OMPM2001 benchmarks. Scientific Programming,                      reinforcement learning. In Conference for the American
+     11(2):105–124, 2003.                                                       Association for Artificial Intelligence, July 2005.
+ [5] D. H. Bailey et al. NAS parallel benchmarks. Technical report,        [44] M. Valero et al. Increasing the number of strides for conflict-free
+     NASA Ames Research Center, March 1994. Tech. Rep. RNR-94-007.              vector access. In ISCA-19, 1992.
+ [6] D. Bertsekas. Neuro Dynamic Programming. Athena Scientific,           [45] D. Vengerov and N. Iakovlev. A reinforcement learning framework
+     Belmont, MA, 1996.                                                         for dynamic resource allocation: First results. In ICAC, 2005.
+ [7] B. Calder, D. Grunwald, M. Jones, D. Lindsay, J. Martin, M. Mozer,    [46] S. C. Woo, M. Ohara, E. Torrie, J. P. Singh, and A. Gupta. The
+     and B. Zorn. Evidence-based static branch prediction using machine         SPLASH-2 programs: Characterization and methodological
+     learning. ACM TOPLAS, 19(1), 1997.                                         considerations. In ISCA-22, 1995.
+ [8] J. Carter et al. Impulse: Building a smarter memory controller. In    [47] Z. Zhang et al. A permutation-based page interleaving scheme to
+     HPCA-5, 1999.                                                              reduce row-buffer conflicts and exploit data locality. In MICRO-33,
+                                                                                2000.
+ [9] R. Caruana and D. Freitag. Greedy attribute selection. In
+     International Conference on Machine Learning, pages 28–36, New        [48] Z. Zhu and Z. Zhang. A performance comparison of DRAM memory
+     Brunswick, NJ, July 1994.                                                  system optimizations for SMT processors. In HPCA-11, 2005.
+[10] Y. Chang, T. Hoe, and L. Kaelbling. Mobilized ad-hoc networks: A      [49] W. K. Zuravleff and T. Robinson. Controller for a synchronous
+     reinforcement learning approach. In International Conference on            DRAM that maximizes throughput by allowing memory requests
+     Autonomic Computing, 2004.                                                 and commands to be issued out of order. United States Patent
+                                                                                #5,630,096, May 1995.
+[11] V. Cuppu, B. Jacob, B. T. Davis, and T. Mudge. A performance
+     comparison of contemporary DRAM architectures. In ISCA-26,
+     1999.
+[12] B. T. Davis. Modern DRAM Architectures. Ph.D. dissertation,
+     Dept. of EECS, University of Michigan, Nov. 2000.
+[13] T. Dunigan, M. R. Fahey, J. White, and P. Worley. Early evaluation
+     of the Cray X1. In SC, 2003.
+[14] J. Emer and N. Gloy. A language for describing predictors and its
+     application to automatic synthesis. In ISCA-24, 1997.
+[15] M. Ghosh and H.-H. S. Lee. Smart refresh: An enhanced memory
+     controller design for reducing energy in conventional and 3D
+     Die-Stacked DRAMs. In MICRO-40, 2007.
+[16] S. I. Hong, S. A. McKee, M. H. Salinas, R. H.Klenke, J. H. Aylor,
+     and W. A. Wulf. Access order and effective bandwidth for streams
+     on a direct Rambus memory. In HPCA-5, 1999.
+[17] I. Hur and C. Lin. Adaptive history-based memory schedulers. In
+     MICRO-37, 2004.
+[18] ITRS. International Technology Roadmap for Semiconductors:
+     2005 Edition, Assembly and packaging.
+     http://www.itrs.net/Links/2005ITRS/AP2005.pdf.
+[19] D. A. Jimenez and C. Lin. Dynamic branch prediction with
+     perceptrons. In HPCA-7, 2001.
+
+
+                                                                      12

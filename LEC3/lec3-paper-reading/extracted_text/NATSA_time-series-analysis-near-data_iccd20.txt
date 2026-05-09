@@ -1,0 +1,892 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/NATSA_time-series-analysis-near-data_iccd20.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/NATSA_time-series-analysis-near-data_iccd20.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+                      NATSA: A Near-Data Processing Accelerator
+                              for Time Series Analysis
+      Ivan Fernandez§     Ricardo Quislant§      Christina Giannoula†                                               Mohammed Alser‡
+            Juan Gómez-Luna‡      Eladio Gutiérrez§      Oscar Plata§                                               Onur Mutlu‡
+          §                                        †                                                                      ‡
+              University of Malaga                     National Technical University of Athens                                ETH Zürich
+
+   Time series analysis is a key technique for extracting and            tection, which cannot be tolerated by many applications (e.g.,
+predicting events in domains as diverse as epidemiology, ge-             vehicle safety systems [85]). Unlike approximate algorithms,
+nomics, neuroscience, environmental sciences, economics,                 exact algorithms [67] do not yield false positives or discor-
+and more. Matrix profile, the state-of-the-art algorithm to              dant dismissals, but can be very time-consuming on large
+perform time series analysis, computes the most similar sub-             time series data. Thus, anytime versions (aka interruptible
+sequence for a given query subsequence within a sliced time              algorithms) of exact algorithms are proposed to provide ap-
+series. Matrix profile has low arithmetic intensity, but it typi-        proximate solutions quickly [108, 112] and can return a valid
+cally operates on large amounts of time series data. In current          result even if the user stops their execution early.
+computing systems, this data needs to be moved between the                  The state-of-the-art exact anytime method for motif and
+off-chip memory units and the on-chip computation units for              discord discovery is matrix profile [108], which is based on Eu-
+performing matrix profile. This causes a major performance               clidean distances and floating-point arithmetic. Fig. 1 depicts
+bottleneck as data movement is extremely costly in terms of              a naive example of anomaly detection using matrix profile,
+both execution time and energy.                                          where the sinusoidal signal has an anomaly between values
+   In this work, we present NATSA, the first Near-Data Pro-              250 and 270. The matrix profile output of this time series shows
+cessing accelerator for time series analysis. The key idea               low values for the periodic subsequences of it as they are very
+is to exploit modern 3D-stacked High Bandwidth Memory                    similar to the other subsequences, and higher values for the
+(HBM) to enable efficient and fast specialized matrix profile            anomalies and their neighboring subsequences.
+computation near memory, where time series data resides.
+                                                                            Distance Amplitude
+
+
+
+
+                                                                                           20
+NATSA provides three key benefits: 1) quickly computing
+the matrix profile for a wide range of applications by building
+                                                                                                 0
+specialized energy-efficient floating-point arithmetic process-                                  5
+                                                                            Euclidean
+
+
+
+
+ing units close to HBM, 2) improving the energy efficiency
+and execution time by reducing the need for data movement                                        0
+over slow and energy-hungry buses between the computa-                                               0   100   200        300      400     500
+tion units and the memory units, and 3) analyzing time series                                                     Datapoints
+
+data at scale by exploiting low-latency, high-bandwidth, and             Figure 1: A time series (upper figure) including anomalies and
+energy-efficient memory access provided by HBM. Our exper-               its matrix profile output (lower figure). Anomalies appear as
+                                                                         higher Euclidean distance values in the profile.
+imental evaluation shows that NATSA improves performance
+by up to 14.2× (9.9× on average) and reduces energy by up to                We evaluate a recent CPU implementation of the matrix pro-
+27.2× (19.4× on average), over the state-of-the-art multi-core           file algorithm [112] on a real multi-core machine (Intel Xeon
+implementation. NATSA also improves performance by 6.3×                  Phi KNL [95]) and observe that its performance is heavily
+and reduces energy by 10.2× over a general-purpose NDP                   bottlenecked by data movement. In other words, the amount
+platform with 64 in-order cores.                                         of computation per data access is not enough to hide the mem-
+                                                                         ory latency and thus time series analysis is memory-bound.
+1. Introduction                                                          This overhead caused by data movement limits the potential
+A time series is a chronologically ordered set of samples of             benefits of acceleration efforts that do not alleviate data the
+a real-valued variable that can contain millions of observa-             movement bottleneck in current time series applications.
+tions. Time series analysis is used to analyze information                  Several CPU and GPU implementations of matrix profile
+in a wide variety of domains [92]: epidemiology, genomics,               have been proposed in the literature [44, 108, 112, 113]. How-
+neuroscience, medicine, environmental sciences, economics,               ever, these acceleration efforts still require transferring the
+and more. Time series analysis includes finding similarities             time series data from the main memory to the CPU/GPU cores,
+(motifs [25]) and anomalies (discords [48]) between every two            leading to the data movement bottleneck. Near-Data Process-
+subsequences (i.e., slices of consecutive data points) of the time       ing (NDP) [5–7, 12, 16–19, 23, 24, 26, 30, 31, 33, 34, 40, 40–43,
+series [101, 109]. There are two major approaches for motif              49, 50, 50, 51, 51, 52, 57, 60, 62, 68, 78, 79, 86–90, 93, 94, 103] is a
+and discord discovery: approximate and exact algorithms [65].            promising approach to alleviate data movement by placing
+Approximate algorithms [25] are faster than exact algorithms,            processing units close to memory. As a result, NDP solutions
+but they can provide inaccurate results or limited discord de-           have the potential to improve system performance and energy
+
+
+                                                                     1
+
+
+===== Page 2 =====
+
+                                                                                                            s                          
+efficiency when they are carefully designed with low-cost and                                                             Qi,j − mµi µj
+low-overhead near data processing cores for memory-bound                                           di,j =          2m 1 −                                                   (1)
+                                                                                                                              mσi σj
+applications [6, 7, 16, 17, 30, 31, 33, 34, 38, 43, 52, 57, 68, 70, 72].
+    Our goal in this work is to enable high-performance and                    where Qi,j is the dot product of Ti,m and Tj,m ; µx and σx are
+energy-efficient time series analysis for a wide range of ap-                  the mean and the standard deviation of the points in Tx,m ,
+plications, by minimizing the overheads of data movement.                      respectively. These statistics are computed in O(n) time [81].
+This can enable efficient time series analysis on large-scale                     Using the distance in Eq. 1, the matrix profile algorithm
+systems as well as embedded and mobile devices, where power                    solves the similarity search problem in three steps. First, it
+consumption is a critical constraint (e.g., heart beat analysis                builds a symmetric (n − m + 1) × (n − m + 1) matrix D,
+on a mobile medical device to predict a heart attack [58]). To                 called distance matrix. Each cell in D, di,j , stores the distance
+this end, we propose NATSA, the first Near-Data Processing                     between two subsequences, Ti,m and Tj,m . Second, it creates
+Accelerator for Time Series Analysis. The key idea of NATSA                    an array P of size n − m + 1, called profile. Each cell Pi in
+is to exploit modern 3D-stacked High Bandwidth Memory                          P keeps the minimum distance recorded in the ith row of
+(HBM) [55, 56] along with specialized custom processing units                  D. Third, it allocates an array I that is of the same size as P ,
+in the logic layer of HBM, to enable energy-efficient and fast                 called profile index, such that Ii = j if Pi = di,j . This way,
+matrix profile computation near memory, where time series                      P contains the minimum distances between subsequences,
+data resides. NATSA supports a wide range of time series ap-                   while I is the vector of “pointers” to the location of these
+plications thanks to matrix profile’s generality and flexibility.              subsequences within the time series.
+    Our evaluation shows that NATSA provides up to 14.2×                          Fig. 2 depicts an example of the distance matrix D, the
+(9.9× on average) higher performance and up to 27.2× (19.4×                    profile P , and the profile index I. The neighboring subse-
+on average) lower energy consumption compared to a state-                      quences of Ti,m are highly similar to it (i.e., di,i+1 ≈ 0) due
+of-the-art multi-core system. NATSA consumes 11.0× and                         to overlapping between them. The algorithm excludes these
+4.1× less energy over optimized implementations of matrix                      subsequences from the computation to avoid false positives,
+profile on an Intel Xeon Phi KNL [27] and NVIDIA GTX 1050                      by defining an exclusion zone for each subsequence. It follows
+GPU [44], respectively. NATSA has 9.6× and 1.8× smaller                        the approach in [112], where the exclusion zone of Ti,m is
+area than these two accelerators, at equivalent performance                    Ti, m4 (i.e., ends at ti+ m4 of the time series).
+points. NATSA outperforms a general-purpose NDP platform
+by 6.3× while consuming 10.2× less energy.                                                                         Ti,m      Tj,m                   P             I
+    This work makes the following contributions:                                    D1      d1,1    d1,2    d1,3     d1,4    ...    d1,n-m+1     min(D1) j | d1,j = P1
+• We propose NATSA, the first near-data processing accel-                           D2      d2,1    d2,2    ...       di,j   ...      ...        min(D2) j | d2,j = P2
+   erator for accelerating time series analysis using modern                        D3      d3,1     ...    d3,3      ...    ...      ...           ...           ...
+   3D-stacked High Bandwidth Memory (HBM).                                          D4      d4,1     ...    ...      d4,4    ...      ...           ...           ...
+• We propose a new workload partitioning scheme that pre-
+                                                                                     ...     ...     ...    ...       ...    ...      ...           ...           ...
+   serves the anytime property of the algorithm, while provid-
+                                                                                  Dn-m+1 dn-m+1,1    ...    ...       ...    ...    dn-m+1,
+                                                                                                                                     n-m+1     min(Dn-m+1) j =| Pdn-m+1
+                                                                                                                                                                  n-m+1,j
+   ing load balancing among near-data processing units.
+• We perform a detailed analysis of NATSA in terms of both                     Figure 2: Example of distance matrix (D), profile (P), and pro-
+   performance and energy consumption. We compare dif-                         file index (I). Pi holds the minimum distance calculated in row
+   ferent versions of NATSA (DDR4 [46] and HBM [55]) with                      Di , and Ii holds the index j of the subsequence that results in
+                                                                               that distance. The cells in the exclusion zone are coloured red.
+   four different architectures (8-core CPU, 64-core CPU, GPUs
+   and NDP-CPU) and find that NATSA provides the highest                       2.2. The SCRIMP Implementation
+   performance and lowest energy consumption.                                  The state-of-the-art CPU-based implementation of the ma-
+                                                                               trix profile algorithm is SCRIMP [112]. We use an optimized
+2. Background                                                                  version of SCRIMP [27] as baseline for our work, since it has
+2.1. Time Series Analysis: The matrix profile                                  the best convergence properties and takes advantage of mul-
+                                                                               tithreading and vectorization. The key mechanism behind
+A time series T is a sequence of n data points ti , where 1 ≤                  optimized SCRIMP is that the dot product in Eq. 1 can be
+i ≤ n, collected over time. A subsequence of T , also called a                 calculated incrementally in the diagonals of D as follows:
+window, is denoted by Ti,m , where i is the index of the first
+data point, and m is the number of samples in the subsequence,                             Qi,j = Qi−1,j−1 − ti−1 tj−1 + ti+m−1 tj+m−1                                      (2)
+with 1 ≤ i, and m ≤ n − i.                                                     According to Eq. 2, except for the first dot product, the remain-
+   The state-of-the-art exact anytime method for time series                   ing cells of a diagonal can be calculated using the values from
+analysis is matrix profile [108]. When analyzing a time series,                the immediate upper left cells. This fact significantly reduces
+the profile is maintained as another time series that represents               the number of multiplications and additions needed.
+the most similar neighbor for a particular subsequence of the                     Algorithm 1, optimized SCRIMP [27], exploits both thread-
+original time series. The similarity between two subsequences                  level parallelism and vectorization. First, it precalculates the
+Ti,m and Tj,m can be calculated using the z-normalized Eu-                     means and standard deviations of every subsequence of the
+clidean distance, which is defined as follows.                                 time series (line 1), and initializes the profile vector (lines 3-4).
+
+
+                                                                           2
+
+
+===== Page 3 =====
+
+Second, it computes the diagonals (see Fig. 2) using the loop                  sors [6, 16, 42] or application-specific accelerators [7, 16, 19,
+in line 5. The variable nDiag is the number of diagonals of                    43, 52, 111] in or close to the logic layer of 3D-stacked mem-
+D assigned to each thread. These diagonals can be ordered                      ory. Generally, NDP can provide performance benefits for
+in the diag vector (line 6) a) randomly, enabling the anytime                  memory-bound applications when they exhibit one or more
+property of the algorithm, or b) sequentially, discarding the                  of the following major properties: 1) requiring higher memory
+anytime property but allowing for optimizations [112] (e.g.,                   bandwidth than available in the system, 2) being sensitive to
+exploiting data locality of consecutive diagonals).                            memory access latency [70], or 3) performing irregular mem-
+                                                                               ory accesses, such that they cannot effectively benefit from
+Algorithm 1 Optimized SCRIMP [27]
+                                                                               cache hierarchy of conventional CPU architectures.
+ 1: µ, σ ← precalculateM eansDevs(T, m);                                          Recent advances in die-stacking technologies have enabled
+ 2: vectF act ← vector_width/sizeof (datatype);
+ 3: for i ← 0 to size(P ) − 1 do
+                                                                               the integration of multiple layers of DRAM arrays in a single
+ 4:   Pi ← ∞;                                                                  package. A 3D-stacked memory consists of several memory
+ 5: for idx ← tid ∗ nDiag to (tid + 1) ∗ nDiag − 1 do                          dies, one on top of each other, connected using Through-
+ 6:   i ← 0; j ← diagidx ;                                                     Silicon Vias (TSV) [55,56]. NDP locates low-power processing
+ 7:   q ← dotP roduct(Ti,m , Tj,m );               . Vectorized loop           units inside the logic layer of 3D-stacked memory, to har-
+ 8:   d ← dist(m, q, µi , σi , µj , σj );                                      ness the significantly higher bandwidth and the lower latency
+ 9:   if d < Pi then Pi ← d; Ii ← j;
+10:   if d < Pj then Pj ← d; Ij ← i;
+                                                                               provided while consuming less energy. The most prominent
+11:   i ← i + 1;                                                               3D-stacked memory technologies are High Bandwidth Mem-
+12:   for j ← diagidx + 1 to size(P ) do                                       ory (HBM) [47] and Hybrid Memory Cube (HMC) [39], but
+13:      for k ← 0 to vectF act − 1 do             . Vectorized loop           there are several others [35, 53].
+14:        qsk ← ti+m−1+k tj+m−1+k − ti−1+k tj−1+k ;
+15:      qs0 ← qs0 + q;
+16:      for k ← 1 to vectF act − 1 do                                         3. Motivation
+17:        qsk ← qsk + qsk−1 ;
+                                                                               NATSA is motivated by two key observations: First, time
+18:      q ← qsvectF act−1 ;
+19:      for k ← 0 to vectF act − 1 do                 . Vectorized loop
+                                                                               series motif and discord discovery are two of the most im-
+20:        dsk ← dist(m, qsk , µi+k , σi+k , µj+k , σj+k );                    portant analysis primitives for a wide variety of applications.
+21:        if dsk < Pi+k then Pi+k ← dsk ; Ii+k ← j + k;                       Besides the applications mentioned in Section 1, we can find
+22:        if dsk < Pj+k then Pj+k ← dsk ; Ij+k ← i + k;                       these primitives applied to bioinformatics [8, 10, 14] , speech
+23:      i ← i + vectF act;                                                    processing [32], robotics [80], weather prediction [64], ento-
+                                                                               mology [97], geophysics [21], finance [20], communication
+   Note that only P and I are allocated in memory, since                       engineering [54], and electroencephalography [45].
+storing D can lead to large memory consumption for large                          Second, memory is the main bottleneck in time series anal-
+series due to the n2 memory footprint (i.e., the values of D                   ysis. We characterize the performance of a state-of-the-art
+are calculated on the fly, updating P and I when needed). For                  CPU-based multithreaded and vectorized implementation of
+each diagonal, the algorithm first computes the dot product                    SCRIMP, developed in [27]. We run SCRIMP [27] on an In-
+of the first pair of subsequences in line 7 using the dotProduct               tel Xeon Phi 7210 processor, with 64 cores and 256 hardware
+function, which is vectorized. Second, it calculates the distance              threads, using two types of memory (DDR4 and HBM) avail-
+according to Eq. 1 (line 8). Third, it checks and replaces the                 able in this architecture. In Fig. 3, we present the performance
+corresponding profile element with the new distance provided                   results normalized to 1 thread (lines) and utilized memory
+that the calculated one is smaller (lines 9-10).                               bandwidth (bars) of SCRIMP. We observe that, when using
+   The algorithm addresses the imposed data dependency due                     DDR4, the performance of SCRIMP does not scale beyond 32
+to the dot product update between the elements in the diagonal                 threads, whereas the higher memory bandwidth provided by
+with the following steps: 1) it pre-computes the add terms in                  HBM enables SCRIMP to scale up to 128 threads. This shows
+Eq. 2 in batches of size vectF actor in a vectorized manner                    that SCRIMP’s performance saturates on many-core archi-
+(lines 13-14); 2) it adds the previous dot product to the first                tectures, because the achievable bandwidth saturates when
+new one (line 15); 3) it sequentially updates the remaining                    the number of threads increases. To know the cause for this
+dot products in the batch (lines 16-17) saving the last one                    memory boundedness we perform the next experiment.
+for the next iteration of the diagonal (line 18); 4) it computes
+                                                                                                   300
+                                                                                Bandwidth (GB/s)
+
+
+
+
+                                                                                                                                                           120
+the distance as well as the profile update in a vectorized way                                               DDR4
+                                                                                                                                                                 Speedup
+
+
+
+
+(lines 19-22). As a result, all loops are fully vectorized except                                  200       HBM                                           80
+the one in lines 16-17.
+                                                                                                   100                                                     40
+2.3. NDP and 3D-Stacked Memory                                                                       0                                                     0
+                                                                                                         1    2     4     8   16     32   64   128   256
+Near-Data Processing (NDP) [5–7, 12, 16–19, 23, 24, 26, 30, 31,                                                         Number of threads
+33, 34, 40, 40–43, 49–52, 57, 60, 62, 68, 78, 79, 86–90, 93, 94, 103] is       Figure 3: Memory bandwidth usage (bars) and normalized
+a promising paradigm to reduce the data movement between                       performance (lines) of a parallel and vectorized version of
+CPUs and memory by placing simple general-purpose proces-                      SCRIMP [27] running on an Intel Xeon Phi 7210.
+
+
+                                                                           3
+
+
+===== Page 4 =====
+
+   We perform the roofline analysis as we show in Fig. 4. We                            HBM                                8-channel         silicon
+                                                                                       memory                              interface NATSA interposer
+observe that the arithmetic intensity of SCRIMP is signifi-
+cantly low. The confirms that the memory boundedness of
+SCRIMP is due to the low arithmetic intensity of the algorithm,
+which leads processing cores to be underutilized. Based on all
+                                                                                                                 PUn
+these observations, we conclude that the performance of the
+state-of-the-art CPU-based implementation of the matrix pro-                                      DPU                                           DCU
+                                                                                                DPU                2     m                 DCU
+file, SCRIMP [27], is heavily bottlenecked by available memory                                            qi,j           µ μm             qi,jDistance
+                                                                                      T       Dot Product
+                                                                                             reg                       q   i,j       i          - <<
+                                                                                                                                         ×Distance
+bandwidth and data movement. Our goal is to reduce the data
+                                                                                        ti,mDot Product                              μj    Calculation
+movement bottleneck of SCRIMP by building an NDP accel-                               m tj,m ×      +
+                                                                                                                                 σ
+                                                                                                                                     σi
+                                                                                                                                     σj ×      ÷
+                                                                                                                                                 m
+                                                                                                                                         Calculation
+                                                                                                                                                       -
+erator that matches the compute throughput of processing
+                                                                                                                 control                                   di,j
+elements with the available memory bandwidth.                                                                     unit
+                                                                                                  DPRU                                           PUU
+   Performance
+
+
+
+
+                                                                                                DPUU                               PUU
+   (GFLOPS)
+
+
+
+
+                 1000                                        HBM Bandwidth                                         1
+                                           SCRIMP
+                                                             Max: 424.42 GB/s
+                                                                                      T ti+m Dotqi,jProduct                   di,j    Profile
+                  100
+                            x
+                                                             Computing Peak:
+                                                             2430.58 GFLOPS           m tj+mDot
+                                                                                              × Product
+                                                                                                      +
+                                                                                              Reutilization qi+1,j+1       PP PPi Profile
+                                                                                                                                    ≤
+                                                                                                                                      Update                 PP
+                                                                                          tiReutilization
+                   10
+                        0       1               10           100         1000             tj ×         -                    II
+                                                                                                                                   PP
+                                                                                                                                   Update
+                                                                                                                                      i,IIi
+                                                                                                                                            di,j ,j
+                                                                                                                                                           { II
+                                Arithmetic Intensity (FLOP/Byte)
+
+Figure 4: Roofline analysis of a parallel and vectorized ver-                                           1KB Scratchpad Memory
+sion of SCRIMP [27] running on an Intel Xeon Phi 7210.
+                                                                                    Figure 5: NATSA design and integration next to HBM mem-
+                                                                                    ory. NATSA is connected directly to the HBM interface.
+4. NATSA Architecture
+Our Near-Data Processing Accelerator for Time Series                                   The execution flow through the hardware components of a
+Analysis, NATSA, is designed to 1) fully exploit the mem-                           PU includes the following six steps:
+ory access parallelism and high memory bandwidth offered                            1. Dot product computation of the first element of the
+by HBM, and 2) employ the required amount of computing                                 diagonal. The DPU calculates the dot product between the
+resources to provide a balanced solution. NATSA is built next                          first pair of subsequences of the diagonal (Ti,m and Tj,m )
+to the HBM memory and exploits the full HBM bandwidth                                  by using the time series input T , and the window size, m,
+available. NATSA consists of multiple processing units (PUs)                           which is used to signal the end of each subsequence. This
+that efficiently compute the diagonals of matrix profile in a                          hardware component vectorizes the operation and outputs
+parallel fashion. The PUs are designed to compute diagonals                            the result, qi,j , for the next step.
+using a vectorized approach to process a batch of elements of                       2. Euclidean distance computation of the first element
+a diagonal at the same time. Each PU includes energy-efficient                         of the diagonal. The DCU computes the first Euclidean
+floating-point units [29], bitwise operators, and registers (See                       distance of each diagonal following Eq. 1, using the dot
+Table 3 in Sect. 6.3). Each PU communicates with the HBM                               product computed by the DPU qi,j . The values of µ and
+memory via a controller connected to one of the 8 memory                               σ are precomputed by the host CPU in negligible time
+channels provided by HBM.                                                              (O(n) [81]) with respect to the total execution time. This
+4.1. NATSA Processing Units (PUs)                                                      simplifies the design of the PU.
+Each NATSA PU consists of four hardware components: the                             3. First profile update. If the Euclidean distance calculated
+Dot Product Unit (DPU), the Distance Compute Unit (DCU), the                           in the DCU, di,j , is lower than that stored in the profile for
+Profile Update Unit (PUU), and the Dot Product Update Unit                             both subsequences, the PUU updates the profile vector and
+(DPUU), as we show in Fig. 5. We share the floating-point                              profile index vector, P P and II.
+arithmetic operators (e.g., multipliers) among those hardware                       4. Dot product update. The dot product of the second and
+components to minimize idle cycles and enable reusability.                             successive cells in the diagonal is calculated from the pre-
+The control unit ( 1 in Fig. 5) is a state machine that orches-                        vious cell. It is computed in the DPUU by subtracting the
+trates the execution flow of a PU. The multiplexers ( 2 in                             first product and adding the new one to qi,j , as shown in
+Fig. 5) choose between the output of DPU and DPUU based on                             Eq. 2. This hardware component is replicated to enable
+a signal from the control unit, so that the DCU can take advan-                        vectorization and is pipelined with the DCU and the PUU.
+tage of Eq. 2, starting from the second element of the diagonal                     5. Second and successive Euclidean distance computa-
+all the way down to the last. We replicate those hardware                              tions. The DCU computes again the Euclidean distance,
+components to compute different elements of a diagonal in                              but now it obtains qi,j from the DPUU. The DPUU hard-
+parallel, using the vectorized approach outlined in Section 2.2.                       ware component is replicated for vectorization of the dot
+The diagonal assignment is pre-calculated in the host CPU,                             product update calculations.
+which sends the indices of the to-be-computed diagonals to                          6. Second and successive profile updates. The PUU up-
+each NATSA PU. Finally, each NATSA PU uses its own 1KB                                 dates the profile vector and profile index vector, if needed.
+scratchpad memory to temporarily store fixed-size auxiliary                            This hardware component is replicated to perform several
+data, such as the window size or configuration parameters.                             updates at a time.
+
+
+                                                                                4
+
+
+===== Page 5 =====
+
+4.2. Workload Partitioning Scheme                                              Data mapping. Each PU has access to its corresponding
+Computing the diagonals of the distance matrix may lead to                  portion of the time series and statistic vectors, and works with
+load imbalance among the PUs, because those diagonals have                  replicated profile and profile index vectors. This approach sim-
+different lengths. To avoid this imbalance, we propose a static             plifies the overall architecture, enabling the use of many PUs
+partition scheduling scheme which depends only on the size                  without having to synchronize between them. NATSA assigns
+of the time series and the exclusion zone.                                  multiple diagonals to each PU with the specific scheduling
+   The way we tackle this problem is by assigning a set of                  scheme described in this section.
+pairs of diagonals to each NATSA PU such that the sum of                    4.3. Programming Interface
+their elements is equal to the number of cells of the main
+                                                                            In this section, we introduce the API to invoke NATSA from a
+diagonal of the distance matrix minus the number of cells of
+                                                                            host processor. While conventional loosely-coupled acceler-
+the exclusion zone, (n − m + 1) − m/4.
+                                                                            ators (e.g., GPUs or FPGAs) have their own memory, where
+   Fig. 6 illustrates an example with two PUs, PU0 and PU1, a
+                                                                            data must be transferred to from the host’s memory, NATSA
+distance matrix for a time series of n = 13 cells, a window size
+                                                                            is a tightly-integrated NDP accelerator, located between the
+of m = 4, and an exclusion zone of 1 diagonal (crossed out
+                                                                            host CPU and main memory. Thus, there is no need to trans-
+rectangles). In this case, the number of elements that each pair
+                                                                            fer any data between the host memory and the accelerator
+of diagonals assigned to a PU should have is (n − m + 1) −
+                                                                            memory, as loosely-coupled accelerators require. The user is
+m/4 = 10−1 = 9. Comparing a subsequence with itself gives
+                                                                            responsible for 1) allocating the time series (T ) and 2) provid-
+zero distance value. As a consequence, the algorithm treats
+                                                                            ing the window length (m). NATSA will provide the user the
+the main diagonal as exclusion zone and avoids computing it.
+                                                                            profile vector (P ) and profile index vector (I) in return. The
+The first diagonal of non-zero values, which starts in column
+                                                                            size of the exclusion zone ( m4 by default) can be also passed
+D2 and is represented with crossed out rectangles, belongs to
+                                                                            as a parameter (exc).
+the exclusion zone (see Fig. 2), so NATSA PUs also skip it.
+                                                                               Algorithm 2 outlines the NATSA API. First, NATSA function
+                                                                            precalculates the statistics (µ, σ) (line 2) in the host CPU and
+       D1    D2     D3     D4     D5     D6    D7    D8    D9    D10
+                                                                            allocates the private vectors (P P, II) to NATSA’s PUs (line 3).
+ D11        PU 0   PU 0   PU1    PU0    PU1   PU1   PU0   PU1    PU 0
+ D2                       PU 0   PU 1   PU0   PU1   PU1   PU 0   PU 1       Algorithm 2 NATSA API
+ D3                              PU0    PU1   PU0   PU1   PU1    PU 0
+                                                                             1: function P, I ← NATSA(T, m, exc, conf )
+ D4                                     PU0   PU1   PU0   PU1    PU 1
+                                                                             2:   µ, σ ← precalculateM eanDev(T, m)
+ D5                                           PU0   PU1   PU0    PU 1
+                                                                             3:   P P, II ← allocateP rivateP rof iles(T, m, exc)
+ D6                                                 PU0   PU1    PU 0
+                                                                             4:   idx ← diagonalScheduling(T, m, exc)
+ D7                                                       PU0    PU 1        5:   start_accelerator(T, m, exc, conf, idx, P P, II)
+ D8                                                              PU 0        6:   P, I ← reduction(P P, II)
+ D9
+ D10                                                                           Second, NATSA function implements the diagonal schedul-
+                                                                            ing scheme presented in the previous section, setting the di-
+Figure 6: Example of the diagonal scheduling scheme for two                 agonals to be computed by each PU in idx (line 4). Third, it
+processing units, denoted as PU0 (green) and PU1 (white). Ar-
+rows show direction of computation.                                         initiates the accelerator (line 5), which starts the computation,
+                                                                            and the host CPU waits for all the processing units to finish.
+   Discarding the computation of the main diagonal and the                  Once the computation finishes, the host CPU performs the
+diagonals in the exclusion zone, both PUs have to compute the               final reduction of the private vectors (line 6) and the user can
+diagonals from columns D3 to D10 . To perform this efficiently              find the results in the P and I vectors. The conf argument
+and maintain the anytime property of SCRIMP, in the first                   (line 1), besides holding configuration parameters for the ac-
+step, PU0 is assigned the first and last diagonal (9 elements               celerator, allows for future extensions, such as using other
+in total), and PU1 is assigned the second and the penultimate               distance metrics (e.g., Pearson correlation [113]).
+diagonal (totalling 9 elements as well). In the second step, PU0
+computes the third and the third-to-last diagonal, whereas                  5. Methodology
+PU1 computes the fourth and fifth diagonals.                                We describe the simulation environment and the workload
+   Our proposed scheduling scheme can be used in two ways:                  we use to evaluate the performance of NATSA.
+1) Randomly ordering the indices of diagonals that each PU
+has to compute. Using this approach, we are able to preserve                5.1. Simulation Environment
+the anytime property of the algorithm, since if the execution is            We simulate general-purpose cores using an in-house integra-
+interrupted, the user obtains a partial exploration of the whole            tion of ZSim [84], whose front-end is Pin [63], with Ramula-
+time series (i.e., events from any point of the time series can be          tor [53] [82]. ZSim is a simulator which can model 1) general
+detected). 2) Sequentially ordering the indices of diagonals that           purpose cores (both in-order and out-of-order cores), and 2)
+each PU has to compute. This approach violates the anytime                  the conventional cache hierarchy. Ramulator is a cycle-level
+property (i.e., only events up to the interruption point can be             and extensible DRAM simulator that provides a wide variety
+detected), but allows for further optimizations (e.g., exploiting           of memory models, including DDR4 [46] and HBM [55]. We
+data locality between consecutive diagonals).                               use McPAT [59] for power estimations.
+
+
+                                                                        5
+
+
+===== Page 6 =====
+
+   For the NATSA accelerator, we use the gem5 [15] and Al-             real datasets to 1) verify the correctness of the matrix profile
+addin [91] integration developed in [96]. Aladdin provides             computed by NATSA (the same approach used in [107]) and
+performance, area, and power estimations for a system-on-              2) evaluate the effect of using single-precision versus double-
+chip accelerator by requiring the equivalent C implementa-             precision (see Section 6.5). We generate the five synthetic
+tion of the accelerator design. Aladdin estimates the perfor-          datasets of different representative lengths [112] for perfor-
+mance, power, and area of the accelerator within 0.9%, 4.9%,           mance evaluation using MATLAB, as shown in Table 1.
+and 6.6% compared to that provided by RTL flows, but over               Table 1: Synthetic time series for performance evaluation.
+100× faster [91]. As Aladdin does not model the memory                  Time Series        rand_128K     rand_256K       rand_512K   rand_1M    rand_2M
+subsystem, we need to simulate it using gem5.                           Length (n)           131072        262144          524288     1048576    2097152
+   For a fair comparison, we evaluate our baseline platform
+(see the evaluated platforms below) in both ZSim and gem5              6. Evaluation
+frameworks using the same workload (see Section 5.2). We
+obtain up to 10% simulated time reduction using ZSim with              In this section, we first evaluate NATSA’s performance, com-
+respect to gem5 (i.e., the baseline system performs slightly           paring it to the general-purpose platforms (DDR4-OoO, DDR4-
+better with ZSim). As a consequence, the performance ben-              inOrder, HBM-OoO, and HBM-inOrder). Second, we compare
+efits of NATSA with respect to the baseline simulated using            NATSA to both simulated and real architectures (e.g., many-
+gem5, would be even higher. However, we choose ZSim since              core CPUs and GPUs [44]) in terms of power consumption and
+simulations of manycore systems with ZSim are orders of mag-           area. Third, we present a design space exploration of NATSA.
+nitude faster than gem5 simulations [84], and this allows for          Fourth, we analyze the performance of general-purpose cores
+the evaluation of general-purpose core platforms with large            and their bottlenecks. Finally, we evaluate SCRIMP in terms
+time series. For both general-purpose cores and accelerators,          of precision and sensitivity to subsequence lengths (m).
+we obtain the power consumption of the memory system us-               6.1. Performance of NATSA
+ing the Micron Power Calculator [2], which we feed with the
+bandwidth usage from Ramulator and gem5, respectively.                 We evaluate the performance of two NATSA designs using
+   Using these simulation environments, we define several              single-precision (SP) and double-precision (DP), respectively.
+representative hardware platforms for the evaluation:                  We present normalized performance of NATSA-DP with re-
+• DDR4-OoO (Baseline): A conventional DDR4-based sys-                  spect to the baseline platform (DDR4-OoO) in Fig. 7, using
+  tem with eight four-wide out-of-order cores at 3.75GHz.              double-precision data. NATSA achieves significant perfor-
+  Each core has 32KB private L1 instruction/data caches and            mance improvements, up to 14.2× (9.9× on average) over the
+  a private 256KB L2 cache. The cores share an 8MB L3 cache.           baseline system for large time series, and 6.3× over HBM-
+  The main memory is a dual channel 16GB DDR4-2400 with                inOrder for all sizes. We observe that NATSA’s speedup in-
+  38.4GB/s of memory bandwidth.                                        creases as the time series length becomes larger. This is be-
+• DDR4-inOrder: A conventional architecture using 64 in-               cause the arithmetic intensity decreases when the ratio of time
+  order cores at 2.5GHz. Each core has only a single level of          series length (n) to window size (m) increases. Dot product
+  private 32KB instruction/data caches. The main memory is             update (Section 2.2) causes the first dot product to take a sig-
+  the same DDR4 as in the baseline system. We use this simple          nificant part of the computation for shorter diagonals (lower
+  core-cache configuration to compare with the following               n to m ratio). The cache hierarchy of the baseline system
+  NDP general-purpose-core system.                                     accelerates the first dot product. Conversely, a greater n to
+• HBM-OoO: An NDP architecture with eight four-wide out-               m ratio results in longer diagonals with the first dot product
+  of-order cores at 3.75GHz. Each core has 32KB private L1             being less significant with respect to the total execution time,
+  instruction/data caches and a private 256KB L2 cache. The            reducing the observed benefits of a cache hierarchy.
+  main memory is a 4GB 3D-stacked HBM2 that provides a                            15
+                                                                                          DDR4-OoO         HBM-OoO           NATSA-DP
+  throughput of 256GB/s.                                                                  DDR4-inOrder     HBM-inOrder
+                                                                        Speedup
+
+
+
+
+                                                                                  10
+• HBM-inOrder: An NDP architecture with 64 in-order
+  cores at 2.5GHz. Each core has a single level of private                         5
+  32KB instruction/data caches. The main memory is a 4GB
+  3D-stacked HBM2 that provides a throughput of 256GB/s.                               rand 128K    rand 256K rand 512K       rand 1M       rand 2M
+• NATSA: Our NDP accelerator with 48 PUs at 1GHz. Each                                                      Time Series Datasets
+  PU has access to a private scratchpad memory of 1KB. The             Figure 7: Speedup with respect to the baseline platform
+  main memory is the same 4GB 3D-stacked HBM2 as in the                (DDR4-OoO) using double precision data.
+  HBM-OoO and HBM-inOrder platforms.                                     We evaluate the performance of the single-precision NATSA
+                                                                       design.1 Table 2 presents the average execution time for the
+5.2. Workload
+                                                                          1 We note that NATSA experiments are carried out with the gem5-Aladdin
+We use two real datasets and five synthetic datasets to evaluate
+                                                                       simulation framework, and the other platforms are evaluated with the ZSim-
+the performance of NATSA against state-of-the-art architec-            Ramulator framework (baseline system included). As mentioned in Section 5.1,
+tures. The two real datasets are electrocardiogram (ECG) and           simulated times are slightly shorter for ZSim, so the actual gains of NATSA
+seismology data obtained from [98] and [107]. We use these             would likely be even greater what we report.
+
+
+                                                                   6
+
+
+===== Page 7 =====
+
+                                                                                                                                 300K      273709
+analyzed datasets. NATSA-SP, which provides higher per-                                                                                                                              Memory          Caches            Cores
+
+
+
+
+                                                                                                               Energy (Joules)
+                                                                                                                                 240K                 223550
+formance with similar area cost to NATSA-DP, outperforms                                                                         180K
+NATSA-DP by up to 1.75×, DDR4-OoO-DP by up to 24.9×                                                                              120K                           118083
+                                                                                                                                                                           92869      86260
+and HBM-inOrder-DP by up to 11.1× for large time series.                                                                         60K                                                             34826
+                                                                                                                                                                                                          14384      8439
+Table 2: Execution time (in seconds) for single-precision and                                                                         0
+                                                                                                                                             HBM       DDR4     DDR4 Xeon Phi HBM                GTX      Tesla     NATSA
+double-precision data.                                                                                                                       OoO       OoO     inOrder KNL    inOrder            1050     K40c
+                      Dataset
+ Config                              rand_128K    rand_256K    rand_512K       rand_1M      rand_2M         Figure 9: Energy consumption for simulated and real hard-
+ DDR4-OoO-DP                              14.72        77.55       414.55        2089.05      9810.30       ware platforms.
+ DDR4-OoO-SP                               6.46        44.47       207.85        1106.36      5206.75
+ HBM-inOrder-DP                           14.95        64.20       262.33        1071.03      4347.38       platform that requires the least area, while using the largest
+ HBM-inOrder-SP                            8.16        35.68       130.23         625.27      2466.69
+ NATSA-DP                                  2.47        10.37        42.45         171.72       690.65       technology node (i.e., 45nm) compared to other evaluated
+ NATSA-SP                                  1.41         5.91        24.19          97.84      393.45        architectures. Using a more recent and smaller technology
+  We conclude that NATSA provides the highest performance                                                   node (e.g., 15nm instead of 45nm) could additionally reduce
+compared to modern general-purpose platforms.                                                               NATSA’s energy consumption by 4× and area by 3× [83].
+                                                                                                                                 30
+
+
+
+
+                                                                                                               Length (mm)
+6.2. Power, Energy and Area Consumption                                                                                          20                                                                           NVIDIA
+                                                                                                                                                                          NVIDIA            Intel
+                                                                                                                                                                                          Xeon Phi             RTX
+Power and Energy Consumption. We compare the power                                                                               10               NVIDIA    Intel         Tesla             7210              2080ti
+
+
+
+
+                                                                                                                                          NATSA
+                                                                                                                                                           Core i7        K40c
+                                                                                                                                                   GTX
+and energy consumption of NATSA versus other existing hard-                                                                                        1050    2600K
+                                                                                                                                  0
+ware platforms in Figures 8 and 9. We use McPAT and Micron                                                                            0              25              50        75              100            125
+                                                                                                                                                                          Width (mm)
+Power Calculators to evaluate energy consumption for the
+general-purpose platforms, getting the number of stalls and                                                 Figure 10: Area comparison of different hardware platforms.
+bandwidth usage from ZSim-Ramulator. For NATSA, we add                                                      6.3. NATSA Design Space Exploration
+Aladdin’s energy estimations to the values obtained from the
+                                                                                                            We explore the key design choices of NATSA so that we deploy
+Micron Power Calculator. We also obtain energy measure-
+                                                                                                            the exact number of PUs that saturate the memory bandwidth
+ments from real executions on GPUs using NVVP [4] and on
+                                                                                                            available, while minimizing the area and power consumption
+CPUs using PCM [1], to compare NATSA with real platforms.
+                                                                                                            of the accelerator. We evaluate the use of HBM memory,2
+  Fig. 8 shows the dynamic power consumption of each sim-
+                                                                                                            where we find that 48 PUs make the accelerator balanced
+ulated or real hardware platform. We observe that NATSA
+                                                                                                            between memory bandwidth and compute parallelism, as 64
+has the lowest power consumption, and most of its power is
+                                                                                                            PUs result in a memory-bound accelerator, whereas 32 PUs a
+consumed by memory.
+                                                                                                            compute-bound one. Table 3 details the design parameters of
+                    200
+                                                         Memory          Caches            Cores            NATSA for HBM. NATSA has 48 PUs which run at a frequency
+    Power (Watts)
+
+
+
+
+                    150                                                                                     of 1GHz, fabricated at 45nm process. Implementations of
+                    100                                                                                     NATSA with lower technology nodes would provide smaller
+                                                      53.77    42.93                                        area footprint and improved energy efficiency. Table 3 shows
+                     50                                                34.97     24.13     21.45
+                      0
+                                                                                                            the components in a PU depending on the data precision: 1)
+                          Xeon Phi    Tesla   GTX     HBM      DDR4     HBM     DDR4 NATSA
+                            KNL       K40c    1050    OoO      OoO     inOrder inOrder                      double-precision (DP), and 2) single-precision (SP).
+Figure 8: Dynamic power consumption for simulated and real                                                                            Table 3: NATSA design components for 48 PUs.
+hardware platforms.                                                                                          Parameter/Component                                     PU-DP         NATSA-DP          PU-SP        NATSA-SP
+   Fig. 9 shows the energy consumption of each simulated or                                                  Mem. bandwidth (GB/s)                                         5              240             5              240
+                                                                                                             Peak power (W)                                              0.1               4.8         0.08              3.84
+real platform, for the computation of a time series of 524,288                                               Area (mm2 )                                               1.62             77.76          1.51             72.48
+elements (rand_512K) using double-precision. To calculate the                                                FP Multipliers/Adders                                    16/14           768/672         64/36        3072/1728
+energy consumption, we compute the power-delay product                                                       Integer Adders                                              16               768            64             3072
+with the measured instantaneous power consumption and                                                        Bitwise Operators                                             2               96             2                96
+                                                                                                             Registers                                                  108              5184           267            12816
+the execution time. NATSA reduces energy consumption by
+27.2× (19.4× on average) over the baseline platform (DDR4-
+OoO), and by 10.2× over an NDP architecture with general-                                                   6.4. Performance of General-Purpose Cores
+purpose cores (HBM-inOrder). NATSA consumes 1.7×, 4.1×,                                                     We evaluate the speedup over the baseline (DDR4-OoO)
+and 11.0× less energy than an NVIDIA Tesla K40c GPU [76],                                                   and memory bandwidth usage of SCRIMP, calculated using
+NVIDIA GTX 1050 GPU [3], and Intel Xeon Phi KNL [95],                                                       the ZSim-Ramulator framework for the DDR4-OoO, DDR4-
+respectively. We conclude that NATSA is the most energy-                                                    inOrder, HBM-OoO and HBM-inOrder platforms using double-
+efficient evaluated platform for matrix profile.                                                            precision time series of different lengths (n), in Fig. 11.
+   Area. We provide a scaled area comparison in Fig. 10. We                                                   We report execution time of the baseline (DDR4-OoO) on
+observe that NATSA requires 9.6×, 7.9×, 3×, and 1.8× less                                                   top of the respective performance bars in Fig. 11. Based on
+area than an Intel Xeon Phi KNL (14nm), NVIDIA Tesla K40c                                                      2 We also explore the use of DDR4 memory, where 8 PUs are enough to
+(28nm), Intel Core i7 (32nm), and NVIDIA GTX 1050 (14nm).                                                   saturate the available memory bandwidth and the performance obtained is
+   We conclude that NATSA (at 45nm technology node) is the                                                  similar to the DDR4-inOrder platform (4% difference).
+
+
+                                                                                                        7
+
+
+===== Page 8 =====
+
+                                 DDR4-OoO       DDR4-inOrder    HBM-OoO     HBM-inOrder                    3                             60
+
+
+
+
+                                                                                               Amplitude
+                     2
+
+
+
+
+                                                                 2089.1s
+
+
+
+
+                                                                            9810.3s
+                                                                                                           2                             40
+
+
+
+
+                                                       414.6s
+           Speedup
+
+
+                         14.7s
+
+
+
+
+                                        77.6s
+                     1                                                                                     1                             20
+
+                                                                                                      0                                   0
+                                                                                                     12                                  7.4
+  Bandwidth GB/s
+
+
+
+
+                   50                                                                                               double
+                                                                                                           8                             6.6
+
+
+
+
+                                                                                                Profile
+                                                                                                                    single
+     Memory
+
+
+
+
+                   25                                                                                      4                             5.8
+                                                                                                           0                             5.0
+                     0                                                                                      100K    100.5K 101K 101.5K      103K 103.2K 103.4K 103.6K
+                         rand 128K      rand 256K rand 512K       rand 1M    rand 2M                               Data Points (ECG)           Data Points (Seismology)
+                                                Time Series Datasets
+Figure 11: Speedup over the baseline DDR4-OoO and memory                                      Figure 12: ECG (left) and seismology (right) data along with
+bandwidth usage for general-purpose platforms.                                                their profiles, calculated by NATSA using double and single
+                                                                                              precision, where events are easily visible.
+these results, we make three key observations. First, the DDR4-
+OoO platform does not use the peak available bandwidth of                                     Sensitivity to the subsequence length. We also perform
+DDR4 (i.e., 38.4GB/s). We reinforce this observation with our                                 a sensitivity analysis to the subsequence length (m). We ob-
+HBM-OoO evaluation which replaces DDR4 with higher band-                                      serve that, when the proportion between m and n is less than
+width HBM. HBM-OoO platform improves performance by                                           two orders of magnitude, the performance of SCRIMP in all
+only 7%, which means that providing more bandwidth does                                       platforms is significantly affected by m. For example, when
+not significantly affect performance. This is because both plat-                              increasing m from 1,024 to 16,384 in a time series of 131,072
+forms are compute-bound when executing SCRIMP. Second,                                        elements, the execution time of SCRIMP reduces by 41%. How-
+the 64 lightweight cores of DDR4-inOrder slightly outperform                                  ever, when the time series length is large enough compared to
+the 8 complex cores of DDR4-OoO when n ≥ 1048576 ele-                                         the subsequence length, performance of SCRIMP is affected
+ments (i.e., rand_1M dataset). This is because shorter time                                   by a smaller amount. For instance, when increasing m from
+series can fit in the L3 cache. For long time series, the higher                              1,024 to 16,384 in a time series of 2,097,152 elements, the exe-
+parallelism provided by the in-order platform enables higher                                  cution time of SCRIMP reduces by 13%. This is because the
+memory-level parallelism [36, 69–73] and higher memory                                        computation of the first element of each diagonal involves the
+bandwidth demand, where DDR4 bandwidth becomes a bot-                                         dot product calculation without any reutilization.
+tleneck, resulting in a memory-bound system. Third, the
+HBM-inOrder platform provides up to 2.25× speedup over the                                    7. Related Work
+baseline (DDR4-OoO), and consumes only 17% of the HBM’s                                       To our knowledge, this is the first work that proposes a near-
+peak bandwidth with the largest dataset evaluated. In this case,                              data processing accelerator for time series analysis. In this
+even though performance is improved, the application is still                                 section, we briefly discuss prior work related to time series
+compute-bound and simple NDP general-purpose cores can-                                       motif discovery and application-specific NDP accelerators.
+not fully exploit the bandwidth provided by HBM (256GB/s)3                                       Multiple techniques exist for time series motif and discord
+for the largest dataset we evaluate, which means that large                                   discovery [13, 22, 25, 28, 37, 61, 66, 67, 74, 75, 77, 99, 100, 102, 106,
+datasets can be comfortably accommodated.                                                     110]. A survey on time series motif discovery algorithms can
+   We conclude that general-purpose platforms provide less                                    be found in [101]. These implementations are approximate
+performance than NATSA’s balanced design because they do                                      or exact [65] in finding motifs and discords, which affects the
+not effectively exploit the memory bandwidth of HBM.                                          time complexity of the algorithm. Exact motif and discord
+                                                                                              discovery processing of exceptionally large time series can
+6.5. Accuracy and Sensitivity to Window Size                                                  be very time-consuming [113]. Consequently, anytime algo-
+                                                                                              rithms [108] are proposed to return a valid solution even if
+Accuracy. We explore how the accuracy of the SCRIMP im-
+                                                                                              they are interrupted, and are expected to find better solutions
+plementation is affected by changing the precision of the data
+                                                                                              the longer they run. Matrix profile [108] is the state-of-the-
+representation. We use real data obtained from [98] and [107],
+                                                                                              art exact anytime algorithm for time series motif and discord
+as discussed in Section 5.2. Fig. 12 presents the output obtained
+                                                                                              discovery. There are several implementations of matrix pro-
+for an electrocardiogram (ECG) and for seismology data us-
+                                                                                              file, including STAMP [108], STOMP [44], SCRIMP [112] and
+ing two precision values. We observe that events are still
+                                                                                              SCAMP [113]. SCRIMP is the state-of-the-art CPU-based im-
+detectable even when reducing the precision from double to
+                                                                                              plementation. Prior acceleration approaches to time series
+single precision. This observation can be exploited to improve
+                                                                                              analysis [44, 112] mainly focus on accelerating STOMP and
+performance and reduce energy consumption, by operating
+                                                                                              PreSCRIMP [112] on GPUs. Recently, SCAMP [113] frame-
+on smaller arithmetic units and less memory footprint.
+                                                                                              work combines a host (either a local machine or a server in a
+   3 Based on the memory bandwidth usage and McPAT, we estimate that a                        compute cluster) and workers that follow the directions from
+general-purpose based architecture would need 128 OoO cores (area 688mm2 ,                    the host (either other CPUs in the cluster or accelerators such
+TDP 1137W, 18nm) or 384 in-order cores (area 164mm2 , TDP 126W, 18nm) to                      as GPUs). A SCRIMP version tuned for a many-core CPU
+take full advantage of the maximum bandwidth provided by HBM.                                 (Intel Xeon Phi KNL) using vectorization can be found in [27].
+
+
+                                                                                          8
+
+
+===== Page 9 =====
+
+   Recent works explore Near Data Processing [5–7, 12, 16–                         [10] M. Alser et al., “GateKeeper: A New Hardware Arch. for Accelerating
+19, 23, 24, 26, 30, 31, 33, 34, 40, 40–43, 49, 52, 57, 60, 62, 68, 78, 79,              Pre-alignment in DNA Short Read Mapping,” Bioinformatics, 2017.
+                                                                                   [11] M. Alser et al., “SneakySnake: A Fast and Accurate Universal Genome
+86–90, 93, 94, 103] for various applications using accelerators                         Pre-Alignment Filter for CPUs, GPUs, and FPGAs,” arXiv, 2019.
+or general-purpose cores. In [26], ARM cores are used as NDP                       [12] H. Asghari-Moghaddam et al., “Chameleon: Versatile and Practical Near-
+compute units to improve data analytics operators (e.g., group,                         DRAM Acceleration Arch. for Large Mem. Sys.” in MICRO, 2016.
+join, sort). IMPICA [43] is an NDP pointer chasing accelerator.                    [13] A. Balasubramanian et al., “Discovering Multidimensional Motifs in
+                                                                                        Physiological Signals for Personalized Healthcare,” JSTSP, 2016.
+Tesseract [6] is a scalable NDP accelerator for parallel graph                     [14] Z. Bar-Joseph, “Analyzing Time Series Gene Expression Data,” Bioinfor-
+processing. TETRIS [31] is an NDP neural network accelerator.                           matics, 2004.
+Lee et al. [57] propose an NDP accelerator for similarity search.                  [15] N. Binkert et al., “The gem5 Simulator,” Comp. Arch. News, 2011.
+GRIM-Filter [52] is an NDP accelerator for pre-alignment fil-                      [16] A. Boroumand et al., “Google Workloads for Consumer Devices: Mitigat-
+                                                                                        ing Data Movement Bottlenecks,” ASPLOS, 2018.
+tering [9–11, 104, 105] in genome analysis [8]. Boroumand et                       [17] A. Boroumand et al., “CoNDA: Efficient Cache Coherence Support for
+al. [16] analyze the energy and performance impact of data                              Near-Data Accelerators,” in ISCA, 2019.
+movement for several widely-used Google consumer work-                             [18] A. Boroumand et al., “LazyPIM: Efficient Support for Cache Coherence
+loads, providing NDP accelerators for them. CoNDA [17]                                  in Processing-In-Memory Architectures,” arXiv, 2017.
+                                                                                   [19] D. S. Cali et al., “GenASM: A High-Performance, Low-Power Approxi-
+provides efficient cache coherence support for NDP accelera-                            mate String Matching Acceleration Framework for Genome Sequence
+tors. Finally, an NDP architecture [38] has been proposed for                           Analysis,” in MICRO, 2020.
+MapReduce-style applications.                                                      [20] E. Cartwright et al., “Financial Time Series: Motif Discovery and Analysis
+                                                                                        Using VALMOD,” in ICCS, 2019.
+                                                                                   [21] C. Cassisi et al., “Motif Discovery on Seismic Amplitude T. Series: The
+8. Conclusion                                                                           Case Study of Mt Etna 2011 Eruptive Activity,” Pure Appl. Geophy., 2013.
+We introduce NATSA, the first Near-Data-Processing (NDP)                           [22] N. Castro et al., “Multireso. Motif Disco. in Time Series,” in SDM, 2010.
+                                                                                   [23] K. K. Chang et al., “Low-Cost Inter-Linked Subarrays (LISA): Enabling
+accelerator for time series analysis. NATSA 1) exploits the                             Fast Inter-Subarray Data Movement in DRAM,” in HPCA, 2016.
+memory bandwidth of high-bandwidth memory (HBM) to                                 [24] P. Chi et al., “PRIME: A Novel Processing-In-Memory Arch. for Neural
+analyze time series data at scale for a wide range of applica-                          Network Computation in ReRAM-Based Main Memory,” in ISCA, 2016.
+tions, 2) improves energy efficiency and execution time by                         [25] B. Chiu et al., “Probabilistic Discovery of Time Series Motifs,” in SIGKDD,
+                                                                                        2003.
+using specialized low-power arithmetic units close to HBM                          [26] M. P. Drumond et al., “The Mondrian Data Engine,” in ISCA, 2017.
+memory, and 3) provides a novel workload scheduling scheme                         [27] I. Fernandez et al., “Accelerating Time Series Motif Discovery in the Intel
+to prevent load imbalance and preserve the anytime property.                            Xeon Phi KNL Processor,” The Journal of Supercomputing, 2019.
+NATSA outperforms the hardware platforms we evaluate in                            [28] P. G. Ferreira et al., “Mining Approximate Motifs in Time Series,” in
+                                                                                        International Conference on Discovery Science, 2006.
+terms of performance, energy consumption and area require-                         [29] S. Galal et al., “Energy-Efficient Floating-Point Unit Design,” IEEE Trans-
+ments. We conclude that NATSA is an efficient NDP acceler-                              actions on Computers, 2010.
+ator for time series, and hope that this work inspires future                      [30] M. Gao et al., “Practical Near-Data Processing for In-Memory Analytics
+research directions in NDP for time series analysis.                                    Frameworks,” in PACT, 2015.
+                                                                                   [31] M. Gao et al., “TETRIS: Scalable and Efficient Neural Network Accelera-
+                                                                                        tion with 3D Memory,” in ASPLOS, 2017.
+Acknowledgments                                                                    [32] P. Garrard et al., “Motif Discovery in Speech: Application to Monitoring
+We thank the anonymous reviewers of ICCD 2020 for feed-                                 Alzheimer’s Disease,” Current Alzheimer Research, 2017.
+                                                                                   [33] S. Ghose et al., “Processing-In-Memory: A Workload-Driven Perspective,”
+back. This work has been supported by TIN2016-80920-R and                               IBM Journal of Research and Development, 2019.
+UMA18-FEDERJA-197 Spanish projects, and Eurolab4HPC and                            [34] S. Ghose et al., “Enabling the Adoption of Processing-In-Memory: Chal-
+HiPEAC collaboration grants. We also acknowledge support                                lenges, Mechanisms, Future Research Directions,” arXiv, 2018.
+                                                                                   [35] S. Ghose et al., “Demystifying Complex Workload-DRAM Interactions:
+from the SAFARI Group’s industrial partners, especially ASML,                           An Experimental Study,” in SIGMETRICS, 2019.
+Facebook, Google, Huawei, Intel, Microsoft, and VMware, as                         [36] A. Glew, “MLP yes! ILP no!” in ASPLOS, 1998.
+well as support from Semiconductor Research Corporation.                           [37] S. Gulati et al., “Mining Melodic Patterns in Large Audio Collections of
+                                                                                        Indian Art Music,” in SITIS, 2014.
+References                                                                         [38] S. H Pugsley et al., “NDC: Analyzing the Impact of 3D-stacked Mem-
+                                                                                        ory+Logic Devices on MapReduce Workloads,” in ISPASS, 2014.
+[1] “Intel Processor Counter Monitor,” https://github.com/opcm/pcm, ac-            [39] R. Hadidi et al., “Demystifying the Characteristics of 3D-stacked Memo-
+    cessed 23 September 2020.                                                           ries: A case Study for Hybrid Memory Cube,” in IISWC, 2017.
+[2] “Micron Power Calculator,” www.micron.com/support/tools-and-                   [40] M. Hashemi et al., “Accelerating Dependent Cache Misses with an En-
+    utilities/power-calc, accessed 23 September 2020.                                   hanced Memory Controller,” in ISCA, 2016.
+[3] “NVIDIA GTX 1050 Specs,” https://www.nvidia.com/en-in/geforce/                 [41] M. Hashemi et al., “Continuous Runahead: Transparent Hardware Accel-
+    products/10series/geforce-gtx-1050/, accessed 23 September 2020.                    eration for Memory Intensive Workloads,” in MICRO, 2016.
+[4] “NVIDIA Visual Profiler,” https://developer.nvidia.com/nvidia-visual-          [42] K. Hsieh et al., “ TOM: Enabling Programmer-Transparent Near-Data
+    profiler, accessed 23 September 2020.                                               Processing in GPU Systems,” in ISCA, 2016.
+[5] S. Aga et al., “Compute caches,” in HPCA, 2017.                                [43] K. Hsieh et al., “Accelerating Pointer Chasing in 3D-stacked Memory:
+[6] J. Ahn et al., “A Scalable Processing-In-Memory Accelerator for Parallel            Challenges, Mechanisms, Evaluation,” in ICCD, 2016.
+    Graph Processing,” in ISCA, 2015.                                              [44] Y. Hu et al., “Matrix Profile II: Exploiting a Novel Algorithm and GPUs
+[7] J. Ahn et al., “PIM-Enabled Instructions: A Low-Overhead, Locality-                 to Break the One Hundred Million Barrier for Time Series Motifs and
+    Aware Processing-In-Memory Architecture,” in ISCA, 2015.                            Joins,” in ICDM, 2016.
+[8] M. Alser et al., “Accelerating Genome Analysis: A Primer on an Ongoing         [45] L. Hussain et al., “Symbolic Time Series Analysis of (EEG) Epileptic
+    Journey,” IEEE Micro, 2020.                                                         Seizure and Brain Dynamics with Eye-Open and Eye-Closed Subjects
+[9] M. Alser et al., “Shouji: A Fast and Efficient Pre-Alignment Filter for             During Resting States,” Journal of Physiological Anthropology, 2017.
+    Sequence Alignment,” Bioinformatics, 2019.
+
+
+                                                                               9
+
+
+===== Page 10 =====
+
+[46] JEDEC JESD79-4C, “DDR4 SDRAM standard,” www.jedec.org/standards-                [81] T. Rakthanmanon et al., “Searching and Mining Trillions of Time Series
+     documents/docs/jesd79-4a, accessed 23 September 2020.                                Subsequences Under Dynamic Time Warping,” in KDD, 2012.
+[47] H. Jun et al., “HBM DRAM Technology and Architecture,” in IMW, 2017.            [82] SAFARI Research Group, “Ramulator Source Code,” https://github.com/
+[48] E. Keogh et al., “Finding the Most Unusual Time Series Subsequence:                  CMU-SAFARI/ramulator, accessed 23 September 2020.
+     Algorithms and Applications,” Knowledge and Information Systems, 2006.          [83] S. Salehi et al., “Energy and Area Analysis of a Floating-Point Unit in
+[49] D. Kim et al., “Neurocube: A Programmable Digital Neuromorphic Ar-                   15nm CMOS Process Technology,” in SoutheastCon, 2015.
+     chitecture with High-density 3D Memory,” in ISCA, 2016.                         [84] D. Sanchez et al., “ZSim: Fast and Accurate Microarchitectural Simulation
+[50] J. S. Kim et al., “The DRAM latency PUF: Quickly Evaluating Physical                 of Thousand-Core Systems,” in ISCA, 2013.
+     Unclonable Functions by Exploiting the Latency-Reliability Tradeoff in          [85] A. Sathyanarayana et al., “CAN-Bus Signal Analysis Using Stochas-
+     Modern Commodity DRAM Devices,” in HPCA, 2018.                                       tic Methods and Pattern Recognition in Time Series for Active Safety,”
+[51] J. S. Kim et al., “D-RaNGe: Using Com. DRAM Devices to Generate True                 Springer-Verlag, 2012.
+     Random Numb. with Low Lat. and High Throughput,” in HPCA, 2019.                 [86] V. Seshadri et al., “Fast Bulk Bitwise AND and OR in DRAM,” CAL, 2015.
+[52] J. S. Kim et al., “GRIM-Filter: Fast seed Location Filter. in DNA Read          [87] V. Seshadri et al., “RowClone: Fast and Energy-Efficient in-DRAM Bulk
+     Mapping Using PIM Technologies,” BMC Genomics, 2018.                                 Data Copy and Initialization,” in MICRO, 2013.
+[53] Y. Kim et al., “Ramulator: A Fast and Extensible DRAM Simulator,” CAL,          [88] V. Seshadri et al., “Ambit: In-memory Accelerator for Bulk Bitwise Oper-
+     2015.                                                                                ations Using Commodity DRAM Technology,” in MICRO, 2017.
+[54] A. Lakhina et al., “Characterization of Network-Wide Anomalies in Traffic       [89] V. Seshadri et al., “Simple Operations in Memory to Reduce Data Move-
+     Flows,” in IMC, 2004.                                                                ment,” in Advances in Computers. Elsevier, 2017.
+[55] D. U. Lee et al., “25.2 A 1.2V 8GB 8-channel 128GB/s High-Bandwidth             [90] V. Seshadri et al., “In-DRAM Bulk Bitwise Execution Engine,” arXiv, 2019.
+     Memory (HBM) Stacked DRAM with Effective Microbump I/O Test Meth-               [91] Y. S. Shao et al., “Aladdin: A Pre-RTL, Power-Performance Accelera-
+     ods using 29nm Process and TSV,” in ISSCC, 2014.                                     tor Simulator Enabling Large Design Space Exploration of Customized
+[56] D. Lee et al., “Simultaneous Multi-Layer Access: Improving 3D-Stacked                Architectures,” in ISCA, 2014.
+     Memory Bandwidth at Low Cost,” TACO, 2016.                                      [92] R. H. Shumway et al., “Time Series Analysis and Its Applications: With
+[57] V. T. Lee et al., “Application Codesign of NDP for Similarity Search,” in            R Examples,” 2017.
+     IPDPS, 2018.                                                                    [93] G. Singh et al., “NERO: A Near High-Bandwidth Memory Stencil Accel-
+[58] K. H. C. Li et al., “The Current State of Mobile Phone Apps for Monitoring           erator for Weather Prediction Modeling,” in FPL, 2020.
+     Heart Rate, Heart Rate Variability, and Atrial Fibrillation: Narrative          [94] G. Singh et al., “NAPEL: Near-memory Computing Application Perfor-
+     Review,” JMIR Mhealth Uhealth, 2019.                                                 mance Prediction Via Ensemble Learning,” in DAC, 2019.
+[59] S. Li et al., “McPAT: An Integrated Power, Area, and Timing Modeling            [95] A. Sodani, “Knights Landing (KNL): 2nd Generation Intel® Xeon Phi
+     Framework for Multicore and Manycore Architectures,” in MICRO, 2009.                 Processor,” in HCS, 2015.
+[60] S. Li et al., “Pinatubo: A Processing-in-Memory Architecture for Bulk           [96] S. Y. Sophia et al., “Co-Designing Accelerators and SoC Interfaces Using
+     Bitwise Operations in Emerging Non-volatile Memories,” in DAC, 2016.                 gem5-Aladdin,” in MICRO, 2016.
+[61] Y. Li et al., “Visualizing Variable-Length Time Series Motifs,” in SDM,         [97] B. Szigeti et al., “Searching for Motifs in the Behaviour of Larval
+     2012.                                                                                Drosophila Melanogaster and Caenorhabditis Elegans Reveals Conti-
+[62] G. H. Loh et al., “A Processing in Memory Taxonomy and a Case for                    nuity Between Behavioural States,” Journal of The Royal Society, 2015.
+     Studying Fixed-Function PIM,” in WoNDP, 2013.                                   [98] A. Taddei et al., “The European ST-T Database: Standard for Evaluating
+[63] C.-K. Luk et al., “Pin: Building Customized Program Analysis Tools with              Systems for the Analysis of ST-T Changes in Ambulatory Electrocardio-
+     Dynamic Instrumentation,” in PLDI, 2005.                                             graphy,” European Heart Journal, 1992.
+[64] A. McGovern et al., “Identifying Predictive Multi-Dimensional Time              [99] Y. Tanaka et al., “Discovery of Time-Series Motif from Multi-Dimensional
+     Series Motifs: An Application to Severe Weather Prediction,” Data Mining             Data Based on MDL Principle,” Machine Learning, 2005.
+     and Knowledge Discovery, 2011.                                                 [100] H. Tang et al., “Discovering Original Motifs with Different Lengths from
+[65] A. Mueen, “Time Series Motif Discovery: Dimensions and Applications,”                Time Series,” Knowledge-Based Systems, 2008.
+     WIREs: Data Mining and Knowledge Discovery, 2014.                              [101] S. Torkamani et al., “Survey on Time Series Motif Discovery,” WIREs:
+[66] A. Mueen et al., “Enumeration of Time Series Motifs of All Lengths,”                 Data Mining and Knowledge Discovery, 2017.
+     Knowledge and Information Systems, 2015.                                       [102] S. Torkamani et al., “Shift-Invariant Feature Extraction for Time-Series
+[67] A. Mueen et al., “Exact Discovery of Time Series Motifs,” in SDM, 2009.              Motif Discovery,” in Workshop Computational Intelligence, 2015.
+[68] O. Mutlu et al., “Processing Data Where it Makes Sense: Enabling In-           [103] H.-S. P. Wong et al., “Metal–oxide RRAM,” Proceedings of the IEEE, 2012.
+     Memory Computation,” Microprocessors and Microsystems, 2019.                   [104] H. Xin et al., “Shifted Hamming Distance: A Fast and Accurate SIMD-
+[69] O. Mutlu et al., “Techniques for Efficient Processing in Runahead Execu-             friendly Filter to Accelerate Alignment Verification in Read Mapping,”
+     tion Engines,” in ISCA, 2005.                                                        Bioinformatics, 2015.
+[70] O. Mutlu et al., “Efficient Runahead Execution: Power-Efficient Memory         [105] H. Xin et al., “FastHASH: A New GPU-friendly Algorithm for Fast and
+     Latency Tolerance,” IEEE Micro, 2006.                                                Comprehensive Next-Generation Sequence Mapping,” in BMC Genomics,
+[71] O. Mutlu et al., “Parallelism-Aware Batch Scheduling: Enhancing Both                 2013.
+     Performance and Fairness of Shared DRAM Systems,” in ISCA, 2008.               [106] D. Yankov et al., “Detecting Time Series Motifs Under Uniform Scaling,”
+[72] O. Mutlu et al., “Runahead Execution: An Alternative to Very Large                   in SIGKDD, 2007.
+     Instruction Windows for Out-of-Order Processors,” in HPCA, 2003.               [107] C. M. Yeh et al., “Matrix Profile III: The Matrix Profile Allows Visualiza-
+[73] O. Mutlu et al., “Runahead Execution: An Effective Alternative to Large              tion of Salient Subsequences in Massive Time Series,” in ICDM, 2016.
+     Instruction Windows,” IEEE Micro, 2003.                                        [108] C.-C. M. Yeh et al., “Matrix Profile I: All Pairs Similarity Joins for Time
+[74] P. Nunthanid et al., “Discovery of Variable Length Time Series Motif,” in            Series: A Unifying View That Includes Motifs, Discords and Shapelets,”
+     ECTI-CON, 2011.                                                                      in ICDM, 2016.
+[75] P. Nunthanid et al., “Parameter-Free Motif Discovery for Time Series           [109] C.-C. M. Yeh et al., “Time Series Joins, Motifs, Discords and Shapelets: A
+     Data,” in ECTI-CON, 2012.                                                            Unifying View That Exploits The Matrix Profile,” JDMKD, 2018.
+[76] NVIDIA, “Tesla K40 GPU Active Accelerator,” Board specification, 2013.         [110] S. Yingchareonthawornchai et al., “Efficient Proper Length Time Series
+[77] P. Patel et al., “Mining Motifs in Massive Time Series Databases,” in ICDM,          Motif Discovery,” in ICDM, 2013.
+     2002.                                                                          [111] D. Zhang et al., “TOP-PIM: Throughput-Oriented Programmable Pro-
+[78] A. Pattnaik et al., “Scheduling Techniques for GPU Architectures with                cessing in Memory,” in HPDC, 2014.
+     Processing-in-Memory Capabilities,” in PACT, 2016.                             [112] Y. Zhu et al., “Matrix Profile XI: SCRIMP++: Time Series Motif Discovery
+[79] X. Qiao et al., “Atomlayer: a Universal Reram-based CNN Accelerator                  at Interactive Speeds,” in ICDM, 2018.
+     with Atomic Layer Computation,” in DAC, 2018.                                  [113] Z. Zimmerman et al., “Matrix Profile XIV: Scaling Time Series Motif
+[80] G. Radhakrishnan et al., “Experimentation and Analysis of Time Series                Discovery with GPUs to Break a Quintillion Pairwise Comparisons a
+     Data from Multi-Path Robotic Environment,” in CONECCT, 2015.                         Day and Beyond,” in SoCC, 2019.
+
+
+
+                                                                                   10

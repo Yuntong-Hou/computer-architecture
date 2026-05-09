@@ -1,0 +1,20 @@
+# Extraction Log
+
+- Input Type: GitHub repository PDF
+- Source: `paper reading/sources/LEC3/2310.14665v3.pdf`
+- Access Status: 已下载并可读取
+- Full Text Retrieved: Yes
+- PDF Pages: 16
+- Sections Detected: Abstract, Introduction, Background, Methodology, Characterization, RowPress, TRR-like defense, ECC implications, Discussion, Conclusion
+- Figures Detected: Yes
+- Tables Detected: Yes
+- Equations Detected: 未发现核心编号公式
+- Appendix Detected: 未发现独立 appendix
+- Supplementary Material Detected: 开源数据/代码链接
+- OCR Used: No
+- Missing Content: 图像本体未做视觉 OCR；部分图中细粒度数值需回 PDF 查看
+- Parsing Problems: pdftotext 对作者列表和部分图注换行不稳定
+- Uncertain Parts: 内部 TRR-like 机制为黑盒推断，非厂商确认
+- Need User Action: 如需逐字翻译或图像级复核，请提供版权授权或指定重点页
+- Quality Check: 已覆盖全文结构、主要实验、图表、局限和原文位置；`full_translation.zh.md` 为版权友好的逐节中文译述，不是逐字全文翻译
+- Batch Status: 第二轮深度阅读完成

@@ -1,0 +1,1130 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/softMC_hpca17.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/softMC_hpca17.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+      SoftMC: A Flexible and Practical Open-Source Infrastructure
+              for Enabling Experimental DRAM Studies
+      Hasan Hassan1,2,3 Nandita Vijaykumar3 Samira Khan4,3 Saugata Ghose3 Kevin Chang3
+              Gennady Pekhimenko5,3 Donghyuk Lee6,3 Oguz Ergin2 Onur Mutlu1,3
+         1 ETH Zürich         2 TOBB University of Economics & Technology    3 Carnegie Mellon University
+                          4 University of Virginia   5 Microsoft Research 6 NVIDIA Research
+
+
+   DRAM is the primary technology used for main memory in                  each cell is periodically refreshed to replenish the charge in
+modern systems. Unfortunately, as DRAM scales down to smaller              the capacitor. At smaller technology nodes, it is becoming in-
+technology nodes, it faces key challenges in both data integrity           creasingly difficult to store and retain enough charge in a cell,
+and latency, which strongly affects overall system reliability and         causing various reliability and performance issues [60, 61]. En-
+performance. To develop reliable and high-performance DRAM-                suring reliable operation of the DRAM cells is a key challenge
+based main memory in future systems, it is critical to characterize,       in future technology nodes [38, 45, 60, 61, 65, 68, 71].
+understand, and analyze various aspects (e.g., reliability, latency)          The fundamental problem of retaining data with less charge
+of existing DRAM chips. To enable this, there is a strong need             in smaller cells directly impacts the reliability and performance
+for a publicly-available DRAM testing infrastructure that can              of DRAM cells. First, smaller cells placed in close proxim-
+flexibly and efficiently test DRAM chips in a manner accessible            ity make cells more susceptible to various types of interfer-
+to both software and hardware developers.                                  ence. This potentially disrupts DRAM operation by flipping
+   This paper develops the first such infrastructure, SoftMC (Soft         bits in DRAM, resulting in major reliability issues [46, 66, 74,
+Memory Controller), an FPGA-based testing platform that can                83, 84, 90], which can lead to system failure [66, 84] or security
+control and test memory modules designed for the commonly-                 breaches [25, 46, 82, 85, 86, 95, 98]. Second, it takes longer
+used DDR (Double Data Rate) interface. SoftMC has two key                  time to access a cell with less charge [27, 56], and write la-
+properties: (i) it provides flexibility to thoroughly control memory       tency increases as the access transistor size reduces [38]. Thus,
+behavior or to implement a wide range of mechanisms using DDR              smaller cells directly impact DRAM latency, as DRAM access
+commands; and (ii) it is easy to use as it provides a simple and           latency is determined by the worst-case (i.e., slowest) cell in
+intuitive high-level programming interface for users, completely           any chip [17, 56]. DRAM access latency has not improved with
+hiding the low-level details of the FPGA.                                  technology scaling in the past decade [6, 36, 57, 71], and, in fact,
+   We demonstrate the capability, flexibility, and programming             some latencies are expected to increase [38], making memory
+ease of SoftMC with two example use cases. First, we implement             latency an increasingly critical system performance bottleneck.
+a test that characterizes the retention time of DRAM cells. Ex-               As such, there is a significant need for new mechanisms
+perimental results we obtain using SoftMC are consistent with              that improve the reliability and performance of DRAM-based
+the findings of prior studies on retention time in modern DRAM,            main memory systems. In order to design, evaluate, and val-
+which serves as a validation of our infrastructure. Second, we val-        idate many such mechanisms, it is important to accurately
+idate two recently-proposed mechanisms, which rely on accessing            characterize, analyze, and understand DRAM (cell) behavior
+recently-refreshed or recently-accessed DRAM cells faster than             in terms of reliability and latency. For such an understand-
+other DRAM cells. Using our infrastructure, we show that the               ing to be accurate, it is critical that the characterization and
+expected latency reduction effect of these mechanisms is not ob-           analysis be based on the experimental studies of real DRAM
+servable in existing DRAM chips, which demonstrates the useful-            chips, since a large number of factors (e.g., various types of
+ness of SoftMC in testing new ideas on existing memory modules.            cell-to-cell interference [46, 74, 83], inter- and intra-die process
+We discuss several other use cases of SoftMC, including the abil-          variation [17, 18, 56, 58, 75], random effects [29, 61, 91, 103],
+ity to characterize emerging non-volatile memory modules that              operating conditions [59, 61], internal organization [30, 43, 61],
+obey the DDR standard. We hope that our open-source release of             stored data patterns [43, 44, 61]) concurrently impact the relia-
+SoftMC fills a gap in the space of publicly-available experimental         bility and latency of cells. Many of these phenomena and their
+memory testing infrastructures and inspires new studies, ideas,            interactions cannot be properly modeled (e.g., in simulation
+and methodologies in memory system design.                                 or using analytical methods) without rigorous experimental
+                                                                           characterization and analysis of real DRAM chips. The need
+1. Introduction                                                            for such experimental characterization and analysis, with the
+   DRAM (Dynamic Random Access Memory) is the predomi-                     goal of building the understanding necessary to improve the
+nant technology used to build main memory systems of modern                reliability and performance of future DRAM-based main mem-
+computers. The continued scaling of DRAM process technol-                  ories at various levels (both software and hardware), motivates
+ogy has enabled tremendous growth in DRAM density in the                   the need for a publicly-available DRAM testing infrastructure
+last few decades, leading to higher capacity main memories.                that can enable system users and designers to characterize real
+Unfortunately, as the process technology node scales down to               DRAM chips.
+the sub-20 nm feature size range, DRAM technology faces key                   Two key features are desirable from such an experimental
+challenges that critically impact its reliability and performance.         memory testing infrastructure. First, the infrastructure should
+   The fundamental challenge with scaling DRAM cells into                  be flexible enough to test any DRAM operation (supported by
+smaller technology nodes arises from the way DRAM stores                   the commonly-used DRAM interfaces, e.g., the standard Dou-
+data in cells. A DRAM cell consists of a transistor and a capac-           ble Data Rate, or DDR, interface) to characterize cell behavior
+itor. Data is stored as charge in the capacitor. A DRAM cell               or evaluate the impact of a mechanism (e.g., adopting different
+cannot retain its data permanently as this capacitor leaks its             refresh rates for different cells [42, 44, 60, 79, 96]) on real DRAM
+charge gradually over time. To maintain correct data in DRAM,              chips. Second, the infrastructure should be easy to use, such
+
+
+                                                                       1
+
+
+===== Page 2 =====
+
+that it is possible for both software and hardware developers to       modules that obey the DDR standard. We hope that SoftMC in-
+implement new tests or mechanisms without spending signifi-            spires other new studies, ideas, and methodologies in memory
+cant time and effort. For example, a testing infrastructure that       system design.
+requires circuit-level implementation, detailed knowledge of             This work makes the following major contributions:
+the physical implementation of DRAM data transfer protocols            • We introduce SoftMC, the first open-source FPGA-based
+over the memory channel, or low-level FPGA-programming to                experimental memory testing infrastructure. SoftMC imple-
+modify the infrastructure would severely limit the usability of          ments all low-level DRAM operations in a programmable
+such a platform to a limited number of experts.                          memory controller that is exposed to the user with a flexible
+   This paper designs, prototypes, and demonstrates the basic            and easy-to-use interface, and hence enables the efficient
+capabilities of such a flexible and easy-to-use experimental             characterization of modern DRAM chips and evaluation of
+DRAM testing infrastructure, called SoftMC (Soft Memory Con-             mechanisms built on top of low-level DRAM operations. To
+troller). SoftMC is an open-source FPGA-based DRAM testing               our knowledge, SoftMC is the first publicly-available infras-
+infrastructure, consisting of a programmable memory con-                 tructure that exposes a high-level programming interface to
+troller that can control and test memory modules designed for            ease memory testing and characterization.
+the commonly-used DDR (Double Data Rate) interface. To this            • We provide a prototype implementation of SoftMC with
+end, SoftMC implements all low-level DRAM operations (i.e.,              a high-level software interface for users and a low-level
+DDR commands) available in a typical memory controller (e.g.,            FPGA-based implementation of the memory controller. We
+opening a row in a bank, reading a specific column address,              have released the software interface and the implementation
+performing a refresh operation, enforcing various timing con-            publicly as a freely-available open-source tool [88].
+straints between commands). Using these low-level operations,          • We demonstrate the capability, flexibility, and programming
+SoftMC can test and characterize any (existing or new) DRAM              ease of SoftMC by implementing two example use cases. Our
+mechanism that uses the existing DDR interface. SoftMC pro-              second use case demonstrates the effectiveness of SoftMC
+vides a simple and intuitive high-level programming interface            as a new tool to test existing or new mechanisms on ex-
+that completely hides the low-level details of the FPGA from             isting memory chips. Using SoftMC, we demonstrate that
+users. Users implement their test routines or mechanisms in a            the expected effect (i.e., highly-charged DRAM rows can
+high-level language that automatically gets translated into the          be accessed faster than others) of two recently-proposed
+low-level SoftMC memory controller operations in the FPGA.               mechanisms is not observable in 24 modern DRAM chips
+   SoftMC can be used to implement any DRAM test or mecha-               from three major manufacturers.
+nism consisting of DDR commands, without requiring signif-
+icant effort. Users can verify whether the test or mechanism           2. Background
+works successfully on real DRAM chips by monitoring whether
+any errors are introduced into the data. The high-level pro-              In this section, we first provide the necessary basics on
+gramming interface provides simple routines to verify data             DRAM organization and operation. We also provide back-
+integrity at any point during the test. SoftMC offers a wide           ground on the DDR command interface, which is the major
+range of use cases, such as characterizing the effects of varia-       standard for modern DRAM-based memories. For a more de-
+tion within a DRAM chip and across DRAM chips, verifying               tailed description of DRAM operation, we refer the reader
+the correctness of new DRAM mechanisms on actual hard-                 to [18, 47, 56, 57, 60].
+ware, and experimentally discovering the reliability, retention,
+and timing characteristics of an unknown or newly-designed             2.1. DRAM Organization
+DRAM chip (or finding the best specifications for a known                Figure 1a shows the organization of a DRAM-based memory
+DRAM chip). We demonstrate the potential and ease of use of            system. This system consists of memory channels that connect
+SoftMC by implementing two use cases.                                  the processor to the memory. A channel has one or more ranks
+   First, we demonstrate the ease of use of SoftMC’s high-level        that share the control and data bus of the channel. A rank
+interface by implementing a simple retention time test. Using          typically consists of multiple (typically four to eight) DRAM
+this test, we characterize the retention time behavior of cells        chips. All DRAM chips in a rank share the command signals
+in modern DRAM chips. Our test results match the prior ex-             such that they operate in lockstep. Each chip has an 8- or 16-bit
+perimental studies that characterize DRAM retention time in            wide IO bus that contributes to the 64-bit IO bus of the channel.
+modern DRAM chips [42, 60, 61, 79], providing a validation of          For example, four DRAM chips (with a 16-bit IO bus per chip)
+our infrastructure.                                                    are used to build the 64-bit IO bus in the memory channel.
+   Second, we demonstrate the flexibility and capability of
+SoftMC by validating two recently-proposed DRAM latency
+reduction mechanisms [27, 87]. These mechanisms exploit the
+idea that highly-charged DRAM cells can be accessed with low
+latency. DRAM cells are in a highly-charged state when they
+are recently refreshed or recently accessed. Our SoftMC-based
+experimental analysis of 24 real DRAM chips from three major
+DRAM vendors demonstrates that the expected latency reduc-
+tion effect of these mechanisms is not observable in existing                (a) System          (b) Chip            (c) Bank
+DRAM chips. We discuss the details of our experiments in                Figure 1: DRAM-based memory system organization
+Section 6.2 and provide reasons as to why the effect is not
+observable in existing chips. This experiment demonstrates (i)            Figure 1b depicts a DRAM chip consisting of multiple banks.
+the importance of experimentally characterizing real DRAM              Each bank’s cells can be accessed independently of other banks.
+chips to understand the behavior of DRAM cells, and designing          Figure 1c shows the key details of a bank, which consists of (i)
+mechanisms that are based on this experimental understand-             a 2D cell array, (ii) a row decoder, and (iii) sense amplifiers. A
+ing; and (ii) the effectiveness of SoftMC in testing (validating       row of cells is connected to the row decoder through a wire
+or refuting) new ideas on existing memory modules.                     called wordline, and a column of cells is connected to a sense
+   We also discuss several other use cases of SoftMC, includ-          amplifier through a wire called bitline. When accessing a row
+ing the ability to characterize emerging non-volatile memory           of cells, one of the wordlines in the cell array is selected by
+
+
+                                                                   2
+
+
+===== Page 3 =====
+
+the row decoder. Then, the corresponding wordline driver               will be performed on. tRP specifies the minimum timing inter-
+raises the wordline, making electrical connections between             val between a PRECHARGE command and a REFRESH com-
+cells in the row and sense amplifiers through the bitlines. This       mand. After tRP, the memory controller issues a REFRESH
+operation, i.e., accessing a row of cells, is referred to as row       command to perform the refresh operation, which delays the
+activation.                                                            subsequent ACTIVATE command to the refreshing rank/bank
+                                                                       for an interval specified by tRFC.
+2.2. DRAM Operations and Commands
+                                                                       2.2.1. DDR Command Interface. DDR commands are trans-
+    There are four DRAM operations necessary for data access           mitted from the memory controller to the DRAM module across
+and retention. We describe them and their associated com-              a memory bus. On the memory bus, each command is en-
+mands and timing constraints, as specified in the DDR stan-            coded using five output signals (CKE, CS, RAS, CAS, and WE).
+dard [34].                                                             Enabling/disabling these signals corresponds to specific com-
+    Activation. When the memory controller receives a request          mands (as specified by the DDR standard). First, the CKE signal
+to a row that is not already activated, it issues an ACTIVATE          (clock enable) determines whether the DRAM is in “standby
+command with a row address to the DRAM. Then, the row                  mode” (ready to be accessed) or “power-down mode”. Second,
+decoder determines the wordline that corresponds to the re-            the CS (chip selection) signal specifies the rank that should
+quested row address, and enables that wordline to activate the         receive the issued command. Third, the RAS (row address
+cells connected to it. The activated cells share their charge          strobe)/CAS (column address strobe) signal is used to generate
+with the bitlines that they are connected to. Then, sense am-          commands related to DRAM row/column operations. Fourth,
+plifiers detect data by observing the perturbation that charge         the WE signal (write enable) in combination with RAS and CAS,
+sharing created on the bitlines, and fully restore the charge of       generates the specific row/column command. For example,
+the activated cells. At the end of activation, sense amplifiers        enabling CAS and WE together generates a WRITE command,
+contain the data of the activated row.                                 while enabling only CAS indicates a READ command.
+    Read/Write. Some time after issuing the ACTIVATE com-                 So far, we have described the major DRAM operations and
+mand, the memory controller issues a column command, i.e.,             commands specified by the DDR interface. Next, we motivate
+READ or WRITE, to select a portion of data in the activated            the need for a DRAM testing infrastructure that can flexibly
+row which corresponds to the requested column address. The             issue these DRAM commands via a high-level user interface.
+tRCD timing parameter restricts the minimum time interval
+between an ACTIVATE command and a column command, to                   3. Motivation
+guarantee that the DRAM chip is ready to transfer data from
+the sense amplifiers to the memory channel. When the con-                  A publicly-available DRAM testing infrastructure that can
+troller performs a READ operation after any WRITE command              characterize real DRAM chips enables new mechanisms to
+is issued to an open row in any bank, the tWTR timing parame-          improve DRAM reliability and latency. In this work, we argue
+ter needs to be obeyed. Likewise, when the controller performs         that such a testing infrastructure should have two key features
+a WRITE operation after any READ command is issued to an               to ensure widespread adoption among architects and designers:
+open row in any bank, it needs to obey the tRTW timing pa-             (i) flexibility and (ii) ease of use.
+rameter. During tWTR and tRTW, the DDR bus is switched                     Flexibility. As discussed in Section 2, a DRAM module
+between read and write modes, which is called bus turnaround.          is accessed by issuing specific commands (e.g., ACTIVATE,
+    Precharge. If a request to access a new row arrives while          PRECHARGE) in a particular sequence with a strict delay be-
+another row is currently activated in the same bank, the mem-          tween the commands (specified by the timing parameters, e.g.,
+ory controller first needs to prepare the DRAM bank for the            tRP, tRAS). A DRAM testing infrastructure should implement
+new row access. This operation is called precharge, and consists       all low-level DRAM operations (i.e., DDR commands) with tun-
+of two steps. First, the activated row in the bank needs to be         able timing parameters without any restriction on the ordering
+deactivated, by disconnecting and isolating the activated cells.       of DRAM commands. Such a design enables flexibility at two
+Second, the sense amplifiers (and corresponding bitlines) need         levels. First, it enables comprehensive testing of any DRAM
+to be prepared (i.e., charged to the appropriate voltage levels)       operation with the ability to customize the length of each tim-
+to detect data during the next row activation [56, 57]. There          ing constraint. For example, we can implement a retention test
+are three timing parameters related to the precharge operation.        with different refresh intervals to characterize the distribution
+First, tRAS specifies the minimum time interval between an             of retention time in modern DRAM chips. Such a characteri-
+ACTIVATE command and a PRECHARGE command, to en-                       zation can enable new mechanisms to reduce the number of
+sure that the activated cells are fully restored. Second, tWR          refresh operations in DRAM, leading to performance and power
+(i.e., write recovery time) specifies the minimum time interval        efficiency improvements. Second, it enables testing of DRAM
+between the end of data transfer caused by a write command             chips with high-level test programs, which can consist of any
+and a PRECHARGE command, to ensure that the cells updated              combination of DRAM operations and timings. Such flexibility
+by the write operation are fully restored. Third, tRP specifies        is extremely powerful to test the impact of existing or new
+the minimum time between a PRECHARGE command and an                    DRAM mechanisms in real DRAM chips.
+ACTIVATE command, to ensure that the precharge operation                   Ease of Use. A DRAM testing infrastructure should provide
+completes before the next activation.                                  a simple and intuitive programming interface that minimizes
+    Refresh. A DRAM cell cannot retain its data permanently            programming effort and time. An interface that hides the de-
+due to charge leakage. To ensure data integrity, the charge            tails of the underlying implementation is accessible to a wide
+of the DRAM cell needs to be refreshed (i.e., replenished) pe-         range of users. With such a high-level abstraction, even users
+riodically. The memory controller replenishes cell charge by           that lack hardware design experience should be able to develop
+refreshing each DRAM row periodically (typically every 64 ms).         DRAM tests.
+The refresh period is specified by a timing parameter tREFI.               In this work, we propose and prototype a publicly-available,
+The refresh operation can be performed at the rank or bank             open-source DRAM testing infrastructure that can enable sys-
+granularity [19] depending on the DDR standard. Prior to               tem users and designers to easily characterize real DRAM chips.
+issuing a REFRESH command to a rank/bank, the memory con-              Our experimental DRAM testing infrastructure, called SoftMC
+troller first precharges all activated rows in the DRAM rank or        (Soft Memory Controller), can test DDR-based memory modules
+the activated row in the DRAM bank that the refresh operation          with a flexible and easy-to-use interface. In the next section,
+
+
+                                                                   3
+
+
+===== Page 4 =====
+
+we discuss the shortcomings of existing tools and platforms               fixed test patterns and algorithms. Using such an approach,
+that can be used to test DRAM chips, and explain how SoftMC               DRAM tests can be performed faster than with other testing
+is designed to avoid these shortcomings.                                  platforms. However, BIST has two major flexibility issues,
+                                                                          since the testing logic is hard-coded into the hardware: (i) BIST
+4. Related Work                                                           offers only a limited number of tests that are fixed at hardware
+                                                                          design time. (ii) A limited set of DRAM chips, which come
+   No prior DRAM testing infrastructure provides both flexibil-           with BIST support, can be tested. In contrast, SoftMC allows
+ity and ease of use properties, which are critical for enabling           for the implementation of a wide range of DRAM test routines
+widespread adoption of the infrastructure. Three different                and supports any off-the-shelf DRAM chip that is compatible
+kinds of tools/infrastructure are available today for character-          with the DDR interface.
+izing DRAM behavior. As we will describe, each kind of tool                  We conclude that prior work lacks either the flexibility or
+has some shortcomings. The goal of SoftMC is to eliminate all             the ease-of-use properties that are critical for performing de-
+of these shortcomings.                                                    tailed DRAM characterization. To fill the gap left by current
+   Commercial Testing Infrastructures. A large number                     infrastructures, we introduce an open-source DRAM testing
+of commercial DRAM testing platforms (e.g., [1, 24, 76, 93])              infrastructure, SoftMC, that fulfills these two properties.
+are available in the market. Such platforms are optimized for
+throughput (i.e., to test as many DRAM chips as possible in a             5. SoftMC Design
+given time period), and generally apply a fixed test pattern to
+the units under test. Thus, since they lack support for flexibility          SoftMC is an FPGA-based open-source programmable mem-
+in defining the test routine, these infrastructures are not suit-         ory controller that provides a high-level software interface,
+able for detailed DRAM characterization where the goal is to              which the users can use to initiate any DRAM operation from
+investigate new issues and new ideas. Furthermore, such test-             a host machine. The FPGA component of SoftMC collects the
+ing equipment is usually quite expensive, which makes these               DRAM operation requests incoming from the host machine
+infrastructures an impractical option for research in academia.           and executes them on real DRAM chips that are attached to
+Industry may also have internal DRAM development and test-                the FPGA board. In this section, we explain in detail the major
+ing tools, but, to our knowledge, these are proprietary and are           components of our infrastructure.
+unlikely to be made openly available.
+   We aim for SoftMC to be a low-cost (i.e., free) and flexible           5.1. High-Level Design
+open-source alternative to commercial testing equipment that                Figure 2 shows our SoftMC infrastructure. It comprises three
+can enable new research directions and mechanisms. For ex-                major components:
+ample, prior work [105] recently proposed a random command
+pattern generator to validate DRAM chips against uncommon                 • In the host machine, the SoftMC API provides a high-level
+yet supported (according to JEDEC specifications) DDR com-                  software interface (in C++) for users to communicate with
+mand patterns. Using the test patterns on commercial test                   the SoftMC hardware. The API provides user-level functions
+equipment, this work demonstrates that specific sequences of                to 1) send SoftMC instructions from the host machine to the
+commands introduce failures in current DRAM chips. SoftMC                   hardware and 2) receive data, which the hardware reads from
+flexibly supports the ability to issue an arbitrary command                 the DRAM, back to the host machine. An instruction encodes
+sequence, and therefore can be used as a low-cost method                    and specifies an operation that the hardware is capable of
+for validating DRAM chips against problems that arise due to                performing (see Section 5.3). It is used to communicate the
+command ordering.                                                           user-level function to the SoftMC hardware such that the
+                                                                            hardware can execute the necessary operations to satisfy the
+   FPGA-Based Testing Infrastructures. Several prior                        user-level function. The SoftMC API provides several func-
+works proposed FPGA-based DRAM testing infrastructures [31,                 tions (See Section 5.2) that users can call to easily generate
+32, 41]. Unfortunately, all of them lack flexibility and/or a sim-          an instruction to perform any of the operations supported
+ple user interface, and none are open-source. The FPGA-based                by the SoftMC infrastructure. For example, the API con-
+infrastructure proposed by Huang et al. [32] provides a high-               tains a genACT() function, which users call to generate an
+level interface for developing DRAM tests, but the interface is             instruction to activate a row in DRAM.
+limited to defining only data patterns and march algorithms for           • The driver is responsible for transferring instructions and
+the tests. Hou et al. [31] propose an FPGA-based test platform              data between the host machine and the FPGA across a PCIe
+whose capability is limited to analyzing only the data reten-               bus. To implement the driver, we use RIFFA [33]. SoftMC
+tion time of the DRAM cells. Another work [41] develops a                   execution is not affected by the long transfer latency of the
+custom memory testing board with an FPGA chip, specifically                 PCIe interface, as our design sends all of the instructions over
+designed to test memories at a very high data rate. However,                the PCIe bus to the FPGA before the test routine begins, and
+it requires low-level knowledge to develop FPGA programs,                   buffers the commands within the FPGA. Therefore, SoftMC
+and even then offers only limited flexibility in defining a test            guarantees that PCIe-related delays do not affect the precise
+routine. On the other hand, SoftMC aims to provide full control             user-defined timings between each instruction.
+over all DRAM commands using a high-level software interface,             • Within the FPGA, the core SoftMC hardware queues the in-
+and it is open-source.                                                      structions, and executes them in an appropriate hardware
+   PARDIS [5] is a reconfigurable logic (e.g., FPGA) based pro-             component. For example, if the hardware receives an in-
+grammable memory controller meant to be implemented inside                  struction that indicates a DRAM command, it sends DDR-
+microprocessor chips. PARDIS is capable of optimizing mem-                  compatible signals to the DRAM to issue the command.
+ory scheduling algorithms, refresh operations, etc. at run-time
+based on application characteristics, and can improve system
+performance and efficiency. However, it does not provide pro-             5.2. SoftMC API
+grammability for DRAM commands and timing parameters,                       SoftMC offers users complete control over the DDR-based
+and therefore cannot be used for detailed DRAM characteriza-              DRAM memory modules by providing an API (Application
+tion.                                                                     Programming Interface) in a high-level programming language
+   Built-In Self Test (BIST). A BIST mechanism (e.g, [3, 77,              (C++). This API consists of several C++ functions that gen-
+78, 104, 106]) is implemented inside the DRAM chip to enable              erate instructions for the SoftMC hardware, which resides in
+
+
+                                                                      4
+
+
+===== Page 5 =====
+
+                                                                        With this one function, the user can implement any timing
+                                                                        constraint. For example, in Program 1, the controller should
+                                                                        wait for tRCD after the ACTIVATE before issuing a WRITE
+                                                                        to the DRAM. We simply add a call to genWAIT() on Line 3 to
+                                                                        insert the tRCD delay. Users can easily provide any value that
+                                                                        they want to test for the time interval (e.g., a reduced tRCD,
+                                                                        to see if errors occur when the timing parameter is reduced).
+                                                                           Aux Functions. There are a number of auxiliary functions
+                                                                        that allow the user to configure the SoftMC hardware. One
+                                                                        such function, genBUSDIR(dir), allows the user to switch (i.e.,
+                                                                        turn around) the DRAM bus direction. To reduce the number
+                                                                        of IO pins, the DDR interface uses a bi-directional data bus
+                                                                        between DRAM and the controller. The bus must be set up to
+                                                                        move data from DRAM to the controller before issuing a READ,
+                                                                        and from the controller to DRAM before issuing a WRITE.
+                                                                        After genBUSDIR() is called, the user should follow it with a
+           Figure 2: Our SoftMC infrastructure.                         genWAIT() function, to ensure that the bus is given enough
+the FPGA. These instructions provide support for (i) all pos-           time to complete the turn around. The time interval for this
+sible DDR DRAM commands; and (ii) managing the SoftMC                   wait corresponds to the tWTR and tRTW timing parameters in
+hardware, e.g., inserting a delay between commands, config-             the DDR interface.
+uring the auto-refresh mechanism (see Section 5.4). Using the              We provide an auxiliary function to control auto-refresh be-
+SoftMC API, any sequence of DRAM commands can be easily                 havior. The SoftMC hardware includes logic to automatically
+and flexibly implemented in SoftMC with little effort and time          refresh the DRAM cells after a given time interval (tREFI) has
+from the programmer.                                                    passed. Auto-refresh operations are not added to the code by
+   When users would like to issue a sequence of commands                the user, and are instead handled directly within our hardware.
+to the DRAM, they only need to make SoftMC API function                 In order to adjust the interval at which refresh is performed, the
+calls. Users can easily generate instructions by calling the API        user can invoke the genREF_CONFIG() function. To disable the
+functions. Users can insert the generated instructions to an            auto-refresh mechanism, the user needs to set the refresh inter-
+InstructionSequence, which is a data structure that the SoftMC          val to 0 by calling that function. The user can invoke the same
+API provides to keep the instructions in order and easily send          function to adjust the number of cycles that specify the refresh
+them to the SoftMC hardware via the driver. There are three             latency (tRFC). We describe the auto-refresh functionality of
+types of API functions: (i) command functions, which provide            the SoftMC hardware in more detail in Section 5.4.
+the user the ability to specify DDR-compatible DRAM com-                   Finally, we provide a function, genEND(), which generates
+mands (e.g., ACTIVATE, PRECHARGE); (ii) the wait function,              an END instruction to inform the SoftMC hardware that the
+which provide the user the ability to specify a time interval be-       end of the instruction sequence has been reached, and that
+tween two commands (thereby allowing the user to determine              the SoftMC hardware can start executing the sequence. Note
+the latencies of each timing parameter); and (iii) aux functions,       that the programmer should call iseq.execute(fpga) to send
+which provide the user with control over various auxiliary              the instruction sequence to the driver, which in turn sends
+operations. Programming the memory controller using such                the sequence to the SoftMC hardware. Program 1 shows an
+high-level C++ function calls enables users who are inexpe-             example of this in Lines 8–9.
+rienced in hardware design to easily develop sophisticated
+memory controllers.                                                     5.3. Instruction Types and Encoding
+   Command Functions. For every DDR command, we pro-                      Figure 3 shows the encodings for the key SoftMC instruction
+vide a command function that generates an instruction, which
+instructs the SoftMC hardware to execute the command. For               types.1 All SoftMC instructions are 32 bits wide, where the
+example, genACT(b, r) function generates an instruction that            most-significant 4 bits indicate the type of the instruction.
+informs the SoftMC controller to issue an ACTIVATE to DRAM               InstrType
+row r in bank b. Program 1 shows a short example program                  DDR (4)     unused (3)   CKE, CS (2), RAS, CAS, WE (6)   Bank (3)   Addr (16)
+that writes to a single cache line (i.e., DRAM column) in a               WAIT (4)                                cycles (28)
+                                                                         BUSDIR (4)                       unused (27)                          dir (1)
+closed row. In Program 1, there are three command functions:              END (4)                                unused (28)
+genACT(), genWR(), and genPRE(), in lines 2, 4, and 6, which
+generate SoftMC hardware instructions that inform the SoftMC                      Figure 3: Key SoftMC instruction types.
+hardware to issue ACTIVATE, WRITE, and PRECHARGE com-
+mands to the DRAM.                                                         DDR Instruction Type. Recall from Section 2.2.1 that the
+1   InstructionSequence iseq;                                           DDR commands are encoded using several fields (e.g., RAS,
+2   iseq.insert(genACT(bank, row));                                     CAS, WE) that correspond to the signals of the DDR interface,
+3   iseq.insert(genWAIT(tRCD));                                         which sits between the memory controller and the DRAM. The
+4   iseq.insert(genWR(bank, col, data));                                SoftMC instructions generated by our API functions encode
+5   iseq.insert(genWAIT(tCL + tBL + tWR));
+6   iseq.insert(genPRE(bank));                                          these same fields, as shown in the instruction encoding for
+7   iseq.insert(genWAIT(tRP));                                          the DDR type instructions in Figure 3. Thus, DDR type in-
+8   iseq.insert(genEND());                                              structions can represent any DDR command from the DDR3
+9   iseq.execute(fpga));                                                specification [34]. For example, the user needs to set CKE = 1,
+Program 1: Performing a write operation to a closed row                 CS = 0, RAS = 0, CAS = 1, and WE = 1 to create an ACTIVATE
+using the SoftMC API.                                                   command to open the row in the bank specified by Address and
+                                                                        Bank, respectively. Other DDR commands can easily be repre-
+   Wait Function. We provide a single function, genWAIT(t),
+which generates an instruction to inform the SoftMC hardware                1 We refer the reader to the source-code and manual of SoftMC for the
+to wait t DRAM cycles before executing the next instruction.            encoding of all instruction types [88].
+
+
+                                                                    5
+
+
+===== Page 6 =====
+
+sented by setting the appropriate instruction fields according          and refresh latency (tRFC) values (See Section 2.2). It issues pe-
+to the DDR3 specification.                                              riodic refresh operations to DRAM, based on the values stored
+   Other Instruction Types. Other instructions carry infor-             in the registers. If the instruction dispatcher is in the middle of
+mation to the FPGA using the bottom 28 bits of their encoding.          executing an instruction sequence that was received from the
+For example, the WAIT instruction uses these bits to encode             host machine, at the time a refresh is scheduled to start, the
+the wait latency, i.e., wait cycles. The BUSDIR instruction uses        auto-refresh controller delays the refresh operation until the
+the least significant bit of the bottom 28 bits to encode the new       dispatcher finishes the execution of the instruction sequence.
+direction of the data bus. The END instruction requires no              Note that a small delay does not pose any problems, as the DDR
+additional parameters, using only the InstrType field.                  standard allows for a small amount of flexibility for scheduling
+                                                                        refresh operations [19, 34, 69]. However, if the instruction se-
+5.4. Hardware Architecture                                              quence is too long, and delays the refresh operation beyond a
+                                                                        critical interval (i.e., more than 8X the tREFI), it is the user’s
+    The driver sends the SoftMC instructions across the PCIe            responsibility to redesign the test routine and split up the long
+bus to the FPGA, where the SoftMC hardware resides. Figure 4            instruction sequence into smaller sequences.
+shows the five components that make up the SoftMC hardware:                Calibration Module. This module ensures the data in-
+(i) an instruction receiver, which accumulates the instructions         tegrity of the memory bus. It periodically issues a command to
+sent over the PCIe bus; (ii) an instruction dispatcher, which de-       perform short ZQ calibration, which is an operation specified
+codes each instruction into DRAM control signals and address            by the DDR standard to calibrate the output driver and on-die
+bits, and then sends the decoded bits to the DRAM module                termination circuits [20, 35]. SoftMC provides hardware sup-
+through the memory bus; (iii) a read capture module, which              port for automatic calibration, in order to ease programmer
+receives data read from the DRAM and sends it to the host               effort.
+machine over PCIe; (iv) an auto-refresh controller; and (v) a              PCIe Controller and DDR PHY. The PCIe controller acts
+calibration controller, responsible for ensuring data integrity         as an interface between the host machine and the rest of the
+on the memory bus. SoftMC also includes two interfaces: a               SoftMC hardware. The DDR PHY sits between the SoftMC
+PCIe bus controller and a DDR PHY. Next, we describe each of            hardware and the DRAM module, and is responsible for initial-
+these components in detail.                                             ization and clock synchronization between the FPGA and the
+                                                                        DRAM module.
+                   Instruction Receiver
+                                               Instruction              5.5. SoftMC Prototype
+                    Instruction Queue          Dispatcher                  We describe the key implementation details of our first pro-
+                                                                        totype of SoftMC.
+     PCIe                                                    DDR
+   Controller                                                PHY
+                                                                           FPGA Board. The current SoftMC prototype targets a Xil-
+                    Auto-
+                   Refresh
+                               Calibration     SoftMC                   inx ML605 FPGA board [101]. It consists of (i) a Virtex-6 FPGA
+                  Controller
+                               Controller                               chip, which we use to implement our SoftMC design; and (ii) a
+                                      Read                              SO-DIMM slot, where we plug in the real DRAM modules to
+                                     Capture                            be tested.
+                                                                           PCIe Interface. The PCIe controller uses (i) the Xilinx PCIe
+          Figure 4: SoftMC hardware architecture.                       Endpoint IP Core [99], which implements low-level operations
+   Instruction Receiver. When the driver sends SoftMC in-               related to the physical layer of the PCIe bus; and (ii) the RIFFA
+structions across the PCIe bus, the instruction receiver buffers        IP Core [33], which provides high-level protocol functions for
+them in an instruction queue until the END instruction is re-           data communication. The communication between the host
+ceived. When the END instruction arrives, the instruction               machine and the FPGA board is established through a PCIe 2.0
+receiver notifies the instruction dispatcher that it can start          link.
+fetching instructions from the instruction queue. Execution                DDR PHY. SoftMC uses the Xilinx DDR PHY IP Core [100]
+ends when the instruction queue is fully drained.                       to communicate with the DRAM module. This PHY imple-
+   Instruction Dispatcher. The instruction dispatcher                   ments the low-level operations to transfer data over the mem-
+fetches an instruction, decodes it, and executes the operation          ory channel to/from the DRAM module. The PHY transmits
+that the instruction indicates, at the corresponding compo-             two DDR commands each memory controller cycle. As a re-
+nent. For example, if the type of the instruction is DDR, the           sult, our SoftMC implementation fetches and dispatches two
+dispatcher decodes the control signals and address bits from            instructions from the instruction queue every cycle.
+the instruction, and then sends them to the DRAM using the                 Performance. To evaluate the performance of our proto-
+DDR PHY. Since the FPGAs operate at a lower frequency than              type, we time the execution of a test routine that performs oper-
+the memory bus, the dispatcher supports fetching and issuing            ations on a particular region of the DRAM and then reads data
+of multiple DDR commands per cycle. As another example,                 back from this region, repeating the test on different DRAM
+if the instruction type is WAIT, it is not sent to the DRAM,            regions until the entire DRAM module has been tested. We
+but is instead used to count down the number of cycles before           model the expected overall execution time of the test as:
+the instruction dispatcher can issue the next instruction to                                                             Capacity
+                                                                          Expected Execution Time = (S + E + R) ∗                   (1)
+the DRAM. Other instruction types (e.g., BUSDIR, END) are                                                               Region Size
+handled in a similar manner.
+   Read Capture Module. After a READ command is sent to                 where S (Send), E (Execute), and R (Receive) are the host-to-
+the DRAM module, the read capture module receives the data              FPGA PCIe latency, execution time of the command sequence
+emitted by the DRAM from the DDR PHY, and sends it to the               in the FPGA, and FPGA-to-host PCIe latency, respectively, that
+host machine via the PCIe controller. The read capture module           is required for each DRAM region. For our prototype, we mea-
+is responsible for ensuring data alignment and ordering, in             sure S and R to both be 22 µs on average (with ±2 µs variation).
+case the DDR PHY operates on a different clock domain or                E varies based on the length of the command sequence. For
+reorders the data output.                                               the sequence given in Program 2, which we use in our first use
+   Auto-Refresh Controller. The auto-refresh controller in-             case (Section 6.1), we calculate E as 16 µs using typical DDR3
+cludes two registers, which store the refresh interval (tREFI)          timing parameters. Since that command sequence tests only
+
+
+                                                                    6
+
+
+===== Page 7 =====
+
+a single 8KB row, the Region Size is 8KB. For an experiment                   Employing a Specific Refresh Interval. Using SoftMC,
+testing a full 4GB memory module completely, we find that                  we can implement the target refresh interval in two ways. We
+our prototype runs Program 2 on the entire module in approx-               can use the auto-refresh support provided by the SoftMC hard-
+imately 31.5 seconds. An at-speed DRAM controller, which, at               ware, by setting the tREFI parameter to our target value, and
+best, has S and R equal to zero, would run the same test in ap-            letting the FPGA take care of the refresh operations. Alterna-
+proximately 11.5 seconds, i.e., only 2.7x faster. As E increases,          tively, we can disable auto-refresh, and manually control the
+the performance of our SoftMC prototype gets closer to the                 refresh operations from the software. In this case, the user is
+performance of an at-speed DRAM controller. We conclude                    responsible for issuing refresh operations at the right time. In
+that our SoftMC prototype is fast enough to run test routines              this retention test, we disable auto-refresh and use a software
+that cover an entire memory module.                                        clock to determine when we should read back data from the
+                                                                           row (i.e., refresh the row).
+6. Example Use Cases                                                        1           InstructionSequence iseq;
+                                                                            2           iseq.insert(genACT(bank, row));
+   Using our SoftMC prototype, we perform two case studies on               3           iseq.insert(genWAIT(tRCD));
+randomly-selected real DRAM chips from three manufacturers.                 4           for(int col = 0; col < COLUMNS; col++){
+                                                                            5               iseq.insert(genWR(bank, col, data));
+First, we discuss how a simple retention test can be imple-                 6               iseq.insert(genWAIT(tBL));
+mented using SoftMC, and present the experimental results of                7           }
+that test (Section 6.1). Second, we demonstrate how SoftMC                  8           iseq.insert(genWAIT(tCL + tWR));
+can be leveraged to test the expected effect of two recently-               9           iseq.insert(genPRE(bank));
+                                                                           10           iseq.insert(genWAIT(tRP));
+proposed mechanisms that aim to reduce DRAM access latency                 11           iseq.insert(genEND());
+(Section 6.2). Both use cases demonstrate the flexibility and              12           iseq.execute(fpga));
+ease of use of SoftMC.                                                     Program 2: Writing data to a row using the SoftMC API.
+6.1. Retention Time Distribution Study                                        Reading Data from DRAM. Reading data back from the
+                                                                           DRAM requires steps similar to DRAM writes (presented in
+   This test aims to characterize data retention time in different         Program 2). The only difference is that, instead of issuing a
+DRAM modules. The retention time of a cell can be determined               WRITE command, we need to issue a READ command and
+by testing the cell with different refresh intervals. The cell fails       enforce read-related timing parameters. In the SoftMC API,
+at a refresh interval that is greater than its retention time.             this is done by calling the genRD() function in place of the
+In this test, we gradually increase the refresh interval from              genWR() function, and specifying the appropriate read-related
+the default 64 ms and count the number of bytes that have an               timing parameters. After the read operation is done, the FPGA
+incorrect value at each refresh interval.                                  sends back the data read from the DRAM module, and the user
+6.1.1. Test Methodology. We perform a simple test to mea-                  can access that data using the fpga_recv() function provided
+sure the retention time of the cells in a DRAM chip. Our test              by the driver.
+consists of three steps: (i) We write a reference data pattern                Based on the intuitive code implementation of the retention
+(e.g. all zeros, or all ones) to an entire row. (ii) We wait for the       test, we conclude that it requires minimal effort to write test
+specified refresh interval, so that the row is idle for that time          programs using the SoftMC API. Our full test is provided in
+and all cells gradually leak charge. (iii) We read data back from          our open-source release [88] and described in our extended
+the same row and compare it against the reference pattern that             technical report [28].
+we wrote in the first step. Any mismatch indicates that the cell           6.1.3. Results. We perform the retention time test at room tem-
+could not hold its data for that duration, which resulted in a             perature, using 24 chips from three major manufacturers. We
+bit flip. We count the number of bytes that have bit flips for             vary the refresh interval from 64 ms to 8192 ms exponentially.
+each test.                                                                 Figure 5 shows the results for the test, where the x-axis shows
+   We repeat this procedure for all rows in the DRAM module.               the refresh interval in milliseconds, and the y-axis shows the
+The read and write operations in the test are issued with the              number of erroneous bytes found in each interval. We make
+standard timing parameters, to make sure that the only timing              two major observations.
+delay that affects the cells is the refresh interval.                         (i) We do not observe any retention failures until we test
+6.1.2. Implementation with SoftMC.                                         with a refresh interval of 1 s. This shows that there is a large
+   Writing Data to DRAM. In Program 2, we present the im-                  safety margin for the refresh interval in modern DRAM chips,
+plementation of the first part of our retention time test, where           which is conservatively set to 64 ms by the DDR standard.2
+we write data to a row, using the SoftMC API. First, to activate
+the row, we insert the instruction generated by the genACT()                    2 DRAM manufacturers perform retention tests that are similar to ours
+
+function to an instance of the InstructionSequence (Lines 1-2).            (but with proprietary in-house infrastructures that are not disclosed). Their
+This function is followed by a genWAIT() function (Line 3) that            results are similar to ours [18, 42, 56, 61], showing significant margin for the
+                                                                           refresh interval. This margin is added to ensure reliable DRAM operation
+ensures that the activation completes with the standard timing             for the worst-case operating conditions (i.e., worst case temperature) and for
+parameter tRCD. Second, we issue write instructions to write               worst-case cells, as has been shown by prior works [18, 42, 56, 61].
+the data pattern in each column of the row. This is implemented
+                                                                                             8000
+in a loop, where, in each iteration, we call genWR() (Line 5),
+                                                                           Erroneous Bytes
+
+
+
+
+                                                                                                                                         Module B
+followed by a call to genWAIT() function (Line 6) that ensures                               6000
+                                                                              Number of
+
+
+
+
+proper delay between two WRITE operations. After writing                                                                          Module C
+                                                                                             4000
+to all columns of the row, we insert another delay (Line 8) to                                                            Module A
+account for the write recovery time (Section 2.2). Third, once we                            2000
+have written to all columns, we close the row by precharging                                   0
+it. This is done by the genPRE() function (Line 9), followed by a                                   0   1000   2000   3000    4000    5000    6000   7000   8000
+genWAIT() function with standard tRP timing. Finally, we call                                                         Refresh Interval (ms)
+the genEND() function to indicate the end of the instruction
+sequence, and send the test program to the FPGA by calling                 Figure 5: Number of erroneous bytes observed in reten-
+the execute() function.                                                    tion time tests.
+
+                                                                       7
+
+
+===== Page 8 =====
+
+   (ii) We observe that the number of failures increases expo-               the command sequence that we use to test whether recently-
+nentially with the increase in refresh interval.                             refreshed DRAM cells can be accessed with a lower tRCD,
+   Prior experimental studies on retention time of DRAM cells                compared to cells that are close to the end of the refresh interval.
+have reported similar observations as ours [26, 31, 42, 56, 61].             We perform the write and read operations to each DRAM row
+We conclude that SoftMC can easily reproduce prior known                     one column at a time, to ensure that each read incurs the tRCD
+DRAM experimental results, validating the correctness of our                 latency. First ( 1 in Figure 6a), we perform a reference write to
+testing infrastructure and showing its flexibility and ease of               the DRAM column under test by issuing ACTIVATE, WRITE,
+use.                                                                         and PRECHARGE successively with the default DRAM timing
+                                                                             parameters. Next ( 2 ), we wait for the duration of a time
+6.2. Evaluating the Expected Effect of Two                                   interval (T1), which is the refresh interval in practice, to vary
+     Recently-Proposed Mechanisms in Existing                                the charge contained in the cells. When we wait longer, we
+     DRAM Chips                                                              expect the target cells to have less charge at the end of the
+    Two recently-proposed mechanisms, ChargeCache [27] and                   interval. We cover a wide range of wait intervals, evaluating
+NUAT [87], provide low-latency access to highly-charged                      values between 1 and 512 ms. Finally ( 3 ), we read the data
+DRAM cells. They both are based on the key idea that a                       from the column that we previously wrote to and compare
+highly-charged cell can be accessed faster than a cell with                  it with the reference pattern. We perform the read with the
+less charge [56]. ChargeCache observes that cells belonging                  custom tRCD value for that specific test. We evaluate tRCD
+to recently-accessed DRAM rows are in a highly-charged state                 values ranging from 3 to 6 (default) cycles. Since a tRCD of 3
+and that such rows are likely to be accessed again in the near               cycles produced errors in every run, we did not perform any
+future. ChargeCache exploits the highly-charged state of these               experiments with a lower tRCD.
+recently-accessed rows to lower the latency for later accesses                  We process multiple rows in an interleaved manner (i.e., we
+to them. NUAT observes that recently-refreshed cells are in                  write to multiple rows, wait, and then verify their data one after
+highly-charged state, and thus it lowers the latency for accesses            another) in order to further stress the reliability of DRAM [56].
+to recently-refreshed rows. Prior to issuing an ACTIVATE                     We repeat this process for all DRAM rows to evaluate the entire
+command to DRAM, both ChargeCache and NUAT determine                         memory module.
+whether the target row is in a highly-charged state. If so, the
+memory controller uses reduced tRCD and tRAS timing pa-                            Write the data 1             Read (with custom tRCD) the
+rameters to perform the access.                                                  pattern to a column              column data and verify 3
+    In this section, we evaluate whether or not the expected
+latency reduction effect of these two works is observable in
+existing DRAM modules, using SoftMC. We first describe our                                                   Wait (T1) 2
+methodology for evaluating the improvement in the tRCD and
+tRAS parameters. We then show the results we obtain using                                              (a) tRCD Test
+SoftMC, and discuss our observations.
+                                                                                  Write the data           ACT-PRE 3 Read row data and
+6.2.1. Evaluating DRAM Latency with SoftMC.                                                       1
+                                                                                 pattern to a row      (with custom tRAS)  verify 5
+   Methodology. In our experiments, we use 24 DDR3 chips
+(i.e., three SO-DIMMs) from three major vendors. To stress
+DRAM reliability and maximize the amount of cell charge leak-                                  Wait (T2) 2            Wait (T3) 4
+age, we raise the test temperature to 80◦ C (significantly higher
+than the common-case operating range of 35-55◦ C [56]) by                                         (b) tRAS Test
+enclosing our FPGA infrastructure in a temperature-controlled                Figure 6: Timelines that illustrate the methodology for
+heat chamber (see Figure 2). For all experiments, the tempera-
+ture within the heat chamber was maintained within 0.5◦ C of                 testing the improvement of (a) tRCD and (b) tRAS on
+the target 80◦ C temperature.                                                highly-charged DRAM cells.
+    To study the impact of charge variation in cells on access la-              tRAS Test. We measure the effect of accessing highly-
+tency in existing DRAM chips, which is dominated by the tRCD                 charged rows on the tRAS timing parameter by issuing the
+and tRAS timing parameters [18, 56, 57] (see Section 2.2), we                ACTIVATE and PRECHARGE commands, with a custom tRAS
+perform experiments to test the headroom for reducing these                  value, to a row. We check if that row still contains the same data
+parameters. In our experiments, we vary one of the two timing                that it held before the ACTIVATE-PRECHARGE command pair
+parameters, and test whether the original data can be read                   was issued. Figure 6b illustrates the methodology for testing
+back correctly with the reduced timing. If the data that is
+read out contains errors, this indicates that the timing param-              the effect of the refresh interval on tRAS. First ( 1 ), we write
+eter cannot be reduced to the tested value without inducing                  the reference data pattern to the selected DRAM row with the
+errors in the data. We perform the tests using a variety of                  default timing parameters. Different from the tRCD test, we
+data patterns (e.g., 0x00, 0xFF, 0xAA, 0x55) because 1) different            write to every column in the open row (before switching to an-
+DRAM cells store information (i.e., 0 or 1) in different states (i.e.,       other row) to save cycles by eliminating a significant amount
+charged or empty) [61] and 2) we would like to stress DRAM                   of ACTIVATE and PRECHARGE commands, thereby reducing
+reliability by increasing the interference between adjacent bit-             the testing time. Next ( 2 ), we wait for the duration of time in-
+lines [43, 44, 61]. We also perform tests using different refresh            terval T2, during which the DRAM cells lose a certain amount
+intervals, to study whether the variation in charge leakage                  of charge. To refresh the cells ( 3 ), we issue an ACTIVATE-
+increases significantly if the time between refreshes increases.             PRECHARGE command pair associated with a custom tRAS
+    tRCD Test. We measure how highly-charged cells affect                    value. When the ACTIVATE-PRECHARGE pair is issued, the
+the tRCD timing parameter, by using a custom tRCD value to                   charge in the cells of the target DRAM row may not be fully
+read data from a row to which we previously wrote a reference                restored if the wait time is too long or the tRAS value is too
+data pattern. We adjust the time between writing a reference                 short, potentially leading to loss of data. Next ( 4 ), we wait
+data pattern and performing the read, to vary the amount of                  again for a period of time T3 to allow the cells to leak a portion
+charge stored within the cells of a row. In Figure 6a, we show               of their charge. Finally ( 5 ), we read the row using the default
+
+
+                                                                         8
+
+
+===== Page 9 =====
+
+timing parameters and test whether it still retains the correct                                                                                                       higher than the common-case operating conditions, we can
+data. Similar to the tRCD test, to stress the reliability of DRAM,                                                                                                    significantly reduce tRCD and tRAS parameters, without ob-
+we simultaneously perform the tRAS test on multiple DRAM                                                                                                              serving any errors. We observe errors only when tRCD and
+rows.                                                                                                                                                                 tRAS parameters are too small to correctly perform the DRAM
+   We would expect, from this experiment, that the data is                                                                                                            access, regardless of the charge amount of the accessed cells.
+likely to maintain its integrity when evaluating reduced tRAS                                                                                                            (ii) The large safety margin employed by the manufacturers
+with shorter wait times (T2), as the higher charge retained in                                                                                                        protects DRAM against errors even when accessing DRAM cells
+a cell with a short wait time can enable a reliable reduction on                                                                                                      with low latency. We observe no change in the number of in-
+tRAS. In contrast, we would expect failures to be more likely                                                                                                         duced errors for tRCD values less than the default of 6 cycles
+when using a reduced tRAS with a longer wait time, because                                                                                                            (down to 4 cycles in modules A and B, and 5 cycles in module
+the cells would have a low amount of charge that is not enough                                                                                                        C). We observe a similar trend in the tRAS test: tRAS can be
+to reliably reduce tRAS.                                                                                                                                              reduced from the default value of 14 cycles to 5 cycles with-
+6.2.2. Results. We analyze the results of the tRCD and tRAS                                                                                                           out increasing the number of induced errors for any refresh
+tests, for 24 real DRAM chips from different vendors, using                                                                                                           interval.
+the test programs detailed in Section 6.2.1. We evaluate tRCD                                                                                                            We conclude that even at temperatures much higher than
+values ranging from 3 to 6 cycles, and tRAS values ranging                                                                                                            typical operating conditions, there exists a large safety margin
+from 2 to 14 cycles, where the maximum number for each is                                                                                                             for access latency in existing DRAM chips. This demonstrates
+the default timing parameter value. For both tests, we evalu-                                                                                                         that DRAM cells are much stronger than their timing specifi-
+ate refresh intervals between 8 and 512 ms and measure the                                                                                                            cations indicate.4 In other words, the timing margin in most
+number of observed errors during each experiment.                                                                                                                     DRAM cells is very large, given the existing timing parameters.
+   Figures 7 and 8 depict the results for the tRCD test and the                                                                                                          (iii) The expected effect of ChargeCache and NUAT, that highly-
+tRAS test, respectively, for three DRAM modules (each from a                                                                                                          charged cells can be accessed with lower latency, is slightly ob-
+different DRAM vendor). We make three major observations:                                                                                                             servable only when very long refresh intervals are used. For each
+   (i) Within the duration of the standard refresh interval (64 ms),                                                                                                  of the tests, we observe a significant increase in the number
+DRAM cells do not leak a sufficient amount of charge to have a                                                                                                        of errors at refresh intervals that are much higher than the
+negative impact on DRAM access latency.3 For refresh intervals                                                                                                        typical refresh interval of 64 ms, demonstrating the variation
+less than or equal to 64 ms, we observe little to no variation                                                                                                        in charge held by each of the DRAM cells. Based on the as-
+in the number of errors induced. Within this refresh interval                                                                                                         sumptions made by ChargeCache and NUAT, we expect that
+range, depending on the tRCD or tRAS value, the errors gen-                                                                                                           when lower values of tRCD and tRAS are employed, the error
+erated are either zero or a constant number. We make the same                                                                                                         rate should increase more rapidly. However, we find that for all
+observation in both the tRCD and tRAS tests for all three                                                                                                             but the minimum values of tRCD and tRAS (and for tRCD = 4
+DRAM modules.                                                                                                                                                         for module C), the tRCD and tRAS latencies have almost no
+   For all the modules tested, using different data patterns and                                                                                                      impact on the error rate.
+stressing DRAM operation with temperatures significantly                                                                                                                 We believe that the reason we cannot observe the expected
+                                                                                                                                                                      latency reduction effect of ChargeCache and NUAT on exist-
+     3 Other studies have shown methods to take advantage of the fact that
+latencies can be reduced without incurring errors [18, 56].                                                                                                                       4 Similar observations were made by prior work [17, 18, 56].
+
+
+                              500                                                                              1000000                                                                                                      10000000
+                                                                                                                                                                                                Number of Erroneous Bytes
+  Number of Erroneous Bytes
+
+
+
+
+                                                                                   Number of Erroneous Bytes
+
+
+
+
+                                                  tRCD (cycles)                                                     100000                                                                                                       1000000
+                              400                                                                                                                   tRCD (cycles)                                                                                                     tRCD (cycles)
+                                                6    5     4      3                                                                               6    5      4           3                                                               100000
+                                                                                                                             10000                                                                                                                                6      5      4         3
+                              300                                                                                                                                                                                                                   10000
+                                                                                                                                     1000
+                              200                                                                                                                                                                                                                    1000
+                                                                                                                                      100
+                                                                                                                                                                                                                                                      100
+                              100                                                                                                      10
+                                                                                                                                                                                                                                                       10
+                                        0                                                                                                   1                                                                                                              1
+                                                                                                                                                 40
+                                                                                                                                                 72
+                                                                                                                                                  8
+
+
+                                                                                                                                                104
+                                                                                                                                                136
+                                                                                                                                                168
+                                                                                                                                                200
+                                                                                                                                                232
+                                                                                                                                                264
+                                                                                                                                                296
+                                                                                                                                                328
+                                                                                                                                                360
+                                                                                                                                                392
+                                                                                                                                                424
+                                                                                                                                                456
+                                                                                                                                                488
+                                             40
+                                             72
+                                              8
+
+
+                                            104
+
+                                            168
+
+                                            232
+
+
+                                            328
+
+                                            392
+
+                                            456
+                                            488
+                                            136
+
+                                            200
+
+                                            264
+                                            296
+
+                                            360
+
+                                            424
+
+
+
+
+                                                                                                                                                                                                                                                                40
+                                                                                                                                                                                                                                                                72
+                                                                                                                                                                                                                                                                 8
+
+
+                                                                                                                                                                                                                                                               104
+                                                                                                                                                                                                                                                               136
+                                                                                                                                                                                                                                                               168
+                                                                                                                                                                                                                                                               200
+                                                                                                                                                                                                                                                               232
+                                                                                                                                                                                                                                                               264
+                                                                                                                                                                                                                                                               296
+                                                                                                                                                                                                                                                               328
+                                                                                                                                                                                                                                                               360
+                                                                                                                                                                                                                                                               392
+                                                                                                                                                                                                                                                               424
+                                                                                                                                                                                                                                                               456
+                                                          Refresh Interval (ms)                                                                         Refresh Interval (ms)                                                                                  488           Refresh Interval (ms)
+
+                                                     (a) Module A                                                                                 (b) Module B                                                                                                        (c) Module C
+                                                         Figure 7: Effect of reducing tRCD on the number of errors at various refresh intervals.
+
+                                        40000                                                                                        1200                                                                                                           2400
+                                                  tRAS (cycles)                                                                                 tRAS (cycles)                                                                                                  tRAS (cycles)
+                                                                                                                                                                                                                        Number of Erroneous Bytes
+            Number of Erroneous Bytes
+
+
+
+
+                                                                                                         Number of Erroneous Bytes
+
+
+
+
+                                                    14     11     8   5   2                                                          1000        14    11     8       5       2                                                                     2000        14      11     8      5       2
+                                        30000
+                                                                                                                                     800                                                                                                            1600
+
+                                        20000                                                                                        600                                                                                                            1200
+
+                                                                                                                                     400                                                                                                            800
+                                        10000
+                                                                                                                                     200                                                                                                            400
+
+                                            0                                                                                          0                                                                                                              0
+                                                                                                                                                                                                                                                           104
+
+
+                                                                                                                                                                                                                                                           200
+
+
+                                                                                                                                                                                                                                                           296
+
+
+                                                                                                                                                                                                                                                           392
+                                                                                                                                                                                                                                                             8
+                                                                                                                                                                                                                                                            40
+                                                                                                                                                                                                                                                            72
+
+                                                                                                                                                                                                                                                           136
+                                                                                                                                                                                                                                                           168
+
+                                                                                                                                                                                                                                                           232
+                                                                                                                                                                                                                                                           264
+
+                                                                                                                                                                                                                                                           328
+                                                                                                                                                                                                                                                           360
+
+                                                                                                                                                                                                                                                           424
+                                                                                                                                                                                                                                                           456
+                                                                                                                                                                                                                                                           488
+                                                  8
+                                                 40
+                                                 72
+                                                104
+
+
+                                                200
+
+
+                                                296
+
+
+                                                392
+                                                136
+                                                168
+
+                                                232
+                                                264
+
+                                                328
+                                                360
+
+                                                424
+                                                456
+                                                488
+
+
+
+                                                                                                                                              8
+                                                                                                                                             40
+                                                                                                                                             72
+                                                                                                                                            104
+
+
+                                                                                                                                            200
+
+
+                                                                                                                                            296
+
+
+                                                                                                                                            392
+                                                                                                                                            136
+                                                                                                                                            168
+
+                                                                                                                                            232
+                                                                                                                                            264
+
+                                                                                                                                            328
+                                                                                                                                            360
+
+                                                                                                                                            424
+                                                                                                                                            456
+                                                                                                                                            488
+
+
+
+
+                                                           Refresh Interval (ms)                                                                        Refresh Interval (ms)                                                                                            Refresh Interval (ms)
+                                                         (a) Module A                                                                                 (b) Module B                                                                                                     (c) Module C
+                                                         Figure 8: Effect of reducing tRAS on the number of errors at various refresh intervals.
+
+
+                                                                                                                                                                  9
+
+
+===== Page 10 =====
+
+ing DRAM modules is due to the internal behavior of existing              using SoftMC while avoiding the PCIe bus latency. This func-
+DRAM chips that does not allow latencies to be reduced be-                tionality requires coordination between the system/simulator
+yond a certain point: we cannot externally control when the               and SoftMC, and we expect to add such support by enabling
+sense amplifier gets enabled, since this is dictated with a fixed         coordination between our DRAM simulator, Ramulator [50, 80],
+latency internally, regardless of the charge amount in the cell.          and a future release of SoftMC.
+The sense amplifiers are enabled only after charge sharing,                  Coarse-Grained Timing Resolution. As FPGAs are sig-
+which starts by enabling the wordline and lasts until sufficient          nificantly slower than the memory bus, the minimum time
+amount of charge flows from the activated cell into the bit-              interval between two consecutive commands that the FPGA
+line (See Section 2.2), is expected to complete. Within existing          can send to the memory bus is limited by the FPGA frequency.
+DRAM chips, the expected charge sharing latency (i.e., the time           In our current prototype, the DDR interface of the ML605
+when the sense amplifiers get enabled) is not represented by a            operates at 400MHz, allowing SoftMC to issue two consecu-
+timing parameter managed by the memory controller. Instead,               tive commands with a minimum interval of 2.5 ns. Therefore,
+the latency is controlled internally within the DRAM using                the timing parameters in SoftMC can be changed only at the
+a fixed value [40, 94]. ChargeCache and NUAT require that                 granularity of 2.5 ns. However, it is possible to support finer-
+charge sharing completes in less time, and the sense amplifiers           granularity resolution with faster FPGA boards [102].
+get enabled faster for a highly-charged cell. However, since                 Limitation on the Number of Instructions Stored in
+existing DRAMs provide no way to control the time it takes to             the FPGA. The number of instructions in one test program
+enable the sense amplifiers, we cannot harness the potential              (that is executed atomically in SoftMC) is limited by the size of
+latency reduction possible for highly-charged cells [94]. Re-             the Instruction Queue in SoftMC. To keep FPGA resource usage
+ducing tRCD affects the time spent only after charge sharing,             low, the size of the Instruction Queue in the current SoftMC
+at which point the bitline voltages exhibit similar behavior re-          prototype is limited to 8192 instructions. In the future, instead
+gardless of the amount of charge initially stored within the cell.        of increasing the size of the Instruction Queue, which would
+Consequently, we are unable to observe the expected latency               increase resource utilization in the FPGA, we plan to extend
+reduction effect of ChargeCache and NUAT by simply reducing               the SoftMC hardware with control flow instructions to support
+tRCD, even though we believe that the mechanisms are sound                arbitrary-length tests. Adding control flow instructions would
+and can reduce latency (assuming the behavior of DRAM chips               enable loops that can iterate over large structures (e.g., DRAM
+is modified). If the DDR interface exposes a method of con-               rows, columns) in hardware with a small number of SoftMC
+trolling the time it takes to enable the sense amplifiers in the          instructions, avoiding the need for the host machine to issue a
+future, SoftMC can be easily modified to use the method and               large number of instructions in a loop-unrolled manner. Such
+fully evaluate the latency reduction effect of ChargeCache and            control flow support would further improve the ease of use of
+NUAT.                                                                     SoftMC.
+   Summary. Overall, we make two major conclusions from
+the implementation and experimental results of our DRAM                   8. Research Directions Enabled by SoftMC
+latency experiments. First, SoftMC provides a simple and easy-                We believe SoftMC can enable many new studies of the
+to-use interface to quickly implement tests that characterize             behavior of DRAM and other memories. We briefly describe
+modern DRAM chips. Second, SoftMC is an effective tool                    several examples in this section.
+to validate or refute the expected effect of existing or new                  More Characterization of DRAM. The SoftMC DRAM
+mechanisms on existing DRAM chips.                                        testing infrastructure can test any DRAM mechanism consist-
+                                                                          ing of low-level DDR commands. Therefore, it enables a wide
+7. Limitations of SoftMC                                                  range of characterization and analysis studies of real DRAM
+   In the previous section, we presented and discussed some               modules that would otherwise not have been possible without
+examples demonstrating the benefits of SoftMC. These use                  such an infrastructure. We discuss three such example research
+cases illustrate the flexibility, ease of use, and capability of          directions.
+SoftMC in characterizing DRAM operations and evaluating                       First, as DRAM scales down to smaller technology nodes,
+new DRAM mechanisms (using the DDR interface). Although                   it faces key challenges in both reliability and latency [38, 43–
+our SoftMC prototype already caters for a wide range of use               45, 60, 61, 65, 68, 71]. Unfortunately, there is no comprehensive
+cases, it also has some limitations that arise mainly from its            experimental study that characterizes and analyzes the trends
+current hardware implementation.                                          in DRAM cell operations and behavior with technology scaling
+   Inability to Evaluate System Performance. Studies                      across various DRAM generations. The SoftMC infrastructure
+where the applications run on the host machine and access                 can help us answer various questions to this end: How are
+memory within the module under test can demonstrate the im-               the cell characteristics, reliability, and latency changing with
+pact of memory reliability and latency on system performance              different generations of technology nodes? Do all DRAM oper-
+using real applications. However, such studies are difficult to           ations and cells get affected by scaling at the same rate? Which
+perform in any FPGA-based DRAM testing infrastructure that                DRAM operations are getting worse?
+connects the host and the FPGA over the PCIe bus (including                   Second, aging-related failures in DRAM can potentially af-
+SoftMC). This is due to the the long latency associated with              fect the reliability and availability of systems in the field [66, 84].
+the PCIe bus (in microseconds [4, 37, 51]; in contrast to DRAM            However, the causes, characteristics, and impact of aging have
+access latency that is within 15-80 ns [57, 89]). Note that this          remained largely unstudied. Using SoftMC, it is possible to
+long PCIe bus latency does not affect our tests (as explained in          devise controlled experiments to analyze and characterize ag-
+Section 5.1), but it would affect the performance of a system             ing. The SoftMC infrastructure can help us answer questions
+that would use SoftMC as the main memory controller. One                  such as: How prevalent are aging-related failures? What types
+way to enable performance studies with SoftMC is to add sup-              of usage accelerate aging? How can we design architectural
+port for trace-based execution, where the traces (i.e., memory            techniques that can slow down the aging process?
+access requests) are collected by executing workloads on real                 Third, prior works show that the failure rate of DRAM mod-
+systems or simulating them. The host PC can transform the                 ules in large data centers is significant, largely affecting the cost
+traces into SoftMC instructions and transmit them to SoftMC               and downtime in data centers [64, 66, 84, 90]. Unfortunately,
+hardware, where we can buffer the instructions and emulate                there is no study that analyzes DRAM modules that have failed
+microarchitectural behavior of a memory controller developed              in the field to determine the common causes of failure. Our
+
+
+                                                                     10
+
+
+===== Page 11 =====
+
+SoftMC infrastructure can test faulty DRAM modules and help               provides an intuitive high-level software interface for the user
+answer various research questions: What are the dominant                  to invoke low-level DRAM operations, in order to minimize
+types of DRAM failures at runtime? Are failures correlated to             programming effort and time. We provide a prototype imple-
+any location or specific structure in DRAM? Do all chips from             mentation of SoftMC, and we have released it publicly as a
+the same generation exhibit the same failure characteristics?             freely-available open-source tool [88].
+   Characterization of Non-Volatile Memory. The SoftMC                       We demonstrate the capability, flexibility, and programming
+infrastructure can test any chip compatible with the DDR in-              ease of SoftMC by implementing two example use cases. Our
+terface. Such a design makes the scope of the chips that can              experimental analyses demonstrate the effectiveness of SoftMC
+be tested by SoftMC go well beyond just DRAM. With the                    as a new tool to (i) perform detailed characterization of various
+emergence of byte addressable non-volatile memories (e.g.,                DRAM parameters (e.g., refresh interval and access latency)
+PCM [53–55, 81], STT-RAM [39, 52], ReRAM [2, 97]), several                as well as the relationships between them, and (ii) test the
+vendors are working towards manufacturing DDR-compatible                  expected effects of existing or new mechanisms (e.g., whether
+non-volatile memory chips at a large scale [23, 67]. When                 or not highly-charged cells can be accessed faster in existing
+these chips become commercially available, it will be critical to         DRAM chips). We believe and hope that SoftMC, with its
+characterize and analyze them in order to understand, exploit,            flexibility and ease of use, can enable many other studies, ideas
+and/or correct their behavior. We believe that SoftMC can                 and methodologies in the design of future memory systems, by
+be seamlessly used to characterize these chips, and can help              making memory control and characterization easily accessible
+enable future mechanisms for NVM.                                         to a wide range of software and hardware developers.
+   SoftMC will hopefully enable other works that build on it in
+various ways. For example, future work can extend the infras-             Acknowledgments
+                                                                            We thank the reviewers, the SAFARI group members, and
+tructure to enable researchers to analyze memory scheduling               Shigeki Tomishima from Intel for their feedback. We acknowl-
+(e.g., [22, 48, 49, 70, 72, 73, 92]) and memory power manage-             edge the generous support of Google, Intel, Nvidia, Samsung,
+ment [20, 21] mechanisms, and allow them to develop new                   and VMware. This work is supported in part by NSF grants
+mechanisms using a programmable memory controller and real                1212962, 1320531, and 1409723, the Intel Science and Tech-
+workloads. We conclude that characterization with SoftMC                  nology Center for Cloud Computing, and the Semiconductor
+enables a wide range of research directions in DDR-compatible             Research Corporation.
+memory chips (DRAM or NVM), leading to better understand-
+ing of these technologies and helping to develop mechanisms               References
+that improve the reliability and performance of future memory              [1] Advantest, “V6000 Memory Platform,” https://www.advantest.com/
+systems.                                                                       products/ic-test-systems/v6000-memory.
+                                                                           [2] H. Akinaga and H. Shima, “Resistive Random Access Memory (ReRAM)
+9. Other Related Work                                                          Based on Metal Oxides,” Proc. IEEE, 2010.
+                                                                           [3] P. Bernardi et al., “A Programmable BIST for DRAM Testing and Diag-
+   Although no prior work provides an open-source DRAM                         nosis,” in ITC, 2010.
+testing infrastructure similar to SoftMC, infrastructures for              [4] R. Bittner et al., “Direct GPU/FPGA Communication via PCI Express,”
+testing other types of memories have been developed. Cai et                    Cluster Computing, 2014.
+                                                                           [5] M. N. Bojnordi and E. Ipek, “PARDIS: A Programmable Memory Con-
+al. [8] developed a platform for characterizing NAND flash                     troller for the DDRx Interfacing Standards,” in ISCA, 2012.
+memory. They propose a flash controller, implemented on                    [6] S. Borkar and A. A. Chien, “The Future of Microprocessors,” in CACM,
+an FPGA, to quickly characterize error patterns of existing                    2011.
+flash memory chips. They expose the functions of the flash                 [7] Y. Cai et al., “Vulnerabilities in MLC NAND Flash Memory Programming:
+                                                                               Experimental Analysis, Exploits, and Mitigation Techniques,” in HPCA,
+translation layer (i.e., the flash chip interface) to the software             2017.
+developer via the host machine connected to the FPGA board,                [8] Y. Cai et al., “FPGA-Based Solid-State Drive Prototyping Platform,” in
+similar to how we expose the DDR interface to the user in                      FCCM, 2011.
+                                                                           [9] Y. Cai et al., “Error Patterns in MLC NAND Flash Memory: Measurement,
+SoftMC. Many works [7, 9–16, 62, 63] use this flash memory                     Characterization, and Analysis,” in DATE, 2012.
+testing infrastructure to study various aspects of flash chips.           [10] Y. Cai et al., “Threshold Voltage Distribution in MLC NAND Flash
+   Our prior works [18, 42–44, 46, 56, 58, 61] developed and                   Memory: Characterization, Analysis, and Modeling,” in DATE, 2013.
+used FPGA-based infrastructures for a wide range of DRAM                  [11] Y. Cai et al., “Read Disturb Errors in MLC NAND Flash Memory: Char-
+                                                                               acterization, Mitigation, and Recovery,” in DSN, 2015.
+studies. Liu et al. [61] and Khan et al. [42] analyzed the                [12] Y. Cai et al., “Data Retention in MLC NAND Flash Memory: Characteri-
+data retention behavior of modern DRAM chips and pro-                          zation, Optimization, and Recovery,” in HPCA, 2015.
+posed mechanisms for mitigating retention failures. Khan                  [13] Y. Cai et al., “Program Interference in MLC NAND Flash Memory: Char-
+et al. [43, 44] studied data-dependent failures in DRAM, and                   acterization, Modeling, and Mitigation,” in ICCD, 2013.
+developed techniques for efficiently detecting and handling               [14] Y. Cai et al., “Flash Correct-and-Refresh: Retention-Aware Error Man-
+                                                                               agement for Increased Flash Memory Lifetime,” in ICCD, 2012.
+them. Lee et al. [56, 58] analyzed latency characteristics of             [15] Y. Cai et al., “Error Analysis and Retention-Aware Error Management
+modern DRAM chips and proposed mechanisms for latency                          for NAND Flash Memory,” ITJ, 2013.
+reduction. Kim et al. [46] discovered a new reliability issue in          [16] Y. Cai et al., “Neighbor-Cell Assisted Error Correction for MLC NAND
+existing DRAM, called RowHammer, which can lead to security                    Flash Memories,” in SIGMETRICS, 2014.
+                                                                          [17] K. Chandrasekar et al., “Exploiting Expendable Process-Margins in
+breaches [25, 82, 85, 86, 95, 98]. Chang et al. [18] used SoftMC               DRAMs for Run-Time Performance Optimization,” in DATE, 2014.
+to characterize latency variation across DRAM cells for funda-            [18] K. K. Chang et al., “Understanding Latency Variation in Modern DRAM
+mental DRAM operations (e.g., activation, precharge). SoftMC                   Chips: Experimental Characterization, Analysis, and Optimization,” in
+evolved out of these previous infrastructures, to address the                  SIGMETRICS, 2016.
+                                                                          [19] K. K.-w. Chang et al., “Improving DRAM Performance by Parallelizing
+need to make the infrastructure flexible and easy to use.                      Refreshes with Accesses,” in HPCA, 2014.
+                                                                          [20] H. David et al., “Memory Power Management via Dynamic Voltage/Fre-
+10. Conclusion                                                                 quency Scaling,” in ICAC, 2011.
+   This work introduces the first publicly-available FPGA-based           [21] Q. Deng et al., “MemScale: Active Low-Power Modes for Main Memory,”
+                                                                               in ASPLOS, 2011.
+DRAM testing infrastructure, SoftMC (Soft Memory Controller),             [22] E. Ebrahimi et al., “Parallel Application Memory Scheduling,” in MICRO,
+which provides a programmable memory controller with a flex-                   2011.
+ible and easy-to-use software interface. SoftMC enables the               [23] EverSpin, “ST-MRAM,” https://www.everspin.com/mram-replaces-
+                                                                               dram.
+flexibility to test any standard DRAM operation and any (ex-              [24] FuturePlus, “FS2800 DDR Detective,” http://www.futureplus.com/DDR-
+isting or new) mechanism comprising of such operations. It                     Detective-Standalone/summary-2800.html.
+
+
+                                                                     11
+
+
+===== Page 12 =====
+
+[25] D. Gruss et al., “Rowhammer.js: A Remote Software-Induced Fault                 [65] J. Mandelman et al., “Challenges and Future Directions for the Scaling
+     Attack in JavaScript,” in arXiv, 2015.                                               of Dynamic Random-Access Memory (DRAM),” IBM JRD, 2002.
+[26] T. Hamamoto et al., “On the Retention Time Distribution of Dynamic              [66] J. Meza et al., “Revisiting Memory Errors in Large-Scale Production
+     Random Access Memory (DRAM),” Electron Devices, 1998.                                Data Centers: Analysis and Modeling of New Trends from the Field,” in
+[27] H. Hassan et al., “ChargeCache: Reducing DRAM Latency by Exploiting                  DSN, 2015.
+     Row Access Locality,” in HPCA, 2016.                                            [67] Micron, “3D XPoint Memory,” http://www.micron.com/about/
+[28] H. Hassan et al., “SoftMC: A Flexible and Practical Open-Source Infras-              innovations/3d-xpoint-technology, 2016.
+     tructure for Enabling Comprehensive Experimental Characterization               [68] W. Mueller et al., “Challenges for the DRAM Cell Scaling to 40nm,” in
+     of Existing DRAM Chips,” Carnegie Mellon Univ., SAFARI Research                      IEDM, 2005.
+     Group, Tech. Rep. 2017-001, 2017.                                               [69] J. Mukundan et al., “Understanding and Mitigating Refresh Overheads
+[29] P. Hazucha and C. Svensson, “Impact of CMOS Technology Scaling on                    in High-Density DDR4 DRAM Systems,” in ISCA, 2013.
+     the Atmospheric Neutron Soft Error Rate,” TNS, 2000.                            [70] S. P. Muralidhara et al., “Reducing Memory Interference in Multicore
+[30] H. Hidaka et al., “Twisted Bit-Line Architectures for Multi-Megabit                  Systems via Application-Aware Memory Channel Partitioning,” in MI-
+     DRAMs,” JSSC, 1989.                                                                  CRO, 2011.
+[31] C. Hou et al., “An FPGA-Based Test Platform for Analyzing Data Reten-           [71] O. Mutlu, “Memory Scaling: A Systems Architecture Perspective,” IMW,
+     tion Time Distribution of DRAMs,” in VLSI-DAT, 2013.                                 2013.
+[32] J. Huang et al., “An FPGA-Based Re-Configurable Functional Tester for           [72] O. Mutlu and T. Moscibroda, “Stall-Time Fair Memory Access Scheduling
+     Memory Chips,” in ATS, 2000.                                                         for Chip Multiprocessors,” in MICRO, 2007.
+[33] M. Jacobsen et al., “RIFFA 2.1: A Reusable Integration Framework for            [73] O. Mutlu and T. Moscibroda, “Parallelism-Aware Batch Scheduling:
+     FPGA Accelerators,” TRETS, 2015.                                                     Enhancing Both Performance and Fairness of Shared DRAM Systems,”
+[34] JEDEC, “DDR3 SDRAM Standard,” JESD79-3, 2007.                                        in ISCA, 2008.
+[35] JEDEC, “Low Power Double Data Rate 3 (LPDDR4),” Standard No.                    [74] Y. Nakagome et al., “The Impact of Data-Line Interference Noise on
+     JESD209-4, 2014.                                                                     DRAM Scaling,” JSSC, 1988.
+[36] T. S. Jung, “Memory Technology and Solutions Roadmap,” http://www.              [75] S. Nassif, “Delay Variability: Sources, Impacts and Trends,” in ISSCC,
+     sec.co.kr/images/corp/ir/irevent/techforum_01.pdf, 2005.                             2000.
+[37] E. Kadric et al., “An FPGA Implementation for a High-Speed Optical              [76] Nickel Electronics, “DRAM Memory Testing,” https://www.
+     Link with a PCIe Interface,” in SoC, 2012.                                           nickelelectronics.com/memory-testing/.
+[38] U. Kang et al., “Co-Architecting Controllers and DRAM to Enhance                [77] B. Querbach et al., “A Reusable BIST with Software Assisted Repair
+     DRAM Process Scaling,” in The Memory Forum, 2014.                                    Technology for Improved Memory and IO Debug, Validation and Test
+[39] T. Kawahara et al., “2 Mb SPRAM (SPin-Transfer Torque RAM) with bit-                 Time,” in ITC, 2014.
+     by-bit bi-directional current write and parallelizing-direction current         [78] B. Querbach et al., “Architecture of a Reusable BIST Engine for Detection
+     read,” JSSC, 2008.                                                                   and Auto Correction of Memory Failures and for IO Debug, Validation,
+[40] B. Keeth, “DRAM Circuit Design: Fundamental and High-Speed Topics.”                  Link Training, and Power Optimization on 14nm SOC,” IEEE D&T, 2016.
+     John Wiley & Sons, 2008, pp. 26–31.                                             [79] M. Qureshi et al., “AVATAR: A Variable-Retention-Time (VRT) Aware
+[41] D. Keezer et al., “An FPGA-Based ATE Extension Module for Low-Cost                   Refresh for DRAM Systems,” in DSN, 2015.
+     Multi-GHz Memory Test,” in ETS, 2015.                                           [80] Ramulator Source Code, https://github.com/CMU-SAFARI/ramulator.
+[42] S. Khan et al., “The Efficacy of Error Mitigation Techniques for DRAM           [81] S. Raoux et al., “Phase-Change Random Access Memory: A Scalable
+     Retention Failures: A Comparative Experimental Study,” in SIGMETRICS,                Technology,” IBM JRD, 2008.
+     2014.                                                                           [82] K. Razavi et al., “Flip Feng Shui: Hammering a Needle in the Software
+[43] S. Khan et al., “PARBOR: An Efficient System-Level Technique to Detect               Stack,” in USENIX Sec., 2016.
+     Data-Dependent Failures in DRAM,” in DSN, 2016.                                 [83] M. Redeker et al., “An Investigation into Crosstalk Noise in DRAM
+[44] S. Khan et al., “A Case for Memory Content-Based Detection and Miti-                 Structures,” in MTDT, 2002.
+     gation of Data-Dependent Failures in DRAM,” CAL, 2016.                          [84] B. Schroeder et al., “DRAM Errors in the Wild: A Large-Scale Field
+[45] K. Kim, “Technology for Sub-50nm DRAM and NAND Flash Manufac-                        Study,” in SIGMETRICS, 2009.
+     turing,” in IEDM, 2005.                                                         [85] M. Seaborn and T. Dullien, “Exploiting the DRAM Rowhammer Bug to
+[46] Y. Kim et al., “Flipping Bits in Memory without Accessing Them: An                   Gain Kernel Privileges,” https://googleprojectzero.blogspot.com/2015/
+     Experimental Study of DRAM Disturbance Errors,” in ISCA, 2014.                       03/exploiting-dram-rowhammer-bug-to-gain.html, 2015.
+[47] Y. Kim et al., “A Case for Exploiting Subarray-Level Parallelism (SALP)         [86] M. Seaborn and T. Dullien, “Exploiting the DRAM Rowhammer Bug to
+     in DRAM,” in ISCA, 2012.                                                             Gain Kernel Privileges,” in Black Hat, 2015.
+[48] Y. Kim et al., “ATLAS: A Scalable and High-Performance Scheduling               [87] W. Shin et al., “NUAT: A Non-Uniform Access Time Memory Controller,”
+     Algorithm for Multiple Memory Controllers,” in HPCA, 2010.                           in HPCA, 2014.
+[49] Y. Kim et al., “Thread Cluster Memory Scheduling: Exploiting Differ-            [88] SoftMC Source Code, https://github.com/CMU-SAFARI/SoftMC.
+     ences in Memory Access Behavior,” in MICRO, 2010.                               [89] Y. Son et al., “Reducing Memory Access Latency with Asymmetric
+[50] Y. Kim et al., “Ramulator: A Fast and Extensible DRAM Simulator,” in                 DRAM Bank Organizations,” ISCA, 2013.
+     CAL, 2015.                                                                      [90] V. Sridharan et al., “Feng Shui of Supercomputer Memory: Positional
+[51] M. J. Koop et al., “Performance Analysis and Evaluation of PCIe 2.0 and              Effects in DRAM and SRAM Faults,” in SC, 2013.
+     Quad-Data Rate Infiniband,” in HOTI, 2008.                                      [91] G. R. Srinivasan et al., “Accurate, Predictive Modeling of Soft Error Rate
+[52] E. Kultursay et al., “Evaluating STT-RAM as an Energy-Efficient Main                 due to Cosmic Rays and Chip Alpha Radiation,” in IRPS, 1994.
+     Memory Alternative,” in ISPASS, 2013.                                           [92] L. Subramanian et al., “The Blacklisting Memory Scheduler: Achieving
+[53] B. C. Lee et al., “Phase Change Technology and the Future of Main                    High Performance and Fairness at Low Cost,” in ICCD, 2014.
+     Memory,” IEEE Micro, 2010.                                                      [93] Teradyne, “Magnum Memory Test System,” http://www.teradyne.com/
+[54] B. C. Lee et al., “Architecting Phase Change Memory as a Scalable                    products/semiconductor-test/magnum.
+     DRAM Alternative,” in ISCA, 2009.                                               [94] S. Tomishima, Personal Communication, Dec. 2016.
+[55] B. C. Lee et al., “Phase Change Memory Architecture and the Quest for           [95] V. van der Veen et al., “Drammer: Deterministic Rowhammer Attacks
+     Scalability,” CACM, 2010.                                                            on Mobile Platforms,” in CCS, 2016.
+[56] D. Lee et al., “Adaptive-Latency DRAM: Optimizing DRAM Timing for               [96] R. Venkatesan et al., “Retention-Aware Placement in DRAM (RAPID):
+     the Common-Case,” in HPCA, 2015.                                                     Software Methods for Quasi-Non-Volatile DRAM,” in HPCA, 2006.
+[57] D. Lee et al., “Tiered-Latency DRAM: A Low Latency and Low Cost                 [97] H.-S. P. Wong et al., “Metal-Oxide RRAM,” Proc. IEEE, 2012.
+     DRAM Architecture,” in HPCA, 2013.                                              [98] Y. Xiao et al., “One Bit Flips, One Cloud Flops: Cross-VM Row Hammer
+[58] D. Lee et al., “Reducing DRAM Latency by Exploiting Design-Induced                   Attacks and Privilege Escalation,” in USENIX Sec., 2016.
+     Latency Variation in Modern DRAM Chips,” arXiv, 2016.                           [99] Xilinx, “Virtex-6 FPGA Integrated Block for PCI Express,” http://www.
+[59] M. Lee and K. W. Park, “A Mechanism for Dependence of Refresh Time                   xilinx.com/support/documentation/user_guides/v6_pcie_ug517.pdf.
+     on Data Pattern in DRAM,” EDL, 2010.                                           [100] Xilinx, “Virtex-6 FPGA Memory Interface Solutions,” http:
+[60] J. Liu et al., “RAIDR: Retention-Aware Intelligent DRAM Refresh,” in                 //www.xilinx.com/support/documentation/ip_documentation/
+     ISCA, 2012.                                                                          mig/v3_92/ug406.pdf.
+[61] J. Liu et al., “An Experimental Study of Data Retention Behavior in            [101] Xilinx, ML605 Hardware User Guide, Oct. 2012.
+     Modern DRAM Devices: Implications for Retention Time Profiling                 [102] Xilinx, VC709 FPGA User Guide, Aug. 2016.
+     Mechanisms,” in ISCA, 2013.                                                    [103] D. Yaney et al., “A Meta-Stable Leakage Phenomenon in DRAM Charge
+[62] Y. Luo et al., “WARM: Improving NAND Flash Memory Lifetime with                      Storage - Variable Hold Time,” in IEDM, 1987.
+     Write-Hotness Aware Retention Management,” in MSST, 2015.                      [104] C. Yang et al., “A Hybrid Built-In Self-Test Scheme for DRAMs,” in
+[63] Y. Luo et al., “Enabling Accurate and Practical Online Flash Channel                 VLSI-DAT, 2015.
+     Modeling for Modern MLC NAND Flash Memory,” JSAC, 2016.                        [105] H. Yang et al., “Random Pattern Generation for Post-Silicon Validation
+[64] Y. Luo et al., “Characterizing Application Memory Error Vulnerability                of DDR3 SDRAM,” in VTS, 2015.
+     to Optimize Datacenter Cost via Heterogeneous-Reliability Memory,”             [106] Y. You and J. Hayes, “A Self-Testing Dynamic RAM Chip,” TED, 1985.
+     in DSN, 2014.
+
+
+
+                                                                               12

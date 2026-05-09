@@ -1,0 +1,1368 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/BEER-bit-exact-ECC-recovery_micro20.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/BEER-bit-exact-ECC-recovery_micro20.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+                                           Best Paper Award, MICRO 2020
+
+             Bit-Exact ECC Recovery (BEER):
+       Determining DRAM On-Die ECC Functions
+   by Exploiting DRAM Data Retention Characteristics
+           Minesh Patel†        Jeremie S. Kim‡†         Taha Shahroodi†               Hasan Hassan†               Onur Mutlu†‡
+                                       † ETH Zürich       ‡ Carnegie Mellon University
+
+
+   Increasing single-cell DRAM error rates have pushed DRAM             entirely within the DRAM chip [39, 76, 120, 129, 138]. On-die
+manufacturers to adopt on-die error-correction coding (ECC),            ECC is completely invisible outside of the DRAM chip, so ECC
+which operates entirely within a DRAM chip to improve factory           metadata (i.e., parity-check bits, error syndromes) that is used
+yield. The on-die ECC function and its effects on DRAM relia-           to correct errors is hidden from the rest of the system.
+bility are considered trade secrets, so only the manufacturer              Prior works [60, 97, 98, 120, 129, 133, 138, 147] indicate that
+knows precisely how on-die ECC alters the externally-visible            existing on-die ECC codes are 64- or 128-bit single-error cor-
+reliability characteristics. Consequently, on-die ECC obstructs         rection (SEC) Hamming codes [44]. However, each DRAM
+third-party DRAM customers (e.g., test engineers, experimental          manufacturer considers their on-die ECC mechanism’s design
+researchers), who typically design, test, and validate systems          and implementation to be highly proprietary and ensures not to
+based on these characteristics.                                         reveal its details in any public documentation, including DRAM
+   To give third parties insight into precisely how on-die ECC          standards [68, 69], DRAM datasheets [63, 121, 149, 158], publi-
+transforms DRAM error patterns during error correction, we              cations [76, 97, 98, 133], and industry whitepapers [120, 147].
+introduce Bit-Exact ECC Recovery (BEER), a new methodol-                   Because the unknown on-die ECC function is encapsulated
+ogy for determining the full DRAM on-die ECC function (i.e.,            within the DRAM chip, it obfuscates raw bit errors (i.e., pre-
+its parity-check matrix) without hardware tools, prerequisite           correction errors)1 in an ECC-function-specific manner. There-
+knowledge about the DRAM chip or on-die ECC mechanism,                  fore, the locations of software-visible uncorrectable errors (i.e.,
+or access to ECC metadata (e.g., error syndromes, parity infor-         post-correction errors) often no longer match those of the pre-
+mation). BEER exploits the key insight that non-intrusively             correction errors that were caused by physical DRAM error
+inducing data-retention errors with carefully-crafted test pat-         mechanisms. While this behavior appears desirable from a
+terns reveals behavior that is unique to a specific ECC function.       black-box perspective, it poses serious problems for third-party
+   We use BEER to identify the ECC functions of 80 real                 DRAM customers who study, test and validate, and/or design
+LPDDR4 DRAM chips with on-die ECC from three major                      systems based on the reliability characteristics of the DRAM
+DRAM manufacturers. We evaluate BEER’s correctness in                   chips that they buy and use. Section 2.2 describes these cus-
+simulation and performance on a real system to show that                tomers and the problems they face in detail, including, but not
+BEER is effective and practical across a wide range of on-die           limited to, three important groups: (1) system designers who
+ECC functions. To demonstrate BEER’s value, we propose and              need to ensure that supplementary error-mitigation mecha-
+discuss several ways that third parties can use BEER to improve         nisms (e.g., rank-level ECC within the DRAM controller) are
+their design and testing practices. As a concrete example, we           carefully designed to cooperate with the on-die ECC func-
+introduce and evaluate BEEP, the first error profiling method-          tion [40, 129, 160], (2) large-scale industries (e.g., computing
+ology that uses the known on-die ECC function to recover the            system providers such as Microsoft [33], HP [47], and Intel [59],
+number and bit-exact locations of unobservable raw bit errors           DRAM module manufacturers [4, 92, 159]) or government enti-
+responsible for observable post-correction errors.                      ties (e.g., national labs [131, 150]) who must understand DRAM
+1. Introduction                                                         reliability characteristics when validating DRAM chips they
+                                                                        buy and use, and (3) researchers who need full visibility into
+   Dynamic random access memory (DRAM) is the predomi-
+                                                                        physical device characteristics to study and model DRAM reli-
+nant choice for system main memory across a wide variety of
+                                                                        ability [17, 20, 31, 42, 43, 46, 72, 78–86, 109, 138, 139, 172, 178].
+computing platforms due to its favorable cost-per-bit relative
+to other memory technologies. DRAM manufacturers main-                     For each of these third parties, merely knowing or reverse-
+tain a competitive advantage by improving raw storage densi-            engineering the type of ECC code (e.g., n-bit Hamming code)
+ties across device generations. Unfortunately, these improve-           based on existing industry [60, 97, 98, 120, 133, 147] and aca-
+ments largely rely on process technology scaling, which causes          demic [129,138] publications is not enough to determine exactly
+serious reliability issues that reduce factory yield. DRAM              how the ECC mechanism obfuscates specific error patterns.
+manufacturers traditionally mitigate yield loss using post-             This is because an ECC code of a given type can have many
+manufacturing repair techniques such as row/column spar-                different implementations based on how its ECC function (i.e.,
+ing [51]. However, continued technology scaling in mod-                 its parity-check matrix) is designed, and different designs lead
+ern DRAM chips requires stronger error-mitigation mecha-                to different reliability characteristics. For example, Figure 1
+nisms to remain viable because of random single-bit errors              shows the relative probability of observing errors in different
+that are increasingly frequent at smaller process technology            bit positions for three different ECC codes of the same type (i.e.,
+nodes [39,76,89,99,109,119,120,124,127,129,133,160]. Therefore,         single-error correction Hamming code with 32 data bits and
+DRAM manufacturers have begun to use on-die error correction                1 We use the term “error” to refer to any bit-flip event, whether observed
+
+coding (on-die ECC), which silently corrects single-bit errors          (e.g., uncorrectable bit-flips) or unobserved (e.g., corrected by ECC).
+
+
+                                                                    1
+
+
+===== Page 2 =====
+
+   6 parity-check bits) but that use different ECC functions. We                                      BEER exploits the key insight that forcing the ECC function to
+   obtain this data by simulating 109 ECC words using the EINSim                                      act upon carefully-crafted uncorrectable error patterns reveals
+   simulator [2, 138] and show medians and 95% confidence inter-                                      ECC-function-specific behavior that disambiguates different
+   vals calculated via statistical bootstrapping [32] over 1000 sam-                                  ECC functions. BEER comprises three key steps: (1) deliber-
+   ples. We simulate a 0xFF test pattern2 with uniform-random                                         ately inducing uncorrectable data-retention errors by pausing
+   pre-correction errors at a raw bit error rate of 10–4 (e.g., as often                              DRAM refresh while using carefully-crafted test patterns to
+   seen in experimental studies [17,20,43,46,76,102,109,139,157]).                                    control the errors’ bit-locations, which is done by leveraging
+                                                                                                      data-retention errors’ intrinsic data-pattern asymmetry (dis-
+                 0.04                                                                                 cussed in Section 3.2), (2) enumerating the bit positions where
+Relative Error
+ Probability
+
+
+
+
+                                                                                                      the ECC mechanism causes miscorrections, and (3) using a SAT
+                                                                                                      solver [28] to solve for the unique parity-check matrix that
+                 0.02                                                                                 causes the observed set of miscorrections.
+                            Pre-Correction                     Post-Correction (ECC Function 1)          We experimentally apply BEER to 80 real LPDDR4 DRAM
+                            Post-Correction (ECC Function 0)   Post-Correction (ECC Function 2)
+                 0.00                                                                                 chips with on-die ECC from three major DRAM manufacturers
+                        0          5         10       15      20             25          30           to determine the chips’ on-die ECC functions. We describe
+                                             Bit Index in Dataword                                    the experimental steps required to apply BEER to any DRAM
+   Figure 1: Relative error probabilities in different bit posi-                                      chip with on-die ECC and show that BEER tolerates observed
+   tions for different ECC functions with uniform-randomly dis-                                       experimental noise. We show that different manufacturers ap-
+   tributed pre-correction (i.e., raw) bit errors.                                                    pear to use different on-die ECC functions while chips from
+      The data demonstrates that ECC codes of the same type can                                       the same manufacturer and model number appear to use the
+  have vastly different post-correction error characteristics. This                                   same on-die ECC function (Section 5.1.3). Unfortunately, our
+  is because each ECC mechanism acts differently when faced                                           experimental studies with real DRAM chips have two limita-
+  with more errors than it can correct (i.e., uncorrectable errors),                                  tions against further validation: (1) because the on-die ECC
+  causing it to mistakenly perform ECC-function-specific “correc-                                     function is considered trade secret for each manufacturer, we
+  tions” to bits that did not experience errors (i.e., miscorrections,                                are unable to obtain a groundtruth to compare BEER’s results
+  which Section 3.3 expands upon). Therefore, a researcher or en-                                     against, even when considering non-disclosure agreements
+  gineer who studies two DRAM chips that use the same type of                                         with DRAM manufacturers and (2) we are unable to publish
+  ECC code but different ECC functions may find that the chips’                                       the final ECC functions that we uncover using BEER for confi-
+  software-visible reliability characteristics are quite different                                    dentiality reasons (discussed in Section 2.1).
+  even if the physical DRAM cells’ reliability characteristics are                                       To overcome the limitations of experimental studies with
+  identical. On the other hand, if we know the full ECC function                                      real DRAM chips, we rigorously evaluate BEER’s correctness in
+  (i.e., its parity-check matrix), we can calculate exactly which                                     simulation (Section 6). We show that BEER correctly recovers
+  pre-correction error pattern(s) result in a set of observed er-                                     the on-die ECC function for 115300 single-error correction
+  rors. Figure 1 is a result of aggregating such calculations across                                  Hamming codes4 , which are representative of on-die ECC,
+  109 error patterns3 , and Section 7.1 demonstrates how we can                                       with ECC word lengths ranging from 4 to 247 bits. We evaluate
+  use the ECC function to infer pre-correction error counts and                                       our BEER implementation’s runtime and memory consumption
+  locations using only observed post-correction errors.                                               using a real system to demonstrate that BEER is practical and
+      Knowing the precise transformation between pre- and post-                                       the SAT problem that BEER requires is realistically solvable.
+  correction errors benefits all of the aforementioned third-party                                       To demonstrate how BEER is useful in practice, we propose
+  use cases because it provides system designers, test engineers,                                     and discuss several ways that third parties can leverage the
+  and researchers with a way to isolate the error characteris-                                        ECC function that BEER reveals to more effectively design,
+  tics of the memory itself from the effects of a particular ECC                                      study, and test systems that use DRAM chips with on-die ECC
+  function. Section 2.2 provides several example use cases and                                        (Section 7). As a concrete example, we introduce and evaluate
+  describes the benefits of knowing the ECC function in detail.                                       Bit-Exact Error Profiling (BEEP), a new DRAM data-retention
+  While specialized, possibly intrusive methods (e.g., chip tear-                                     error profiling methodology that reconstructs pre-correction er-
+  down [66, 164], advanced imaging techniques [48, 164]) can                                          ror counts and locations purely from observed post-correction
+  theoretically extract the ECC function, such techniques are typ-                                    errors. Using the ECC function revealed by BEER, BEEP infers
+  ically inaccessible to or infeasible for many third-party users.                                    precisely which unobservable raw bit errors correspond to ob-
+      To enable third parties to reconstruct pre-correction DRAM                                      served post-correction errors at a given set of testing conditions.
+  reliability characteristics, our goal is to develop a methodol-                                     We show that BEEP enables characterizing pre-correction er-
+  ogy that can reliably and accurately determine the full on-die                                      rors across a wide range of ECC functions, ECC word lengths,
+  ECC function without requiring hardware tools, prerequisite                                         error patterns, and error rates. We publicly release our tools as
+  knowledge about the DRAM chip or on-die ECC mechanism, or                                           open-source software: (1) a new tool [1] for applying BEER to
+  access to ECC metadata (e.g., error syndromes, parity informa-                                      experimental data from real DRAM chips and (2) enhancements
+  tion). To this end, we develop Bit-Exact ECC Recovery (BEER),                                       to EINSim [2] for evaluating BEER and BEEP in simulation.
+  a new methodology for determining a DRAM chip’s full on-die                                            This paper makes the following key contributions:
+  ECC function simply by studying the software-visible post-                                          1. We provide Bit-Exact ECC Recovery (BEER), the first
+  correction error patterns that it generates. Thus, BEER requires                                       methodology that determines the full DRAM on-die ECC
+  no hardware support, hardware intrusion, or access to inter-                                           function (i.e., its parity-check matrix) without requiring
+  nal ECC metadata (e.g., error syndromes, parity information).                                          4 This irregular number arises from evaluating a different number of ECC
+          2 Other patterns show similar behavior, including RANDOM data.                              functions for different code lengths because longer codes require exponentially
+          3 Capturing approximately 109 of the 238 ≈ 2.7 × 1011 unique patterns.                      more simulation time (discussed in Section 6.1).
+
+
+                                                                                                  2
+
+
+===== Page 3 =====
+
+   hardware tools, prerequisite knowledge about the DRAM                                This raises two challenges for our experiments with real
+   chip or on-die ECC mechanism, or access to ECC metadata                           DRAM chips: (1) we do not have access to “groundtruth” ECC
+   (e.g., error syndromes, parity information).                                      functions to validate BEER’s results against and (2) we cannot
+2. We experimentally apply BEER to 80 real LPDDR4 DRAM                               publish the final ECC functions that we determine using BEER
+   chips with unknown on-die ECC mechanisms from three                               for confidentiality reasons based on our relationships with the
+   major DRAM manufacturers to determine their on-die ECC                            DRAM manufacturers. However, this does not prevent third-
+   functions. We show that BEER is robust to observed experi-                        party consumers from applying BEER to their own devices,
+   mental noise and that DRAM chips from different manufac-                          and we hope that our work encourages DRAM manufacturers
+   turers appear to use different on-die ECC functions while                         to be more open with their designs going forward.6
+   chips from the same manufacturer and model number appear                          2.2. On-Die ECC’s Impact on Third Parties
+   to use the same function.
+                                                                                        On-die ECC alters a DRAM chip’s software-visible reliability
+3. We evaluate BEER’s correctness in simulation and show
+                                                                                     characteristics so that they are no longer determined solely by
+   that BEER correctly identifies the on-die ECC function for
+                                                                                     how errors physically occur within the DRAM chip. Figure 1
+   115300 representative on-die ECC codes with ECC word
+                                                                                     illustrates this by showing how using different on-die ECC func-
+   lengths ranging from 4 to 247 bits.
+                                                                                     tions changes how the same underlying DRAM errors appear
+4. We analytically evaluate BEER’s experimental runtime and
+                                                                                     to the end user. Instead of following the pre-correction error
+   use a real system to measure the SAT solver’s performance
+                                                                                     distribution (i.e., uniform-random errors), the post-correction
+   and memory usage characteristics (e.g., negligible for short
+                                                                                     errors exhibit ECC-function-specific shapes that are difficult to
+   codes, median of 57.1 hours and 6.3 GiB memory for rep-
+                                                                                     predict without knowing precisely which ECC function is used
+   resentative 128-bit codes, and up to 62 hours and 11.4 GiB
+                                                                                     in each case. This means that two commodity DRAM chips with
+   memory for 247-bit codes) to show that BEER is practical.
+                                                                                     different on-die ECC functions may show similar or different
+5. We propose and evaluate Bit-Exact Error Profiling (BEEP),
+                                                                                     reliability characteristics irrespective of how the underlying
+   a new DRAM data-retention error profiling methodology
+                                                                                     DRAM technology and error mechanisms behave. Therefore,
+   that uses a known ECC function (e.g., via BEER) to infer
+                                                                                     the physical error mechanisms’ behavior alone can no longer
+   pre-correction error counts and locations. We show that
+                                                                                     explain a DRAM chip’s post-correction error characteristics.
+   BEEP enables characterizing the bit-exact pre-correction
+                                                                                        Unfortunately, this poses a serious problem for third-party
+   error locations across different ECC functions, codeword
+                                                                                     DRAM consumers (e.g., system designers, testers, and re-
+   lengths, error patterns, and error rates.
+                                                                                     searchers), who can no longer accurately understand a DRAM
+6. We open-source the software tools we develop for (1) apply-
+                                                                                     chip’s reliability characteristics by studying its software-visible
+   ing BEER to experimental data from real DRAM chips [1]
+                                                                                     errors. This lack of understanding prevents third parties from
+   and (2) evaluating BEER and BEEP in simulation [2].
+                                                                                     both (1) making informed design decisions, e.g., when building
+2. Challenges of Unknown On-Die ECCs                                                 memory-controller based error-mitigation mechanisms to com-
+   This section discusses why on-die ECC is considered propri-                       plement on-die ECC and (2) developing new ideas that rely on
+etary, how its secrecy causes difficulties for third-party con-                      on leveraging predictable aspects of a DRAM chip’ reliability
+sumers, and how the BEER methodology helps overcome these                            characteristics, e.g., physical error mechanisms that are funda-
+difficulties by identifying the full on-die ECC function.                            mental to all DRAM technology. As error rates worsen with
+                                                                                     continued technology scaling [39, 76, 86, 89, 90, 99, 119, 120, 124,
+2.1. Secrecy Concerning On-Die ECC                                                   127,129,133], manufacturers will likely resort to stronger codes
+   On-die ECC silently mitigates increasing single-bit errors                        that further distort the post-correction reliability characteris-
+that reduce factory yield [39, 76, 89, 99, 109, 119, 120, 124, 127,                  tics. The remainder of this section describes three key ways in
+129, 133, 160]. Because on-die ECC is invisible to the external                      which an unknown on-die ECC function hinders third-parties,
+DRAM chip interface, older DRAM standards [68, 69] place                             and determining the function helps mitigate the problem.
+no restrictions on the on-die ECC mechanism while newer                              Designing High-Reliability Systems. System designers of-
+standards [70] specify only a high-level description for on-die                      ten seek to improve memory reliability beyond that which the
+ECC to support new (albeit limited) DDR5 features, e.g., on-die                      DRAM provides alone (e.g., by including rank-level ECC within
+ECC scrubbing. In particular, there are no restrictions on the                       the memory controllers of server-class machines or ECC within
+design or implementation of the on-die ECC function itself.                          on-chip caches). In particular, rank-level ECCs are carefully
+   This means that knowing an on-die ECC mechanism’s de-                             designed to mitigate common DRAM failure modes [21] (e.g.,
+tails could reveal information about its manufacturer’s factory                      chip failure [129], burst errors [29, 116]) in order to correct as
+yield rates, which are highly proprietary [23, 55] due to their                      many errors as possible. However, designing for key failure
+direct connection with business interests, potential legal con-                      modes requires knowing a DRAM chip’s reliability characteris-
+cerns, and competitiveness in a USD 45+ billion DRAM mar-                            tics, including the effects of any underlying ECC function (e.g.,
+ket [143, 170]. Therefore, manufacturers consider their on-die                       on-die ECC) [40,160]. For example, Son et al. [160] show that if
+ECC designs and implementations to be trade secrets that they                        on-die ECC suffers an uncorrectable error and mistakenly “cor-
+are unwilling to disclose. In our experience, DRAM manufac-                          rects” a non-erroneous bit (i.e., introduces a miscorrection), the
+turers will not reveal on-die ECC details under confidentiality                      stronger rank-level ECC may no longer be able to even detect
+agreements, even for large-scale industry board vendors for                          what would otherwise be a detectable (possibly correctable)
+whom knowing the details stands to be mutually beneficial.5                          error. To prevent this scenario, both levels of ECC must be care-
+   5 Even if such agreements were possible, industry teams and academics             fully co-designed to complement each others’ weaknesses. In
+without major business relations with DRAM manufacturers (i.e., an over-                6 While full disclosure would be ideal, a more realistic scenario could be
+
+whelming majority of the potentially interested scientists and engineers) will       more flexible on-die ECC confidentiality agreements. As recent work [35]
+likely be unable to secure disclosure.                                               shows, security or protection by obscurity is likely a poor strategy in practice.
+
+
+                                                                                 3
+
+
+===== Page 4 =====
+
+general, high-reliability systems can be more effectively built              54, 61, 64, 65, 77, 102, 103, 106, 111, 153–155, 180], coding the-
+around DRAM chips with on-die ECC if its ECC function and                    ory [25, 53, 108, 115, 122, 146, 148], and SAT solvers [8, 24, 28, 30].
+its effects on typical DRAM failure modes are known.                         3.1. DRAM Cells and Data Storage
+Testing, Validation, and Quality Assurance. Large-scale                         A DRAM chip stores each data bit in its own storage cell using
+computing system providers (e.g., Microsoft [33], HP [47], In-               the charge level of a storage capacitor. Because the capacitor is
+tel [59]), DRAM module manufacturers [4, 92, 159], and gov-                  susceptible to charge leakage [26, 42, 90, 95, 109, 110, 138, 139,
+ernment entities (e.g., national labs [131, 150]) typically per-             169], the stored value may eventually degrade to the point of
+form extensive third-party testing of the DRAM chips they                    data loss, resulting in a data-retention error. During normal
+purchase in order to ensure that the chips meet internal per-                DRAM operation, a refresh operation restores the data value
+formance/energy/reliability targets. These tests validate that               stored in each cell every refresh window (tREFw ), e.g., 32ms or
+DRAM chips operate as expected and that there are well-                      64ms [67–69, 109, 110, 139], to prevent data-retention errors.
+understood, convincing root-causes (e.g., fundamental DRAM                      Depending on a given chip’s circuit design, each cell may
+error mechanisms) for any observed errors. Unfortunately, on-                store data using one of two encoding conventions: a true-cell
+die ECC interferes with two key components of such testing.                  encodes data ‘1’ as a fully-charged storage capacitor (i.e., the
+First, it obfuscates the number and bit-exact locations of pre-              CHARGED state), and an anti-cell encodes data ‘1’ as a fully-
+correction errors, so diagnosing the root cause for any observed             discharged capacitor (i.e., the DISCHARGED state). Although
+error becomes challenging. Second, on-die ECC encodes all                    a cell’s encoding scheme is transparent to the rest of the system
+written data into ECC codewords, so the values written into                  during normal operation, it becomes evident in the presence of
+the physical cells likely do not match the values observed                   data-retention errors because DRAM cells typically decay only
+at the DRAM chip interface. The encoding process defeats                     from their CHARGED to their DISCHARGED state as shown
+carefully-constructed test patterns that target specific circuit-            experimentally by prior work [26, 90, 95, 109, 110, 138, 139].
+level phenomena (e.g., exacerbating interference between bit-                3.2. Studying DRAM Errors
+lines [3, 79, 123]) because the encoded data may no longer have
+                                                                                Deliberately inducing DRAM errors (e.g., by violating de-
+the intended effect. Unfortunately, constructing such patterns
+                                                                             fault timing parameters) reveals detailed information about
+is crucial for efficient testing since it minimizes the testing time
+                                                                             a DRAM chip’s internal design through the resulting errors’
+required to achieve high error coverage [3, 51]. In both cases,
+                                                                             statistical characteristics. Prior works use custom memory
+the full on-die ECC function determined by BEER describes                    testing platforms (e.g., FPGA-based [46]) and commodity
+exactly how on-die ECC transforms pre-correction error pat-                  CPUs [6, 57] (e.g., by changing CPU configuration registers
+terns into post-correction ones. This enables users to infer                 via the BIOS [56]) to study a variety of DRAM error mecha-
+pre-correction error locations (demonstrated in Section 7.1)                 nisms, including data-retention [26, 90, 95, 109, 110, 138, 139],
+and design test patterns that result in codewords with desired               circuit timing violations [17, 83–85, 102, 104], and RowHam-
+properties (discussed in Section 7.2).                                       mer [86, 90, 125, 126, 135, 136]. Our work focuses on data-
+Scientific Error-Characterization Studies. Scientific error-                 retention errors because they exhibit well-studied properties
+characterization studies explore physical DRAM error mecha-                  that are helpful for our purposes:
+nisms (e.g., data retention [42, 43, 46, 74, 75, 78–81, 109, 139, 157,       1. They are easily induced and controlled by manipulating the
+172, 173], reduced access-latency [16, 17, 20, 37, 83–85, 102, 104],            refresh window (tREFw ) and ambient temperature.
+circuit disturbance [35, 79, 81, 86, 90, 135, 136]) by deliberately          2. They are repeatable [139, 163] and their spatial distribution
+exacerbating the error mechanism and analyzing the resulting                    is uniform random [7, 43, 84, 138, 157].
+errors’ statistical properties (e.g., frequency, spatial distribu-           3. They fail unidirectionally from the CHARGED state to the
+tion). These studies help build error models [20,31,43,83,94,104,               DISCHARGED state [26, 90, 95, 109, 110, 138, 139].
+157, 178], leading to new DRAM designs and operating points                  Off-DRAM-Chip Errors. Software-visible memory errors
+that improve upon the state-of-the-art. Unfortunately, on-die                often occur due to failures in components outside the DRAM
+ECC complicates error analysis and modeling by (1) obscuring                 chip (e.g., sockets, buses) [119]. However, our work focuses on
+the physical pre-correction errors that are the object of study              errors that occur within a DRAM chip, which are a serious and
+and (2) preventing direct access to parity-check bits, thereby               growing concern at modern technology node sizes [39, 76, 89,
+precluding comprehensive testing of all DRAM cells in a given                99, 119, 120, 124, 127, 129, 133, 160]. These errors are the primary
+chip. Although prior work [138] enables inferring high-level                 motivation for on-die ECC, which attempts to correct them
+statistical characteristics of the pre-correction errors, it does            before they are ever observed outside the DRAM chip.
+not provide a precise mapping between pre-correction and
+post-correction errors, which is only possible knowing the full              3.3. On-Die ECC and Hamming Codes
+ECC function. Knowing the full ECC function, via our new                        As manufacturers continue to increase DRAM storage den-
+BEER methodology, enables recovering the bit-exact locations                 sity, unwanted single-bit errors appear more frequently [39, 41,
+of pre-correction errors throughout the entire ECC word (as we               50, 76, 89, 99, 105, 114, 119, 120, 128, 129, 133, 138, 151, 161, 162]
+demonstrate in Section 7.1) so that error-characterization stud-             and reduce factory yield. To combat these errors, manufactur-
+ies can separate the effects of DRAM error mechanisms from                   ers use on-die ECC [39, 76, 120, 128, 129, 133, 138], which is an
+those of on-die ECC. Section 7 provides a detailed discussion of             error-correction code implemented directly in the DRAM chip.
+several key characterization studies that BEER enables.                         Figure 2 shows how a system might interface with a memory
+                                                                             chip that uses on-die ECC. The system writes k-bit datawords
+3. Background                                                                (d) to the chip, which internally maintains an expanded n-bit
+  This section provides a basic overview of DRAM, coding                     representation of the data called a codeword (c), created by
+theory, and satisfiability (SAT) solvers as pertinent to this                the ECC encoding of d. The stored codeword may experience
+manuscript. For further detail, we refer the reader to com-                  errors, resulting in a potentially erroneous codeword (c0 ). If
+prehensive texts on DRAM design and operation [17–20, 45,                    more errors occur than ECC can correct, e.g., two errors in a
+
+
+                                                                         4
+
+
+===== Page 5 =====
+
+single-error correction (SEC) code, the final dataword read out                                         4.1. Disambiguating Linear Block Codes
+after ECC decoding (d0 ) may also contain errors. The encoding                                              DRAM ECCs are linear block codes, e.g., Hamming
+and decoding functions are labeled Fencode and Fdecode .                                                codes [44] for on-die ECC [60, 97, 98, 120, 129, 133, 138, 147],
+     SYSTEM                                                  MEMORY CHIP                                BCH [9, 49] or Reed-Solomon [145] codes for rank-level
+  d0 d1 d2 d3 …                             ECC Encoder        d0 d1 d2 d3 … p0 p1 p2 …                 ECC [26, 87], whose encoding and decoding operations are
+                            DRAM
+   dataword (d)
+                             BUS
+                                              Fencode (d)               codeword (c)     error(s)       described by linear transformations of their respective inputs
+  d´0 d´1 d´2 d´3 …                         ECC Decoder        d0´ d1´ d2´ d3´ … p´0 p´1 p´2 …          (i.e., G and H matrices, respectively). We can therefore deter-
+  dataword´ (d´)                              Fdecode (c´)                codeword´ (c´)
+                                                                                                        mine the full ECC function by independently determining each
+ Figure 2: Interfacing a memory chip that uses on-die ECC.                                              of its linear components.
+  For all linear codes (e.g., SEC Hamming codes [44]), Fencode                                              We can isolate each linear component of the ECC function
+and Fdecode can be represented using matrix transformations.                                            by injecting errors in each codeword bit position and observing
+As a demonstrative example throughout this paper, we use                                                the resulting error syndromes. For example, an n-bit Hamming
+the (7, 4, 3) Hamming code [44] shown in Equation 1. Fencode                                            code’s parity-check matrix can be systematically determined
+represents a generator matrix G such that the codeword c is                                             by injecting a single-bit error in each of the n bit positions: the
+computed from the dataword d as c = G · d.                                                              error syndrome that the ECC decoder computes for each pat-
+                            1000111                                                                     tern is exactly equal to the column of the parity-check matrix
+                                                                      1110100
+                             "                     #
+                                                                                                        that corresponds to the position of the injected error. As an
+                                                                                 
+  Fencode = G         T
+                          = 00 10 01 00 11 10 01       Fdecode = H = 1 1 0 1 0 1 0 (1)
+                             0001011                                  1011001                           example, Equation 2 shows how injecting an error at position
+Decoding. The most common decoding algorithm is known as                                                2 (i.e., adding error pattern e2 to codeword c) extracts the cor-
+syndrome decoding, which simply computes an error syndrome                                              responding column of the parity-check matrix H in the error
+s = H · c0 that describes if and where an error exists:                                                 syndrome s. By the definition of a block code, H · c = 0 for all
+ • s = 0: no error detected.                                                                            codewords [27, 53], so e2 isolates column 2 of H (i.e., H∗,2 ).
+ • s 6= 0: error detected, and s describes its bit-exact location.                                                                           
+                                                                                                                                                     0
+                                                                                                                                                   
+Note that the error syndrome computation is unaware of the                                                            0
+                                                                                                                                                   01 
+                                                                                                             s = H · c = H · (c + e2 ) = H · c +  0   = 0 + H∗,2 = H∗,2     (2)
+                                                                                                                                             
+true error count; it blindly computes the error syndrome(s)
+                                                                                                                                                 
+                                                                                                                                                     0 
+assuming a low probability of uncorrectable errors. If, however,                                                                                     0
+                                                                                                                                                     0
+an uncorrectable error is present (e.g., deliberately induced                                           Thus, the entire parity-check matrix can be fully determined
+during testing), one of three possibilities may occur:                                                  by testing across all 1-hot error patterns. Cojocar et al. [26]
+ • Silent data corruption: syndrome is zero; no error.                                                  use this approach on DRAM rank-level ECC, injecting errors
+ • Partial correction: syndrome points to one of the errors.                                            into codewords on the DDR bus and reading the resulting error
+ • Miscorrection: syndrome points to a non-erroneous bit.                                               syndromes provided by the memory controller.
+When a nonzero error syndrome occurs, the ECC decoding
+logic simply flips the bit pointed to by the error syndrome,                                            4.2. Determining the On-Die ECC Function
+potentially exacerbating the overall number of errors.                                                     Unfortunately, systematically determining an ECC function
+Design Space. Each manufacturer can freely select Fencode and                                           as described in Section 4.1 is not possible with on-die ECC
+Fdecode functions, whose implementations can help to meet a set                                         for two key reasons. First, on-die ECC’s parity-check bits
+of design constraints (e.g., circuit area, reliability, power con-                                      cannot be accessed directly, so we have no easy way to inject
+sumption). The space of functions that a designer can choose                                            an error within them. Second, on-die ECC does not signal
+from is quantified by the number of arrangements of columns                                             an error-correction event or report error syndromes (i.e., s).
+of H. This means that for an n-bit code with k data bits, there                                         Therefore, even if specialized methods (e.g., chip teardown [66,
+                                                                                                        164], advanced imaging techniques [48,164]) could inject errors
+are 2 n –1 possible ECC functions. Section 4.2 formalizes this
+       n–k 
+                                                                                                        within a DRAM chip package where the on-die ECC mechanism
+space of possible functions in the context of our work.
+                                                                                                        resides,7 the error syndromes would remain invisible, so the
+3.4. Boolean Satisfiability (SAT) Solvers                                                               approach taken by Cojocar et al. [26] cannot be applied to
+   Satisfiability (SAT) solvers [8, 24, 28, 30, 38, 140] find possi-                                    on-die ECC. To determine the on-die ECC function using the
+ble solutions to logic equation(s) with one or more unknown                                             approach of Section 4.1, we first formalize the unknown on-
+Boolean variables. A SAT solver accepts one or more such                                                die ECC function and then determine how we can infer error
+equations as inputs, which effectively act as constraints over                                          syndromes within the constraints of the formalized problem.
+the unknown variables. The SAT solver then attempts to deter-                                           4.2.1. Formalizing the Unknown ECC Function. We as-
+mine a set of values for the unknown variables such that the                                            sume that on-die ECC uses a systematic encoding, which means
+equations are satisfied (i.e., the constraints are met). The SAT                                        that the ECC function stores data bits unmodified. This is a
+solver will return either (1) one (of possibly many) solutions                                          reasonable assumption for real hardware since it greatly sim-
+or (2) no solution if the Boolean equation is unsolvable.                                               plifies data access [181] and is consistent with our experimen-
+4. Determining the ECC Function                                                                         tal results in Section 5.1.2. Furthermore, because the DRAM
+  BEER identifies an unknown ECC function by systematically                                             chip interface exposes only data bits, the relative ordering of
+reconstructing its parity-check matrix based on the error syn-                                          parity-check bits within the codeword is irrelevant from the
+dromes that the ECC logic generates while correcting errors.                                            system’s perspective. Mathematically, the different choices of
+Different ECC functions compute different error syndromes                                               bit positions represent equivalent codes that all have identical
+for a given error pattern, and by constructing and analyzing                                            error-correction properties and differ only in their internal
+carefully-crafted test cases, BEER uniquely identifies which                                            representations [146, 148], which on-die ECC does not expose.
+ECC function a particular implementation uses. This section                                             Therefore, we are free to arbitrarily choose the parity-check
+describes how and why this process works. Section 5 describes                                              7 Such methods may reveal the exact on-die ECC circuitry. However, they
+
+how BEER accomplishes this in practice for on-die ECC.                                                  are typically inaccessible to or infeasible for many third-party consumers.
+
+
+                                                                                                    5
+
+
+===== Page 6 =====
+
+bit positions within the codeword without loss of generality.              bit to the CHARGED state and all others to the DISCHARGED
+If it becomes necessary to identify the exact ordering of bits             state. In these patterns, data-retention errors may only oc-
+within the codeword (e.g., to infer circuit-level implementa-              cur in either (1) the CHARGED bit or (2) any parity-check bits
+tion details), reverse-engineering techniques based on physical            that the ECC function also sets to the CHARGED state. With
+DRAM error mechanisms [73, 104] can potentially be used.                   these restrictions, observable miscorrections may only occur
+   A systematic encoding and the freedom to choose parity-                 within data bits whose error syndromes can be created by some
+check bit positions mean that we can assume that the ECC                   linear combination of the parity-check matrix columns that
+function is in standard form, where we express the parity-check            correspond to the CHARGED cells within the codeword.
+matrix for an (n, k) code as a partitioned matrix Hn–k×n =                    As a concrete example, consider the codeword of Equation 3.
+[Pn–k×k |In–k×n–k ]. P is a conventional notation for the sub-             C and D represent that the corresponding cell is programmed
+matrix that corresponds to information bit positions and I is an           to the CHARGED and DISCHARGED states, respectively.
+identity matrix that corresponds to parity-check bit positions.                                     c= DDCD|DCC
+                                                                                                               
+                                                                                                                                            (3)
+Note that the example ECC code of Equation 1 is in standard
+form. With this representation, all codewords take the form                Because only CHARGED cells can experience data-retention er-
+c1×n = [d0 d1 …dk–1 |p0 p1 …pn–k–1 ], where d and p are data and           rors, there are 23 = 8 possible error syndromes that correspond
+parity-check symbols, respectively.                                        to the unique combinations of CHARGED cells failing. Table 1
+4.2.2. Identifying Syndromes Using Miscorrections.                         illustrates these eight possibilities.
+Given that on-die ECC conceals error syndromes, we develop                       Pre-Correction
+                                                                                                     Error Syndrome
+                                                                                                                          Post-Correction
+a new approach for determining the on-die ECC function that                      Error Pattern                             Outcome
+indirectly determines error syndromes based on how the ECC                      0 0 0 0 | 0 0 0    0                    No error
+
+mechanism responds when faced with uncorrectable errors.                        0 0 0 0 | 0 0 1    H∗,6                 Correctable
+                                                                                0 0 0 0 | 0 1 0    H∗,5                 Correctable
+To induce uncorrectable errors, we deliberately pause normal                    0 0 0 0 | 0 1 1    H∗,5 + H∗,6          Uncorrectable
+DRAM refresh operations long enough (e.g., several minutes                      0 0 1 0 | 0 0 0    H∗,2                 Correctable
+at 80◦ C) to cause a large number of data-retention errors (e.g.,               0 0 1 0 | 0 0 1    H∗,2 + H∗,5          Uncorrectable
+BER > 10–4 ) throughout a chip. These errors expose a signif-                   0 0 1 0 | 0 1 0    H∗,2 + H∗,6          Uncorrectable
+                                                                                  0010|011           H∗,2 + H∗,5 + H∗,6   Uncorrectable
+icant number of miscorrections in different ECC words, and
+the sheer number of data-retention errors dominates any un-                Table 1: Possible data-retention error patterns, their syn-
+wanted interference from other possible error mechanisms                   dromes, and their outcomes for the codeword of Equation 3.
+(e.g., particle strikes [117]).
+                                                                               A miscorrection occurs whenever the error syndrome of an
+   To control which data-retention errors occur, we write                  uncorrectable error pattern matches the parity-check matrix
+carefully-crafted test patterns that restrict the errors to specific       column of a non-erroneous data bit. In this case, the column’s
+bit locations. This is possible because only cells programmed              location would then correspond to the bit position of the mis-
+to the CHARGED state can experience data-retention errors as               correction. However, a miscorrection only reveals information
+discussed in Section 3.2. By restricting pre-correction errors             if it occurs within one of the DISCHARGED data bits, for only
+to certain cells, if a post-correction error is observed in an             then are we certain that the observed bit flip is unambiguously
+unexpected location, it must be an artifact of error correction,           a miscorrection rather than an uncorrected data-retention er-
+i.e., a miscorrection. Such a miscorrection is significant since           ror. Therefore, the test patterns we use should maximize the
+it: (1) signals an error-correction event, (2) is purely a func-           number of DISCHARGED bits so as to increase the number of
+tion of the ECC decoding logic, and (3) indirectly reveals the             miscorrections that yield information about the ECC function.
+error syndrome generated by the pre-correction error pattern.
+                                                                               To determine which test patterns to use, we expand upon
+The indirection occurs because, although the miscorrection
+                                                                           the approach of injecting 1-hot errors described in Section 4.1.
+does not expose the raw error syndrome, it does reveal that
+                                                                           Although we would need to write data to all codeword bits in
+whichever error syndrome is generated internally by the ECC
+                                                                           order to test every 1-hot error pattern, on-die ECC does not
+logic exactly matches the parity-check matrix column that
+                                                                           allow writing directly to the parity-check bits. This leads to
+corresponds to the position of the miscorrected bit.
+                                                                           two challenges. First, we cannot test 1-hot error patterns for
+   These three properties mean that miscorrections are a re-               which the 1-hot error is within the parity-check bits, which
+liable tool for analyzing ECC functions: for a given pre-                  means that we cannot differentiate ECC functions that differ
+correction error pattern, different ECC functions will gener-              only within their parity-check bit positions. Fortunately, this
+ate different error syndromes, and therefore miscorrections,               is not a problem because, as Section 4.2.1 discusses in detail, all
+depending on how the functions’ parity-check matrices are                  such functions are equivalent codes with identical externally-
+organized. This means that a given ECC function causes                     visible error-correction properties. Therefore, we are free to
+miscorrections only within certain bits, and the locations of              assume that the parity-check matrix is in standard form, which
+miscorrection-susceptible bits differ between functions. There-            specifies parity-check bits’ error syndromes (i.e., In–k×n–k ) and
+fore, we can differentiate ECC functions by identifying which              obviates the need to experimentally determine them.
+miscorrections are possible for different test patterns.                       Second, writing the k bits of the dataword with a single
+4.2.3. Identifying Useful Test Patterns. To construct a                    CHARGED cell results in a codeword with an unknown number
+set of test patterns that suffice to uniquely identify an ECC              of CHARGED cells because the ECC function independently
+function, we observe that a miscorrection is possible in a                 determines the values of remaining n – k parity-check bits.
+DISCHARGED data bit only if the bit’s error syndrome can be                As a result, the final codeword may contain anywhere from
+produced by some linear combination of the parity-check ma-                1 to n – k + 1 CHARGED cells, and the number of CHARGED
+trix columns that correspond to CHARGED bit locations. For ex-             cells will vary for different test patterns. Because we cannot
+ample, consider the 1-CHARGED patterns that each set one data              directly access the parity-check bits’ values, we do not know
+
+
+                                                                       6
+
+
+===== Page 7 =====
+
+which cells are CHARGED for a given test pattern, and there-              perform all tests using a temperature-controlled infrastruc-
+fore, we cannot tie post-correction errors back to particular             ture with precise control over the timings of refresh and other
+pre-correction error patterns. Fortunately, we can work around            DRAM bus commands.
+this problem by considering all possible error patterns that a            5.1. Step 1: Inducing Miscorrections
+given codeword can experience, which amounts to examin-                      To induce miscorrections as discussed in Section 4.2.3, we
+ing all combinations of errors that the CHARGED cells can                 must first identify the (1) CHARGED and DISCHARGED encod-
+experience. Table 1 illustrates this for when the dataword                ings of each cell and (2) layout of individual datawords within
+is programmed with a 1-CHARGED test pattern (as shown in                  the address space. This section describes how we determine
+Equation 3). In this example, the encoded codeword contains               these in a way that is applicable to any DRAM chip.
+three CHARGED cells, which may experience any of 23 possible              5.1.1. Determining CHARGED and DISCHARGED States.
+error patterns. Section 5.1.3 discusses how we can accomplish              We determine the encodings of the CHARGED and
+testing all possible error patterns in practice by exploiting the         DISCHARGED states by experimentally measuring the
+fact that data-retention errors occur uniform-randomly, so test-          layout of true- and anti-cells throughout the address space
+ing across many different codewords provides samples from                 as done in prior works [90, 95, 138]. We write data ‘0’ and
+many different error patterns at once.                                    data ‘1’ test patterns to the entire chip while pausing DRAM
+4.2.4. Shortened Codes. Linear block codes can be either of               refresh for 30 minutes at temperatures between 30 – 80◦ C.
+full-length if all possible error syndromes are present within            The resulting data-retention error patterns reveal the true-
+the parity-check matrix (e.g., all 2p – 1 error syndromes for a           and anti-cell layout since each test pattern isolates one of
+Hamming code with p parity-check bits, as is the case for the             the cell types. We find that chips from manufacturers A and
+code shown in Equation 1) or shortened if one or more informa-            B use exclusively true-cells, and chips from manufacturer
+tion symbols are truncated while retaining the same number                C use 50%/50% true-/anti-cells organized in alternating
+of parity-check symbols [27, 53]. This distinction is crucial for         blocks of rows with block lengths of 800, 824, and 1224 rows.
+determining appropriate test patterns because, for full-length            These observations are consistent with the results of similar
+codes, the 1-CHARGED patterns identify the miscorrection-                 experiments performed by prior work [138].
+susceptible bits for all possible error syndromes. In this case,          5.1.2. Determining the Layout of Datawords. To deter-
+testing additional patterns that have more than one CHARGED               mine which addresses correspond to individual ECC datawords,
+bit provides no new information because any resulting error               we program one cell per row8 to the CHARGED state with all
+syndromes are already tested using the 1-CHARGED patterns.                other cells DISCHARGED. We then sweep the refresh window
+   However, for shortened codes, the 1-CHARGED patterns may               tREFw from 10 seconds to 10 minutes at 80◦ C to induce un-
+not provide enough information to uniquely identify the ECC               correctable errors. Because only CHARGED cells can fail, post-
+function because the 1-CHARGED patterns can no longer test                correction errors may only occur in bit positions corresponding
+for the missing error syndromes. Fortunately, we can recover              to either (1) the CHARGED cell itself or (2) DISCHARGED cells
+the missing information by reconstructing the truncated error             due to a miscorrection. By sweeping the bit position of the
+syndromes using pairwise combinations of the 1-CHARGED                    CHARGED cell within the dataword, we observe miscorrec-
+patterns. For example, asserting two CHARGED bits effectively             tions that are restricted exclusively to within the same ECC
+tests an error syndrome that is the linear combination of the             dataword. We find that chips from all three manufacturers use
+bits’ corresponding parity-check matrix columns. Therefore, by            identical ECC word layouts: each contiguous 32B region of
+supplementing the 1-CHARGED patterns with the 2-CHARGED                   DRAM comprises two 16B ECC words that are interleaved at
+patterns, we effectively encompass the error syndromes that               byte granularity. A 128-bit dataword is consistent with prior
+were shortened. Section 6.1 evaluates BEER’s sensitivity to               industry and academic works on on-die ECC [97, 98, 120, 138].
+code length, showing that the 1-CHARGED patterns are in-                  5.1.3. Testing With 1,2-CHARGED Patterns. To test each of
+deed sufficient for full-length codes and the {1,2}-CHARGED               the 1- or 2-CHARGED patterns, we program an equal number of
+patterns for shortened codes that we evaluate with dataword               datawords with each    test pattern. For example, a 128-bit data-
+lengths between 4 and 247.
+                                                                          word yields 128     = 128  and 128
+                                                                                                           2 = 8128 1- and 2-CHARGED
+                                                                                            
+                                                                                          1
+5. Bit-Exact Error Recovery (BEER)                                        test patterns, respectively. As Section 4.2.3 discusses, BEER
+   Our goal in this work is to develop a methodology that reli-           must identify all possible miscorrections for each test pattern.
+ably and accurately determines the full ECC function (i.e., its           To do so, BEER must exercise all possible error patterns that
+parity-check matrix) for any DRAM on-die ECC implementa-                  a codeword programmed with a given test pattern can expe-
+tion without requiring hardware tools, prerequisite knowledge             rience (e.g., up to 210 = 1024 unique error patterns for a (136,
+about the DRAM chip or on-die ECC mechanism, or access to                 128) Hamming code using a 2-CHARGED pattern).
+ECC metadata (e.g., error syndromes, parity information). To                 Fortunately, although BEER must test a large number of error
+this end, we present BEER, which systematically determines                patterns, even a single DRAM chip typically contains millions
+the ECC function by observing how it reacts when subjected                of ECC words (e.g., 224 128-bit words for a 16 Gib chip), and we
+to carefully-crafted uncorrectable error patterns. BEER imple-            simultaneously test them all when we reduce the refresh win-
+ments the ideas developed throughout Section 4 and consists               dow across the entire chip. Because data-retention errors occur
+of three key steps: (1) experimentally inducing miscorrections,           uniform-randomly (discussed in Section 3.2), every ECC word
+(2) analyzing observed post-correction errors, and (3) solving            tested provides an independent sample of errors. Therefore,
+for the ECC function.                                                     even one experiment provides millions of samples of different
+   This section describes each of these steps in detail in the con-       error patterns within the CHARGED cells, and running multiple
+text of experiments using 32, 20, and 28 real LPDDR4 DRAM                    8 We assume that ECC words do not straddle row boundaries since accesses
+chips from three major manufacturers, whom we anonymize                   would then require reading two rows simultaneously. However, one cell per
+for confidentiality reasons as A, B, and C, respectively. We              bank can be tested to accommodate this case if required.
+
+
+                                                                      7
+
+
+===== Page 8 =====
+
+    experiments at different operating conditions (e.g., changing                         manufacturers B and C exhibit repeating patterns, which likely
+    temperature or the refresh window) across multiple DRAM                               occur due to regularities in how syndromes are organized in
+    chips9 dramatically increases the sample size, making the prob-                       the parity-check matrix, whereas the matrix of manufacturer A
+    ability of not observing a given error pattern exceedingly low..                      appears to be relatively unstructured. We suspect that manufac-
+    We analyze experimental runtime in Section 6.3.                                       turers use different ECC functions because each manufacturer
+       Table 2 illustrates testing the 1-CHARGED patterns using                           employs their own circuit design, and specific parity-check ma-
+    the ECC function given by Equation 1. There are four test                             trix organizations lead to more favorable circuit-level tradeoffs
+    patterns, and Table 2 shows the miscorrections that are pos-                          (e.g., layout area, critical path lengths).
+    sible for each one assuming that all cells are true cells. For                           We find that chips of the same model number from the same
+    this ECC function, miscorrections are possible only for test                          manufacturer yield identical miscorrection profiles, which (1)
+    pattern 0, and no pre-correction error pattern exists that can                        validates that we are observing design-dependent data and
+    cause miscorrections for the other test patterns. Note that,                          (2) confirms that chips from the same manufacturer and prod-
+    for errors in the CHARGED-bit positions, we cannot be certain                         uct generation appear to use the same ECC functions. To
+    whether a post-correction error is a miscorrection or simply                          sanity-check our results, we use EINSim [2, 138] to simulate
+    a data-retention error, so we label it using ‘?’. We refer to the                     the miscorrection profiles of the final parity-check matrices we
+    cumulative pattern-miscorrection pairs as a miscorrection pro-                        obtain from our experiments with real chips, and we observe
+    file. Thus, Table 2 shows the miscorrection profile of the ECC                        that the miscorrection profiles obtained via simulation match
+    function given by Equation 1.                                                         those measured via real chip experiments.
+          1-CHARGED Pattern ID
+       (Bit-Index of CHARGED Cell)
+                                   1-CHARGED Pattern Possible Miscorrections              5.2. Step 2: Analyzing Post-Correction Errors
+                     3                  [D D D C]            [– – – ?]                       In practice, BEER may either (1) fail to observe a possible
+                     2                  [D D C D]            [– – ? –]                    miscorrection or (2) misidentify a miscorrection due to unpre-
+                     1                  [D C D D]            [– ? – –]
+                     0                  [C D D D]            [? 1 1 1]                    dictable transient errors (e.g., soft errors from particle strikes,
+    Table 2: Example miscorrection profile for the ECC function
+                                                                                          variable-retention time errors, voltage fluctuations). These
+                                                                                          events can theoretically pollute the miscorrection profile with
+    given in Equation 1.
+                                                                                          incorrect data, potentially resulting in an illegal miscorrection
+       To obtain the miscorrection profile of the on-die ECC func-                        profile, i.e., one that does not match any ECC function.
+    tion within each DRAM chip that we test, we lengthen the                                 Fortunately, case (1) is unlikely given the sheer number of
+    refresh window tREFw to between 2 minutes, where uncor-                               ECC words even a single chip provides for testing (discussed
+    rectable errors begin to occur frequently (BER ≈ 10–7 ), and                          in Section 5.1.3). While it is possible that different ECC words
+    22 minutes, where nearly all ECC words exhibit uncorrectable                          throughout a chip use different ECC functions, we believe that
+    errors (BER ≈ 10–3 ), in 1 minute intervals at 80◦ C. During each                     this is unlikely because it complicates the design with no clear
+    experiment, we record which bits are susceptible to miscor-                           benefits. Even if a chip does use more than one ECC function,
+    rections for each test pattern (analogous to Table 2). Figure 3                       the different functions will likely follow patterns aligning with
+    shows this information graphically, giving the logarithm of                           DRAM substructures (e.g., alternating between DRAM rows or
+    the number of errors observed in each bit position (X -axis)                          subarrays [83, 91]), and we can test each region individually.
+    for each 1-CHARGED test pattern (Y -axis). The data is taken                             Similarly, case (2) is unlikely because transient errors occur
+    from the true-cell regions of a single representative chip from                       randomly and rarely [141] as compared with the data-retention
+    each manufacturer. Errors in the CHARGED bit positions (i.e.,                         error rates that we induce for BEER (> 10–7 ), so transient error
+    where Y = X ) stand out clearly because they occur alongside                          occurrence counts are far lower than those of real miscorrec-
+    all miscorrections as uncorrectable errors.                                           tions that are observed frequently in miscorrection-susceptible
+                               Rarely-Observed Error   Frequently-Observed Error
+                                BER 0                               BER 10 3              bit positions. Therefore, we apply a simple threshold filter to
+1-CHARGED Pattern ID
+
+
+
+
+                       127 A
+ (CHARGED Bit Index)
+
+
+
+
+                                              B                       C                   remove rarely-observed post-correction errors from the mis-
+                        96                                                                correction profile. Figure 4 shows the relative probability of ob-
+                                                                                          serving a miscorrection in each bit position aggregated across
+                        64                                                                all 1-CHARGED test patterns for a representative chip from
+                        32                                                                manufacturer B. Each data point is a boxplot that shows the
+                                                                                          full distribution of probability values, i.e., min, median, max,
+                         0                                                                and interquartile-range (IQR), observed when sweeping the re-
+                          0
+                         32
+                         64
+                         96
+                        127
+                          0
+                         32
+                         64
+                         96
+                        127
+                          0
+                         32
+                         64
+                         96
+                        127
+
+
+
+
+                                                                                          fresh window from 2 to 22 minutes (i.e., the same experiments
+                                    Bit Index Within ECC Dataword                         described in Section 5.1.3).
+    Figure 3: Errors observed in a single representative chip from                           We see that zero and nonzero probabilities are distinctly sep-
+    each manufacturer using the 1-CHARGED test patterns, show-                            arated, so we can robustly resolve miscorrections for each bit.
+    ing that manufacturers appear to use different ECC functions.                         Furthermore, each distribution is extremely tight, meaning that
+      The data shows that miscorrection profiles vary significantly                       any of the individual experiments (i.e., any single component
+    between different manufacturers. This is likely because each                          of the distributions) is suitable for identifying miscorrections.
+    manufacturer uses a different parity-check matrix: the possi-                         Therefore, a simple threshold filter (illustrated in Figure 4) dis-
+    ble miscorrections for a given test pattern depend on which                           tinctly separates post-correction errors that occur near-zero
+    parity-check matrix columns are used to construct error syn-                          times from miscorrections that occur significantly more often.
+    dromes. With different matrices, different columns combine to                         5.3. Step 3: Solving for the ECC Function
+    form different error syndromes. The miscorrection profiles of                            We use the Z3 SAT solver [28] (described in Section 3.4)
+              9 Assuming chips of the same model use the same on-die ECC mechanism,       to identify the exact ECC function given a miscorrection pro-
+    which our experimental results in Section 5.1.3 support.                              file. To determine the encoding (Fencode ) and decoding (Fdecode )
+
+
+                                                                                      8
+
+
+===== Page 9 =====
+
+                   0.025                                      Example Threshold (1e-3)       • Inducing data-retention errors: BEER requires finding a re-
+Probability Mass
+                   0.020
+ Miscorrection
+
+                                                                                               fresh window (i.e., tREFw ) for each chip that is long enough to
+                   0.015                                                                       induce data-retention errors and expose miscorrections. For-
+                   0.010                                                                       tunately, we find that refresh windows between 1-30 minutes
+                   0.005                                                                       at 80◦ C reveal more than enough miscorrections to apply
+                   0.000                                                                       BEER. In general, the refresh window can be easily modi-
+                           0   16   32       48 64 80 96                  112 127              fied (discussed in Section 3.2), and because data-retention
+                                         Bit Index in ECC Word                                 errors are fundamental to DRAM technology, BEER applies
+   Figure 4: Relative probability of observing a miscorrection in
+                                                                                               to all DDRx DRAM families regardless of their data access
+                                                                                               protocols and will likely hold for future DRAM chips, whose
+   each bit position aggregated across all 1-CHARGED test patterns
+                                                                                               data-retention error rates will likely be even more promi-
+   for a representative chip of manufacturer B. The dashed line
+                                                                                               nent [39, 76, 89, 99, 109, 119, 120, 129, 133, 160].
+   shows a threshold filter separating zero and nonzero values.
+                                                                                             Limitations
+  functions, we express them as unknown generator (G) and                                    • ECC code type: BEER works on systematic linear block codes,
+  parity-check (H) matrices, respectively. We then add the fol-                                which are commonly employed for latency-sensitive main
+  lowing constraints to the SAT solver for G and H:                                            memory chips since: (i) they allow the data to be directly ac-
+  1. Basic linear code properties (e.g., unique H columns).                                    cessed without additional operations [181] and (ii) stronger
+  2. Standard form matrices, as described in Section 4.2.1.                                    codes (e.g., LDPC [36], concatenated codes [34]) cost consid-
+  3. Information contained within the miscorrection profile (i.e.,                             erably more area and latency [11, 132].
+     pattern i can(not) yield a miscorrection in bit j).                                     • No groundtruth: BEER alone cannot confirm whether the
+  Upon evaluating the SAT solver with these constraints, the                                   ECC function that it identifies is the correct answer. How-
+  resulting G and H matrices represent the ECC encoding and                                    ever, if BEER finds exactly one ECC function that explains
+  decoding functions, respectively, that cause the observed mis-                               the experimentally observed miscorrection profile, it is very
+  correction profile. To verify that no other ECC function may                                 likely that the ECC function is correct.
+  result in the same miscorrection profile, we simply repeat the                             • Disambiguating equivalent codes: On-die ECC does not ex-
+  SAT solver evaluation with the additional constraint that the                                pose the parity-check bits, so BEER can only determine
+  already discovered G and H matrices are invalid. If the SAT                                  the ECC function to an equivalent code (discussed in Sec-
+  solver finds another ECC function that satisfies the new con-                                tions 4.2.1 and 4.2.3). Fortunately, equivalent codes differ
+  straints, the solution is not unique.                                                        only in their internal metadata representations, so this limi-
+     To seamlessly apply BEER to the DRAM chips that we test,                                  tation should not hinder most third-party studies. In general,
+  we develop an open-source C++ application [1] that incorpo-                                  we are unaware of any way to disambiguate equivalent codes
+  rates the SAT solver and determines the ECC function corre-                                  without accessing the ECC mechanism’s internals.
+  sponding to an arbitrary miscorrection profile. The tool ex-                               6. BEER Evaluation
+  haustively searches for all possible ECC functions that satisfy                               We evaluate BEER’s correctness in simulation, SAT solver
+  the aforementioned constraints and therefore will generate the                             performance on a real system, and experimental runtime ana-
+  input miscorrection profile. Using this tool, we apply BEER to                             lytically. Our evaluations both (1) show that BEER is practical
+  miscorrection profiles that we experimentally measure across                               and correctly identifies the ECC function within our simulation-
+  all chips using refresh windows up to 30 minutes and temper-                               based analyses, and (2) provide intuition for how the SAT prob-
+  atures up to 80◦ C. We find that BEER uniquely identifies the                              lem’s complexity scales for longer ECC codewords.
+  ECC function for all manufacturers. Unfortunately, we are un-                              6.1. Simulation-Based Correctness Evaluation
+  able to publish the resulting ECC functions for confidentiality
+  reasons as set out in Section 2.1. Although we are confident in                               We simulate applying BEER to DRAM chips with on-die
+  our results because our SAT solver tool identifies a unique ECC                            ECC using a modified version of the EINSim [2, 138] open-
+  function that explains the observed miscorrection profiles for                             source DRAM error-correction simulator that we also publicly
+  each chip, we have no way to validate BEER’s results against                               release [2]. We simulate 115300 single-error correction Ham-
+  a groundtruth. To overcome this limitation, we demonstrate                                 ming code functions that are representative of those used for
+  BEER’s correctness using simulation in Section 6.1.                                        on-die ECC [60, 97, 98, 120, 129, 133, 138, 147]: 2000 each for
+                                                                                             dataword lengths between 4 and 57 bits, 100 each between
+   5.4. Requirements and Limitations                                                         58 and 120 bits, and 100 each for selected values between 121
+     Although we demonstrate BEER’s effectiveness using both                                 and 247 bits because longer codes require significantly more
+   experiment and simulation, BEER has several testing require-                              simulation time. For each ECC function, we simulate induc-
+   ments and limitations that we review in this section.                                     ing data-retention errors within the 1-, 2-, and 3-CHARGED11
+   Testing Requirements                                                                      test patterns according to the data-retention error properties
+   • Single-level ECC: BEER assumes that there is no second level                            outlined in Section 3.2. For each test pattern, we model a real
+     of ECC (e.g., rank-level ECC in the DRAM controller) present                            experiment by simulating 109 ECC words and data-retention
+     during testing.10 This is reasonable since system-level ECCs                            error rates ranging from 10–5 to 10–2 to obtain a miscorrection
+     can typically be bypassed (e.g., via FPGA-based testing or                              profile. Then, we apply BEER to the miscorrection profiles and
+     disabling through the BIOS) or reverse-engineered [26], even                            show that BEER correctly recovers the original ECC functions.
+     in the presence of on-die ECC, before applying BEER.                                       Figure 5 shows how many unique ECC functions BEER finds
+         10 We can potentially extend BEER to multiple levels of ECC by extending            when using different test patterns to generate miscorrection
+   the SAT problem to the concatenated code formed by the combined ECCs and                     11 We include the 3-CHARGED patterns to show that they fail to uniquely
+
+   constructing test patterns that target each level sequentially, but we leave this         identify all ECC functions despite comprising combinatorially more test pat-
+   direction to future work.                                                                 terns than the combined 1- and 2-CHARGED patterns.
+
+
+                                                                                         9
+
+
+===== Page 10 =====
+
+                                                                                                                                               Memory Usage (MiB)
+   profiles. For each dataword length tested, we show the mini-                     106       Total Runtime                                  104
+   mum, median, and maximum number of solutions identified                          104       Check Uniqueness
+                                                                                              Determine Function(s)
+   across all miscorrection profiles. The data shows that BEER                                                                               103
+
+
+
+
+                                                                        Time (s)
+                                                                                              Memory Usage
+   is always able to recover the original unique ECC function                       102
+   using the {1,2}-CHARGED configuration that uses both the 1-                      100                                                      102
+   CHARGED and 2-CHARGED test patterns. For full-length codes                      10 2
+   (i.e., with dataword lengths k ∈ 4, 11, 26, 57, 120, 247, …) that                                                                         101
+   contain all possible error syndromes within the parity-check                           4        8        16     32     64     128   256
+   matrix by construction, all test patterns uniquely determine                                            Dataword Length (k)
+   the ECC function, including the 1-CHARGED patterns alone.                Figure 6: Measured BEER runtime (left y-axis) and memory
+                                                                            usage (right y-axis) for different ECC codeword lengths.
+Number of Unique
+
+
+
+
+                                                       1-CHARGED
+ ECC Functions
+
+
+
+
+                   102                                 2-CHARGED            checking uniqueness, which requires exhaustively exploring
+                                                       3-CHARGED            the entire search space of a given ECC function. However, sim-
+                                                       {1,2}-CHARGED
+                   101                                                      ply determining the solution ECC function(s) is much faster,
+                                                                            requiring less than 2.7 minutes even for the longest codes eval-
+                   100                                                      uated and for shortened codes that potentially have multiple
+                         4   8     16      32     64     128     256        solutions using only the 1-CHARGED patterns. From this data,
+                                 Dataword Length (k)                        we conclude that BEER is practical for reasonable-length codes
+   Figure 5: Number of ECC functions that match miscorrection               used for on-die ECC (e.g., k = 64, 128). However, our BEER
+   profiles created using different test patterns.                          implementation has room for optimization, e.g., using dedi-
+                                                                            cated GF(2) BLAS libraries (e.g., LELA [52]) or advanced SAT
+      On the other hand, the individual 1-, 2-, and 3-CHARGED
+                                                                            solver theories (e.g., SMT bitvectors [10]), and an optimized
+   patterns sometimes identify multiple ECC functions for short-
+                                                                            implementation would likely improve performance, enabling
+   ened codes, with more solutions identified both for (1) shorter
+                                                                            BEER’s application to an even greater range of on-die ECC
+   codes and (2) codes with more aggressive shortening. However,
+                                                                            functions. Section 7.3 discusses such optimizations in greater
+   the data shows that BEER often still uniquely identifies the
+                                                                            detail. Nevertheless, BEER is a one-time offline process, so it
+   ECC function even using only the 1-CHARGED patterns (i.e., for
+                                                                            need not be aggressively performant in most use-cases.
+   87.7% of all codes simulated) and always does so with the {1,2}-
+   CHARGED patterns. This is consistent with the fact that short-           6.3. Analytical Experiment Runtime Analysis
+   ened codes expose fewer error syndromes to test (discussed                  Our experimental runtime is overwhelmingly bound by wait-
+   in Section 4.2.3). It is important to note that, even if BEER            ing for data-retention errors to occur during a lengthened re-
+   identifies multiple solutions, it still narrows a combinatorial-         fresh window (e.g., 10 minutes) while interfacing with the
+   sized search space to a tractable number of ECC functions                DRAM chip requires only on the order of milliseconds (e.g.,
+   that are well suited to more expensive analyses (e.g., intrusive         168 ms to read an entire 2 GiB LPDDR4-3200 chip [69]). There-
+   error-injection, die imaging techniques, or manual inspection).          fore, we estimate total experimental runtime as the sum of the
+      While our simulations do not model interference from tran-            refresh windows that we individually test. For the data we
+   sient errors, such errors are rare events [141] when compared            present in Section 5.1.3, testing each refresh window between
+   with the amount of uncorrectable data-retention errors that              2 to 22 minutes in 1 minute increments requires a combined
+   BEER induces. Even if sporadic transient errors were to occur,           4.2 hours of testing for a single chip. However, if chips of the
+   Section 5.2 discusses in detail how BEER mitigates their impact          same model number use the same ECC functions (as our data
+   on the miscorrection profile using a simple thresholding filter.         supports in Section 5.1.3), we can reduce overall testing latency
+   6.2. Real-System Performance Evaluation                                  by parallelizing individual tests across different chips. Further-
+      We evaluate BEER’s performance and memory usage using                 more, because BEER is likely a one-time exercise for a given
+   ten servers with 24-core 2.30 GHz Intel Xeon(R) Gold 5118                DRAM chip, it is sufficient that BEER is practical offline.
+   CPUs [58] and 192 GiB 2666 MHz DDR4 DRAM [68] each. All                  7. Example Practical Use-Cases
+   measurements are taken with Hyper-Threading [58] enabled                    BEER empowers third-party DRAM users to decouple the
+   and all cores fully occupied. Figure 6 shows overall runtime             reliability characteristics of modern DRAM chips from any
+   and memory usage when running BEER with the 1-CHARGED                    particular on-die ECC function that a chip implements. This
+   patterns for different ECC code lengths on a log-log plot along          section discusses five concrete analyses that BEER enables. To
+   with the time required to (1) solve for the ECC function (“Deter-        our knowledge, BEER is the first work capable of inferring this
+   mine Function”) and (2) verify the uniqueness of the solution            information without bypassing the on-die ECC mechanism.
+   (“Check Uniqueness”). Each data point gives the minimum,                 We hope that end users and future works find more ways to
+   median, and maximum values observed across our simulated                 extend and apply BEER in practice.
+   ECC functions (described in Section 6.1). We see that the total
+   runtime and memory usage are negligible for short codes and              7.1. BEEP: Profiling for Raw Bit Errors
+   grow as large as 62 hours and 11.4 GiB of memory for large                  We introduce Bit-Exact Error Profiling (BEEP), a new data-
+   codes. For a representative dataword length of 128 bits, the             retention error profiling algorithm enabled by BEER that infers
+   median total runtime and memory usage are 57.1 hours and                 the number and bit-exact locations of pre-correction error-
+   6.3 GiB, respectively. At each code length where we add an               prone cells when given a set of operating conditions that cause
+   additional parity-check bit, the runtime and memory usage                uncorrectable errors in an ECC word. To our knowledge, BEEP
+   jump accordingly since the complexity of the SAT evaluation              is the first DRAM error profiling methodology capable of iden-
+   problem increases by an extra dimension.                                 tifying bit-exact error locations throughout the entire on-die
+      The total runtime is quickly dominated by the SAT solver              ECC codeword, including within the parity bits.
+
+
+                                                                       10
+
+
+===== Page 11 =====
+
+7.1.1. BEEP: Inference Based on Miscorrections. Because                                                           low-probability errors). Figure 7 1 illustrates how such a test
+miscorrections are purely a function of the ECC logic (discussed                                                  pattern appears physically within the cells of a codeword: the
+in Section 4.2.2), an observed miscorrection indicates that a                                                     target cell is CHARGED, its neighbors are DISCHARGED, and
+specific pre-correction error pattern has occurred. Although                                                      the SAT solver freely determines the states of the remaining
+several such patterns can map to the same miscorrection, BEEP                                                     cells to increase the likelihood of a miscorrection if the tar-
+narrows down the possible pre-correction error locations by                                                       get cell fails. If the SAT solver fails to find such a test pattern,
+using the known parity-check matrix (after applying BEER)                                                         BEEP attempts to craft a pattern using constraint 2 alone, which,
+to construct test patterns for additional experiments that dis-                                                   unlike constraint 1, is essential to observing miscorrections.
+ambiguate the possibilities. At a high level, BEEP crafts test                                                    Failing that, BEEP simply skips the bit until more error-prone
+patterns to reveal errors as it incrementally traverses each                                                      cells are identified that could facilitate causing miscorrections.
+codeword bit, possibly using multiple passes to capture low-                                                      We evaluate how successfully BEEP identifies errors in Sec-
+probability errors. As BEEP iterates over the codeword, it                                                        tion 7.1.4, finding that a second pass over the codeword helps
+builds up a list of suspected error-prone cells.                                                                  in cases of few or low-probability errors.
+   BEEP comprises three phases: 1 crafting suitable test pat-                                                     7.1.3. Experimental Testing with Crafted Patterns. BEEP
+terns, 2 experimental testing with crafted patterns, and 3                                                        tests a pattern by writing it to the target ECC word, induc-
+calculating pre-correction error locations from observed mis-                                                     ing errors by lengthening the refresh window, and reading
+corrections. Figure 7 illustrates these three phases in an exam-                                                  out the post-correction data. Figure 7 2 shows examples of
+ple where BEEP profiles for pre-correction errors in a 128-bit                                                    post-correction error patterns that might be observed during
+ECC dataword. The following sections explain each of the three                                                    an experiment. Each miscorrection indicates that an uncor-
+phases and refer to Figure 7 as a running example.                                                                rectable number of pre-correction errors exists, and BEEP uses
+7.1.2. Crafting Suitable Test Patterns. Conventional                                                              the parity-check matrix H to calculate their precise locations.
+DRAM error profilers (e.g., [22, 46, 71, 79, 81, 95, 104, 109, 110,                                               This is possible because each miscorrection reveals an error syn-
+139, 165, 169]) use carefully designed test patterns that induce                                                  drome s for the (unknown) erroneous pre-correction codeword
+worst-case circuit conditions in order to maximize their cov-                                                     c0 that caused the miscorrection. Therefore, we can directly
+erage of potential errors [3, 123]. Unfortunately, on-die ECC                                                     solve for c0 as shown in Equation 4.
+encodes all data into codewords, so the intended software-level                                                          s = H ∗ c0 = c00 · H∗,0 + c10 · H∗,1 + … + cn0 · H∗,n    (4)
+test patterns likely do not maintain their carefully-designed
+properties when written to the physical DRAM cells. BEEP                                                          This is a system of equations with one equation for each of n–k
+circumvents these ECC-imposed restrictions by using a SAT                                                         unknowns, i.e., one each for the n – k inaccessible parity bits.
+solver along with the known ECC function (via BEER) to craft                                                      There is guaranteed to be exactly one solution for c0 since the
+test patterns that both (1) locally induce the worst-case cir-                                                    parity-check matrix always has full rank (i.e., rank(H) = n – k).
+cuit conditions and (2) result in observable miscorrections if                                                    Since we also know the original codeword (c = Fencode (d) =
+suspected error-prone cells do indeed fail.                                                                       G·d), we can simply compare the two (i.e., c⊕c0 ) to determine
+                                                                                                                  the bit-exact error pattern that led to the observed miscorrection.
+   Without loss of generality, we assume that the worst-case                                                      Figure 7 3 shows how BEEP updates a list of learned pre-
+conditions for a given bit occur when its neighbors are pro-                                                      correction error locations, which the SAT solver then uses to
+grammed with the opposite charge states, which prior work                                                         construct test patterns for subsequent bits. Once all bits are
+shows to exacerbate circuit-level coupling effects and increase                                                   tested, the list of pre-correction errors yields the number and
+error rates [3, 5, 79, 93, 107, 109, 123, 130, 144, 156, 166]. If the                                             bit-locations of all identified error-prone cells.
+design of a worst-case pattern is not known, or if it has a differ-
+ent structure than we assume, BEEP can be adapted by simply                                                       7.1.4. Evaluating BEEP’s Success Rate. To understand how
+modifying the relevant SAT solver constraints (described be-                                                      BEEP performs in practice, we evaluate its success rate, i.e.,
+low). To ensure that BEEP observes a miscorrection when a                                                         the likelihood that BEEP correctly identifies errors within a
+given error occurs, BEEP crafts a pattern that will suffer a mis-                                                 codeword. We use a modified version of EINSim [2] to perform
+correction if the error occurs alongside an already-discovered                                                    Monte-Carlo simulation across 100 codewords per measure-
+error. We express these conditions to the SAT solver using the                                                    ment. To keep our analysis independent of any particular
+following constraints:                                                                                            bit-error rate model, we subdivide experiments by the number
+1. Bits adjacent to the target bit have opposing charge states.                                                   of errors (N ) injected per codeword. In this way, we can flexibly
+2. One or more miscorrections is possible using some combi-                                                       evaluate the success rate for a specific error distribution using
+   nation of the already-identified data-retention errors.                                                        the law of total probability over the N s.
+Several such patterns typically exist, and BEEP simply uses the                                                      Number of Passes. Figure 8 shows BEEP’s success rate
+first one that the SAT solver returns (although a different BEEP                                                  when using one and two passes over the codeword for different
+implementation could test multiple patterns to help identify                                                      codeword lengths. Each bar shows the median value over the
+ Generate Test Paern                     Test Bit[0]          Begin                               Test Bit[1]                                                           Test Bit[135]
+     C CHARGED cell                                                                                                                                                                      To Test Bit[0]
+ 1 D DISCHARGED cell                          CD - - - … - - - - -                                      DCD - - … - - - - -                          - - - - - … - - - DC
+     - Free for SAT solver to choose                       136-bit Codeword
+                                                                                     nreaP tseT arC
+                                                                                     revloS TAS gnisU
+
+
+
+
+                                 ECC Words with Diﬀerent
+                                                              Run Experiments
+ Test for Miscorrections Pre-Correction Error Paerns                                                                                                                                (Optional) Repeat
+                                            - - - - M- - - …… - - - - -M - -                             - - - - - - - - ……M- - - - - - -            M- -M - - - - ……
+                                                                                                                                            …
+
+
+
+
+      M Miscorrection observed                                                                                                                                        - - - -     for Second Pass to Find
+  2 - No error observed                        - - - -      …    - - - -                                    - M - - … - - - -                          - M - - … -- -- -- --      Low-Probability Errors
+                                                           128-bit Dataword
+                                                                    Calculate With                                            New Error Identified
+ Learn Pre-Correction Errors                                        ECC Function
+  3 E? Known  error                           ? E ? ? ? …E ? ? ? ?                                      ? E ? ? ? …E ? ? E ?                         ? E ? ? E …E ? ? E ?                Pre-Correction
+                                                                                                                                                                                         Error Locations
+        Unknown                                            136-bit Codeword
+
+         Figure 7: Example of running BEEP on a single 136-bit ECC codeword to identify locations of pre-correction errors.
+
+
+                                                                                                            11
+
+
+===== Page 12 =====
+
+      100 codewords with an error bar showing the 5th and 95th per-                                                    low-probability errors,13 the data shows that BEEP is resilient
+      centiles. The data shows that BEEP is highly successful across                                                   to low error probabilities, especially for longer, more realis-
+      all tested error counts, especially for longer 127- and 255-bit                                                  tic codewords. Therefore, our evaluations demonstrate that
+      codewords that show a 100% success rate even with a single pass.                                                 BEEP effectively enables a new profiling methodology that uses
+      Longer codewords perform better in part because BEEP uses                                                        the ECC function determined by BEER to infer pre-correction
+      one test pattern per bit, which means that longer codes lead                                                     errors from observed post-correction error patterns.
+      to more patterns. However, longer codewords perform better                                                       7.1.5. Other DRAM Error Mechanisms. Although we
+      even with comparable test-pattern counts (e.g., 2 passes with                                                    demonstrate BEEP solely for data-retention errors, BEEP can
+      31-bit vs 1 pass with 63-bit codewords) because longer code-                                                     potentially be extended to identify errors that occur due to
+      words simply have more bits (and therefore, error syndromes)                                                     other DRAM error mechanisms (e.g., stuck-at faults, circuit
+      for the SAT solver to consider when crafting a miscorrection-                                                    timing failures). However, simultaneously diagnosing multiple
+      prone test pattern. On the other hand, miscorrection-prone                                                       error models is a very difficult problem since different types
+      test patterns are more difficult to construct for shorter codes                                                  of faults can be nearly indistinguishable (e.g., data-retention
+      that provide fewer bits to work with, so BEEP fails more often                                                   errors and stuck-at-DISCHARGED errors). Profiling for arbi-
+      when testing shorter codes.                                                                                      trary error types is a separate problem from what we tackle in
+                                                         1 Pass        2 Passes                                        this work, and we intend BEEP as a simple, intuitive demon-
+                           31-Bit Codeword      63-Bit Codeword      127-Bit Codeword       255-Bit Codeword           stration of how knowing the ECC function is practically useful.
+                    100%
+BEEP Success Rate
+
+
+
+
+                                                                                                                       Therefore, we leave extending BEEP to alternative DRAM error
+                     75%                                                                                               mechanisms to future work.
+                     50%                                                                                               7.2. Other Use-Cases that Benefit from BEER
+                                                                                                                          We identify four additional use cases for which BEER mit-
+                     25%                                                                                               igates on-die ECC’s interference with third-party studies by
+                      0%                                                                                               revealing the full ECC function (i.e., its parity-check matrix).
+                            2      3     4      5        10 15 20                                       25             7.2.1. Combining Error Mitigation Mechanisms. If the
+                                 Number of Errors Injected per Codeword                                                on-die ECC function is known, a system architect can design
+      Figure 8: BEEP success rate for 1 vs. 2 passes and different                                                     a second level of error mitigation (e.g., rank-level ECC) that
+      codeword lengths and numbers of errors injected.                                                                 better suits the error characteristics of a DRAM chip with on-
+         Per-Bit Error Probabilities. Figure 9 shows how BEEP’s                                                        die ECC. Figure 1 provides a simple example of how different
+      success rate changes using a single pass when the injected                                                       ECC functions cause different data bits to be more error-prone
+      errors have different per-bit probabilities of error (P[error]).                                                 even though the pre-correction errors are uniformly distributed.
+      This experiment represents a more realistic scenario where                                                       This means that on-die ECC changes the DRAM chip’s software-
+      some DRAM cells probabilistically experience data-retention                                                      visible error characteristics in a way that depends on the par-
+      errors. We see that BEEP remains effective (i.e., has a near-100%                                                ticular ECC function it employs. If the on-die ECC function
+      success rate) for realistic 63- and 127-bit codeword lengths,                                                    is known, we can calculate the expected post-correction error
+      especially at higher bit-error probabilities and error counts.                                                   characteristics14 and build an error model that accounts for the
+      BEEP generally has a higher success rate with longer codes                                                       transformative effects of on-die ECC. Using this error model,
+      compared to shorter ones, and for shorter codewords at low                                                       the system architect can make an informed decision when
+      error probabilities, the data shows that BEEP may require more                                                   selecting a secondary mitigation mechanism to complement
+      test patterns (e.g., multiple passes) to reliably identify all errors.                                           on-die ECC. For example, architects could modify a traditional
+                                                                                                                       rank-level ECC scheme to asymmetrically protect certain data
+                                    31-Bit Codeword          63-Bit Codeword          127-Bit Codeword
+                                                                                                                       bits that are more prone to errors than others as a result of on-
+                           P[error] = 1.0         P[error] = 0.75        P[error] = 0.5         P[error] = 0.25
+                    100%                                                                                               die ECC’s behavior [95, 174]. In general, BEER enables system
+BEEP Success Rate
+
+
+
+
+                                                                                                                       designers to better design secondary error-mitigation mech-
+                     75%                                                                                               anisms to suit the expected DRAM reliability characteristics,
+                     50%                                                                                               thereby improving overall system reliability.
+                     25%                                                                                               7.2.2. Crafting Targeted Test Patterns. Several DRAM
+                                                                                                                       error mechanisms are highly pattern sensitive, including
+                      0%                                                                                               RowHammer [86, 90, 125, 126], data-retention [43, 78, 79, 81, 88,
+                            2      3    4      5         10 15 20 25                                                   109, 110, 139], and reduced-access-latency [17, 20, 83, 102, 104].
+                                 Number of Errors Injected per Codeword                                                Different test patterns affect error rates by orders of magni-
+      Figure 9: BEEP success rate for different single-bit error prob-                                                 tude [79–81, 86, 100, 109, 139] because each pattern exercises
+      abilities using different ECC codeword lengths for different                                                     different static and dynamic circuit-level effects. Therefore, test
+      numbers of errors injected in the codeword.                                                                      patterns are typically designed carefully to induce the worst-
+         It is important to note that, while evaluating low error prob-                                                case circuit conditions for the error mechanism under test (e.g.,
+      abilities is demonstrative, it represents a pessimistic scenario                                                 marching ‘1’s [3, 46, 109, 123, 139]). As Section 7.1.2 discusses
+      since a real DRAM chip exhibits a mix of low and high per-bit                                                    in greater detail, on-die ECC restricts the possible test patterns
+                                                                                                                       to only the ECC function’s codewords. Fortunately, the SAT-
+      error probabilities.12 Although any error-profiling mechanism
+                                                                                                                          13 Patel et al. [139] increase error coverage by exacerbating the bit-error
+      that identifies errors based on when they manifest might miss
+                                                                                                                       probability, and their approach (REAPER) can be used alongside BEEP to help
+        12 Patel et al. [139] provide a preliminary exploration of how per-bit er-                                     identify low-probability errors.
+      ror probabilities are distributed throughout a DRAM chip, but formulating a                                         14 By assuming a given data value distribution, e.g., fixed values for a pre-
+
+      detailed error model for accurate simulation is beyond the scope of our work.                                    dictable software application, uniform-random data for a general system.
+
+
+                                                                                                                  12
+
+
+===== Page 13 =====
+
+solver-based approach that BEEP uses to craft test patterns                          BEER’s SAT problem mathematically in order to directly solve
+generalizes to crafting targeted test patterns for these error                       for the parity-check matrix that can produce a given miscor-
+mechanisms also.                                                                     rection profile. Such an approach could identify the solution
+7.2.3. Studying Spatial Error Distributions. Numerous                                significantly faster than using a SAT solver to perform a brute-
+prior works [17, 20, 83, 90, 104, 136, 157] experimentally study                     force exploration of the entire solution space.
+the spatial distributions of errors throughout the DRAM chip                         8. Related Work
+in order to gain insight into how the chip operates and how its                         To our knowledge, this is the first work to (i) determine the
+performance, energy, and/or reliability can be improved. These                       full on-die ECC function and (ii) recover the number and bit-
+studies rely on inducing errors at relatively high error rates so                    exact error locations of pre-correction errors in DRAM chips
+that many errors occur that can leak information about a de-                         with on-die ECC without any insight into the ECC mechanism
+vice’s underlying structure. With on-die ECC, studying spatial                       or any hardware modification. We distinguish BEER from
+error distributions requires identifying pre-correction errors                       related works that study on-die ECC, techniques for reverse-
+throughout the codeword, including within the inaccessible                           engineering DRAM ECC functions, and DRAM error profiling.
+parity bits. BEEP demonstrates one possible concrete way by                          On-Die ECC. Several works study on-die ECC [15,40,129,138],
+which BEER enables these studies for chips with on-die ECC.                          but only Patel et al. [138] attempt to identify pre-correction er-
+7.2.4. Diagnosing Post-Correction Errors. A third-party                              ror characteristics without bypassing or modifying the on-die
+tester may want to determine the physical reason(s) behind                           ECC mechanism. Although Patel et al. [138] statistically infer
+an observed error. For example, a system integrator who is                           high-level characteristics about the ECC mechanism and pre-
+validating a DRAM chip’s worst-case operating conditions may                         correction errors, their approach has several key limitations
+observe unexpected errors due to an unforeseen defect (e.g.,                         (discussed in Section 1). BEER overcomes these limitations
+at a precise DQ-pin position). Unfortunately, on-die ECC ob-                         and identifies (1) the full ECC function and (2) the bit-exact
+scures both the number and locations of pre-correction errors,                       locations of pre-correction errors without requiring any pre-
+so the observed errors no longer provide insight into the un-                        requisite knowledge about the errors being studied.
+derlying physical error mechanism responsible. Using BEEP,                           Determining ECC Functions. Prior works reverse-engineer
+such errors can be more easily diagnosed because the revealed                        ECC characteristics in Flash memories [167, 168, 175], DRAM
+pre-correction errors directly result from the error mechanism.                      with rank-level ECC [26], and on-die ECC [138]. However,
+7.3. Extensions and Future Work                                                      none of these works can identify the full ECC function by
+    Our work demonstrates that on-die ECC is not an insur-                           studying data only at the external DRAM chip interface because
+mountable problem for third-party system design and testing.                         they either require (1) examining the encoded data [167, 168,
+To further explore how tools like BEER can help clarify a DRAM                       175], (2) injecting errors directly into the codeword [26], or (3)
+chip’s core reliability characteristics, we identify several ways                    knowing when an ECC correction is performed and obtaining
+in which future studies can build upon our work. We believe                          the resulting error syndrome [26]. On-die ECC provides no
+these are promising directions to explore and will further fa-                       insight into the error-correction process and does not report if
+cilitate studying the reliability characteristics of current and                     or when a correction is performed.
+future devices with on-die ECC.                                                      DRAM Error Profiling. Prior work proposes many DRAM
+Extension to Other Devices. BEER theoretically applies to                            error profiling methodologies [17, 20, 26, 37, 42, 43, 46, 74, 75,
+any memory device that uses a linear block code in which                             78–80, 83–86, 90, 95, 102, 104, 109, 110, 138, 139, 141, 157, 169, 172,
+we can exploit data-dependent errors (e.g., CHARGED-to-                              173]. Unfortunately, none of these approaches are capable
+DISCHARGED) to control which miscorrections occur. A con-                            of identifying pre-correction error locations throughout the
+crete example is DRAM with rank-level ECC, where BEER                                entire codeword (i.e., including within parity-check bits).
+can be applied as is.15 However, BEER may be extensible to                           9. Conclusion
+other memory devices (e.g., Flash memory [11–14,112,113,118],                           We introduce Bit-Exact Error Recovery (BEER), a new
+STT-MRAM [62, 96, 182], PCM [101, 142, 152, 177], Race-                              methodology for determining the full DRAM on-die ECC func-
+track [137, 179], RRAM [134, 171, 176]) if its core principles can                   tion (i.e., its parity-check matrix) without requiring hardware
+be adapted for their error models and ECC functions. These                           support, prerequisite knowledge about the DRAM chip or on-
+memories all exhibit reliability challenges that BEER can help                       die ECC mechanism, or access to ECC metadata (e.g., parity-
+third-party scientists and engineers better tackle and overcome.                     check bits, error syndromes). We use BEER to determine the
+Further Constraining the SAT Problem. We believe there                               on-die ECC functions of 80 real LPDDR4 DRAM chips and show
+are several ways to further constrain the SAT problem, includ-                       that BEER is both effective and practical using rigorous simu-
+ing (i) prioritizing more likely hardware ECC implementations,                       lations. We discuss five concrete use-cases for BEER, including
+(ii) adding additional SAT constraints for obvious or trivial                        BEEP, a new DRAM error profiling methodology capable of
+cases, and (iii) further constraining the set of test patterns.                      inferring exact pre-correction error counts and locations. We
+Improving SAT Solver Efficiency. Our implementations of                              believe that BEER takes an important step towards enabling
+BEER and BEEP express ECC arithmetic (e.g., GF(2) matrix op-                         effective third-party design and testing around DRAM chips
+erations, SAT constraints) using simple Boolean logic equations.                     with on-die ECC and are hopeful that BEER will enable many
+An optimized implementation that leverages native GF(2) BLAS                         new studies going forward.
+libraries (e.g., LELA [52]) and advanced SAT solver theories                         Acknowledgments
+(e.g., SMT bitvectors [10]) could drastically improve BEER’s
+                                                                                        We thank the SAFARI Research Group members for the
+performance, enabling BEER for a wider variety of ECC func-
+                                                                                     valuable input and stimulating intellectual environment they
+tions. Taking this a step further, future work could reformulate
+                                                                                     provide, Karthik Sethuraman for his expertise in nonparametric
+  15 There may be no need to infer error syndromes from miscorrections if the
+                                                                                     statistics, and the anonymous reviewers for their feedback.
+CPU directly exposes them [26].
+
+
+                                                                                13
+
+
+===== Page 14 =====
+
+References                                                                             [31] N. Edri, P. Meinerzhagen, A. Teman, A. Burg, and A. Fish, “Silicon-
+  [1] “BEER Source Code,” https://github.com/CMU-SAFARI/BEER.                               Proven, Per-Cell Retention Time Distribution Model for Gain-Cell
+  [2] “EINSim Source Code,” https://github.com/CMU-SAFARI/EINSim.                           Based eDRAMs,” IEEE TOCS, 2016.
+                                                                                       [32] B. Efron, “Bootstrap Methods: Another Look at the Jackknife,” in
+  [3] R. D. Adams, High Performance Memory Testing: Design Principles,
+                                                                                            Breakthroughs in Statistics, 1992.
+      Fault Modeling and Self-Test. Springer SBM, 2002.
+                                                                                       [33] S. Field, “Microsoft Azure uses Error-Correcting Code Memory for
+  [4] ADATA, “ADATA XPG DDR4 Officially Validated by AMD as
+                                                                                            Enhanced Reliability and Security,” https://azure.microsoft.com/en-
+      AM4/Ryzen Compatible,” ADATA, Tech. Rep., 2017.
+                                                                                            us/blog/microsoft-azure-uses-error-correcting-code-memory-for-
+  [5] Z. Al-Ars, S. Hamdioui, and A. J. van de Goor, “Effects of Bit Line                   enhanced-reliability-and-security, 2015.
+      Coupling on the Faulty Behavior of DRAMs,” in VTS, 2004.
+                                                                                       [34] G. D. Forney, “Concatenated Codes,” MIT Press, 1965.
+  [6] AMD, “AMD Opteron 4300 Series Processors,” 2018.
+                                                                                       [35] P. Frigo, E. Vannacci, H. Hassan, V. van der Veen, O. Mutlu, C. Giuffrida,
+  [7] S. Baek, S. Cho, and R. Melhem, “Refresh Now and Then,” in TC, 2014.                  H. Bos, and K. Razavi, “TRRespass: Exploiting the Many Sides of Target
+  [8] N. Bjørner, A.-D. Phan, and L. Fleckenstein, “nu-Z: An Optimizing                     Row Refresh,” in IEEE S&P, 2020.
+      SMT Solver,” in TACAS, 2015.                                                     [36] R. G. Gallager, “Low density parity check codes,” Ph.D. dissertation,
+  [9] R. C. Bose and D. K. Ray-Chaudhuri, “On a Class of Error Correcting                   Massachusetts Institute of Technology, 1963.
+      Binary Group Codes,” Information and Control, 1960.                              [37] F. Gao, G. Tziantzioulis, and D. Wentzlaff, “ComputeDRAM: In-
+ [10] R. Brummayer and A. Biere, “Boolector: An Efficient SMT Solver                        Memory Compute using Off-the-Shelf DRAMs,” in MICRO, 2019.
+      for Bit-Vectors and Arrays,” in International Conference on Tools and            [38] C. P. Gomes, H. Kautz, A. Sabharwal, and B. Selman, “Satisfiability
+      Algorithms for the Construction and Analysis of Systems, 2009.                        Solvers,” Foundations of Artificial Intelligence, 2008.
+ [11] Y. Cai, S. Ghose, E. F. Haratsch, Y. Luo, and O. Mutlu, “Error Character-        [39] S.-L. Gong, J. Kim, and M. Erez, “DRAM Scaling Error Evaluation
+      ization, Mitigation, and Recovery In Flash-Memory-Based Solid-State                   Model Using Various Retention Time,” in DSN-W, 2017.
+      Drives,” Proc. IEEE, 2017.
+ [12] Y. Cai, S. Ghose, E. F. Haratsch, Y. Luo, and O. Mutlu, “Errors in Flash-        [40] S.-L. Gong, J. Kim, S. Lym, M. Sullivan, H. David, and M. Erez, “DUO:
+      Memory-Based Solid-State Drives: Analysis, Mitigation, and Recovery,”                 Exposing On-Chip Redundancy to Rank-Level ECC for High Reliabil-
+      Inside Solid State Drives, 2018.                                                      ity,” in HPCA, 2018.
+ [13] Y. Cai, E. F. Haratsch, O. Mutlu, and K. Mai, “Error Patterns in MLC             [41] B. Gu, T. Coughlin, B. Maxwell, J. Griffith, J. Lee, J. Cordingley, S. John-
+      NAND Flash Memory: Measurement, Characterization, and Analysis,”                      son, E. Karaginiannis, and J. Ehmann, “Challenges and Future Direc-
+      in DATE, 2012.                                                                        tions of Laser Fuse Processing in Memory Repair,” Proc. Semicon China,
+ [14] Y. Cai, G. Yalcin, O. Mutlu, E. F. Haratsch, A. Cristal, O. S. Unsal, and             2003.
+      K. Mai, “Error Analysis and Retention-Aware Error Management for                 [42] T. Hamamoto, S. Sugiura, and S. Sawada, “Well Concentration: A Novel
+      NAND Flash Memory,” in ITJ, 2013.                                                     Scaling Limitation Factor Derived From DRAM Retention Time and
+                                                                                            Its Modeling,” in IEDM, 1995.
+ [15] S. Cha et al., “Defect Analysis and Cost-Effective Resilience Architec-
+      ture for Future DRAM Devices,” in HPCA, 2017.                                    [43] T. Hamamoto, S. Sugiura, and S. Sawada, “On the Retention Time
+ [16] K. Chandrasekar, S. Goossens, C. Weis, M. Koedam, B. Akesson,                         Distribution of Dynamic Random Access Memory (DRAM),” in TED,
+                                                                                            1998.
+      N. Wehn, and K. Goossens, “Exploiting Expendable Process-Margins                 [44] R. W. Hamming, “Error Detecting and Error Correcting Codes,” in Bell
+      in DRAMs for Run-Time Performance Optimization,” in DATE, 2014.                       Labs Technical Journal, 1950.
+ [17] K. K. Chang, A. Kashyap, H. Hassan, S. Ghose, K. Hsieh, D. Lee, T. Li,           [45] H. Hassan, M. Patel, J. S. Kim, A. G. Yağlıkçı, N. Vijaykumar, N. M.
+      G. Pekhimenko, S. Khan, and O. Mutlu, “Understanding Latency Varia-                   Ghiasi, S. Ghose, and O. Mutlu, “CROW: A Low-Cost Substrate for
+      tion in Modern DRAM Chips: Experimental Characterization, Analysis,                   Improving DRAM Performance, Energy Efficiency, and Reliability,” in
+      and Optimization,” in SIGMETRICS, 2016.                                               ISCA, 2019.
+ [18] K. K. Chang, D. Lee, Z. Chishti, A. R. Alameldeen, C. Wilkerson, Y. Kim,         [46] H. Hassan, N. Vijaykumar, S. Khan, S. Ghose, K. Chang, G. Pekhimenko,
+      and O. Mutlu, “Improving DRAM Performance by Parallelizing Re-                        D. Lee, O. Ergin, and O. Mutlu, “SoftMC: A Flexible and Practical Open-
+      freshes with Accesses,” in HPCA, 2014.                                                Source Infrastructure for Enabling Experimental DRAM Studies,” in
+ [19] K. K. Chang, P. J. Nair, D. Lee, S. Ghose, M. K. Qureshi, and O. Mutlu,               HPCA, 2017.
+      “Low-Cost Inter-Linked Subarrays (LISA): Enabling Fast Inter-Subarray            [47] Hewlett-Packard Development Company, L.P., “Why Buy HP Qualified
+      Data Movement in DRAM,” in HPCA, 2016.                                                Memory?” Hewlett-Packard Development Company, L.P., Tech. Rep.,
+ [20] K. K. Chang, A. G. Yağlıkçı, S. Ghose, A. Agrawal, N. Chatterjee,                   2011, 3rd Edition.
+      A. Kashyap, D. Lee, M. O’Connor, H. Hassan, and O. Mutlu, “Un-                   [48] M.-J. Ho, “Method of Analyzing DRAM Redundancy Repair,” 2003, uS
+      derstanding Reduced-Voltage Operation in Modern DRAM Devices:                         Patent 6,573,524.
+      Experimental Characterization, Analysis, and Mechanisms,” in SIG-                [49] A. Hocquenghem, “Codes Correcteurs D’erreurs,” Chiffres, 1959.
+      METRICS, 2017.                                                                   [50] S. Hong, “Memory Technology Trend and Future Challenges,” in IEDM,
+ [21] H.-M. Chen, S.-Y. Lee, T. Mudge, C.-J. Wu, and C. Chakrabarti,                        2010.
+      “Configurable-ECC: Architecting a Flexible ECC Scheme to Support                 [51] M. Horiguchi and K. Itoh, Nanoscale Memory Repair. Springer SBM,
+      Different Sized Accesses in High Bandwidth Memory Systems,” TC,                       2011.
+      2018.                                                                            [52] B. Hovinen, “Getting Started with LELA,” http://www.singular.uni-
+ [22] K.-L. Cheng, M.-F. Tsai, and C.-W. Wu, “Neighborhood Pattern-                         kl.de/lela/tutorial.html, 2011.
+      Sensitive Fault Testing and Diagnostics for Random-Access Memories,”             [53] W. C. Huffman and V. Pless, Fundamentals of Error-Correcting Codes.
+      TCAD, 2002.                                                                           Cambridge University Press, 2003.
+ [23] B. R. Childers, J. Yang, and Y. Zhang, “Achieving Yield, Density and Per-        [54] K. Iniewski, Nano-Semiconductors: Devices and Technology. CRC
+      formance Effective DRAM at Extreme Technology Sizes,” in MEMSYS,                      Press, 2011.
+      2015.
+                                                                                       [55] Integrated Circuit Engineering Corporation, Cost Effective IC Manu-
+ [24] A. Cimatti, A. Franzén, A. Griggio, R. Sebastiani, and C. Stenico, “Sat-
+                                                                                            facturing, 1997.
+      isfiability Modulo The Theory of Costs: Foundations and Applications,”
+      in TACAS, 2010.                                                                  [56] Intel      Corporation,       “Intel      Extreme        Memory         Pro-
+ [25] G. C. Clark Jr and J. B. Cain, Error-Correction Coding for Digital Com-               file      (Intel      XMP)        DDR3          Technology,”           2009,
+      munications. Springer SBM, 2013.                                                      http://www.intel.com/content/www/us/en/chipsets/extreme-
+                                                                                            memory-profile-ddr3-technology-paper.html.
+ [26] L. Cojocar, K. Razavi, C. Giuffrida, and H. Bos, “Exploiting Correcting
+      Codes: On the Effectiveness of ECC Memory Against Rowhammer                      [57] Intel Corporation, “Mobile 4th Generation Intel Core Processor Family,”
+      Attacks,” in S&P, 2019.                                                               2015.
+ [27] D. J. Costello and S. Lin, Error Control Coding: Fundamentals and                [58] Intel Corporation, “Intel Xeon Gold 5118 Processor,” 2020,
+      Applications. Prentice Hall, 1982.                                                    https://ark.intel.com/content/www/us/en/ark/products/120473/intel-
+                                                                                            xeon-gold-5118-processor-16-5m-cache-2-30-ghz.html.
+ [28] L. De Moura and N. Bjørner, “Z3: An Efficient SMT Solver,” in TACAS,
+      2008.                                                                            [59] Intel Corporation, “Platform Memory Validation,” https://www.intel.
+ [29] T. J. Dell, “A White Paper on the Benefits of Chipkill-Correct ECC for                com/content/www/us/en/platform-memory/platform-memory.html,
+      PC Server Main Memory,” IBM Microelectronics Division, 1997.                          2020.
+                                                                                       [60] Intelligent Memory, “IM ECC DRAM with Integrated Error Correcting
+ [30] I. Dillig, T. Dillig, K. L. McMillan, and A. Aiken, “Minimum Satisfying               Code,” 2016, Product Brief.
+      Assignments for SMT,” in CAV, 2012.
+
+
+
+                                                                                  14
+
+
+===== Page 15 =====
+
+[61] E. Ipek, O. Mutlu, J. F. Martı́nez, and R. Caruana, “Self-Optimizing                   [93] Y. Konishi, M. Kumanoya, H. Yamasaki, K. Dosaka, and T. Yoshihara,
+     Memory Controllers: A Reinforcement Learning Approach,” in ISCA,                            “Analysis of Coupling Noise Between Adjacent Bit Lines in Megabit
+     2008.                                                                                       DRAMs,” JSSC, 1989.
+[62] T. Ishigaki, T. Kawahara, R. Takemura, K. Ono, K. Ito, H. Matsuoka,                    [94] S. Koppula, L. Orosa, A. G. Yağlıkçı, R. Azizi, T. Shahroodi, K. Kanel-
+     and H. Ohno, “A Multi-Level-Cell Spin-Transfer Torque Memory with                           lopoulos, and O. Mutlu, “EDEN: Enabling Energy-Efficient, High-
+     Series-Stacked Magnetotunnel Junctions,” in VLSI, 2010.                                     Performance Deep Neural Network Inference Using Approximate
+[63] ISSI, “8Gb (x16 x 2 Channel) Mobile LPDDR4/LPDDR4X,” 2020.                                  DRAM,” in MICRO, 2019.
+[64] K. Itoh, VLSI Memory Chip Design. Springer Science & Business                          [95] K. Kraft, C. Sudarshan, D. M. Mathew, C. Weis, N. Wehn, and M. Jung,
+     Media, 2013, vol. 5.                                                                        “Improving the Error Behavior of DRAM by Exploiting its Z-Channel
+[65] B. Jacob, S. Ng, and D. Wang, Memory Systems: Cache, DRAM, Disk.                            Property,” in DATE, 2018.
+     Morgan Kaufmann, 2010.                                                                 [96] E. Kültürsay, M. Kandemir, A. Sivasubramaniam, and O. Mutlu, “Eval-
+[66] D. James, “Silicon Chip Teardown to the Atomic Scale–Challenges                             uating STT-RAM as an Energy-Efficient Main Memory Alternative,”
+     Facing the Reverse Engineering of Semiconductors,” Microscopy and                           in ISPASS, 2013.
+     Microanalysis, 2010.                                                                   [97] N. Kwak et al., “A 4.8 Gb/s/pin 2Gb LPDDR4 SDRAM with Sub-100µA
+[67] JEDEC, DDR3 SDRAM Specification, 2008.                                                      Self-Refresh Current for IoT Applications,” in ISSCC, 2017.
+[68] JEDEC, DDR4 SDRAM Specification, 2012.                                                 [98] H.-J. Kwon et al., “An Extremely Low-Standby-Power 3.733 Gb/s/pin
+[69] JEDEC, “Low Power Double Data Rate 4 (LPDDR4) SDRAM Specifica-                              2Gb LPDDR4 SDRAM for Wearable Devices,” in ISSCC, 2017.
+     tion,” JEDEC Standard JESD209–4B, 2014.                                                [99] S. Kwon, Y. H. Son, and J. H. Ahn, “Understanding DDR4 in Pursuit of
+[70] JEDEC, DDR5 SDRAM Specification, 2020.                                                      In-DRAM ECC,” in ISOCC, 2014.
+[71] N. K. Jha and S. Gupta, Testing of Digital Systems. Cambridge Univer-                 [100] M. Lanteigne, “How Rowhammer Could Be Used to Exploit Weak-
+     sity Press, 2003.                                                                           nesses in Computer Hardware,” Tech. Rep., 2016.
+[72] S. Jin, J.-H. Yi, Y. J. Park, H. S. Min, J. H. Choi, and D. G. Kang, “Modeling        [101] B. C. Lee, E. Ipek, O. Mutlu, and D. Burger, “Architecting Phase Change
+     of Retention Time Distribution of DRAM Cell Using a Monte-Carlo                             Memory as a Scalable DRAM Alternative,” in ISCA, 2009.
+     Method,” in IEDM, 2004.                                                               [102] D. Lee, Y. Kim, G. Pekhimenko, S. Khan, V. Seshadri, K. Chang, and
+[73] M. Jung, C. C. Rheinländer, C. Weis, and N. Wehn, “Reverse Engineer-                       O. Mutlu, “Adaptive-Latency DRAM: Optimizing DRAM Timing for
+     ing of DRAMs: Row Hammer with Crosshair,” in MEMSYS, 2016.                                  the Common-Case,” in HPCA, 2015.
+[74] M. Jung, C. Weis, N. Wehn, M. Sadri, and L. Benini, “Optimized Active                 [103] D. Lee, S. Ghose, G. Pekhimenko, S. Khan, and O. Mutlu, “Simultaneous
+     and Power-Down Mode Refresh Control in 3D-DRAMs,” in VLSI-SoC,                              Multi-Layer Access: Improving 3D-Stacked Memory Bandwidth at
+     2014.                                                                                       Low Cost,” in TACO, 2016.
+[75] M. Jung, É. Zulian, D. M. Mathew, M. Herrmann, C. Brugger, C. Weis,                  [104] D. Lee, S. Khan, L. Subramanian, S. Ghose, R. Ausavarungnirun,
+     and N. Wehn, “Omitting Refresh: A Case Study for Commodity and                              G. Pekhimenko, V. Seshadri, and O. Mutlu, “Design-Induced Latency
+     Wide I/O DRAMs,” in MEMSYS, 2015.                                                           Variation in Modern DRAM Chips: Characterization, Analysis, and
+[76] U. Kang, H.-s. Yu, C. Park, H. Zheng, J. Halbert, K. Bains, S. Jang, and                    Latency Reduction Mechanisms,” in SIGMETRICS, 2017.
+     J. S. Choi, “Co-Architecting Controllers and DRAM to Enhance DRAM                     [105] D. Lee, Y. Kim, V. Seshadri, J. Liu, L. Subramanian, and O. Mutlu,
+     Process Scaling,” in The Memory Forum, 2014.                                                “Tiered-Latency DRAM: A Low Latency and Low Cost DRAM Archi-
+[77] B. Keeth, R. J. Baker, B. Johnson, and F. Lin, DRAM Circuit Design:                         tecture,” in HPCA, 2013.
+     Fundamental and High-Speed Topics. John Wiley & Sons, 2007.                           [106] D. Lee, L. Subramanian, R. Ausavarungnirun, J. Choi, and O. Mutlu,
+[78] S. Khan, D. Lee, Y. Kim, A. R. Alameldeen, C. Wilkerson, and O. Mutlu,                      “Decoupled Direct Memory Access: Isolating CPU and IO Traffic by
+     “The Efficacy of Error Mitigation Techniques for DRAM Retention                             Leveraging a Dual-Data-Port DRAM,” in PACT, 2015.
+     Failures: A Comparative Experimental Study,” in SIGMETRICS, 2014.                     [107] Y. Li, H. Schneider, F. Schnabel, R. Thewes, and D. Schmitt-Landsiedel,
+[79] S. Khan, D. Lee, and O. Mutlu, “PARBOR: An Efficient System-Level                           “DRAM Yield Analysis and Optimization by a Statistical Design Ap-
+     Technique to Detect Data-Dependent Failures in DRAM,” in DSN, 2016.                         proach,” in CSI, 2011.
+[80] S. Khan, C. Wilkerson, D. Lee, A. R. Alameldeen, and O. Mutlu, “A                     [108] S. Lin and D. J. Costello, Error Control Coding: Fundamentals and
+     Case for Memory Content-Based Detection and Mitigation of Data-                             Applications, 2004.
+     Dependent Failures in DRAM,” in IEEE CAL, 2016.                                       [109] J. Liu, B. Jaiyen, Y. Kim, C. Wilkerson, and O. Mutlu, “An Experi-
+[81] S. Khan, C. Wilkerson, Z. Wang, A. R. Alameldeen, D. Lee, and O. Mutlu,                     mental Study of Data Retention Behavior in Modern DRAM Devices:
+     “Detecting and Mitigating Data-Dependent DRAM Failures by Exploit-                          Implications for Retention Time Profiling Mechanisms,” in ISCA, 2013.
+     ing Current Memory Content,” in MICRO, 2017.                                          [110] J. Liu, B. Jaiyen, R. Veras, and O. Mutlu, “RAIDR: Retention-Aware
+[82] D.-H. Kim, S. Cha, and L. S. Milor, “AVERT: An Elaborate Model for                          Intelligent DRAM Refresh,” in ISCA, 2012.
+     Simulating Variable Retention Time in DRAMs,” Microelectronics Reli-                  [111] H. Luo, T. Shahroodi, H. Hassan, M. Patel, A. Giray Yağlıkçı, L. Orosa,
+     ability, 2015.                                                                              J. Park, and O. Mutlu, “CLR-DRAM: A Low-Cost DRAM Architecture
+[83] J. S. Kim, M. Patel, H. Hassan, and O. Mutlu, “Solar-DRAM: Reducing                         Enabling Dynamic Capacity-Latency Trade-Off,” in ISCA, 2020.
+     DRAM Access Latency by Exploiting the Variation in Local Bitlines,”                   [112] Y. Luo, S. Ghose, Y. Cai, E. F. Haratsch, and O. Mutlu, “HeatWatch:
+     in ICCD, 2018.                                                                              Improving 3D NAND Flash Memory Device Reliability by Exploiting
+[84] J. S. Kim, M. Patel, H. Hassan, and O. Mutlu, “The DRAM Latency PUF:                        Self-Recovery and Temperature Awareness,” in HPCA, 2018.
+     Quickly Evaluating Physical Unclonable Functions by Exploiting the
+                                                                                           [113] Y. Luo, S. Ghose, Y. Cai, E. F. Haratsch, and O. Mutlu, “Improving 3D
+     Latency-Reliability Tradeoff in Modern Commodity DRAM Devices,”
+                                                                                                 NAND Flash Memory Lifetime by Tolerating Early Retention Loss and
+     in HPCA, 2018.
+                                                                                                 Process Variation,” SIGMETRICS, 2018.
+[85] J. S. Kim, M. Patel, H. Hassan, L. Orosa, and O. Mutlu, “D-RaNGe:
+     Using Commodity DRAM Devices to Generate True Random Numbers                          [114] Y. Luo, S. Govindan, B. Sharma, M. Santaniello, J. Meza, A. Kansal, J. Liu,
+     With Low Latency And High Throughput,” in HPCA, 2019.                                       B. Khessib, K. Vaid, and O. Mutlu, “Characterizing Application Memory
+                                                                                                 Error Vulnerability to Optimize Datacenter Cost via Heterogeneous-
+[86] J. S. Kim, M. Patel, A. G. Yağlıkçı, H. Hassan, R. Azizi, L. Orosa, and                   Reliability Memory,” in DSN, 2014.
+     O. Mutlu, “Revisiting RowHammer: An Experimental Analysis of
+     Modern Devices and Mitigation Techniques,” in ISCA, 2020.                             [115] F. J. MacWilliams and N. J. A. Sloane, The Theory of Error-Correcting
+                                                                                                 Codes. Elsevier, 1977.
+[87] J. Kim, M. Sullivan, S. Lym, and M. Erez, “All-Inclusive ECC: Thorough
+                                                                                           [116] J. Maiz, S. Hareland, K. Zhang, and P. Armstrong, “Characterization of
+     End-to-End Protection for Reliable Computer Memory,” in ISCA, 2016.
+                                                                                                 Multi-Bit Soft Error Events in Advanced SRAMs,” in IEDM, 2003.
+[88] K. Kim and J. Lee, “A New Investigation of Data Retention Time in                     [117] T. C. May and M. H. Woods, “Alpha-Particle-Induced Soft Errors in
+     Truly Nanoscaled DRAMs,” in EDL, 2009.                                                      Dynamic Memories,” TED, 1979.
+[89] S.-H. Kim et al., “A Low Power and Highly Reliable 400Mbps Mobile                     [118] J. Meza et al., “A Large-Scale Study of Flash Memory Errors in the
+     DDR SDRAM With On-Chip Distributed ECC,” in ASSCC, 2007.                                    Field,” in SIGMETRICS, 2015.
+[90] Y. Kim, R. Daly, J. Kim, C. Fallin, J. H. Lee, D. Lee, C. Wilkerson, K. Lai,          [119] J. Meza, Q. Wu, S. Kumar, and O. Mutlu, “Revisiting Memory Errors in
+     and O. Mutlu, “Flipping Bits in Memory Without Accessing Them: An                           Large-Scale Production Data Centers: Analysis and Modeling of New
+     Experimental Study of DRAM Disturbance Errors,” in ISCA, 2014.                              Trends from the Field,” in DSN, 2015.
+[91] Y. Kim, V. Seshadri, D. Lee, J. Liu, and O. Mutlu, “A Case for Exploiting             [120] Micron Technology Inc., “ECC Brings Reliability and Power Efficiency
+     Subarray-Level Parallelism (SALP) in DRAM,” in ISCA, 2012.                                  to Mobile Devices,” Micron Technology Inc., Tech. Rep., 2017.
+[92] Kingston Technology Corporation, “Kingston Testing Overview,”
+     Kingston Technology Corporation, Tech. Rep., 2012.
+
+                                                                                      15
+
+
+===== Page 16 =====
+
+[121] Micron Technology, Inc., “Mobile LPDDR4 SDRAM,” 2018.                             [153] V. Seshadri et al., “RowClone: Fast and Energy-Efficient In-DRAM
+[122] T. K. Moon, Error Correction Coding: Mathematical Methods and Algo-                     Bulk Data Copy and Initialization,” in MICRO, 2013.
+      rithms. John Wiley & Sons, 2005.                                                  [154] V. Seshadri, D. Lee, T. Mullins, H. Hassan, A. Boroumand, J. Kim, M. A.
+[123] I. Mrozek, Multi-Run Memory Tests for Pattern Sensitive Faults.                         Kozuch, O. Mutlu, P. B. Gibbons, and T. C. Mowry, “Ambit: In-Memory
+      Springer, 2019.                                                                         Accelerator for Bulk Bitwise Operations Using Commodity DRAM
+[124] O. Mutlu, “Memory Scaling: A Systems Architecture Perspective,” in                      Technology,” in MICRO, 2017.
+      IMW, 2013.                                                                        [155] V. Seshadri and O. Mutlu, “In-DRAM Bulk Bitwise Execution Engine,”
+[125] O. Mutlu, “The RowHammer Problem and Other Issues we may Face                           arXiv preprint arXiv:1905.09822, 2019.
+      as Memory Becomes Denser,” in DATE, 2017.                                         [156] S. M. Seyedzadeh, D. Kline Jr, A. K. Jones, and R. Melhem, “Mitigating
+[126] O. Mutlu and J. Kim, “RowHammer: A Retrospective,” in TCAD, 2019.                       Bitline Crosstalk Noise in DRAM Memories,” in ISMS, 2017.
+[127] O. Mutlu and L. Subramanian, “Research Problems and Opportunities                 [157] C. G. Shirley and W. R. Daasch, “Copula Models of Correlation: A
+      in Memory Systems,” in SUPERFRI, 2014.                                                  DRAM Case Study,” in TC, 2014.
+[128] P. J. Nair, D.-H. Kim, and M. K. Qureshi, “ArchShield: Architectural              [158] SK Hnyix, “366ball FBGA Specification 32Gb LPDDR4 (x16, 4 Channel),”
+      Framework for Assisting DRAM Scaling by Tolerating High Error                           2015.
+      Rates,” in ISCA, 2013.                                                            [159] SMART Modular Technologies, “SMART Press Release 415,” SMART
+[129] P. J. Nair, V. Sridharan, and M. K. Qureshi, “XED: Exposing On-Die                      Modular Technologies, Tech. Rep., 2017.
+      Error Detection Information for Strong Memory Reliability,” in ISCA,              [160] Y. H. Son, S. Lee, O. Seongil, S. Kwon, N. S. Kim, and J. H. Ahn, “CiDRA:
+      2016.                                                                                   A cache-Inspired DRAM resilience architecture,” in HPCA, 2015.
+[130] Y. Nakagome, M. Aoki, S. Ikenaga, M. Horiguchi, S. Kimura,                        [161] V. Sridharan, N. DeBardeleben, S. Blanchard, K. B. Ferreira, J. Stearley,
+      Y. Kawamoto, and K. Itoh, “The Impact of Data-Line Interference Noise                   J. Shalf, and S. Gurumurthi, “Memory Errors in Modern Systems: The
+      on DRAM Scaling,” in JSSC, 1988.                                                        Good, the Bad, and the Ugly,” in ASPLOS, 2015.
+[131] NASA, “NASA NEPP Program Memory Technology - Testing, Anal-                       [162] V. Sridharan and D. Liberty, “A Study of DRAM Failures in the Field,”
+      ysis, and Roadmap,” https://radhome.gsfc.nasa.gov/radhome/papers/                       in SC, 2012.
+      radecs05 sc.pdf, 2016.                                                            [163] S. Sutar, A. Raha, and V. Raghunathan, “D-PUF: An Intrinsically Recon-
+[132] Y. Nishi and B. Magyari-Kope, Advances in Non-Volatile Memory and                       figurable DRAM PUF for Device Authentication in Embedded Systems,”
+      Storage Technology. Woodhead Publishing, 2019.                                          in CASES, 2016.
+[133] T.-Y. Oh et al., “A 3.2Gbps/pin 8Gb 1.0V LPDDR4 SDRAM with In-                    [164] R. Torrance and D. James, “The State-of-the-Art in IC Reverse Engi-
+      tegrated ECC Engine for Sub-1V DRAM Core Operation,” in ISSCC,                          neering,” in CHES, 2009.
+      2014.                                                                             [165] A. J. Van de Goor, Testing Semiconductor Memories: Theory and Practice.
+[134] S. Pal, S. Bose, W.-H. Ki, and A. Islam, “Design of Power-and Variability-              John Wiley & Sons, Inc., 1991.
+      Aware Nonvolatile RRAM Cell Using Memristor as a Memory Element,”                 [166] A. J. Van De Goor and I. Schanstra, “Address and Data Scrambling:
+      J-EDS, 2019.                                                                            Causes and Impact on Memory Tests,” in DELTA, 2002.
+[135] K. Park, C. Lim, D. Yun, and S. Baeg, “Experiments and Root Cause                 [167] J. P. van Zandwijk, “A Mathematical Approach to NAND Flash-
+      Analysis for Active-Precharge Hammering Fault In DDR3 SDRAM                             Memory Descrambling and Decoding,” Digital Investigation, 2015.
+      Under 3× Nm Technology,” Microelectronics Reliability, 2016.
+                                                                                        [168] J. P. van Zandwijk, “Bit-Errors as a Source of Forensic Information in
+[136] K. Park, D. Yun, and S. Baeg, “Statistical Distributions of Row-                        NAND-Flash Memory,” Digital Investigation, 2017.
+      Hammering Induced Failures in DDR3 Components,” Microelectronics
+      Reliability, 2016.                                                                [169] R. K. Venkatesan, S. Herr, and E. Rotenberg, “Retention-Aware Place-
+                                                                                              ment in DRAM (RAPID): Software Methods for Quasi-Non-Volatile
+[137] S. Parkin and S.-H. Yang, “Memory on the Racetrack,” Nature Nan-
+                                                                                              DRAM,” in HPCA, 2006.
+      otechnology, 2015.
+                                                                                        [170] Verified Market Research, “Global DRAM Market By Application,
+[138] M. Patel, J. S. Kim, H. Hassan, and O. Mutlu, “Understanding and Mod-                   By Technology, By Memory, By Competitive Landscape, By Geo-
+      eling On-Die Error Correction in Modern DRAM: An Experimental                           graphic Scope And Forecast,” https://www.verifiedmarketresearch.
+      Study Using Real Devices,” in DSN, 2019.                                                com/product/global-dram-market-size-and-forecast-to-2025, 2019.
+[139] M. Patel, J. S. Kim, and O. Mutlu, “The Reach Profiler (REAPER): En-              [171] M. Wang, N. Deng, H. Wu, and Q. He, “Theory Study and Implementa-
+      abling the Mitigation of DRAM Retention Failures via Profiling at                       tion of Configurable ECC on RRAM Memory,” in NVMTS, 2015.
+      Aggressive Conditions,” in ISCA, 2017.
+                                                                                        [172] C. Weis, M. Jung, P. Ehses, C. Santos, P. Vivet, S. Goossens, M. Koedam,
+[140] M. R. Prasad, A. Biere, and A. Gupta, “A Survey of Recent Advances                      and N. Wehn, “Retention Time Measurements and Modelling of Bit
+      in SAT-based Formal Verification,” STTT, 2005.                                          Error Rates of Wide I/O DRAM in MPSoCs,” in DATE, 2015.
+[141] M. K. Qureshi, D.-H. Kim, S. Khan, P. J. Nair, and O. Mutlu, “AVATAR:
+                                                                                        [173] C. Weis, M. Jung, O. Naji, C. Santos, P. Vivet, and A. Hansson, “Thermal
+      A Variable-Retention-Time (VRT) Aware Refresh for DRAM Systems,”
+      in DSN, 2015.                                                                           Aspects and High-Level Explorations of 3D Stacked DRAMs,” in ISVLSI,
+                                                                                              2015.
+[142] M. K. Qureshi, V. Srinivasan, and J. A. Rivers, “Scalable High Perfor-            [174] W. Wen, M. Mao, X. Zhu, S. H. Kang, D. Wang, and Y. Chen, “CD-ECC:
+      mance Main Memory System Using Phase-change Memory Technol-                             Content-Dependent Error Correction Codes for Combating Asymmet-
+      ogy,” in ISCA, 2009.                                                                    ric Nonvolatile Memory Operation Errors,” in ICCAD, 2013.
+[143] QY Research, “Global DRAM Market Professional Survey Re-                          [175] J. Wise, “Reverse Engineering a NAND Flash Device Management Al-
+      port,” https://garnerinsights.com/Global-DRAM-Market-Professional-                      gorithm,” https://joshuawise.com/projects/ndfrecovery#ecc recovery,
+      Survey-Report-2019, 2019.                                                               2014.
+[144] M. Redeker, B. F. Cockburn, and D. G. Elliott, “An Investigation Into             [176] H.-S. P. Wong, H.-Y. Lee, S. Yu, Y.-S. Chen, Y. Wu, P.-S. Chen, B. Lee,
+      Crosstalk Noise in DRAM Structures,” in MTDT, 2002.                                     F. T. Chen, and M.-J. Tsai, “Metal–Oxide RRAM,” Proc. IEEE, 2012.
+[145] I. S. Reed and G. Solomon, “Polynomial Codes Over Certain Finite                  [177] H.-S. P. Wong, S. Raoux, S. Kim, J. Liang, J. P. Reifenberg, B. Rajendran,
+      Fields,” SIAM, 1960.                                                                    M. Asheghi, and K. E. Goodson, “Phase Change Memory,” Proc. IEEE,
+[146] T. Richardson and R. Urbanke, Modern Coding Theory. Cambridge                           2010.
+      University Press, 2008.                                                           [178] D. S. Yaney, C.-Y. Lu, R. A. Kohler, M. J. Kelly, and J. T. Nelson, “A
+[147] R. Rooney and N. Koyle, “Micron DDR5 SDRAM: New Features,” Mi-                          Meta-Stable Leakage Phenomenon in DRAM Charge Storage-Variable
+      cron Technology Inc., Tech. Rep., 2019.                                                 Hold Time,” in IEDM, 1987.
+[148] R. M. Roth, Introduction to Coding Theory. Cambridge University                   [179] C. Zhang, G. Sun, X. Zhang, W. Zhang, W. Zhao, T. Wang, Y. Liang,
+      Press, 2006.                                                                            Y. Liu, Y. Wang, and J. Shu, “Hi-Fi Playback: Tolerating Position Errors
+[149] Samsung Electronics, “Mobile DRAM Stack Specification (LPDDR4),”                        in Shift Operations of Racetrack Memory,” in ISCA, 2015.
+      2018.                                                                             [180] T. Zhang, K. Chen, C. Xu, G. Sun, T. Wang, and Y. Xie, “Half-DRAM:
+[150] Sandia National Laboratories, “Fabriation, Testing, and Validation                      A High-Bandwidth and Low-Power DRAM Architecture from the
+      Capabilities,” https://www.sandia.gov/mesa/fabrication/index.html#                      Rethinking of Fine-Grained Activation,” in ISCA, 2014.
+      tab-9, 2020.                                                                      [181] X. Zhang, VLSI Architectures for Modern Error-Correcting Codes. CRC
+[151] B. Schroeder, E. Pinheiro, and W.-D. Weber, “DRAM Errors in the Wild:                   Press, 2015.
+      a Large-Scale Field Study,” in SIGMETRICS, 2009.                                  [182] Y. Zhang, L. Zhang, W. Wen, G. Sun, and Y. Chen, “Multi-Level Cell
+[152] N. H. Seong, S. Yeo, and H.-H. S. Lee, “Tri-Level-Cell Phase Change                     STT-RAM: Is it Realistic or Just a Dream?” in ICCAD, 2012.
+      Memory: Toward an Efficient and Reliable Memory System,” in ISCA,
+      2013.
+
+
+                                                                                   16

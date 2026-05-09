@@ -1,0 +1,21 @@
+# Extraction Log
+
+- Input Type: GitHub repository PDF
+- Source: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/NATSA_time-series-analysis-near-data_iccd20.pdf
+- Access Status: 成功下载并读取本地 PDF
+- Full Text Retrieved: Yes
+- PDF Pages: 10
+- Sections Detected: Abstract; Introduction; Matrix Profile; Motivation; NATSA Design; Evaluation; Related Work; Conclusion
+- Figures Detected: Yes
+- Tables Detected: Yes
+- Equations Detected: Yes
+- Appendix Detected: 未发现独立 appendix 或本轮未作为重点处理
+- Supplementary Material Detected: 未发现
+- OCR Used: No
+- Extracted Text File: paper reading/extracted_text/NATSA_time-series-analysis-near-data_iccd20.txt
+- Missing Content: 图中细小标注和双栏排版细节建议回到 PDF 人工核对
+- Parsing Problems: PDF 双栏文本存在局部换行错位；已按页码、章节和图表编号定位关键结论
+- Uncertain Parts: DOI/arXiv 如 metadata 标注“未找到”则表示未在 PDF 抽取文本中确认
+- Need User Action: 无；如需逐字全文翻译，请确认版权授权范围后再处理
+- Quality Check: 已覆盖摘要、引言、方法/综述结构、实验/案例、主要结果、局限、图表/公式、术语与复习 checklist
+- Batch Status: 第五轮深度阅读完成

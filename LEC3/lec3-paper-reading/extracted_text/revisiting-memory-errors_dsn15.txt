@@ -1,0 +1,1355 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/revisiting-memory-errors_dsn15.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/revisiting-memory-errors_dsn15.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+                   2015 45th Annual IEEE/IFIP International Conference on Dependable Systems and Networks
+
+
+          Revisiting Memory Errors in Large-Scale Production Data Centers:
+                Analysis and Modeling of New Trends from the Field
+                                     Justin Meza Qiang Wu  Sanjeev Kumar  Onur Mutlu
+                                            Carnegie Mellon University  Facebook, Inc.
+        Abstract—Computing systems use dynamic random-access                    this problem, various error correcting codes (ECC) for DRAM
+    memory (DRAM) as main memory. As prior works have shown,                    data [12, 11] have been used to detect and correct memory
+    failures in DRAM devices are an important source of errors in               errors. However, these techniques require additional DRAM
+    modern servers. To reduce the effects of memory errors, error               storage overheads [33] and DRAM controller complexity and
+    correcting codes (ECC) have been developed to help detect and               cannot detect or correct all errors.
+    correct errors when they occur. In order to develop effective                    Much past research has been directed toward analyzing the
+    techniques, including new ECC mechanisms, to combat memory                  causes and effects of memory errors in the ﬁeld (e.g., [44, 16,
+    errors, it is important to understand the memory reliability trends         47, 48, 10, 46, 45, 40, 27, 28]). These past works identiﬁed a
+    in modern systems.                                                          variety of DRAM failure modes and have formed the basis of
+        In this paper, we analyze the memory errors in the entire               the community’s understanding of DRAM reliability. Our goal
+    ﬂeet of servers at Facebook over the course of fourteen months,             is to strengthen the understanding of DRAM failures in the ﬁeld
+    representing billions of device days. The systems we examine                by comprehensively studying new trends in DRAM errors in
+    cover a wide range of devices commonly used in modern servers,              a large-scale production datacenter environment using modern
+    with DIMMs manufactured by 4 vendors in capacities ranging                  DRAM devices and workloads. To this end, this paper presents
+    from 2 GB to 24 GB that use the modern DDR3 communication                   our analysis of memory errors across Facebook’s entire ﬂeet of
+    protocol.                                                                   servers over the course of fourteen months and billions of device
+        We observe several new reliability trends for memory systems            days. Our main contributions are threefold. We: (1) analyze
+    that have not been discussed before in literature. We show that             new DRAM failure trends in modern devices and workloads
+    (1) memory errors follow a power-law, speciﬁcally, a Pareto                 that have not been identiﬁed in prior work, (2) develop a
+    distribution with decreasing hazard rate, with average error rate           model for examining the memory failure rates of systems with
+    exceeding median error rate by around 55; (2) non-DRAM                     different characteristics, and (3) describe and perform the ﬁrst
+    memory failures from the memory controller and memory channel               analysis of a large-scale implementation of a software technique
+    cause the majority of errors, and the hardware and software                 proposed in prior work to reduce DRAM error rate (page
+    overheads to handle such errors cause a kind of denial of service           ofﬂining [49]). Speciﬁcally, we observe several new reliability
+    attack in some servers; (3) using our detailed analysis, we provide         trends for memory systems that have not been discussed before
+    the ﬁrst evidence that more recent DRAM cell fabrication tech-              in literature:
+    nologies (as indicated by chip density) have substantially higher
+                                                                                     (1) The number of memory errors per machine follows a
+    failure rates, increasing by 1.8 over the previous generation; (4)
+                                                                                power-law distribution, speciﬁcally a Pareto distribution, with
+    DIMM architecture decisions affect memory reliability: DIMMs
+                                                                                decreasing hazard rate. While prior work reported the average
+    with fewer chips and lower transfer widths have the lowest error
+    rates, likely due to electrical noise reduction; (5) while CPU
+                                                                                memory error rate per machine, we ﬁnd that the average exceeds
+    and memory utilization do not show clear trends with respect
+                                                                                the median amount by around 55, and thus may not be a
+    to failure rates, workload type can inﬂuence failure rate by up to          reliable number to use in various studies.
+    6.5, suggesting certain memory access patterns may induce more                  (2) Non-DRAM memory failures, such as those in the
+    errors; (6) we develop a model for memory reliability and show              memory controller and the memory channel, are the source of
+    how system design choices such as using lower density DIMMs and             the majority of errors that occur. Contrary to popular belief,
+    fewer cores per chip can reduce failure rates of a baseline server          memory errors are not always isolated events and can bombard
+    by up to 57.7%; and (7) we perform the ﬁrst implementation                  a server (if not handled appropriately), creating a kind of denial
+    and real-system analysis of page ofﬂining at scale, showing that            of service attack. No prior work that we are aware of that
+    it can reduce memory error rate by 67%, and identify several                examined DRAM chip-level failures accounted for this effect.
+    real-world impediments to the technique.                                         (3) DRAM failure rates increase with newer cell fabrication
+                                                                                technologies (as indicated by chip density, which is a good
+                            I. I NTRODUCTION                                    indicator of technology node): 4 Gb chips have 1:8 higher
+        Computing systems store a variety of data in memory – pro-              failure rates than 2 Gb chips. Prior work that examined DRAM
+    gram variables, operating system and ﬁle system structures, pro-            capacity, which is not closely related to fabrication technology,
+    gram binaries, and so on. The main memory in modern systems                 observed inconclusive trends. Our empirical ﬁnding is that the
+    is composed of dynamic random-access memory (DRAM), a                       quadratic rate at which DRAM density increases with each
+    technology that, from the programmer’s perspective, has the                 generation has made maintaining or reducing DRAM failure
+    following property: a byte written to an address can be read                rate untenable, as also indicated by a recent paper by Samsung
+    correctly, repeatedly, until it is overwritten or the machine is            and Intel [20].
+    turned off. All correct programs rely on DRAM to operate in                      (4) DIMM architecture characteristics, such as the number
+    this manner and DRAM manufacturers work hard to design                      of data chips per DIMM and the transfer width of each chip,
+    reliable devices that obey this property.                                   affect memory error rate. The best architecture for device
+        Unfortunately, DRAM does not always obey this property.                 reliability occurs when there are both low chips per DIMM
+    Various events can change the data stored in DRAM, or                       and small transfer width. This is likely due to reductions in the
+    even permanently damage DRAM. Some documented events                        amount of electrical disturbance within the DIMM.
+    include transient charged particle strikes from the decay of                     (5) The type of work that a server performs (i.e., its
+    radioactive molecules in chip packaging material, charged alpha             workload), and not CPU and memory utilization, affects failure
+    particles from the atmosphere [34], and wear-out of the various             rate. We ﬁnd that the DRAM failure rate of different workloads
+    components that make up DRAM chips (e.g., [7, 6]). Such                     can vary by up to 6:5. This large variation in workloads can
+    faults, if left uncorrected, threaten program integrity. To reduce          potentially be due to memory errors that are induced by certain
+
+
+
+978-1-4799-8629-3/15 $31.00 © 2015 IEEE                                   415
+DOI 10.1109/DSN.2015.57
+     Authorized licensed use limited to: ETH BIBLIOTHEK ZURICH. Downloaded on October 03,2025 at 12:54:58 UTC from IEEE Xplore. Restrictions apply.
+
+
+===== Page 2 =====
+
+access patterns, such as accessing the same memory location                      We distinguish between errors and faults. A fault refers to
+in rapid succession, as shown in controlled studies in prior                 the underlying cause of an error, such as a DRAM cell that no
+work [23].                                                                   longer reliably stores data. An error is the manifestation of a
+    (6) We develop a model for quantifying DRAM reliability                  fault. A hard, or permanent, fault causes an error every time the
+across a wide variety of server conﬁgurations and show how it                fault is exercised. A soft, or transient/intermittent, fault causes
+can be used to evaluate the server failure rate trends for different         an error only some of the times the fault is exercised.
+system designs. We show that using systems with lower density
+DIMMs or fewer CPUs to access memory can reduce DRAM
+failure rates by 57.7% and 34.6%, respectively. We make this                 C. The Systems
+model publicly available at [1].                                                 We examined all of the DRAM devices in Facebook’s
+    (7) We describe our implementation of page ofﬂining [49]                 server ﬂeet, which have operational lifetimes extending across
+at scale and evaluate it on a fraction (12,276) of the servers               four years and comprise billions of device days of usage. We
+that we examine. We show that it can reduce memory error                     analyzed data over a fourteen month period. We examined six
+rate by around 67%. While prior work reported larger error                   different system types with hardware conﬁgurations based on
+rate reductions in simulation [16], we show that real-world                  the resource requirements of the workloads running on them.
+factors such as memory controller and memory channel failures                Table I lists the workloads and their resource requirements. The
+and OS-locked pages that cannot be taken ofﬂine can limit the                workloads perform a diverse set of operations including web
+effectiveness of this technique.                                             serving, caching [41], database management [18], video and im-
+                                                                             age processing/storage [50, 37], and messaging routing/storage.
+                                                                             The detailed speciﬁcations for the base server platforms that
+           II. BACKGROUND AND M ETHODOLOGY
+                                                                             we examine have been published as part of the Open Compute
+A. Server Memory Organization
+                                                                             Project [2]. For example, typical servers can support two Intel
+    Modern servers have one or two processor chips that are
+                                                                             Xeon CPUs, 16 DIMM slots, and 1 HDD [2]. The resource
+connected to DRAM via several memory channels that are
+                                                                             requirements in Table I refer to the relative number of processor
+operated in parallel. Attached to each channel are dual in-
+                                                                             cores, memory capacity, and storage capacity for servers for
+line memory modules (DIMMs) that provide an interface for
+                                                                             each type of workload.
+accessing data stored across multiple DRAM chips. Processors
+                                                                                 Note that each server runs a single type of workload. All
+use the double data rate (DDR) protocol to communicate
+                                                                             the servers conﬁgured for a particular workload type have
+with DIMMs. Chips on a DIMM are logically organized into
+                                                                             equivalent minimum capabilities, and, in general, a workload
+ranks and chips within a rank are operated in lockstep. Chips
+                                                                             can be run on any of them.
+contain multiple banks that are operated in parallel. Each bank
+                                                                              TABLE I: The workloads we examine and their resource requirements.
+is organized into rows (typically 16 K to 64 K) and columns
+(typically 2 K to 4 K). At the intersection of a row and a column                                           Resource requirements
+                                                                                        Workload      Processor    Memory      Storage
+is a DRAM cell, which stores a single bit of data. We refer
+                                                                                          Web            High        Low         Low
+the reader to [24, 26, 29, 25] for more information on DRAM                            Hadoop [4]        High      Medium        High
+organization and operation.                                                            Ingest [18]       High       High       Medium
+                                                                                     Database [18]     Medium       High         High
+B. Memory Errors and Their Handling                                                 Memcache [41]        Low        High         Low
+    As prior works have shown, DRAM errors occur relatively                            Media [50]        Low         Low         High
+commonly due to a variety of stimuli [34, 44, 16, 47, 48, 10, 46,                The memory in these systems covers a wide range of de-
+6, 27, 45, 30, 23, 21]. To protect against such errors in servers,           vices commonly used in servers. The DIMMs are manufactured
+additional data is stored in the DIMM (in a separate DRAM                    by 4 vendors in capacities ranging from 2 GB to 24 GB per
+chip) to maintain error correcting codes (ECC) computed over                 DIMM. DDR3 is the protocol used to communicate with the
+data. These codes can detect and correct a small number                      DIMMs. The DIMM architecture spans devices with 1, 2, and
+of errors. For example, single error correction, double error                4 ranks with 8, 16, 32, and 64 chips. The chip architecture
+detection (SEC-DED) is a common ECC strategy that can detect                 consists of 8 banks with 16 K, 32 K, and 64 K rows and 2 K to
+any 2 ﬂipped bits and correct 1 ﬂipped bit per 64 bits by storing            4 K columns, and has chips that transfer both 4 and 8 bits of
+an additional 12.5% of ECC metadata. An error that can be                    data per clock cycle. We analyze three different chip densities
+corrected by ECC is called a correctable error (CE); an error                of 1 Gb, 2 Gb, and 4 Gb, which are closely related to DRAM
+that cannot be corrected by ECC, but which can still be detected             fabrication technology.
+by ECC, is called an uncorrectable error (UCE).                                  The composition of the modules we examine differs from
+    The processor’s memory controller orchestrates access to the             prior studies (e.g., [44, 16, 47, 48, 10, 45, 40]) in three
+DRAM devices and is also responsible for checking the ECC                    ways: (1) it consists of a current DRAM access protocol
+metadata and detecting and correcting errors. While detecting                (DDR3, as opposed to older generation protocols with less
+errors does not add overhead when performing memory ac-                      aggressive memory bus clock frequencies, such as DDR and
+cesses, correcting errors can delay a memory request and disrupt             DDR2 in [44]); (2) it consists of a more diverse range of
+a system. As an example, on the systems that we examine,                     DRAM device organizations (e.g., DIMMs with a variety of
+when an error is corrected, the CPU raises a hardware exception              ranks, chips, rows, and columns versus the more homogeneous
+called a machine check exception (MCE) which must be handled                 DIMMs of [44, 16, 47, 48, 10, 45]); and (3) it contains DIMMs
+by the processor.                                                            with characteristics that have never been analyzed at a large-
+    When an MCE occurs, the processor stores information                     scale (such as density, number of chips, transfer width, and
+about the memory error in special registers that can be read                 workload).
+by the operating system. This information includes the physical                  Some of the systems we examined had hardware mem-
+address of the memory access when the error occurred and what                ory scrubbing [36] enabled, which would cause the memory
+type of memory access (e.g., read or write) was being performed              controller to traverse memory, detecting (but not correcting)
+when the error occurred. Note that memory errors do not only                 memory errors in order to help determine faulty locations in
+occur in DRAM chips: memory errors can occur if the memory                   memory. The hardware scrubber was enabled only when the
+controller fails or if logic associated with transmitting data on            machine entered a low enough idle state, so the scrubbing rate
+a memory channel fails.                                                      of machines varied.
+
+
+                                                                       416
+
+ Authorized licensed use limited to: ETH BIBLIOTHEK ZURICH. Downloaded on October 03,2025 at 12:54:58 UTC from IEEE Xplore. Restrictions apply.
+
+
+===== Page 3 =====
+
+D. Measurement Methodology                                                                   III. BASELINE S TATISTICS
+     We use the mcelog Linux kernel module to log memory                        We will ﬁrst focus on the overall error rate and error dis-
+errors in a ﬁle. We do this for every machine in the ﬂeet. For              tribution among the systems that we analyze and then examine
+each correctable memory error, we collect: (1) a time stamp                 correlations between different factors and failure rate.
+of when the error occurred; (2) the physical address that was
+being accessed when the error occurred; (3) the server name;                A. Incidence Error Rate and Error Count
+(4) the socket, channel, and bank the physical address is located               Figure 1 shows the monthly incidence error rate for memory
+on; and (5) the type of memory access being performed when                  over a span of fourteen months. The incidence error rate is
+the error occurred (e.g., read or write). Uncorrectable errors              the fraction of servers in the ﬂeet that have memory errors
+will halt the execution of the processors on the machines we                compared to the total size of the ﬂeet.1 We observe three trends
+examine, causing a system crash. While we do not have detailed              with respect to incidence error rate.
+information on uncorrectable errors, we are able to measure                                                        0.040
+their occurrence by examining a separate log of them that is kept                                                  0.035   Correctable errors (CE)
+
+
+
+
+                                                                                             Fraction of servers
+in non-volatile memory on the system boards that we examine.                                                               Uncorrectable errors (UCE)
+                                                                                                                   0.030
+We use a collector script to retrieve log data and parse it into                                                   0.025
+a form that can be curated in a Hive [5] table. This process is                                                    0.020
+done in real time every ten minutes.                                                                               0.015
+                                                                                                                   0.010
+     In addition to information about the correctable errors that                                                  0.005
+occur, we also collect information on systems that had errors                                                      0.000
+(e.g., CPU utilization and system age; see Table II for details).
+
+
+
+
+                                                                                                                           11/13
+                                                                                                                           10/13
+
+                                                                                                                           12/13
+                                                                                                                            1/14
+
+
+
+
+                                                                                                                            7/14
+                                                                                                                            7/13
+
+
+
+
+                                                                                                                            3/14
+
+                                                                                                                            5/14
+
+
+                                                                                                                            8/14
+                                                                                                                            8/13
+                                                                                                                            9/13
+
+
+
+
+                                                                                                                            6/14
+                                                                                                                            2/14
+
+                                                                                                                            4/14
+This process is done in a separate step.
+     The scale of the systems we analyzed and the amount of                                                                         Month
+data being collected posed challenges for analysis. To process
+billions of device days of information, we used a cluster of                         Fig. 1: Timeline of correctable and uncorrectable errors.
+machines to perform a parallelized aggregation of the data using                First, correctable errors occur relatively commonly each
+MapReduce jobs. This resulted in a set of statistics for each of            month, affecting 2.08% of servers on average. Though such
+the devices we analyzed. We then processed this summary data                errors do not corrupt data, they do reduce machine performance
+in R [3] to collect our results.                                            due to the hardware required to reconstruct the correct data.
+E. Analytical Methodology                                                   While a single correctable error may not be very noticeable, a
+     When we analyze the reliability trends with respect to a               large number of correctable errors could lead to performance
+system characteristic (e.g., chip density or CPU utilization), we           degradation. We examine the distribution of the number of
+group systems into buckets based on the particular character-               correctable errors among machines at the end of this section.
+istic and plot the failure rate of the systems in each bucket.                  To compare against prior work, we measured the correctable
+When performing bucketing, we round the value of a device’s                 error incidence rate over the course of twelve months (7/13
+characteristic to the nearest bucket and we eliminate buckets               up to and including 7/14, excluding 1/14) and found that,
+that contain less than 0.1% of the systems analyzed in order                cumulatively across all months, around 9.62% of servers ex-
+to have a statistically signiﬁcant sample of systems in our                 perience correctable memory errors. This is much lower than
+measurements. We show the 95th percentile conﬁdence interval                the yearly correctable error incidence rate reported in work
+for our data when relevant.                                                 from the ﬁeld seven years ago (32.2% in Table 1 in [44])
+     Due to the size of the ﬂeet, we could not collect detailed             and comparable with the 5.48% to 9.10% failure rate reported
+information for all the systems without errors (we do collect               in more recent work [48] from two years ago. Thus, though
+detailed information for every system with errors). So, in                  the overall correctable error incidence rate may have decreased
+Sections IV and V, instead of examining the absolute failure                over the better part of a decade of device improvements, our
+rate among different types of servers, we examine the relative              measurements corroborate the trend that memory errors are still
+failure rate compared to a more manageable size of servers that             a widespread problem in the ﬁeld.
+we call the control group. The servers in the control group are                 In addition, we ﬁnd that the correlation between a server
+uniformly randomly selected from among all the servers that                 having a correctable error in a given month, depending on
+did not have errors, and we collected detailed information on               whether there were correctable errors observed in the previous
+the servers in this group.                                                  month is 31.4% on average. In comparison, prior work from
+     Note that such a selection process preserves the distribution          the ﬁeld found around a 75% correlation in correctable errors
+of server types in the underlying ﬂeet, and our analysis in                 between two consecutive months [44]. Our lower observed
+Sections IV and V can be considered as being performed on a                 amount of correlation is partially due to how memory errors
+“scaled down” version of the ﬂeet. The size of the control group            are handled in the servers we evaluate: servers were ﬂagged for
+was chosen to be equal to the size of the error group, and the              memory repair if they had more than 100 correctable errors per
+sizes of these groups were sufﬁciently large to be statistically            week, whereas prior work (e.g., [44]) only replaced components
+signiﬁcant. We bucket servers in each group based on their                  with uncorrectable errors. Under our more aggressive/proactive
+value for a given characteristic (e.g., age) and plot the fraction          repair policy, we ﬁnd that on average around 46% of servers
+of failed servers compared to operational servers in each bucket,           that have errors end up being repaired each month. As a result,
+which we call the relative server failure rate. With this metric,           in contrast to prior work, we ﬁnd that a majority (69.6%) of the
+we can perform relative comparisons between failure rates that              machines that report errors each month are not repeat offenders
+we compute for different factors, but the absolute values for the           from the previous month.
+metric do not have any substantial meaning. We ﬁnd that the                     Second, the rate of uncorrectable errors is much smaller
+relative failure rates we examine are in the range Œ0; 1, and we           than the rate of correctable errors, with uncorrectable errors
+plot our data within this range. In Sections IV and V, when we              affecting 0.03% of servers each month on average. Recall
+refer to failure rate we mean relative server failure rate and as
+a reminder that our data should not be confused with absolute                  1 Correctable error data for January 2014 (1/14) is not available. Note that
+failure rates, we label our graphs with relative server failure             if a server has multiple errors in multiple months, it will be represented in
+rate.                                                                       multiple data points.
+
+
+
+                                                                      417
+
+ Authorized licensed use limited to: ETH BIBLIOTHEK ZURICH. Downloaded on October 03,2025 at 12:54:58 UTC from IEEE Xplore. Restrictions apply.
+
+
+===== Page 4 =====
+
+that uncorrectable errors cause a server to crash, increasing                      Internet [42], CPU requirements for supercomputing jobs [43],
+downtime and potentially causing data loss. Therefore, it is                       and memory access latencies [22]), we ﬁnd that the distribution
+desirable to decrease the rate of uncorrectable errors as much                     of errors across servers follows a Pareto distribution, with a
+as possible.                                                                       decreasing hazard rate. This means, roughly, that the more
+     Schroeder et al. conjectured that repair policies “where a                    errors a server has had so far, the more errors it is expected
+DIMM is replaced once it experiences a signiﬁcant number of                        to have.2
+correctable errors, rather than waiting for the ﬁrst uncorrectable                     Quantifying the skewed distribution of correctable errors is
+error” could reduce the likelihood of uncorrectable errors [44].                   important as it can help diagnose the severity of a memory
+To test this hypothesis in the ﬁeld on our systems that are                        failure relative to the population. For comparison, Schroeder
+repaired with more than 100 correctable errors, we compare                         et al. reported a mean error rate of 22,696 correctable errors
+the rate of uncorrectable errors relative to the rate of correctable               per server per year (Table 1 in [44]), or 1,891 correctable
+errors, in order to control for the change in rate of correctable                  errors per server per month. Without knowing the underlying
+errors between the two studies. Interestingly, in Schroeder et                     distribution, however, it is not clear whether all servers had such
+al.’s study, uncorrectable error rate was only 25:0 smaller than                  a large number of errors each month or whether this average is
+the correctable error rate, while in our study it is 69:3 smaller.                dominated by a small number of outliers (as we observe here).
+If more aggressive repair policies indeed lead to higher server                        If we compute the mean error rate as in prior work, we
+reliability, then our results suggest that uncorrectable error rate                observe 497 correctable errors per server per month. However, if
+can be lowered by up to 2:8 (i.e., 69:3 / 25:0). This is                        we examine the error rate for the majority of servers (by taking
+achieved by repairing around 46% of the machines with errors                       the median errors per server per month), we ﬁnd that most
+(those with more than 100 correctable errors). System designers                    servers have at most 9 correctable errors per server per month.3
+must decide whether the beneﬁt in reduction of potential data                      In this case, using the mean value to estimate the value for
+loss is worth the increase in repair rate.                                         the majority overestimates by over 55. We therefore conclude
+     Third, the incidence error rate for correctable errors ﬂuctu-                 that, for memory devices, the skewed nature in which errors
+ates little (its standard deviation is ˙0:297%) and is relatively                  are distributed among devices call for the full distribution to be
+stable over the fourteen months that we examined. Uncor-                           examined. Doing so reveals that memory errors follow a power-
+rectable errors also remain low in comparison to correctable                       law distribution, which can be used to accurately assess the
+errors (with a standard deviation of ˙0:018%). We attribute                        severity of machine failures. Therefore, we hope future studies
+the low standard deviation in error behavior over time to the                      that use error data from the ﬁeld take into account the new
+large population size that we examine.                                             distribution we observe and openly provide.
+     Figure 2 (left) shows the distribution of correctable errors                      In addition, we found that hardware scrubbing detected
+among servers that had at least one correctable error. The x axis                  13.1% of the total number of errors. While we did not monitor
+is the normalized device number, with devices sorted based on                      how many servers employed scrubbing, we observed that 67.6%
+the number of errors they had during a month. The y axis shows                     of the servers with errors detected at least one error through
+the total number of errors a server had during the month in log                    scrubbing. We do not have detailed memory access information,
+scale. Notice that the maximum number of logged errors is in                       so the interaction between scrubbing and different workloads is
+the millions. We observe that a small number of servers have                       not clear, and requires further examination.
+a large number of errors. For example, the top 1% of servers
+with the most errors have over 97.8% of all observed correctable                   B. Component Failure Analysis
+errors. We also ﬁnd that the distribution of number of errors                          Memory errors can occur due to failures in a DRAM device
+among servers is similar to that of a power-law distribution                       as well as if the memory controller in the processor fails
+with exponent 2:964. Prior work observed that some failed                         or if logic associated with transmitting data on a memory
+devices, such as the memory controller or bus, can account for                     channel fails. While prior work examined DRAM chip-level
+a large number of errors (e.g., [45]), though the full distribution                failures ([16, 47, 48]) and memory controller/channel failures
+of errors has not been quantiﬁed before.                                           ([45]) separately, no prior work has comprehensively examined
+                                                                                   failures across the entire memory system.
+                                                                                       We adopted a methodology for classifying component fail-
+                                                                                   ures similar to prior work (e.g., [16, 47, 48, 45]). We examined
+                                                                                   all of the correctable errors across the ﬂeet each month. We
+                                                                                   began by determining each correctable error’s corresponding
+                                                                                   processor socket, memory channel, bank, row, column, and byte
+                                                                                   offset. Then, we grouped errors based on the component that
+                                                                                   failed and caused the error to occur. For grouping errors by
+                                                                                   components, we used the following criteria:
+                                                                                       Socket. If there were > 1 K errors across > 1 memory
+                                                                                   channel connected to the same processor socket, we classiﬁed
+                                                                                   those errors as being caused by a socket failure. The > 1 K error
+Fig. 2: The distribution of memory errors among servers with errors (left)
+resembles a power-law distribution. Memory errors also follow a Pareto
+                                                                                   threshold was chosen so as to ensure that the failures we classify
+distribution among servers with errors (right).                                    are not due to a small number of independent cell failures. To
+                                                                                   make sure this was the case, we cross-referenced repair logs of
+    Figure 2 (right) shows the probability density distribution of                 the servers classiﬁed with failed sockets and found that 50% of
+correctable errors. The x axis is the number of errors per month                   them had a large number of errors that required replacing the
+and the y axis is the probability of a server having at least that
+many errors per month. A Pareto distribution (a special case                         2 Note that one can take advantage of this property to potentially predict
+of the power law) has been ﬁt to the measured data. Similarly                      which servers may have errors in the future. We leave this for future work.
+to many past works that have found decreasing hazard rates in                      For more information on the Pareto distribution, decreasing hazard rate, and
+the behavior of systems (e.g., Unix process lifetimes [14], sizes                  their properties, we refer the reader to [22, 13].
+                                                                                     3 Concurrent work by Sridharan et al. [46] makes a similar observation,
+of ﬁles transferred through the Web [8, 9], sizes of ﬁles stored
+in Unix ﬁle systems [17], durations of FTP transfers in the                        though we quantify and provide a model for the full distribution of errors
+                                                                                   per server.
+
+
+
+                                                                             418
+
+ Authorized licensed use limited to: ETH BIBLIOTHEK ZURICH. Downloaded on October 03,2025 at 12:54:58 UTC from IEEE Xplore. Restrictions apply.
+
+
+===== Page 5 =====
+
+processor to eliminate the errors and 50% contained intermittent                                                                                                                       examined socket (memory controller) and channel failures [45]
+bursts of errors that caused the server to become unresponsive                                                                                                                         (but did not examine DRAM chip-level failures), we ﬁnd that
+for long periods of time – both of these are characteristics of                                                                                                                        our systems have 2:9 more socket errors and 5:3 more
+failed sockets that can generate a large number of machine                                                                                                                             channel errors. This could be due to differences in the server
+check exceptions, as observed in prior work [45].                                                                                                                                      access patterns to memory or how quickly servers crash when
+    Channel. After excluding the above errors, if there were                                                                                                                           experiencing these types of failures.
+> 1 K errors across > 1 DRAM banks connected to the same                                                                                                                                   That sockets and channels cause a large number of errors
+memory channel, we classiﬁed the channel as having failed.                                                                                                                             when they fail helps explain the skew in the distribution of
+Similar to sockets, we cross-referenced repair logs for servers                                                                                                                        errors among servers (Figure 2, left). For example, servers
+classiﬁed with failed channels and found that 60% of the servers                                                                                                                       with socket failures had the highest number of errors in the
+with failed channels did not have any logged repair action (re-                                                                                                                        distribution. This large source of errors, if not controlled for, can
+placing or reseating the DIMM), suggesting that these failures                                                                                                                         confound memory reliability conclusions by artiﬁcially inﬂating
+were transient, potentially caused by temporary misalignment                                                                                                                           the error rates for memory and creating the appearance of more
+of the transmission signal on the channel. The other 40% of                                                                                                                            DRAM chip-level failures than in reality. Besides the work that
+servers required DIMMs to be replaced, suggesting permanent                                                                                                                            only measured socket and channel failures, but not DRAM chip-
+failures related to the channel transmission logic (e.g., the I/O                                                                                                                      level failures ([45]), we did not ﬁnd mention of controlling for
+circuitry) within the DIMM.                                                                                                                                                            socket and channel errors in prior work that examined errors
+    Bank. After excluding the above errors, we repeated the                                                                                                                            in the ﬁeld (e.g., [44, 16, 47, 48, 10, 27, 28]).
+procedure for banks, classifying a bank as having failed if it                                                                                                                             We observe that DRAM chip-level (banks, rows, columns,
+had > 1 K errors across > 1 row. Note that our study examines                                                                                                                          cells, and spurious) failures contribute a relatively small number
+monthly failure trends, and we assume that multiple row failures                                                                                                                       of errors compared to sockets and channels: 6.06%, 0.02%,
+in the same bank in the same month may be more indicative                                                                                                                              0.20%, 0.93%, and 7.80%, respectively. This is because when
+of a bank failure than multiple independent row failures in the                                                                                                                        these components fail, they affect only a relatively small amount
+bank.                                                                                                                                                                                  of memory. Based on these ﬁndings, to help with the diagnosis
+    Row. After excluding the above errors, we classiﬁed a row                                                                                                                          of memory failures, we recommend that memory error classiﬁ-
+as having failed if > 1 column in the same row had errors.                                                                                                                             cation should always include components such as sockets and
+    Column. After excluding the above errors, we classiﬁed                                                                                                                             channels.
+a column as having failed if > 1 error occurred in the same                                                                                                                                So far, we have examined how component failures are
+column.                                                                                                                                                                                related to the number of errors reported. We next turn to how
+    Cell. After excluding the above errors, we classiﬁed a cell                                                                                                                        component failures themselves (the underlying source of errors)
+as having failed if > 1 error occurred in the same byte within                                                                                                                         are distributed among servers. Figure 4 shows what fraction of
+60 seconds. We chose this amount of time because we found                                                                                                                              servers with correctable errors each month have each type of
+that 98.9% of errors at a particular byte address had another                                                                                                                          failure that we examine. We plot error bars for the standard
+error at the same address within 60 seconds if they ever had an                                                                                                                        deviation in fraction of servers that report each type of error
+error at the same byte address again in the same day.                                                                                                                                  between months, though we ﬁnd that the trends are remarkably
+    Spurious. After excluding the above errors, we are left                                                                                                                            stable, and the standard deviation is correspondingly very low
+with what we term spurious errors. These errors are isolated to                                                                                                                        (barely visible in Figure 4).
+individual cells that do not share a common failed component                                                                                                                               Notice that though socket and channel failures account for
+and do not repeat in a short amount of time. Potential causes of                                                                                                                       a large fraction of errors (Figure 3), they occur on only a small
+these errors include alpha particle strikes from the atmosphere                                                                                                                        fraction of servers with errors each month: 1.34% and 1.10%,
+or chip packaging [34] and cells with weak or variable charge                                                                                                                          respectively (Figure 4). This helps explain why servers that
+retention times [30, 21, 20].                                                                                                                                                          have socket failures often appear unresponsive in the repair
+    Figure 3 shows the fraction of logged errors each month that                                                                                                                       logs that we examined. Socket failures bombard a server with
+are attributed to different types of failures. Error bars show the                                                                                                                     a large ﬂood of MCEs that must be handled by the operating
+standard deviation between months.                                                                                                                                                     system, essentially creating a kind of denial of service attack on
+                                                                                                                                                                                       the server. Systems that have these type of failures have been
+                       1.00
+
+
+
+
+                                                                                                               1.00
+
+
+
+
+                                                                                                                                                                                       observed to appear unresponsive for minutes at a time while
+                                                                                                                                                                                       correcting errors and handling MCEs. We believe that context
+                                                                                         Fraction of servers
+  Fraction of errors
+
+
+
+
+                                                                                                                                                                                       switching to the operating system kernel to handle the MCE
+                                                                                                                                                                                       contributes largely to the unresponsiveness.
+                       0.50
+
+
+
+
+                                                                                                               0.50
+
+
+
+
+                                                                                                                                                                                           Thus, memory errors are not always isolated events, and
+                                                                                                                                                                                       correcting errors in hardware and handling MCEs in the sys-
+                                                                                                                                                                                       tem software (as current architectures do) can easily cause
+                       0.00
+
+
+
+
+                                                                                                               0.00
+
+
+
+
+                                                                                                                                                                                       a machine to become unresponsive. We suspect that simple
+                                                                                                                                                                                       hardware changes such as caching error events and having
+                              Socket
+                                       Channel
+                                                 Bank
+                                                        Row
+                                                              Column
+                                                                       Cell
+                                                                              Spurious
+
+
+
+
+                                                                                                                      Socket
+                                                                                                                               Channel
+                                                                                                                                         Bank
+                                                                                                                                                Row
+                                                                                                                                                      Column
+                                                                                                                                                               Cell
+                                                                                                                                                                      Spurious
+
+
+
+
+                                                                                                                                                                                       system software poll the contents of the error cache once in a
+                                                                                                                                                                                       while, instead of always invoking the system software on each
+                                                                                                                                                                                       error detection, could greatly reduce the potential availability
+ Fig. 3: How errors are distributed                                                      Fig. 4: The fraction of failed                                                                impact of socket and channel failures. In addition, the DDR4
+ among different memory compo-                                                           servers that had each type of mem-                                                            standard [19] will allow memory accesses to be retried by the
+ nents. Error bars signify the varia-                                                    ory component failure.                                                                        memory controller (by using a cyclic redundancy check on the
+ tion in total errors from month to                                                                                                                                                    command/address bits and asserting an “alert” signal when an
+ month.                                                                                                                                                                                error is detected) without interrupting the operating system,
+     Sockets and channels generate the most errors when they                                                                                                                           which can help reduce the system-level unavailability resulting
+fail, 63.8% and 21.2% of all errors each month, respectively.                                                                                                                          from socket and channel failures.
+This is because when these components fail, they affect a                                                                                                                                  Bank failures occur relatively frequently, on 14.08% of
+large amount of memory. Compared to a prior work that                                                                                                                                  servers with errors each month. We observe a larger failure
+                                                                                                                                                                                       rate for banks than prior work that examined DRAM chip-
+
+
+                                                                                                                                                                                 419
+
+ Authorized licensed use limited to: ETH BIBLIOTHEK ZURICH. Downloaded on October 03,2025 at 12:54:58 UTC from IEEE Xplore. Restrictions apply.
+
+
+===== Page 6 =====
+
+level failures on Google servers, which found 2.02% of banks                 fabrication technology improves, devices with higher densities
+failed over the course of their study (Table 2 in [16]4 ). One               can be manufactured. The most widely-available chip density
+reason for this difference could be the different composition                currently is 4 Gb as of 2014, with 8 Gb chips gaining adoption.
+of the servers evaluated. For example, while the prior work                      DRAM density is different from DIMM capacity. A DIMM
+examined older DDR and DDR2 DIMMs from over ﬁve years                        of a certain capacity could be composed in multiple ways
+ago, we examine newer DIMMs that use the DDR3 protocol.                      depending on the density and transfer width of its chips. For
+The relatively large occurrence of bank failures suggests that               example, a 4 GB capacity DIMM could have 16  2 Gb chips
+devices that support single chip failures (e.g., Chipkill [11]) can          or 8  4 Gb chips. Prior work examined DIMM capacity when
+provide additional protection to help ensure that such failures              drawing conclusions [44, 40], and observed trends that were,
+do not lead to uncorrectable errors.                                         in the authors’ own words, either “not consistent” [44] or a
+    We ﬁnd that row and column failures are relatively infre-                “weak correlation” [40] with error rate. This led the prominent
+quent, occurring in 0.92% and 0.99% of servers each month.                   Schroeder et al. work to conclude that “unlike commonly
+Prior work on Google servers found much larger rate of row                   feared, we don’t observe any indication that newer generations
+(7.4%) and column (14.5%) failures [16]. We believe that the                 of DIMMs have worse error behavior.” Our results with DRAM
+much larger estimate in prior work could potentially be due                  density stand to refute this claim as we explain below.
+to the confounding effects of socket and channel errors. Such                    Similar to these works, we also ﬁnd that the error trends
+errors, if present and unaccounted for, can artiﬁcially increase             with respect to DIMM capacity are not consistent. Figure 5
+the number of row and column errors (e.g., the socket and                    shows how the different capacities of DIMMs we examine are
+channel errors in Figure 3 may end up being misidentiﬁed as                  related to device failure rate.5 The large error bars for 16 GB
+other types of errors).                                                      and 24 GB DIMMs are due to the relatively small number of
+    We observe that a relatively large fraction of servers experi-           DIMMs of those types. Notice that there is no consistent trend
+ence cell failures, 25.54%. Similar to row and column failures,              across DIMM capacities.
+prior work found a much larger amount of cell failures, 46.1%.
+As with rows an columns, this could also potentially be due
+
+
+
+                                                                                                                1.00
+
+
+
+
+                                                                                                                                                                                    1.00
+                                                                                 Relative server failure rate
+
+
+
+
+                                                                                                                                                     Relative server failure rate
+to unaccounted-for socket and channel failures increasing the
+perceived number of cell failures. The prevalence of this type of                                                                                                                                                  ●
+
+
+
+failure prompted the prior work to examine the effectiveness of
+page ofﬂining, where the operating system (OS) removes pages                                                    0.50
+                                                                                                                               ●
+
+
+
+
+                                                                                                                                                                                    0.50
+                                                                                                                                                ●                                                  ●
+                                                                                                                       ●
+that contain failed cells from the physical address space. While
+the prior study evaluated page ofﬂining in simulation using the                                                                       ●
+                                                                                                                                                                                           ●
+                                                                                                                           ●
+same memory traces from their evaluation, we evaluate page
+                                                                                                                0.00
+
+
+
+
+                                                                                                                                                                                    0.00
+ofﬂining on a fraction (12,276) of the servers we examine in
+Section VI and ﬁnd it to be less effective than reported in prior
+                                                                                                                       2       8     16         24                                         1      2                4
+work ([16]).
+    While prior work, which may not have controlled for socket                                                             DIMM capacity (GB)                                                  Chip density (Gb)
+and channel failures, found repeat cell errors to be the dominant
+type of failure (e.g., [16, 48, 10]); when controlling for socket                Fig. 5: The relative failure rate                                   Fig. 6: The relative failure rate
+and channel failures (by identifying and separately accounting                   for servers with different DIMM                                     for servers with different chip den-
+for the errors associated with them), we ﬁnd spurious failures                   capacities. Similar to prior work,                                  sities. Newer densities (related to
+occur the most frequently, across 56.03% of servers with errors.                 we ﬁnd no consistent reliability                                    newer technology nodes) show a
+Such errors can be caused by random DRAM-external events                         trend.                                                              trend of higher failure rates.
+such as alpha particle strikes from the atmosphere or chip
+                                                                                  In contrast to prior works [44, 40], we do observe indication
+packaging [34] and DRAM-internal effects such as cells with
+                                                                             that newer generations of DRAM chips have worse error
+weak or variable charge retention times [30, 21, 20]. This is
+                                                                             behavior by examining failure rate as a function of DRAM
+signiﬁcant because, as we mentioned before and as we will
+                                                                             chip density. The servers we analyzed contained three different
+show in Section VI, spurious failures can limit the effectiveness
+                                                                             types of DRAM chip densities: 1 Gb, 2 Gb, and 4 Gb. Figure 6
+of the page-ofﬂining technique. To deal with these type of
+                                                                             shows how different DRAM chip densities are related to device
+failures, more effective techniques for detecting and reducing
+                                                                             failure rate. We can see that there is a clear trend of increasing
+the reliability impact of weak cells are required (some potential
+                                                                             failure rate with increasing chip density, with 2 Gb devices
+options are discussed in [21, 20]).
+                                                                             having 2:4 higher failure rates than 1 Gb devices and 4 Gb
+            IV. T HE ROLE OF S YSTEM FACTORS                                 devices having 1:8 higher failure rates than 2 Gb devices. This
+    We next examine how various system factors are correlated                is troubling because it indicates that business-as-usual practices
+with the occurrence of failures in the systems we examine.                   in DRAM design will likely lead to increased memory failure
+For this detailed analysis, we examine systems that failed                   rates in the future, as predicted by both industry [20] and
+over a span of three months from 7/13 to 9/13. We focus                      academia [21, 23, 38, 39] in recent works. To understand the
+on understanding DRAM failures and excluded systems with                     source of this trend, we next examine the failure rate for DRAM
+socket and channel failures from our study. We examine the                   cells.
+effects of DRAM density and DIMM capacity, DIMM vendor,                           Figure 7 shows the cell failure rate computed by normal-
+DIMM architecture, age, and workload characteristics on failure              izing the failure rates in Figure 6 by the number of cells in
+rate.                                                                        each chip. Interestingly, cell failure rate had a brief increase
+                                                                             going from 1 Gb chips to 2 Gb chips but a recent decrease going
+A. DIMM Capacity and DRAM Density                                            from 2 Gb chips to 4 Gb chips. This shows that the reliability
+    DRAM density is measured in the number of bits per                       of individual DRAM cells may be improving recently. This is
+chip and is closely related to the DRAM cell technology and
+manufacturing process technology [20]. As DRAM cell and                         5 Recall from Section II-E that we examine relative server failure rates
+                                                                             compared to the sampled control group. Though relative failure rates happen
+  4 Other studies (e.g., [47, 48]) have similar ﬁndings. For brevity, we     to be in the range Œ0; 1, they should not be confused with absolute failure
+compare against [16].                                                        rates across the ﬂeet.
+
+
+
+                                                                           420
+
+  Authorized licensed use limited to: ETH BIBLIOTHEK ZURICH. Downloaded on October 03,2025 at 12:54:58 UTC from IEEE Xplore. Restrictions apply.
+
+
+===== Page 7 =====
+
+                                                                                                                                 ●      1 Gb            2 Gb      4 Gb                                  ●          1 Gb        2 Gb         4 Gb
+likely due to the large amounts of effort that DRAM manufac-
+
+
+
+
+                                                                                                                                 1.00
+
+
+
+
+                                                                                                                                                                                                            1.00
+turers put into designing faster and more reliable DRAM cell
+
+
+
+
+                                                                                                  Relative server failure rate
+
+
+
+
+                                                                                                                                                                         Relative server failure rate
+architectures. Our insight is that small improvements in DRAM
+cell reliability are easily outpaced by the quadratic increase in                                                                                  x8    x4
+number of cells per chip, leading to the trend of net decrease
+
+
+
+
+                                                                                                                                 0.50
+
+
+
+
+                                                                                                                                                                                                            0.50
+in DRAM reliability as shown by the server failure rate data in
+Figure 6. Unless more-than–quadratic improvements in DRAM
+cell reliability are achieved in future devices, maintaining or                                                                                ●
+                                                                                                                                                              ●                                                            ●
+                                                                                                                                                                                                                                        ●
+
+
+decreasing DRAM server failure rates in the future (while still
+
+
+
+
+                                                                                                                                 0.00
+
+
+
+
+                                                                                                                                                                                                            0.00
+increasing DRAM chip capacity) will be untenable without
+stronger hardware and/or software error correction.                                                                                      8     16          32      48                                                     4            8
+                                                 3.0e−13
+
+
+
+
+                                                                                                                                             Data chips per DIMM                                                     Chip transfer width (bits)
+                  Relative cell failure rate
+
+
+
+
+                                                                        ●
+                                                                                                  Fig. 9: The relative failure rate of                                   Fig. 10: The relative failure rate of
+                                                                                        ●         servers with DIMMs with different                                      servers with DIMMs with different
+                                                 1.5e−13
+
+
+
+
+                                                            ●
+                                                                                                  numbers of data chips separated by                                     chip transfer widths separated by
+                                                                                                  chip density.                                                          chip density.
+                                                                                                  First, for a given number of chips per DIMM, servers with
+                                                 0.0e+00
+
+
+
+
+                                                                                              higher chip densities generally have higher average failure rates.
+                                                                                              This illustrates how chip density is a ﬁrst-order effect when
+                                                           1           2                4
+                                                                                              considering memory failure rate (as we showed in Figure 6).
+                                                                                                  Second, we ﬁnd that server failure rate trends with respect
+                                                                    Chip density (Gb)         to chips per DIMM are dependent on the transfer width of the
+Fig. 7: The relative per-cell failure rate at different technology nodes (chip                chips – the number of data bits each chip can transfer in one
+densities).                                                                                   clock cycle. In order to transfer data at a similar rate, DIMMs
+                                                                                              with fewer (8 or 16) chips must compensate by using a larger
+B. DIMM Vendor                                                                                transfer width of 8 bits per clock cycle (and are called 8
+    DIMM vendors purchase chips from DRAM chip manufac-                                       devices) while DIMMs with more chips (32 or 48) can use a
+turers and assemble them into DIMMs. While we have infor-                                     smaller transfer width of 4 bits per clock cycle (and are called
+mation on DIMM manufacturer, we do not have information                                       4 devices). We have annotated the graph to show which chip
+on the DRAM chip manufacturers in our systems.                                                counts have transfer widths of 4 bits and 8 bits.
+    Figure 8 shows the failure rate for servers with different                                    We observe two trends depending on whether chips on a
+                                                                                              DIMM have the same or different transfer widths. First, among
+DIMM vendors.6 We observe that failure rate varies by over
+                                                                                              chips of the same transfer width, we ﬁnd that increasing the
+2 between vendors (e.g., Vendor B and Vendor C). The dif-
+                                                                                              number of chips per DIMM increases server failure rate. For
+ferences between vendors can arise if vendors use less reliable
+                                                                                              example, for 4 Gb devices, increasing the number of chips from
+chips from a particular foundry or build DIMMs with less
+                                                                                              8 to 16 increases failure rate by 40.8% while for 2 Gb devices,
+reliable organization and manufacturing. Prior work [48, 10]
+                                                                                              increasing the number of chips from 32 to 48 increases failure
+also found a large range in the server failure rate among vendors
+                                                                                              rate by 36.1%. Second, once the number of chips per DIMM
+of 3:9.
+                                                                                              increases beyond 16 and chips start using a different transfer
+                                                                                              width of 8, there is a decrease in failure rate. For example,
+                                                 1.00
+
+
+
+
+                                                                                              for 1 Gb devices, going from 16 chips with a 8 interface to
+                  Relative server failure rate
+
+
+
+
+                                                                                              32 chips with a 4 interface decreases failure rate by 7.1%.
+                                                                                              For 2 Gb devices, going from 8 chips with a 8 interface to 32
+                                                                                              chips with a 4 interface decreases failure rate by 13.2%.
+                                                 0.50
+
+
+
+
+                                                                                                  To conﬁrm the trend related to transfer width, we plotted
+                                                                                              the failure rates dependent on transfer width alone in Figure 10.
+                                                                                              We ﬁnd that, in addition to the ﬁrst-order effect of chip density
+                                                                                              increasing failure rate (Effect 1), there is a consistent increase
+                                                 0.00
+
+
+
+
+                                                                                              in failure rate going from 4 to 8 devices (Effect 2).
+                                                                A       B     C     D             We believe that both effects may be partially explained by
+                                                                                              considering how number of chips and transfer width contribute
+                                                           DIMM vendor (anonymized)
+                                                                                              to the electrical disturbance within a DIMM that may disrupt
+  Fig. 8: Relative server failure rate for different vendors varies widely.                   the integrity of the signal between components. For example,
+                                                                                              a larger transfer width increases internal data transfer current
+C. DIMM Architecture                                                                          (e.g., IDD4R=W in Table 19 of [35], which compares the power
+    We next examine how DIMM architecture affects server                                      consumption of 4 and 8 DRAM devices), leading to addi-
+failure rate. We examine two aspects of DIMM design that have                                 tional power noise across the device. Such power noise could
+not been studied in published literature before: the number of                                induce additional memory errors if, for example, charge were
+data chips (not including chips for ECC) per DIMM and the                                     to get trapped in components. Interestingly, we ﬁnd that, for a
+transfer width of each chip.                                                                  given chip density, the best architecture for device reliability
+    Figure 9 plots the failure rate for servers with DIMMs with                               occurs when there is, ﬁrst, low transfer width and, second, low
+different numbers of data chips for each of the densities that                                chips per DIMM. This is shown by the 2 Gb devices with 32
+we examine. The DIMMs that we examine have 8, 16, 32, and                                     chips with a 4 interface compared to the other 2 Gb devices
+48 chips. We make two observations from Figure 9.                                             in Figure 9.
+  6 We have made the vendors anonymous.
+
+
+
+
+                                                                                            421
+
+  Authorized licensed use limited to: ETH BIBLIOTHEK ZURICH. Downloaded on October 03,2025 at 12:54:58 UTC from IEEE Xplore. Restrictions apply.
+
+
+===== Page 8 =====
+
+D. Workload Characteristics
+
+
+
+
+                                                                                                                                                                                                          Relative server failure rate
+
+                                                                                                                                                                                                                                         1.00
+    We next examine how workload-related characteristics such
+as CPU utilization (the average utilization of the CPUs in a
+system), memory utilization (the fraction of physical memory
+
+
+
+
+                                                                                                                                                                                                                                         0.50
+pages in use), and workload type affect server failure rate. Prior
+work examined CPU utilization and memory utilization and
+found that they were correlated positively with failure rate [44].
+    We measure CPU utilization as the fraction of non-idle
+
+
+
+
+                                                                                                                                                                                                                                         0.00
+cycles versus total cycles across the CPUs in a server. Due to
+
+
+
+
+                                                                                                                                                                                                                                                Web
+                                                                                                                                                                                                                                                      Hadoop
+                                                                                                                                                                                                                                                               Ingest
+                                                                                                                                                                                                                                                                        Database
+                                                                                                                                                                                                                                                                                   Memcache
+                                                                                                                                                                                                                                                                                              Media
+software load balancing, we ﬁnd that CPU utilization among
+cores in a server running the same workload are relatively
+similar, and so the average utilization across the cores is rea-
+sonably representative of each core’s individual utilization. We
+measure memory utilization as the fraction of pages allocated                                                                                                                            Fig. 13: The relative failure rate of servers that run different types of
+by the OS. Note that memory utilization does not describe how                                                                                                                            workloads (Table I) can vary widely.
+the cells in pages are accessed. For this reason, we examine                                                                                                                             that chip density once again plays a large role in determining
+workloads as a proxy for how cells are accessed. We plot how                                                                                                                             server failure rate: For a given age, servers with 4 Gb devices
+CPU utilization and memory utilization are related to server                                                                                                                             have a 15.3% higher failure rate on average than 2 Gb devices,
+failure rate in Figures 11 and 12.                                                                                                                                                       and servers with 2 Gb devices have a 23.9% higher failure rate
+                                 ●          1 Gb               2 Gb            4 Gb                                    ●          1 Gb                2 Gb              4 Gb             on average than 1 Gb devices.
+                                                                                                                                                                                             We do not observe any general age-dependent trend in
+                                     1.00
+
+
+
+
+                                                                                                                           1.00
+  Relative server failure rate
+
+
+
+
+                                                                                        Relative server failure rate
+
+
+
+
+                                                                                                                                                                                         server failure rate when controlling for the effects of density
+                                                                                                                                                                                         alone. One reason for this is that age is correlated with other
+                                                                                                                                                                                         server characteristics. For example, we ﬁnd that in addition to
+                                     0.50
+
+
+
+
+                                                                                                                           0.50
+
+
+
+
+                                                                                                                                                                                         being correlated with chip density (correlation coefﬁcient of
+                                                                                                                                         ●
+                                                                                                                                                                                         0:69), age is also correlated with the number of CPUs in a
+                                                           ●
+                                                               ●                                                                                                ●
+                                                                                                                                                                    ●      ●             system (correlation coefﬁcient of 0:72). Figure 15 shows the
+                                                   ●
+                                                                           ●                                                                  ●       ●    ●
+                                                                                                                                                                                         trend for age for different combinations of chip density and
+                                     0.00
+
+
+
+
+                                                                                                                           0.00
+
+
+
+
+                                                       ●                        ●                                                                 ●
+
+                                                                                                                                                                                         CPUs (which we will denote as hx; yi where x is chip density
+                                              0        0.25        0.5   0.75       1                                               0        0.25         0.5       0.75       1         in Gb and y is number of CPUs). We make two observations
+                                                                                                                                                                                         from Figure 15.
+                                                       CPU utilization                                                                       Memory utilization                              First, we ﬁnd that among systems of the same age, more
+                                                                                                                                                                                         cores lead to higher failure rates. For example, consider the
+ Fig. 11: The relative failure rate of                                                  Fig. 12: The relative failure rate                                                               h2; i systems that are two years of age: going from 4 ! 12
+ servers with different average CPU                                                     of servers with different average                                                                cores increases failure rate by 21.0% and going from 12 ! 16
+ utilizations.                                                                          memory utilizations.                                                                             cores increases failure rate by 22.2%. Figure 16, which plots
+     Contrary to what was observed in prior work, we do not                                                                                                                              the server failure rate with respect to different numbers of CPUs
+ﬁnd a correlation between either CPU utilization or memory                                                                                                                               conﬁrms this trend, with 2 Gb systems with 16 cores having a
+utilization and failure rate. We observe multiple local maxima                                                                                                                           40.0% higher failure rate than 2 Gb systems with 4 cores. This
+for failure rate compared to CPU utilization and memory                                                                                                                                  could potentially be due to more cores accessing DRAM more
+utilization across all the chip densities. We believe that this                                                                                                                          intensely and wearing out DRAM cells at a faster rate, a failure
+is due to the more diverse workloads that we examine (Table I)                                                                                                                           mode that was shown in a prior controlled study [6].
+compared to prior work [44, 47, 48, 10], which mainly exam-                                                                                                                                  The most related trend observed in prior work was that
+ined a homogeneous workload. The implications of this are that                                                                                                                           CPU frequency was shown to be correlated with error rate [40].
+memory failure rate may depend more on the type of work as                                                                                                                               The trend we observe with respect to CPU count is signiﬁcant
+opposed to the CPU or memory utilization the work causes.                                                                                                                                because the number of CPU cores per processor is increasing
+     To examine how the type of work a server performs affects                                                                                                                           at a much faster rate than CPU frequency and so our results
+failure rate, we plotted the server failure rate for the different                                                                                                                       allow us to predict that future processor generations will likely
+workload types at Facebook in Figure 13. We observe that, de-                                                                                                                            continue to induce higher rates of errors in DRAM devices.
+pending on the workload, failure rate can vary by up to 6:5, as                                                                                                                             Second, among systems with the same number of cores,
+shown by the difference between servers executing a Database-                                                                                                                            older machines generally have higher failure rates than younger
+type workload compared to those executing a Hadoop-type                                                                                                                                  machines. For example, for the h2; 12i system, average failure
+workload. While we leave the detailed examination of how                                                                                                                                 rate increases by 2.8% going from 2 ! 3 years of age, and
+workloads affect memory failure rate to future work, we hy-                                                                                                                              average failure rate increases by 7.8% going from 3 ! 4 years
+pothesize that certain types of workload memory access patterns                                                                                                                          of age. This is consistent with prior observations from the ﬁeld
+may increase the likelihood of errors. For example, prior work                                                                                                                           that showed that failure rates can increase with age [44], though
+has shown that memory errors can be induced in a controlled                                                                                                                              we observe a much clearer trend compared to prior work (e.g.,
+environment by accessing the same memory row in rapid                                                                                                                                    Figure 10 in [44] shows large ﬂuctuations in failure rate over
+succession [23]. Such an access pattern involves modifying                                                                                                                               time) because we have controlled for correlated factors such as
+data and writing it back to memory using the clflush and                                                                                                                                 chip density and CPU count. Not all systems exhibit this trend,
+mfence instructions. We believe it would be interesting to                                                                                                                               however: the h1; 12i system shows a small decrease in failure
+examine what types of workloads exhibit this behavior.                                                                                                                                   rate going from 3 ! 4 years of age, which could be due to
+                                                                                                                                                                                         second-order effects on failure rate from other factors that may
+E. Server Age                                                                                                                                                                            be correlated with age, such as transfer width.
+    We examine next how age affects server failure rate. The
+servers we analyzed were between one and four years old, with                                                                                                                                          V. M ODELING DRAM FAILURES
+an average age of between one and two years. Figure 14 shows                                                                                                                                 We next develop a model for DRAM failures using the data
+the monthly failure rate for servers of different ages. We observe                                                                                                                       collected from our study. We use a statistical regression analysis
+
+
+                                                                                                                                                                                   422
+
+Authorized licensed use limited to: ETH BIBLIOTHEK ZURICH. Downloaded on October 03,2025 at 12:54:58 UTC from IEEE Xplore. Restrictions apply.
+
+
+===== Page 9 =====
+
+                                   ●          1 Gb        2 Gb       4 Gb        ●   1 Gb, 12 cores                                    2 Gb, 8 cores        2 Gb, 16 cores                                  ●          1 Gb        2 Gb        4 Gb
+                                                                                     2 Gb, 4 cores                                     2 Gb, 12 cores       4 Gb, 16 cores
+                                       1.00
+
+
+
+
+                                                                                                                                                                                                                1.00
+    Relative server failure rate
+
+
+
+
+                                                                                                                                                                             Relative server failure rate
+                                                                                        Relative server failure rate
+
+                                                                                                                       1.00
+                                       0.50
+
+
+
+
+                                                                                                                                                                                                                0.50
+                                                                                                                       0.50
+                                                                 ●                                                                               ●                                                                                        ●
+                                                                          ●                                                                            ●
+                                       0.00
+
+
+
+
+                                                                                                                                                                                                                0.00
+                                                                                                                       0.00
+                                                1        2       3        4                                                   1       2         3      4                                                                      4    8      12   16
+
+                                                     Server age (years)                                                           Server age (years)                                                                              CPU cores
+
+    Fig. 14: The relative failure rate of                                     Fig. 15: The relative failure rate of servers of different                                     Fig. 16: The relative failure rate of
+    servers of different ages. There is no                                    hchip density; CPU counti conﬁgurations. When controlling for                                  servers with different numbers of CPU
+    clear trend when controlling only for                                     density and CPUs together, older devices usually have higher                                   cores. Servers with more CPUs have
+    chip density.                                                             failure rates.                                                                                 higher failure rates.
+
+TABLE II: The factors in our regression analysis and the resulting error model. p-value is the likelihood that a characteristic is inaccurately modeled: lower
+p-values indicate more accurate modeling. Signiﬁcant? is whether the p-value is < 0:01, corresponding a < 1% chance that the characteristic is inaccurately
+modeled. ˇ -coefﬁcient is the characteristic’s contribution to error rate and standard error is how much the model differs from the measured values for a given
+characteristic. The model is publicly available at [1].
+    Characteristic     Description                                                               p-value           Signiﬁcant?    ˇ -coefﬁcient     Standard error
+    Intercept          A baseline server with 1 Gb chips with a 4 interface and 0           <2:000  1016            Yes     5:511                3:011  101
+                       for all other factors.
+    Capacity           DIMM capacity (GB).                                                   <2:000  1016            Yes        9:012  102       2:168  102
+    Density2Gb         1 if the server has 2 Gb density chips; 0 otherwise.                  <2:000  1016            Yes        1:018              1:039  101
+    Density4Gb         1 if the server has 4 Gb density chips; 0 otherwise.                  <2:000  1016            Yes        2:585              1:907  101
+    Chips              Number of chips per DIMM.                                             <2:000  1016            Yes     4:035  102         1:294  102
+    Width8             1 if the server has 8 DRAM chips; 0 otherwise.                         0:071                   No         2:310  101       1:277  101
+    CPU%               Average CPU utilization (%).                                          <2:000  1016            Yes        1:731  102       1:633  103
+    Memory%            Average fraction of allocated physical pages (%).                       0:962                   No         5:905  105       1:224  103
+    Age                Server age (years).                                                   <2:000  1016            Yes        2:296  101       3:956  102
+    CPUs               Number of physical CPU cores in the server.                           <2:000  1016            Yes        2:126  101       1:449  102
+    Failure model       ln ŒF =.1  F  / D  ˇ Intercept C .Capacity  ˇCapacity / C .Density2Gb  ˇ Density2Gb / C .Density4Gb  ˇ Density4Gb / C .Chips  ˇChips /
+                                                                C.CPU%  ˇCPU% / C .Age  ˇAge / C .CPUs  ˇCPUs /
+to determine which server characteristics have a statistically                                                                                  coefﬁcient, is the characteristic’s contribution to error rate and
+signiﬁcant effect on failure rate and how much they contribute                                                                                  the last column, standard error, is how much the model differs
+to failure rate. The resulting model can then be used to examine                                                                                from the measured values for a given characteristic.
+how relative server failure rate changes for servers with different                                                                                 The Intercept is a byproduct of the regression and helps the
+characteristics, which can be used to reason about the relative                                                                                 model ﬁt the measured data better. It represents a server with
+reliability of different server conﬁgurations.                                                                                                  a certain set of baseline characteristics (listed in Table II) and
+     We used R [3] for our statistical analysis. We performed                                                                                   0 for all other factors (0 CPUs, 0 years old, and so on). The
+a logistic regression [15, 32] on a binary characteristic that                                                                                  factors Density2Gb and Density4Gb take on the value 0 or 1
+represented whether a server was part of the error group or                                                                                     depending on whether the server has the characteristic (in which
+control group of servers (see Section II-E for our error and                                                                                    case the value is 1) or does not (0). Note that the regression
+control group classiﬁcation/formation). We include most of the                                                                                  analysis computes the ˇ-coefﬁcients for these variables in such
+characteristics we analyzed in Section IV in our regression with                                                                                a way that when they are added to the model, they effectively
+the exception of DIMM vendor because it is anonymized and                                                                                       replace the default values represented in ˇIntercept (e.g., though
+workload type because it is difﬁcult to apply outside the context                                                                               ˇIntercept represents a server with 1 Gb chips, when Density2Gb
+of our ﬂeet.7 One limitation of the logistic regression model                                                                                   is set to 1, the model computes the failure rate of servers with
+is that it is able to identify only linear relationships between                                                                                2 Gb chips).
+characteristics and failure rates. On the other hand, using a                                                                                       Note that a characteristic that is included in the model
+logistic regression made analyzing our large data set of errors                                                                                 does not necessarily mean that it affects failure rate in the
+across many variables tractable.                                                                                                                real world. It may mean that it is only correlated with other
+     Table II shows the parameters and output of the regression                                                                                 characteristics that do affect failure rate. The opposite is true
+and the resulting model (in the last row). The ﬁrst two columns                                                                                 as well: A characteristic that is not included in the model may
+describe the factors included in the regression. The third column                                                                               in fact contribute to failure rate but its effects are captured
+lists the resulting p-value for each factor after performing                                                                                    by other characteristics present in the model. For example,
+the logistic regression. The p-value is the likelihood that a                                                                                   Figure 17 shows a heatmap representing the correlation between
+characteristic is inaccurately modeled: lower p-values indicate                                                                                 the different measured factors: darker colors correspond to a
+more accurate modeling. The fourth column describes whether                                                                                     stronger correlation while lighter colors correspond to a weaker
+the p-value is < 0:01, corresponding to a < 1% chance that                                                                                      correlation. While some factors that are independent of one
+the characteristic is inaccurately modeled. The ﬁfth column, ˇ-                                                                                 another have weak or no correlation (i.e., close to 0, such
+                                                                                                                                                as CPUs and Chips), others show strong correlations (i.e.,
+   7 This results in these contributions to the model being expressed indirectly                                                                more/less than ˙0:8, such as Capacity and Chips). We have
+though other factors, whose values will be computed, in part, based on how
+                                                                                                                                                discussed and attempted to control for these correlations in
+they are correlated with different vendors.                                                                                                     Section IV.
+
+
+
+                                                                                                                                          423
+
+Authorized licensed use limited to: ETH BIBLIOTHEK ZURICH. Downloaded on October 03,2025 at 12:54:58 UTC from IEEE Xplore. Restrictions apply.
+
+
+===== Page 10 =====
+
+                                                                                                           pared to leaving the faulty page in the physical address space.
+                                                                                                           While prior work evaluated page ofﬂining using simulations on
+
+
+
+
+                                             Chip width
+                                                                                                           memory traces [16], we deployed page ofﬂining on a fraction of
+
+
+
+
+                                   Memory%
+
+
+
+
+                                                                           Capacity
+                                                                 Density
+                                                                                                           the machines we examined (12,276 servers) and observed the
+
+
+                            CPU%
+
+
+
+
+                                                          CPUs
+
+
+
+
+                                                                                      Chips
+                      Age
+                                                                                                           results. We next describe the system design decisions required
+                                                                                              1
+               Age
+                                                                                                           to make page-ofﬂining work well at a large scale, and analyze
+                                                                                              0.8          its effectiveness.
+            CPU%                                                                              0.6
+                                                                                              0.4
+                                                                                                           A. Design Decisions and Implementation
+         Memory%
+                                                                                                               The three main design decisions we explore with respect
+                                                                                              0.2
+         Chip width                                                                                        to utilizing page ofﬂining in practice are: (1) when to take a
+                                                                                              0
+             CPUs
+                                                                                                           page ofﬂine, (2) for how long to take a page ofﬂine, and (3)
+                                                                                              −0.2         how many pages to take ofﬂine (the ﬁrst and last of which were
+            Density                                                                           −0.4         also identiﬁed in [16]).
+           Capacity                                                                           −0.6             (1) When to take a page ofﬂine? ECC DIMMs provide
+                                                                                              −0.8         ﬂexibility for tolerating correctable errors for a certain amount
+             Chips
+                                                                                              −1           of time. In some settings, it may make sense to wait until a
+                                                                                                           certain number of memory errors occur on a page in a certain
+                                                                                                           amount of time before taking the page ofﬂine. We examine a
+       Fig. 17: The correlation between different measured factors.                                        conservative approach and take any page that had a memory er-
+                                                                                                           ror ofﬂine immediately (the same as the most aggressive policy
+    Using the equation in Table II, we can solve for F , the rate                                          examined in prior work [16]). The rationale is that leaving a
+of memory failure for a server with a given set of characteristics.                                        page with an error in use increases the risk of an uncorrectable
+For example, Table III compares the failure rates predicted by                                             error occurring on that page. Another option could be to leave
+the model for four different server types: (1) a low-end server                                            pages with errors in use for longer and, for example, design
+with low density DIMMs and few CPUs, (2) a high-end (HE)                                                   applications that are not as adversely affected by memory errors.
+server with high density DIMMs and twice as many CPUs                                                      Such an approach is taken by Flikker [31], which developed a
+as the low-end server, (3) a high-end server that uses lower-                                              programming model for reasoning about the reliability of data,
+density DIMMs (HE/#density), and (4) a high-end server that                                                and by heterogeneous-reliability memory systems where parts
+uses half as many CPUs (HE/#CPUs). So that the workload is                                                 of memory can be less reliable and application data that is less
+kept roughly similar across the conﬁgurations, we double the                                               vulnerable to errors can be allocated there [33].
+CPU utilization for servers with half as many CPUs.                                                            (2) For how long to take a page ofﬂine? One question
+ TABLE III: Predicted relative failure rates among different server types.                                 that arose when designing page ofﬂining at a large scale was
+ Factor       Low-end High-end (HE) HE/#density HE/#CPUs                                                   how to make an ofﬂined page persist across machine reboots
+ Capacity       4 GB            16 GB            4 GB           16 GB                                      (both planned and unplanned) and hardware changes (e.g., disk
+ Density2Gb       1                0               1               0                                       replacement). Neither of these cases are handled by existing
+ Density4Gb       0                1               0               1                                       techniques. Allowing an ofﬂined page with a permanent error
+ Chips           16               32              16              32
+ CPU%           50%              25%             25%             50%                                       to come back online can defeat the purpose of page ofﬂining by
+ Age              1                1               1               1                                       increasing the window of vulnerability for uncorrectable errors.
+ CPUs             8               16              16               8                                       We examine a policy that takes pages ofﬂine permanently. To
+ Predicted                                                                                                 keep track of ofﬂined pages across machine reboots, we store
+ relative       0.12             0.78            0.33            0.51                                      ofﬂined pages by host name in a distributed database that is
+ failure rate
+                                                                                                           queried when the OS kernel loads. This allows known-bad
+    We can see that the model-predicted failure rate of the high-                                          pages to be taken ofﬂine before the kernel allocates them to
+end server is 6:5 that of the low-end server. This agrees with                                            applications. Entries in this database need to be updated as
+the trends that we observed in Section IV, which showed, for                                               DRAM parts are replaced in a system.
+example, increasing failure rates with increasing chip density                                                 (3) How many pages to take ofﬂine? Taking a page ofﬂine
+and number of CPUs. Interestingly, the model can be used                                                   reduces the size of physical memory in a system and could
+to provide insight into the relative change in error rate for                                              cause increased swapping of pages to storage. To limit the
+different system design choices. For example, the failure rate                                             negative performance impact of this, we place a cap on the
+of the high-end server can be reduced by 57.7% by using                                                    number of physical pages that may be taken ofﬂine. Unlike
+lower density DIMMs and by 34.6% by using half as many                                                     prior work, as we showed in Section III-B, socket and channel
+cores. This indicates that designing systems with lower density                                            failures can potentially cause page ofﬂining to remove large
+DIMMs can provide a larger DRAM reliability beneﬁt than                                                    portions of the physical address space, potentially causing large
+designing systems with fewer CPUs. In this way, the model                                                  amounts of swapping to storage and degrading performance.
+that we develop allows system architects to easily and quickly                                             To check how many pages have been taken ofﬂine, logs are
+explore a large design space for memory reliability. We hope                                               routinely inspected on each machine. When the amount of
+that, by using the model, system architects can evaluate the                                               physical memory taken ofﬂine is greater than 5% of a server’s
+reliability trade-offs of their own system conﬁgurations in order                                          physical memory capacity, a repair ticket is generated for the
+to achieve better memory reliability. We make the model also                                               server.
+available online at [1].
+                                                                                                           B. Effectiveness
+        VI. E FFECT OF PAGE O FFLINING AT S CALE                                                               Figure 18 shows a timeline of the normalized number of
+    We next discuss the results of a study performed to examine                                            errors in the 12,276 servers that we examine (unlike the rest
+ways to reduce memory errors using page ofﬂining [49, 16].                                                 of this study, we only examine a small number of servers for
+Page ofﬂining removes a physical page of memory that contains                                              this technique). The experiment was performed for 86 days and
+a memory error from the set of physical pages of memory that                                               we measure the number of errors as a moving average over 30
+the operating system can allocate. This reduces the chance of                                              days. As it was a production environment, page ofﬂining was
+a more severe uncorrectable error occurring on that page com-                                              deployed on all of the machines over the course of several
+
+
+                                                                                                     424
+
+Authorized licensed use limited to: ETH BIBLIOTHEK ZURICH. Downloaded on October 03,2025 at 12:54:58 UTC from IEEE Xplore. Restrictions apply.
+
+
+===== Page 11 =====
+
+days. We divide the graph into three regions based on the                                   able memory error tolerance beneﬁts, as we have demonstrated.
+different phases of our experiment. Region a shows the state                                We look forward to future works that analyze the interaction of
+of the servers before page ofﬂining was deployed. Region b                                  page ofﬂining with other error correction methods.
+shows the state of the servers while page ofﬂining was deployed
+gradually to 100% of the servers (so that any malfunctions                                                       VII. R ELATED W ORK
+of the deployment could be detected in a small number of                                         To the best of our knowledge, we have performed the
+machines and not all of them). Region c shows the state of                                  ﬁrst analysis of DRAM failure trends (on modern DRAM
+the servers after page ofﬂining was fully deployed.                                         devices using modern data-intensive workloads) that have not
+                                                                                            been identiﬁed in prior work (e.g., chip density, transfer width,
+                                        1.0                                                 workload type), presented the ﬁrst regression-based model for
+             Normalized logged errors
+
+
+
+
+                                                                                            examining the memory failure rate of systems, and performed
+                                        0.8                                                 the ﬁrst analysis of page ofﬂining in the ﬁeld. Prior large
+                                        0.6                                                 scale empirical studies of memory errors analyzed various
+                                                    Initial        Fully                    aspects of memory errors in different systems. We have al-
+                                        0.4       testing          deployed
+                                                                                            ready presented extensive comparisons to the most prevalent of
+                                        0.2                                                 them [44, 16, 47, 48, 10] throughout the paper. We will discuss
+                                                     a         b         c                  these and others here brieﬂy.
+                                        0.0                                                      Schroeder et al. performed the ﬁrst study of memory errors
+                                              0      10       20 30 40        50 57         in the ﬁeld on a majority of Google’s servers in 2009 [44].
+                                                              Day of study                  The authors’ study showed the relatively high rate of memory
+                                                                                            errors across Google’s server population, provided evidence that
+           Fig. 18: The effect of page ofﬂining on error rate.
+                                                                                            errors are dominated by device failures (versus alpha particles),
+    The initial hump in Region a from days 0 to 7 was due                                   and noted that they did not observe any indication that newer
+to a bank failure on one server that generated a large number                               generations of DRAM devices have worse error behavior, that
+of errors. By day 8 its effects were no longer noticeable in                                CPU and memory utilization are correlated with error rate, and
+the moving average and we compare the effectiveness of page                                 that average server error rate is very high – ﬁndings clariﬁed
+ofﬂining to the error rate after day 8.                                                     by our study in this paper, ﬁve years later, as we explained in
+    There are three things to note from Figure 18. First, after                             Section III. Their work formed the basis for what is known of
+deploying page ofﬂining to 100% of the ﬂeet at day 25,                                      DRAM errors in the ﬁeld.
+error rate continues to decrease until day 50. We believe that                                   Hwang et al. performed an analysis on a trace of memory
+this is because some pages that contained errors, but which                                 errors from a sample of Google servers and IBM supercomput-
+were not accessed immediately after deploying page ofﬂining,                                ers, showing how errors are distributed across various DRAM
+were eventually accessed, triggering an error and taking the                                components [16], but without controlling for the effect of
+page ofﬂine. In addition, some pages cannot be taken ofﬂine                                 socket and channel failures. The high number of repeat address
+immediately due to restrictions in the OS, which we will                                    errors led them to simulate the effectiveness of page ofﬂining
+describe in the next section. Second, comparing the error rate                              (proposed in [49]) on the memory error traces, which they found
+at day 18 (right before initial testing) to the error rate at day 50                        to reduce error rate by 86% to 94%. Note that their study of
+(after deploying page ofﬂining and letting the servers run for a                            page ofﬂining, unlike ours (presented in Section VI), was done
+couple of weeks), the error rate decreased by around 67%. This                              purely in simulation, not in a large scale system.
+is smaller than the 86% to 94% error rate reduction reported                                     Sridharan et al. examined memory errors in a supercom-
+in Hwang et al.’s study [16]. One reason for this could be that                             puting environment [47, 48, 10]. Similar to Hwang et al., they
+the prior study may have included socket and channel errors in                              found that most memory errors are permanent and additionally
+their simulation – increasing the number of errors that could                               identiﬁed occurrences of multi-DIMM errors, and speculated as
+be avoided due to page ofﬂining. Third, we observe a relatively                             to their origin. They also found that DRAM vendor and age are
+large rate of error occurrence (e.g., at day 57 the error rate                              correlated with error rate. Concurrent to our work, Sridharan et
+is still around 18% of the maximum amount), even after page                                 al. also observe that average server errors are much larger than
+ofﬂining. This suggests that it is important to design devices                              median server errors [46], though we quantify and provide a
+and other techniques that help reduce the error rate that does                              model for the full distribution of errors per server. Siddiqua et
+not seem to be affected by aggressive page ofﬂining.                                        al. provided an error classiﬁcation methodology for the memory
+                                                                                            controller and memory bus, but did not classify memory errors
+C. Limitations                                                                              at a ﬁner DRAM chip-level granularity as we do [45]. They
+    While page ofﬂining is relatively effective at reducing the                             found that a small number of faults generate a large number of
+number of reported errors, we ﬁnd that it has two main limi-                                errors and that faults are predominantly permanent.
+tations that were not addressed in prior work. First, it reduces                                 Nightingale et al. examined the failure rate of consumer PCs
+memory capacity, which requires repairing a machine after a                                 and showed that increased CPU frequency is correlated with
+certain fraction of its pages have been taken ofﬂine. Second, it                            increased DRAM error rates [40]. A pair of works by Li et al.
+may not always succeed in real systems. We additionally logged                              analyzed memory errors on 212 Ask.com servers and evaluated
+the failure rate of page ofﬂining and found that around 6% of                               their application-level impact [27, 28]. They found that most
+the attempts to ofﬂine a page initially failed. One example we                              memory errors are permanent and that memory errors affected
+found of why a page may fail to be ofﬂined in the Linux kernel                              applications in noticeable ways, and proposed a technique to
+is if its contents cannot be locked for exclusive access. For                               monitor memory for errors to reduce application impact.
+example, if its data is being prefetched into the page cache at
+the time when it is to be ofﬂined, locking the page could result                                                VIII. C ONCLUSIONS
+in a deadlock, and so the Linux kernel does not allow this.                                     We performed a comprehensive analysis of the memory
+This, however, could be easily ﬁxed by retrying page-ofﬂining                               errors across all of Facebook’s servers over fourteen months.
+at a later time, at the expense of added complexity to system                               We analyzed a variety of factors and how they affect server
+software.                                                                                   failure rate and observed several new reliability trends for
+    Despite these limitations, however, we ﬁnd that page of-                                memory systems that have not been discussed before in lit-
+ﬂining – when adapted to function at scale – provides reason-                               erature. We ﬁnd that (1) memory errors follow a power-law
+
+
+                                                                                      425
+
+ Authorized licensed use limited to: ETH BIBLIOTHEK ZURICH. Downloaded on October 03,2025 at 12:54:58 UTC from IEEE Xplore. Restrictions apply.
+
+
+===== Page 12 =====
+
+distribution, speciﬁcally, a Pareto distribution with decreasing                     [17] G. Irlam, “Unis File Size Survey – 1993,” http://www.base.com/
+hazard rate, with average error rate exceeding median error                               gordoni/ufs93.html.
+rate by around 55; (2) non-DRAM memory failures from the                            [18] N. Jain et al., “Data Warehousing and Analytics Infrastructure at
+                                                                                          Facebook,” SIGMOD, 2010.
+memory controller and memory channel contribute the majority                         [19] JEDEC Solid State Technology Association, “JEDEC Standard: DDR4
+of errors and create a kind of denial of service attack in                                SDRAM, JESD49-4A,” Nov. 2013.
+servers; (3) more recent DRAM cell fabrication technologies (as                      [20] U. Kang et al., “Co-Architecting Controllers and DRAM to Enhance
+indicated by chip density) show higher failure rates (prior work                          DRAM Process Scaling,” The Memory Forum, 2014.
+that measured DRAM capacity, which is not closely related                            [21] S. Khan et al., “The Efﬁcacy of Error Mitigation Techniques for DRAM
+                                                                                          Retention Failures: A Comparative Experimental Study,” SIGMET-
+to fabrication technology, observed inconclusive trends); (4)                             RICS, 2014.
+DIMM architecture decisions affect memory reliability: DIMMs                         [22] Y. Kim et al., “ATLAS: A Scalable and High-Performance Scheduling
+with fewer chips and lower transfer widths have the lowest error                          Algorithm for Multiple Memory Controllers,” HPCA, 2010.
+rates, likely due to electrical noise reduction; and (5) while CPU                   [23] ——, “Flipping Bits in Memory Without Accessing Them: An Exper-
+and memory utilization do not show clear trends with respect                              imental Study of DRAM Disturbance Errors,” ISCA, 2014.
+                                                                                     [24] ——, “A Case for Subarray-Level Parallelism (SALP) in DRAM,”
+to failure rates, workload type can inﬂuence server failure rate                          ISCA, 2012.
+by up to 6:5.                                                                       [25] D. Lee et al., “Adaptive-Latency DRAM: Optimizing DRAM Timing
+    We developed a model for memory failures and showed how                               for the Common-Case,” HPCA, 2015.
+system design choices such as using lower density DIMMs and                          [26] ——, “Tiered-Latency DRAM: A Low Latency and Low Cost DRAM
+fewer processors can reduce failure rates of baseline servers                             Architecture,” HPCA, 2013.
+by up to 57.7%. We also performed the ﬁrst analysis of page                          [27] X. Li et al., “A Memory Soft Error Measurement on Production
+                                                                                          Systems,” USENIX ATC, 2007.
+ofﬂining in a real-world environment, showing that error rate                        [28] ——, “A Realistic Evaluation of Memory Hardware Errors and Soft-
+can be reduced by around 67% identifying and ﬁxing several                                ware System Susceptibility,” USENIX ATC, 2010.
+real-world challenges to the technique.                                              [29] J. Liu et al., “RAIDR: Retention-Aware Intelligent DRAM Refresh,”
+    We hope that the data and analyses presented in our work                              ISCA, 2012.
+can aid in (1) clearing up potential inaccuracies and limitations                    [30] ——, “An Experimental Study of Data Retention Behavior in Modern
+                                                                                          DRAM Devices: Implications for Retention Time Proﬁling Mecha-
+in past studies’ conclusions, (2) understanding the effects of                            nisms,” ISCA, 2013.
+different factors on memory reliability, (3) the design of more                      [31] S. Liu et al., “Flikker: Saving DRAM Refresh-power through Critical
+reliable DIMM and memory system architectures, and (4) im-                                Data Partitioning,” ASPLOS, 2011.
+proving evaluation methodologies for future memory reliability                       [32] J. S. Long, Regression Models for Categorical and Limited Dependent
+                                                                                          Variables. Sage Publications, 1997.
+studies.
+                                                                                     [33] Y. Luo et al., “Characterizing Application Memory Error Vulnerability
+                                                                                          to Optimize Data Center Cost via Heterogeneous-Reliability Memory,”
+                    ACKNOWLEDGMENTS                                                       DSN, 2014.
+    We thank Konrad Lai, Manish Modi, and Jon Brauer for                             [34] T. C. May and M. H. Woods, “Alpha-Particle-Induced Soft Errors in
+their contributions to the work. We also thank the students                               Dynamic Memories,” IEEE Transactions on Electron Devices, 1979.
+who attended the Fall 2014 lectures of 18-742 at CMU, who                            [35] Micron Technology, Inc., “4 Gb: 4, 8, 16 DDR3 SDRAM,” 2009.
+provided feedback on earlier drafts. We thank the anonymous                          [36] S. S. Mukherjee et al., “Cache Scrubbing in Microprocessors: Myth or
+                                                                                          Necessity?” PRDC, 2004.
+reviewers from ISCA 2014, OSDI 2015, and DSN 2015 and the
+                                                                                     [37] S. Muralidhar et al., “f4: Facebook’s warm blob storage system,” OSDI,
+members of the SAFARI research group for their comments and                               2014.
+suggestions. This work is supported in part by Samsung and the                       [38] O. Mutlu, “Memory Scaling: A Systems Architecture Perspective,”
+Intel Science and Technology Center for Cloud Computing, as                               MEMCON, 2013.
+well as NSF grants 0953246, 1065112, 1212962, and 1320531.                           [39] O. Mutlu, J. Meza, and L. Subramanian, “The Main Memory System:
+                                                                                          Challenges and Opportunities,” Comm. of the Korean Institute of
+                                                                                          Information Scientists and Engineers, 2015.
+                               R EFERENCES                                           [40] E. B. Nightingale, J. R. Douceur, and V. Orgovan, “Cycles, Cells and
+                                                                                          Platters: An Empirical Analysis of Hardware Failures on a Million
+ [1]   “DRAM Failure Model,” http://www.ece.cmu.edu/~safari/tools.html.                   Consumer PCs,” EuroSys, 2011.
+ [2]   “Open Compute Project,” http://www.opencompute.org/.                          [41] R. Nishtala et al., “Scaling Memcache at Facebook,” NSDI, 2013.
+ [3]   “The R Project for Statistical Computing,” http://www.r-project.org/.         [42] V. Paxson and S. Floyd, “Wide-area trafﬁc: The failure of poisson
+ [4]   D. Borthakur et al., “Apache Hadoop goes realtime at Facebook,”                    modeling,” IEEE/ACM TON, 1995.
+       SIGMOD, 2011.                                                                 [43] B. Schroeder and M. Harchol-Balter, “Evaluation of task assignment for
+ [5]   P. Chakka et al., “Hive: A Warehousing Solution Over a Map-Reduce                  supercomputing servers: The case for load unbalancing and fairness,”
+       Framework,” VLDB, 2009.                                                            Cluster Computing, 2004.
+ [6]   P.-F. Chia, S.-J. Wen, and S. Baeg, “New DRAM HCI Qualiﬁcation                [44] B. Schroeder, E. Pinheiro, and W.-D. Weber, “DRAM Errors in the
+       Method Emphasizing on Repeated Memory Access,” IRW, 2010.                          Wild: A Large-Scale Field Study,” SIGMETRICS/Performance, 2009.
+ [7]   C. Constantinescu, “Trends and Challenges in VLSI Circuit Reliabil-           [45] T. Siddiqua et al., “Analysis and Modeling of Memory Errors from
+       ity,” IEEE Micro, 2003.                                                            Large-scale Field Data Collection,” SELSE, 2013.
+ [8]   M. E. Crovella and A. Bestavros, “Self-similarity in world wide web           [46] V. Sridharan et al., “Memory Errors in Modern Systems: The Good,
+       trafﬁc: Evidence and possible causes,” IEEE/ACM TON, 1997.                         The Bad, and The Ugly,” ASPLOS, 2015.
+ [9]   M. E. Crovella, M. S. Taqqu, and A. Bestavros, A Practical Guide to           [47] V. Sridharan and D. Liberty, “A Study of DRAM Failures in the Field,”
+       Heavy Tails. Chapman & Hall, 1998.                                                 SC, 2012.
+[10]   N. DeBardeleben et al., “Extra Bits on SRAM and DRAM Errors –                 [48] V. Sridharan et al., “Feng Shui of Supercomputer Memory: Positional
+       More Data from the Field,” SELSE, 2014.                                            Effects in DRAM and SRAM Faults,” SC, 2013.
+[11]   T. J. Dell, “A White Paper on the Beneﬁts of Chipkill-Correct ECC for         [49] D. Tang et al., “Assessment of the Effect of Memory Page Retirement
+       PC Server Main Memory,” IBM Microelectronics Division, Nov. 1997.                  on System RAS Against Hardware Faults,” DSN, 2006.
+[12]   R. W. Hamming, “Error Correcting and Error Detecting Codes,” Bell             [50] P. Vajgel et al., “Finding a Needle in Haystack: Facebook’s Photo
+       System Technical Journal, Apr. 1950.                                               Storage,” OSDI, 2010.
+[13]   M. Harchol-Balter, “Task assignment with unknown duration,” J. ACM,
+       2002.
+[14]   M. Harchol-Balter and A. Downey, “Exploiting Process Lifetime
+       Distributions for Dynamic Load Balancing,” SIGMETRICS, 1996.
+[15]   D. Hosmer and S. Lemeshow, Applied Logistic Regression (Second
+       Edition). John Wiley and Sons, Inc., 2000.
+[16]   A. Hwang, I. Stefanovici, and B. Schroeder, “Cosmic Rays Don’t Strike
+       Twice: Understanding the Characteristics of DRAM Errors and the
+       Implications for System Design,” ASPLOS, 2012.
+
+
+
+                                                                               426
+
+ Authorized licensed use limited to: ETH BIBLIOTHEK ZURICH. Downloaded on October 03,2025 at 12:54:58 UTC from IEEE Xplore. Restrictions apply.

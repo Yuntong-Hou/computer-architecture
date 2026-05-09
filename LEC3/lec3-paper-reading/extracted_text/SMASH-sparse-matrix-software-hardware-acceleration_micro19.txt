@@ -1,0 +1,1620 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/SMASH-sparse-matrix-software-hardware-acceleration_micro19.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/SMASH-sparse-matrix-software-hardware-acceleration_micro19.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+                           SMASH: Co-designing Software Compression
+                              and Hardware-Accelerated Indexing
+                             for Efficient Sparse Matrix Operations
+       Konstantinos Kanellopoulos1 Nandita Vijaykumar2,1 Christina Giannoula1,3 Roknoddin Azizi1
+       Skanda Koppula1 Nika Mansouri Ghiasi1 Taha Shahroodi1 Juan Gomez Luna1 Onur Mutlu1,2
+                        1 ETH Zürich              2 Carnegie Mellon University                      3 National Technical University of Athens
+
+
+ABSTRACT                                                                                        ACM Reference Format:
+Important workloads, such as machine learning and graph analytics                               Konstantinos Kanellopoulos, Nandita Vijaykumar, Christina Giannoula, Ro-
+                                                                                                knoddin Azizi, Skanda Koppula, Nika Mansouri Ghiasi, Juan Gomez Luna,
+applications, heavily involve sparse linear algebra operations. These
+                                                                                                Taha Shahroodi and Onur Mutlu. 2019. SMASH: Co-designing Software
+operations use sparse matrix compression as an effective means to                               Compression and Hardware-Accelerated Indexing for Efficient Sparse Ma-
+avoid storing zeros and performing unnecessary computation on                                   trix Operations. In The 52nd Annual IEEE/ACM International Symposium
+zero elements. However, compression techniques like Compressed                                  on Microarchitecture (MICRO-52), October 12–16, 2019, Columbus, OH, USA.
+Sparse Row (CSR) that are widely used today introduce significant                               ACM, New York, NY, USA, 15 pages. https://doi.org/10.1145/3352460.3358286
+instruction overhead and expensive pointer-chasing operations to
+                                                                                                1     INTRODUCTION
+discover the positions of the non-zero elements. In this paper, we
+identify the discovery of the positions (i.e., indexing) of non-zero                            Sparse linear algebra operations are widely used in modern applica-
+elements as a key bottleneck in sparse matrix-based workloads,                                  tions like recommender systems [33, 49, 61], neural networks [29,
+which greatly reduces the benefits of compression.                                              50], graph analytics [8, 12], and high-performance computing [10,
+   We propose SMASH, a hardware-software cooperative mecha-                                     20, 24, 25, 34]. The matrices involved in these operations are very
+nism that enables highly-efficient indexing and storage of sparse                               large in size and highly sparse, i.e., the vast majority of the elements
+                                                                                                are zeros. For example, the matrices that represent Facebook’s and
+matrices. The key idea of SMASH is to explicitly enable the hard-
+                                                                                                YouTube’s social network connectivity contain 0.0003% [75] and
+ware to recognize and exploit sparsity in data. To this end, we devise
+                                                                                                2.31% [45] non-zero elements, respectively. These highly sparse
+a novel software encoding based on a hierarchy of bitmaps. This
+                                                                                                matrices lead to significant inefficiencies in both storage and com-
+encoding can be used to efficiently compress any sparse matrix,
+                                                                                                putation. First, they require an unnecessarily large amount of stor-
+regardless of the extent and structure of sparsity. At the same time,
+                                                                                                age space, which is largely occupied by zeros. Second, computation
+the bitmap encoding can be directly interpreted by the hardware.
+                                                                                                on highly sparse matrices involves a large number of unnecessary
+We design a lightweight hardware unit, the Bitmap Management
+                                                                                                operations (such as additions and multiplications) on zero elements.
+Unit (BMU), that buffers and scans the bitmap hierarchy to per-
+                                                                                                The traditional solution to these inefficiencies is to compress the
+form highly-efficient indexing of sparse matrices. SMASH exposes                                matrix and store only the non-zero elements, and then operate only
+an expressive and rich ISA to communicate with the BMU, which                                   on the non-zero values.
+enables its use in accelerating any sparse matrix computation.                                     Prior works take two major approaches to designing such com-
+   We demonstrate the benefits of SMASH on four use cases that                                  pression schemes. The first approach is to devise general compres-
+include sparse matrix kernels and graph analytics applications. Our                             sion formats or encodings [38, 44, 53, 68, 72, 86, 89, 93], such as
+evaluations show that SMASH provides average performance im-                                    CSR [53], COO [72], BCSR [38], and CSR5 [53]. Such formats es-
+provements of 38% for Sparse Matrix Vector Multiplication and 44%                               sentially store the non-zero elements and their positions within
+for Sparse Matrix Matrix Multiplication, over a state-of-the-art CSR                            the matrix using additional data structures and different encodings.
+implementation, on a wide variety of matrices with different char-                              Such encodings are general in applicability and are highly-efficient
+acteristics. SMASH incurs a very modest hardware area overhead                                  in storage, with high compression ratios. However, this approach in-
+of up to 0.076% of an out-of-order CPU core.                                                    volves repositioning and packing the non-zero values in the matrix,
+                                                                                                which leads to significant computation overheads that diminish the
+KEYWORDS                                                                                        overall benefit. Determining the positions of the non-zero elements
+sparse matrices, compression, hardware-software cooperation, ac-                                in the compressed encoding (i.e., indexing) requires a series of
+celerators, memory, efficiency, specialized architectures, linear al-                           pointer-chasing operations in memory that, as we demonstrate, are
+gebra, graph processing                                                                         highly inefficient in modern processors and memory hierarchies.
+                                                                                                   The second approach taken by prior work is to leverage a cer-
+Permission to make digital or hard copies of part or all of this work for personal or           tain known structure in a given type of sparse matrix to avoid
+classroom use is granted without fee provided that copies are not made or distributed
+for profit or commercial advantage and that copies bear this notice and the full citation
+                                                                                                the cost of discovering the non-zero regions of the sparse ma-
+on the first page. Copyrights for third-party components of this work must be honored.          trix [7, 16, 30, 41, 42, 46, 77]. For example, the DIA format [7]
+For all other uses, contact the owner/author(s).                                                is highly effective in matrices where the non-zero values are con-
+MICRO-52, October 12–16, 2019, Columbus, OH, USA                                                centrated along the diagonals of the matrix. Specializing the com-
+© 2019 Copyright held by the owner/author(s).
+ACM ISBN 978-1-4503-6938-1/19/10. . . $15.00                                                    pression scheme to patterns in the sparsity can be efficient in both
+https://doi.org/10.1145/3352460.3358286                                                         computation and storage but it is highly specific to certain types of
+
+
+
+                                                                                            1
+
+
+===== Page 2 =====
+
+matrices and inapplicable when the structure and extent of sparsity               • We introduce SMASH, a hardware-software cooperative
+are not known a priori.                                                             mechanism that enables the hardware to recognize and ex-
+   Our goal in this work is to enable efficient and general sparse                  ploit the compression encoding used in software. SMASH
+matrix computation with a technique that satisfies three major re-                  consists of 1) a novel software encoding that uses a hierar-
+quirements: 1) high computation and storage efficiency by storing                   chy of bitmaps to efficiently compress sparse matrices and
+and operating on only non-zero elements; 2) minimal overheads                       2) hardware support to enable highly-efficient indexing of
+from the compression scheme (e.g., efficient discovery of non-zero                  sparse matrices that are compressed using SMASH’s soft-
+elements) and 3) generality and applicability to any sparse matrix,                 ware encoding.
+regardless of its structure or the extent of its sparsity.                        • We show how SMASH can efficiently compress sparse matri-
+   Our key idea is a new hardware-software co-design where we                       ces with diverse structure and sparsity characteristics using
+enable the hardware to recognize and exploit the compression en-                    the hierarchical bitmap encoding. We design and demon-
+coding used in software for any sparse matrix. This allows us to                    strate the effectiveness of the Bitmap Management Unit
+add hardware support for highly-efficient storage and retrieval of                  (BMU) that efficiently buffers and scans the bitmap hier-
+non-zero values in sparse matrices, avoiding the overheads of soft-                 archy in hardware to identify non-zero regions in the matrix.
+ware indexing (requirement 2). Our software encoding is designed                    We introduce an expressive ISA that enables the flexible use
+to maintain low storage requirements (requirement 1) and be gen-                    of SMASH in a wide variety of sparse matrix operations.
+erally applicable to any sparse matrix without any assumption of                  • We evaluate SMASH on important sparse matrix kernels and
+structure or extent of sparsity (requirement 3).                                    graph analytics applications using a collection of matrices
+   We propose SMASH (Sparse MAtrix Software/Hardware), a gen-                       with diverse structure and sparsity. We find that SMASH
+eral hardware-software cooperative mechanism that efficiently com-                  provides significant performance improvements compared
+presses and operates on sparse matrices. The key construct behind                   to state-of-the-art CSR implementations while incurring a
+SMASH is the use of efficiently encoded hierarchical bitmaps to                     very modest area overhead in a modern out-of-order CPU.
+express sparsity, where each bit represents a region of non-zero val-
+ues. These bitmaps are recognized by both hardware and software.            2     MOTIVATION
+On the software side, sparse matrices of any form are flexibly en-          Sparse matrix operations are widely used in a variety of applications
+coded using our hierarchical bitmap representation. SMASH adapts            including sparse linear algebra [39, 69], graph processing [8, 12],
+to each matrix’s sparsity characteristics by supporting multiple            convolutional neural networks (CNNs) [50], and machine learn-
+compression granularities throughout the bitmap hierarchy. On               ing (ML) [33, 49, 61, 97]. These applications involve matrices with
+the hardware side, the bitmap representation allows us to use a             very high sparsity, i.e., a large fraction of zero elements. Using a
+lightweight hardware unit, the Bitmap Management Unit (BMU),                compression scheme is a straightforward approach to avoid unnec-
+to perform highly-efficient scans of the bitmap hierarchy. The BMU          essarily 1) storing zero elements and 2) performing computations
+hardware enables low-cost indexing (that avoids expensive pointer-          on them. To this end, a variety of sparse matrix representation
+chasing lookups) and efficient sparse matrix computation.                   formats (e.g., [38, 44, 53, 68, 72, 86, 89, 93]) have been proposed to
+   To enable wide applicability, SMASH exposes five new instruc-            compress the sparse matrix. The most widely used state-of-the-art
+tions that enable the software to communicate with the Bitmap               format is Compressed Sparse Row (CSR) [53]. In this section, we
+Management Unit. The new instructions enable efficient lookup of            describe the CSR format and demonstrate its inefficiency.
+non-zero matrix regions, and are sufficiently rich to express a wide        2.1     Compressed Storage Formats
+variety of operations on any type of (sparse) matrix.                       The Compressed Sparse Row (CSR) format [53] is widely used in
+   We evaluate SMASH on four use cases: two sparse matrix kernels,          many libraries that involve sparse matrix operations [1, 23, 40, 87,
+Sparse Matrix Vector Multiplication (SpMV) and Sparse Matrix-               92]. It consists of three one-dimensional arrays: row_ptr, col_ind,
+Matrix Multiplication (SpMM), as well as two graph analytics ap-            and values. Given an M × N matrix, the row_ptr array is used
+plications, PageRank and Betweenness Centrality (BC). For our               to store (and determine) the number of non-zero elements per row;
+experiments, we use a collection of sparse matrices with varying            the col_ind array indicates the column indices of the non-zero ele-
+structure and sparsity characteristics [19]. We compare SMASH               ments; and the values array stores the values of only the non-zero
+to two state-of-the-art compression formats, CSR [53] and BCSR              elements. Discovering the position of a non-zero element in row i
+[38]. We find that SMASH improves average performance by 41.5%              requires streaming through col_ind from col_ind[row_ptr[i]]
+for SpMV and SpMM, across 15 matrices and by 20% for PageRank               up to col_ind[row_ptr[i+1]] to discover its column index in the
+and BC, compared to a state-of-the-art CSR implementation [40].             row. Figure 1 illustrates an example of a compressed matrix using
+We also compare the software-only version of SMASH against two              the CSR format. In this example, in order to discover the non-zero
+state-of-the-art sparse matrix frameworks [1, 40] on a real system.         elements of row 1 (i.e., second row from the top) of A, we search in
+We find that even with no hardware support, SMASH’s bitmap                  col_ind starting from index col_ind[row_ptr[1] == 1] up to
+encoding outperforms a state-of-the-art CSR implementation [40].            col_ind[row_ptr[2] == 3].
+   In this paper, we make the following key contributions:                     A variant of CSR is Compressed Sparse Column (CSC). CSC
+     • We show that discovering the positions of non-zero elements          stores the elements in column-major order instead of row-major.
+       (indexing) is a key bottleneck in sparse matrix computation.         The col_ptr array is used to store (and determine) the number of
+       We demonstrate that efficient indexing can boost the perfor-         non-zero elements per column, the row_ind array holds the row
+       mance of sparse matrix operations significantly.                     indices of the non-zero elements, and the values array stores the
+                                                                            values of the non-zero elements themselves.
+
+
+
+                                                                        2
+
+
+===== Page 3 =====
+
+                                                                            Listing 2). For each non-zero element in each row of A, we need
+                                                                            to search through col_ind of matrix A and row_ind of matrix B
+             3.2 0.0 0.0 0.0                                                to discover which elements should be multiplied during each dot
+                                row_ptr:       0 1 3 4 6
+             1.2 0.0 4.2 0.0                                                product. This process is called index matching (Lines 4-6 in Code
+     A=      0.0 0.0 0.0 5.1
+                                 col_ind:      0 0 2 3 0 1
+                                                                            Listing 2). Figure 2 presents an example of index matching. We need
+             5.3 3.3 0.0 0.0      values:     3.2 1.2 4.2 5.1 5.3 3.3       to match the positions of the non-zero elements of matrix A at row
+                                                                            0 and the non-zero elements of matrix B at column 0 to perform the
+Figure 1: Compressed Sparse Row format for a 4 × 4 matrix                   dot product correctly. Given that index matching is performed for
+with 6 non-zero elements. We count the number of non-zero                   every dot product operation, a CSR-based SpMM implementation
+elements of row i by computing (row_ptr[i + 1]-row_ptr[i]).                 requires a large number of position-finding operations for non-zero
+col_ind holds the column index of each non-zero element.                    elements and thus the indexing mechanism plays a critical role in
+                                                                            performance and efficiency.
+    CSR significantly reduces the amount of memory needed to                  1. for each row of A
+store a sparse matrix, especially when the matrix is large and its            2.          for each column of B
+sparsity is high. However, CSR and schemes with CSR-like struc-               3.               for each non-zero element in row of A
+tures [53, 72] have one major requirement: in order to determine              4.                    k1 = search_in_col_ind_of_A()
+where the non-zero elements are located in the original matrix,               5.                    k2 = search_for_row_ind_of_B()
+the corresponding indices need to be retrieved from the row_ptr               6.                    if (k1 == k2)
+and col_ind data structures. Accessing these data structures adds             7.                          y[i][j] += a_val[k1] * b_val[k2]
+many additional instructions and requires a series of indirect data-
+dependent memory accesses. These overheads reduce the benefits              Code Listing 2: CSR-based inner-product SpMM implemen-
+of avoiding the computation on zero elements. Hence, even though            tation. Index matching (Lines 4-6) is needed to perform the
+CSR-like formats reduce storage requirements and avoid needless             multiplication of A’s rows and B’s columns (line 7).
+computation, discovering the positions of the non-zero elements                               Matrix A                           Matrix B                Matrix C
+still is an unsolved challenge that causes performance and efficiency                                                   Col 0
+overheads.
+                                                                            Row 0
+
+
+
+
+                                                                                     A         C   E         0           B                           A   B
+
+2.1.1 Sparse Matrix Vector Multiplication (SpMV). We consider                                                                                        C   D
+the SpMV kernel y := y + Ax, where A is a sparse matrix, x is a                                                          D
+dense vector, and y is the output vector. The naive 2D implemen-                                                          0
+tation of the SpMV kernel involves performing computations on
+every element of the two-dimensional matrix A and incurs high                                                             Z
+computational and storage overheads. Code Listing 1 presents the                    col_ind                           row_ind    0   1   3
+                                                                                               0   1     2
+CSR-based implementation. In this case, the algorithm iterates over                                              Indices match                  values   A   B   C   D
+
+only the non-zero elements and avoids unnecessary zero-element                                                         values    B D        Z
+                                                                                    values     A C       E
+computations. However, it introduces a pointer-chasing operation
+when col_ind is loaded and then used as an index to load the
+appropriate element of the vector (x[col_ind[j]]). Only after               Figure 2: Index matching in SpMM. We search col_ind of ma-
+this complex indexing operation can we perform the multiplication           trix A and row_ind of matrix B to find indices that match.
+with the corresponding non-zero element in matrix A (values[j]),            Only the indices of the first two elements of A’s Row 0 and
+as shown in Line 3 of Code Listing 1.                                       B’s Column 0 match. The remaining two elements in A’s
+  1.       for (i = 0; i < N; i++)                                          Row 0 or B’s Column 0 have at least one zero element in
+  2.           for (j = row_ptr[i]; j < row_ptr[i+1]; j++)                  them and their indices do not match.
+  3.               y[i] += values[j] * x[col_ind[j]]
+                                                                            2.2           Limitations of Existing Compressed
+Code Listing 1: CSR-based SpMV implementation. The col-
+umn index of each element is needed to perform the multi-                                 Storage Formats
+                                                                            Compressed storage formats, such as CSR [53], BCSR [38], and
+plication with the x vector.
+                                                                            CSR5 [53], are effective at reducing the storage area and avoid-
+2.1.2 Sparse Matrix Matrix Multiplication (SpMM). SpMM is tra-              ing redundant computations on the zero elements of the matrix.
+ditionally performed using inner product multiplication [66]. This          However, as described above, they require additional computation
+results in a series of dot product operations between each row              and indirect memory accesses to find the indices, i.e., the row and
+of the first matrix (A) and each column of the second matrix (B)            column positions, of non-zero elements. This increases the compu-
+to produce the final elements of the result matrix (C). The naive           tation burden and memory traffic, and hence lowers the potential
+O(n 3 ) SpMM implementation is prohibitively expensive due to the           gains from the compression scheme.
+high number of unnecessary computation operations on zero el-                  To understand the impact of this indexing overhead on sparse
+ements. A CSR-based implementation of SpMM, shown in Code                   matrix processing, we conduct an experiment where we compare
+Listing 2, avoids such unnecessary computations. In SpMM, ma-               a state-of-the-art CSR implementation to an idealized version in
+trix A is compressed using CSR and matrix B using CSC. SpMM                 which accessing the positions of non-zero elements does not incur
+iterates over the rows of A and columns of B (Lines 1-2 in Code             any additional computation or memory access. Figure 3 shows the
+
+
+
+                                                                        3
+
+
+===== Page 4 =====
+
+                                                                           3.1    Design Challenges
+                                   CSR          Ideal CSR
+                Speedup   3                                                Designing SMASH involves addressing two major challenges:
+                          2                                                   Challenge 1: Efficiently Encoding Bitmaps. Representing
+                          1                                                each element in a matrix with a single bit to denote sparsity is
+       Instructions
+
+
+
+                                                                           highly-inefficient in terms of storage and computation. Hence, we
+       Normalized
+
+
+
+
+                      1.00
+                      0.75
+                      0.50                                                 need a more efficient bitmap representation that is effective re-
+                      0.25
+                      0.00                                                 gardless of the matrix sparsity and the location/distribution of the
+                              SpMatAdd   SpMV         SpMM                 non-zero values. At the same time, hardware should be able to
+                                                                           flexibly interpret and leverage this bitmap encoding.
+Figure 3: Speedup and normalized number of executed in-                       Challenge 2: Flexibility and Expressiveness. To express a
+structions of an ideal indexing scheme over the baseline                   diverse set of sparse matrix operations in any application, we need
+CSR, averaged across 15 sparse matrices for Sparse Matrix                  a rich cross-layer interface between the application and the under-
+Addition, SpMV, and SpMM (see Section 6 for methodology).                  lying hardware that 1) allows the software to flexibly manipulate
+                                                                           and index sparse matrices encoded using our hierarchical bitmap
+speedup and executed instruction count of this idealized CSR over          encoding and 2) enables hardware to easily interpret the sparse
+the regular state-of-the-art CSR. As shown in the figure, eliminat-        matrix operations in the application and effectively accelerate those
+ing the indexing part of the CSR format significantly improves             operations.
+performance: 2.21× for Sparse Matrix Addition, 2.13× for SpMV,
+and 2.81× for SpMM. These performance benefits come from the               3.2    SMASH: Key Components
+reduced number of executed instructions (by 49%, 42%, 65%, respec-             Hierarchy of Bitmaps. To address Challenge 1, we represent
+tively) and from eliminating the expensive pointer-chasing lookups         the positions of the non-zero values in any sparse matrix with a
+in memory.                                                                 hierarchy of bitmaps. Our system is designed to support a certain
+                                                                           maximum number of levels of the hierarchy. Each level of the hier-
+2.3    Other Approaches to Sparse Matrix                                   archy encodes the presence of non-zero values with a configurable
+       Compression                                                         compression ratio. This compression ratio is determined by the
+Other approaches [7, 16, 30, 41, 42, 46, 77] aim to maximize the           software based on the sparsity and distribution of non-zero values
+efficiency of sparse matrix computations by specializing to particu-       in a given matrix. With this representation, a zero matrix would
+lar matrix types and thus trading off generality. These approaches         require only one bit and one level of the bitmap encoding.
+assume and leverage a specific matrix structure or known pattern.             In Figure 4, we show an example with a 3-level bitmap hierarchy.
+Saad et al. [70] assume a diagonal matrix and base the compres-            Each bit in Bitmap-2 encodes the presence of non-zero values in
+sion scheme around the assumption that all non-zero elements are           two consecutive regions in Bitmap-1 (hence, the compression ratio
+only along the matrix diagonal. Kourtis et al. [41] assume matrices        at this level is two). Bitmap-1, on the other hand, encodes the pres-
+with few unique non-zero elements in designing the compression             ence of non-zero values in four consecutive regions in Bitmap-0
+scheme. As a result, these approaches are not applicable to a wide         (hence, the compression ratio at this level is four). The selection of
+range of important classes of applications like CNNs and graph             compression ratio at any level is a tradeoff between computation
+processing algorithms, where such assumptions do not hold.                 efficiency and storage efficiency. With a higher compression ratio,
+                                                                           we store fewer bits to encode the presence/absence of non-zero
+3     SMASH : DESIGN OVERVIEW                                              elements but may perform unnecessary computations on zero ele-
+We introduce SMASH, a hardware-software cooperative mechanism              ments. With a lower compression ratio, on the other hand, we can
+that 1) enables highly-compressed storage and avoids unnecessary           compute only on non-zero elements, but this would incur a higher
+computation; 2) significantly reduces the overheads imposed by the         storage overhead.
+compression scheme itself (i.e., enables efficient discovery of the           The non-zero elements of the matrix are kept in a data struc-
+positions of non-zero elements); and 3) can be used generally across       ture called the Non-Zero Values Array (NZA). The granularity
+a diverse set of sparse matrices and sparse matrix operations.             at which they are stored in memory depends on the compression
+   The key idea of SMASH is to enable the hardware to recognize            ratio of the lowest level of the bitmap hierarchy (Bitmap-0). As
+and exploit the compression encoding used in software. We devise           we show in the example bitmap hierarchy of Figure 4, Bitmap-0
+a new construct, recognized by both the hardware and software, to          encodes the 4-element non-zero blocks of the NZA using a single
+compress sparse matrices efficiently: a hierarchy of bitmaps. Each         bit (i.e., the compression ratio is 4:1).
+bitmap in the hierarchy efficiently encodes sparsity by denoting              Our hierarchical bitmap compression mechanism enables effi-
+the presence/absence of non-zero values in a matrix region using           cient representation of matrices with varying degrees of sparsity
+a single bit. The size of the region varies with the level of the          and varying distributions of non-zero elements by adjusting the
+bitmap in the hierarchy and can be adjusted by software. This              bitmap representation granularity (i.e., compression ratios at all
+representation does not assume any structure in the matrix and can         levels of the bitmap hierarchy). It can also be flexibly and efficiently
+be used to efficiently compress a diverse set of sparse matrices. At       interpreted by hardware, as we describe next.
+the same time, as we demonstrate, it enables designing hardware                Bitmap Management Unit (BMU). We design a new hard-
+that can exploit the known sparsity in data and hence perform              ware unit that buffers and efficiently scans the bitmap hierarchy to
+highly-efficient indexing of sparse matrices.                              quickly find the non-zero elements. The BMU is responsible for effi-
+                                                                           ciently and quickly calculating the indices of the non-zero regions
+
+
+
+                                                                       4
+
+
+===== Page 5 =====
+
+                                                                                                 There are two major factors that impact the effectiveness of our
+                                                                                              hierarchical bitmap compression scheme: 1) the selected compres-
+                   Compression       Bitmap Hierarchy                                         sion ratio at each level of the bitmap hierarchy (Section 4.1.1) and 2)
+                     ratio 2:1                                                                the distribution of non-zero elements in the matrix (Section 4.1.2).
+                                          1 1       Bitmap-2
+                   Compression                                                                4.1.1 Impact of compression ratio. Figure 5 demonstrates the im-
+    (a)              ratio 4:1                                                                pact of choosing different compression ratios for Bitmap-0 using a
+                                       1 0 1 0 Bitmap-1                                       simplified example. We show two cases where the bitmap encodes
+                                                                        Bitmap-0
+                                                                                              the same 4 × 4 matrix using two different compression ratios be-
+                   0 0 1 0        0 0 0 0        1 0       1 0      0 0 0 0                   tween Bitmap-0 and the NZA. In case 1 , the bitmap uses a single
+                                                                    Compression ratio         bit to encode 8 consecutive elements of the matrix, i.e., the com-
+                      NZA block               NZA block NZA block         4:1
+                                                                                              pression ratio is 8:1. The bitmap requires 2 bits to encode the entire
+                                                                                              matrix and the NZA holds one 8-element non-zero block (consisting
+          Memory
+
+
+
+
+                      Bitmap-2     Bitmap-1        Bitmap-0         Bitmap-0
+                                                                                              of 2 non-zero and 6 zero elements). In case 2 , the bitmap uses a
+ (b)                0x0    1 1    1 0 1 0         0 0 1 0           1 0 1 0         0x2
+                                                                                              single bit to encode 4 consecutive elements of the matrix, i.e, the
+                    0xF0                            0xFB   NZA blocks                         compression ratio is 4:1. In this case, the bitmap requires 4 bits to
+                                                                                              encode the entire matrix and the NZA holds one 4-element block
+                                                                                              (consisting of 2 non-zero and 2 zero elements).
+Figure 4: (a) A three-level bitmap hierarchy with different
+compression ratios between the levels. The NZA (Non-Zero                                                 Compression ratio           1                Compression ratio       2
+                                                                                                               8:1                                          4:1
+Values Array) stores the non-zero values of the matrix. (b)                                                                      Matrix                                   Matrix
+We store in memory only the non-zero blocks of the bitmaps                                                                   0   0       0   0                        0   0       0   0
+
+
+
+                                                                                                   Bitmap-0
+
+
+
+
+                                                                                                                                                 Bitmap-0
+and the NZA.                                                                                                  1
+                                                                                                                             A   0       B   0              0
+                                                                                                                                                                      A   0       B   0
+                                                                                                                                                            1
+in the matrix using the bitmap hierarchy. To this end, it caches and                                          0
+                                                                                                                             0   0           0              0         0   0       0   0
+                                                                                                                                         0
+efficiently operates on the bitmaps in the hierarchy. Section 4.2                                                                                           0
+                                                                                                                             0   0       0   0                        0   0       0   0
+describes the BMU in detail.
+   Cross-layer interface. To flexibly accelerate a diverse range                                                                  NZA                                      NZA
+of operations on any sparse matrix, we expose to the software a
+                                                                                                                             0   0       0   0                        A   0       B   0
+rich set of primitives that 1) are general, 2) can control the BMU to
+                                                                                                                             A   0       B   0
+quickly find the locations of non-zero elements, and 3) enable the
+processing core to skip unnecessary computations. These primitives                            Figure 5: Two bitmaps that compress the matrix with two
+are implemented as five new ISA instructions that are designed to                             different compression ratios. Bitmap 1 encodes blocks of 8
+1) communicate the parameters of a sparse matrix and its bitmap                               elements with a single bit, while Bitmap 2 encodes blocks
+hierarchy to the BMU, 2) load the bitmaps into the BMU, 3) scan                               of 4 elements with a single bit.
+the bitmaps to determine the location of the non-zero elements in                                As we demonstrate with this example, a higher compression
+the matrix, and 4) communicate the <row, column> positions of the                             ratio reduces the size of the bitmap and thus scanning it becomes
+non-zero elements in the original sparse matrix back to the appli-                            more efficient. However, with a higher compression ratio, the NZA
+cation. These instructions are sufficiently expressive to be used for                         unnecessarily stores more zero elements. Since zeroes within the
+a diverse set of sparse matrix computations, such as Sparse Matrix                            block cannot be identified a priori, the processor unnecessarily
+Vector Multiplication, Sparse Matrix Matrix Multiplication, Sparse                            performs computation on them.
+Matrix Addition, and more [39, 69], thereby addressing Challenge                                 Hence, the compression ratio forms a tradeoff between 1) smaller
+2 (Section 3.1). Section 4.3 describes the SMASH ISA primitives in                            bitmaps that can be quickly scanned and 2) more zero elements
+detail. Section 5 shows examples of how the primitives can be used                            in the NZA storage and unnecessary computations on them. This
+in software applications.                                                                     major tradeoff also applies to the higher levels of the bitmap hier-
+4      SMASH: DETAILED DESIGN                                                                 archy.
+In this section, we provide a detailed description of the different                           4.1.2 Impact of distribution of non-zero elements in the sparse ma-
+components of SMASH and their operation.                                                      trix. The distribution of non-zero elements across the matrix also
+4.1        Software Compression (Hierarchical                                                 affects the size of the NZA. On the one hand, if the non-zero ele-
+                                                                                              ments of the matrix are closely clustered, the number of non-zero
+           Bitmap Compression)                                                                blocks of the matrix decreases and the NZA stores fewer blocks.
+The hierarchy of bitmaps is the key construct of SMASH that en-
+                                                                                              On the other hand, if the non-zero elements of the matrix are dis-
+ables 1) highly-compressed matrix storage and 2) efficient discovery
+                                                                                              tributed more uniformly across the matrix, the number of non-zero
+of the positions of the non-zero regions of the matrix. The Non-Zero
+                                                                                              blocks of the matrix increases and the NZA may need to hold more
+Values Array (NZA) holds the actual values of the sparse matrix.
+                                                                                              non-zero blocks (that also contain more zeros).
+Every set bit of the last-level Bitmap-0 corresponds to one non-
+zero block in the NZA. The size of each non-zero block in the NZA                             4.1.3 Conversion to the hierarchical bitmap format. If the input
+(that is encoded by a single set bit in Bitmap-0) depends on the                              data to any user application is already stored using another com-
+compression ratio used for Bitmap-0.                                                          pression format (such as CSR), the application needs to convert
+
+
+
+                                                                                          5
+
+
+===== Page 6 =====
+
+the sparse matrices to the hierarchical bitmap encoding and the               Bitmap Management Unit (BMU)
+NZA used in SMASH. This is done using three steps. First, the
+                                                                                                                           Group 1
+application identifies all the non-zero blocks in the matrix using                                                      Group 0         Transfer
+the indexing mechanism required by the original format. The size                     SRAM Buffer 2                                                   Memory
+                                                                                                             Bitmap                  Bitmap Blocks
+                                                                                     SRAM Buffer 1                                                   Hierarchy
+of the block depends on the assumed size of the non-zero blocks in                                           Buffers
+                                                                                     SRAM Buffer 0
+the NZA. Second, the application creates the NZA by appending
+                                                                                             Scan 1                      Row
+these non-zero blocks contiguously in memory. Third, the applica-                                                       index 4
+                                                                                                                                           6
+                                                                                                                                     SMASH ISA
+tion creates the bitmap hierarchy, starting with Bitmap-0. To create                 Hardware Logic
+                                                                                                         Update        Column
+Bitmap-0, the application determines the locations of the non-zero                           Read 2
+                                                                                                               3
+                                                                                                                        index 5        4              CPU
+blocks of the matrix (where the block size is equal to the Bitmap 0
+                                                                                   Matrix parameters         Programmable
+compression ratio). For each one of these locations, the application               Bitmap parameters            Registers
+sets the corresponding bit of Bitmap-0 to 1. Next, the application
+creates the higher levels of the bitmap hierarchy: each level i of the
+hierarchy is created based on the compression ratio of Bitmap-i and          Figure 6: Bitmap Management Unit consists of four key com-
+the corresponding set bits of Bitmap-(i − 1). Assuming the chosen            ponents: 1) SRAM buffers to store portions of the bitmaps
+compression ratio of level i is 8:1, we set each bit in Bitmap-i if          that are being operated on, 2) hardware logic that scans the
+there are one or more set bits in the corresponding 8 elements in            buffers, 3) registers to hold the matrix and bitmap parame-
+Bitmap-(i − 1).                                                              ters, and 4) output registers to store the row 4 and column
+   We note that this conversion process from any format to our               indices 5 of the non-zero blocks. The BMU communicates
+hierarchical bitmap encoding can be automated in software, and, if           with the CPU using the SMASH ISA 6 .
+needed, accelerated with hardware support.
+                                                                             column indices of the current non-zero block 2 . Third, it updates
+4.2    Hardware Indexing                                                     the output registers 3 that hold the row 4 and column 5 indices
+                                                                             of the non-zero block. These registers can be repeatedly read by
+       (Bitmap Management Unit)
+                                                                             the CPU to iteratively find the location of the non-zero elements.
+The Bitmap Management Unit (BMU) provides the key functionality              To find the next non-zero element, the hardware logic looks for
+of scanning the bitmap hierarchy to quickly identify the non-zero            the next set bit in the bitmap block or loads the next bitmap block
+elements of the matrix in a highly-efficient manner. It recognizes           from the memory hierarchy to perform the search for the non-zero
+the bitmap encoding used in software based on the parameters                 blocks. These operations are controlled by software with five new
+of the bitmap (and sparse matrix) provided to it via the SMASH               ISA instructions 6 , which we describe in Section 4.3.
+software-hardware interface (Section 4.3).
+                                                                             4.2.3 Efficient indexing with the BMU. The BMU iteratively com-
+4.2.1 BMU components. Figure 6 demonstrates the structure of the             municates to the CPU the row and column indices of the non-zero
+BMU. It consists of four key components: 1) the SRAM buffers that            elements in the sparse matrix. Since we use multiple levels of indi-
+hold the bitmaps when they are being scanned, 2) the hardware logic          rection with the hierarchical bitmap, finding each non-zero element
+that scans the buffers to find the non-zero blocks, 3) programmable          involves traversing the bitmap hierarchy in a depth-first manner.
+registers that hold configuration parameters, such as the matrix             Every time a set bit is encountered at any bitmap level, we save
+dimensions and the compression ratios of the bitmap hierarchy,               that bit’s index within the bitmap and then traverse the lower-level
+and that effectively orchestrate the operation of the hardware logic,        bitmap associated with that set bit. The BMU traverses the hierar-
+and 4) two registers to store the row and column indices of the non-         chy in this manner (saving the index of the set bit at each level)
+zero elements determined by the BMU. The BMU supports multiple               until it reaches Bitmap-0. Any set bit in Bitmap-0 directly maps
+groups of the components presented in Figure 6, to enable the                to a block of elements in the sparse matrix that has at least one
+indexing of multiple sparse matrices, where each group is dedicated          non-zero element. Using the saved indices of the set bits at each
+to buffering and scanning a single sparse matrix.                            level of the hierarchy, as well as the corresponding compression
+   The SRAM buffers hold the bitmaps one block at a time. In our             ratios, the BMU calculates the index of the non-zero block in the
+implementation, each buffer is 256 bytes in size. The compression            original sparse matrix.
+ratio (the number of bytes encoded by a single bit) at each level of             The final index = row_index ∗ matrix_columns +column_index,
+the bitmap, including between Bitmap-0 and the NZA, must be less             is computed using the hierarchy of bitmaps in the following way:
+than or equal to the bitmap buffer size. This is to avoid loading the                     Í evels−1 Îj=i
+                                                                                 Index = li=0        (( 0 comp(j))∗index_bit(i)) where comp(j)
+buffers multiple times from memory to scan a single block, which
+                                                                             is the compression ratio of Bitmap-j and index_bit(i) is the index
+would be expensive and inefficient. For example, with a 256-byte
+                                                                             of the encountered set bit while scanning Bitmap-i. The row and
+SRAM buffer size, the maximum compression ratio supported in
+                                                                             column indices of the non-zero block in the original sparse matrix
+the BMU is 256 × 8 = 2048:1.
+                                                                             are calculated as follows: row_index = Index/matrix_columns and
+4.2.2 BMU operation. As depicted in Figure 6, identifying the lo-            column_index = Index%matrix_columns. These indices are stored
+cation of a non-zero block in the matrix involves three steps. First,        in the two output registers dedicated to the row index and the col-
+the hardware logic scans the bitmap buffers to find the set bits             umn index in the BMU. They are retrieved by the CPU using new
+and discover the positions of the non-zero blocks 1 . Second, the            ISA instructions (described below). The application iterates through
+hardware logic reads the matrix dimensions and the compression               the non-zero blocks of the NZA to compute on the non-zero val-
+ratios from the programmable registers to calculate the row and              ues. For each consecutive non-zero block, the application reads the
+
+
+
+                                                                         6
+
+
+===== Page 7 =====
+
+row and column indices from the BMU registers to identify the                reading the row index and column index output registers of the
+<row,column> location of the non-zero block in the original sparse           BMU. RDIND has two destination registers: rd1 and rd2, and a grp
+matrix.                                                                      selector. RDIND loads the row index and column index into rd1 and
+                                                                             rd2, respectively. grp is used to select the group of the BMU.
+4.3     SMASH ISA: Software/Hardware Interface
+We introduce five new instructions in the ISA to control the func-           4.4    An Alternative: Software-only SMASH
+tionality provided by the BMU. Table 1 shows the instructions.               The hierarchical bitmap encoding of SMASH can be used entirely in
+These instructions are designed to i) communicate parameters of the          software, as a pure software compression mechanism without any
+matrix and the bitmap hierarchy to the BMU (MATINFO,BMAPINFO),               hardware support. In this case, a sparse matrix is represented using
+ii) load the bitmaps into the BMU buffers (RDBMAP), iii) iteratively         the hierarchy of bitmaps but the indexing is still performed entirely
+scan the bitmaps to determine the location of the next non-zero              in software, i.e., the BMU and the ISA are not used to accelerate
+element in the matrix (PBMAP), and iv) communicate the row and col-          the indexing. If used entirely in software, one 64-byte block of the
+umn indices (in the original sparse matrix) of the non-zero element          bitmap needs to be loaded using four memory load instructions. A
+back to the application (RDIND).                                             Count Leading Zeros (e.g., CLZ in x86) bitwise instruction is needed
+    MATINFO: This instruction communicates the dimensions of the             to find the first most-significant set bit. For every set bit that is
+matrices to the BMU. It has three source operands: row,col, and              found, one bitwise AND is needed to mask the set bit and then
+grp. row represents the number of rows and col represents the                search for the next one. This adds more computation to find the
+number of columns of the matrix. grp is used to select the group of          set bits compared to the mechanism we describe in Section 4.2. In
+the BMU. If the user application involves two sparse data structures,        contrast to Software-only SMASH, the BMU loads the whole block
+MATINFO needs to be executed twice (one for each matrix) before              at once and does not need AND operations to find set bits. As we
+performing other operations with the BMU.                                    show in Section 7.2, Software-only SMASH cannot leverage the full
+    BMAPINFO: This instruction communicates the compression ratio            benefits of the hierarchical bitmap encoding and incurs additional
+of each bitmap to the BMU. It has three source operands: comp for            computational overhead. Even so, as we also show in Section 7.2,
+the compression ratio, lvl selects the bitmap level in the hierarchy,        Software-only SMASH still outperforms CSR on average, because
+and grp selects the group of the BMU.                                        it uses fewer instructions overall.
+
+                  Table 1: SMASH instructions                                5     SMASH EXAMPLE USE CASES
+         ISA instruction          Functionality                              We describe in detail how the SpMV and SpMM operations are
+                                                                             performed using SMASH. We assume a 3-level bitmap hierarchy
+                                  Loads the matrix dimensions                for SpMV and, for simplicity of explanation, a 1-level bitmap for
+      matinfo row,col,grp
+                                  into the registers of the BMU.             SpMM. Our SpMM example consists of two sparse data structures.
+                                  Loads the compression ratio
+      bmapinfo comp,lvl,grp       comp that bitmap at lvl oper-              5.1    Example Use Case 1: SpMV
+                                  ates with.                                 Figure 7 and Algorithm 1 describe the execution flow for SpMV
+                                  Loads bitmap starting from                 using SMASH. SpMV involves only one sparse matrix and a dense
+      rdbmap [mem],buf,grp
+                                  [mem] into SRAM buffer buf.                vector, x. Therefore, it utilizes only one group of the BMU’s com-
+                                  Signals the BMU to scan the                ponents. MATINFO is used in the beginning of the algorithm to
+                                  SRAM buffers and find the row              communicate the dimensions of the matrices 1 to the BMU (line
+           pbmap grp                                                         2 in Algorithm 1). BMAPINFO is executed once for each bitmap to
+                                  and column indices of the next
+                                  non-zero block.                            communicate the compression ratios 2 (lines 3-5). RDBMAP is ex-
+                                  Loads into rd1 and rd2 the                 ecuted three times at the beginning to load the bitmap hierarchy
+                                  row and column indices of the              into the bitmap buffers 3 (lines 6-8). Whenever a non-zero block
+                                  current non-zero block that                is found, PBMAP is used to search in the SRAM buffers to find the
+        rdind rd1,rd2,grp                                                    row and column indices of the next non-zero block of the NZA 4
+                                  are stored in the row index
+                                  and column index output reg-               (line 11) and RDIND returns these indices of the non-zero block back
+                                  isters of the BMU.                         to the application (line 12). The processor loads the block from the
+                                                                             NZA, and multiplies it with the x vector’s block at the row index
+   RDBMAP: This instruction loads the bitmap into the bitmap buffers         returned by RDIND 5 (lines 15-16).
+in the BMU. It has three source operands: a [mem] location, a buf
+selector, and a grp selector. It loads a bitmap block starting from          5.2    Example Use Case 2: SpMM
+the address pointed by [mem] into the buffer buf of the group grp .          Figure 8 and Algorithm 2 describe the execution flow for SpMM
+   PBMAP: This instruction signals the hardware logic of the BMU to          using SMASH. We describe SpMM in the case where a 1-level bitmap
+scan the bitmap buffers and find the index of the next non-zero block.       hierarchy is used for each of the two sparse data structures. In the
+The hardware logic updates the row index and column index output             initialization phase of the algorithm, we need to execute MATINFO
+registers with the position of the non-zero block. This instruction          twice, one for each sparse matrix 1 (lines 2-3 in Algorithm 2). We
+has one source operand: grp selects the group of the BMU.                    also need to execute BMAPINFO twice, one for each bitmap 2 (lines
+   RDIND: This instruction communicates to the CPU the row and               4-5). The program iterates over the rows of matrix A and columns
+column indices of the current non-zero block that was identified             of matrix B. For each row of matrix A, we load the bitmap at the
+by the BMU after the execution of PBMAP. This essentially involves           correct offset using RDBMAP as follows: [mem]=bitmapA+rowOffset,
+
+
+
+                                                                         7
+
+
+===== Page 8 =====
+
+                                                                                        5.2.1 Generality of SMASH for other use cases. In this work, we
+        BMU                                               Application - SpMV
+                                                                                        evaluate SMASH using two sparse matrix kernels, SpMV and SpMM,
+               0 1 0 0 1 0 3
+                                                              NZA                       that are central to many important applications (e.g., [50, 67, 83]).
+                                                      5
+                                                                                        However, SMASH is generally applicable to any sparse matrix com-
+
+
+
+
+                                                                         x vector
+     Group 0
+
+
+
+
+               0 1 0 1 0 0             Row Index                                        putation. Sparse matrix computations operate only on the non-zero
+                                                             Non Zero
+               0 1 0 1 0 0             Column Index
+                                                              block                     elements of the matrix and hence fundamentally require 1) identi-
+                            4                                                           fying the indices (row and column) of the non-zero elements and
+                                   1
+               Matrix parameters
+                                                                  5
+                                                                                        2) retrieving those non-zero elements from memory. With the pro-
+                                   2
+                                                                                        posed ISA instructions, we can efficiently determine the location
+               Bitmap parameters
+
+
+                                                                                        (in the matrix) of the non-zero blocks of the NZA, regardless of 1)
+Figure 7: SpMV flow of execution. One matrix is compressed                              the computation that will be performed on the non-zero elements
+using a 3-Level Bitmap Hierarchy.                                                       and 2) the structure and the extent of sparsity in the matrix. Other
+                                                                                        examples of widely used operations on sparse matrices that SMASH
+Algorithm 1 : SpMV using SMASH                                                          can accelerate include Sparse LU Decomposition [69], Sparse Eigen-
+                                                                                        value Calculation [21, 39] and Sparse Iterative Solvers [70].
+ 1   # Operation: A * x = C
+ 2   matinfo rows,columns,0 # Load dimensions to BMU                                            BMU                                             Application - SpMM
+                                                                                                                             3
+ 3   bmapinfo comp2,2,0                                                                                0 1 0 0 1 0
+
+
+
+
+                                                                                             Group 0
+                                                                                                                        4        Row Index      5   NZA_A          NZA_B
+ 4   bmapinfo comp1,1,0 # Load compression ratios to BMU
+                                                                                                       Matrix parameters
+ 5   bmapinfo comp0,0,0                                                                                                          Column Index
+                                                                                                       Bitmap parameters
+ 6   rdbmap [bitmap2],2,0                                                                                                                           Non zero
+                                                                                                                                                     block
+ 7   rdbmap [bitmap1],1,0 # Load 3 bitmaps in BMU buffers                                              0 1 0 1 0 0 3
+
+
+                                                                                             Group 1
+                                                                                                                    4
+ 8   rdbmap [bitmap0],0,0                                                                                                        Row Index                     5
+                                                                                                       Matrix parameters 1
+ 9   ctrNZ = 0 # Initialize counter of NZ blocks                                                       Bitmap parameters 2
+                                                                                                                                 Column Index
+10   for all non-zero blocks of the sparse matrix
+11       pbmap 0 # Scan the bitmaps
+                                                                                        Figure 8: SpMM flow of execution. Two matrices are com-
+12       rdind rowInd,colInd,0 # Read index of the NZ block
+                                                                                        pressed, each using a single-level Bitmap Hierarchy.
+13       ctrElmt = 0 # Initialize counter of elements
+14       for all elements of block (rowInd,colInd)
+15           NZA_ind = ctrNZ*comp0 + ctrElmt                                            Algorithm 2 : SpMM using SMASH
+16           C[rowInd+ctrElmt]+=NZA[NZA_ind]*x[colInd+ctrElmt]                           1   # Operation: A * B = C
+17           ctrElmt+=1 # Point to the next element                                      2   matinfo rowsA,colsA,0 # Load dimensions to BMU
+18       ctrNZ+=1 # Point to the next NZ block                                           3   matinfo rowsB,colsB,1
+                                                                                         4   bmapinfo comp0_A,0,0 # Load compression ratios to BMU
+where buf=0 and grp=0 3 (line 7). For each column of matrix B, we
+                                                                                         5   bmapinfo comp0_B,0,1
+load the bitmap at the correct offset in the second group of buffers
+                                                                                         6   for i in [0 .. rowsA) # Iterate over rows of A
+using RDBMAP as follows: [mem]= bitmapB+colOffset, where buf=0
+                                                                                         7       rdbmap [bitmapA+rowOffset],0,0 # Load bitmap_A
+and grp=1 (line 9). Index matching requires the use of the PBMAP
+                                                                                         8       for j in [0 .. colsB) # Iterate over columns of B
+instructions 4 (lines 10-11) to search the bitmaps of both matrices
+                                                                                         9           rdbmap [bitmapB+colOffset],0,1 # Load bitmap_B
+and determine the matching indices of NZA_A’s and NZA_B’s
+                                                                                        10           do: pbmap 0 # Find next non-zero block
+blocks. RDIND instructions 5 (lines 12-13) are executed to load the
+                                                                                        11               pbmap 1 # in both matrices
+indices of the non-zero blocks into registers so that the column
+                                                                                        12               rdind rowIndA,colIndA,0 # Read NZ index in A
+index of A can be compared to the row index of B (line 14). If the
+                                                                                        13               rdind rowIndB,colIndB,1 # Read NZ index in B
+indices match, the algorithm performs the inner product between
+                                                                                        14               if (colIndA == rowIndB) # Index matching
+the corresponding blocks of NZA_A and NZA_B (line 15). If the
+row index of A is greater than the current row or if the column                         15                  C[rowIndA][colIndB]+=inner_pr(NZA_A,NZA_B)
+index of B is greater than the current column of B (line 16), the                       16           while (rowIndA < i) && (colIndB < j)
+algorithm skips the remaining inner-product computation (lines 10-
+15) between the current row of A and the current column of B. This                      6    EXPERIMENTAL SETUP
+implies the absence of anymore non-zero elements in the current                         We model and evaluate SMASH using the zsim simulator [71]. Ta-
+row of A (or column of B) and thus, unnecessary computation on                          ble 2 provides the system configuration we evaluate. We simulate
+zero elements is avoided.
+                                                                                        each workload until completion. We use an Intel Xeon system [2]
+   The index matching phase of the algorithm requires calculating
+                                                                                        to perform experiments on real hardware. Table 5 provides the
+the indices of each non-zero element in both A and B for each
+                                                                                        configuration of the real system.
+inner product (line 10-16). A format like CSR would incur extra
+                                                                                           Workloads: Sparse Matrix Kernels. We evaluate SMASH us-
+computations and expensive indirect memory accesses to perform
+                                                                                        ing two sparse matrix kernels, Sparse Matrix Vector Multiplication
+this step (i.e., the index matching). With SMASH, we leverage the
+                                                                                        and Sparse Matrix Matrix Multiplication. We use the TACO library’s
+BMU to accelerate the index matching. We demonstrate the benefits
+                                                                                        [40] respective implementations of these kernels as our baseline.
+of our scheme in Section 7.
+
+
+                                                                                    8
+
+
+===== Page 9 =====
+
+           Table 2: Simulated system configuration                             Betweenness Centrality [27] is a measure of the significance
+CPU 3.6 GHz, Westmere-like [43] OOO, 4-wide issue;                          of each vertex based on the number of shortest paths that pass
+128-entry ROB; 32-entry LQ and SQ;                                          through it. Betweenness Centrality iteratively uses SpMV to per-
+                                                                            form breadth-first searches in the graph [9]. We evaluate these two
+L1 Data + Inst. Cache 32 KB, 8-way, 2-cycle; 64 B line; LRU policy;
+MSHR size: 10; Stride prefetcher;                                           workloads using a set of four graph inputs from the Sparse Suite
+                                                                            Collection [19]. We use the term G i to refer to each graph input in
+L2 Cache 256 KB, 8-way, 8-cycle; 64 B line; LRU policy;                     Section 7.
+MSHR size: 20; Stride prefetcher;
+L3 Cache 1MB , 16-way, 20-cycle; 64 B line; LRU policy;
+                                                                            7     EVALUATION RESULTS
+MSHR size: 64; Stride prefetcher;                                           We evaluate five different mechanisms: (i) TACO-CSR: The CSR-
+                                                                            based implementation from the TACO library [40]; (ii) TACO-
+DRAM 1-channel; 16-bank; open-row policy; 4GB DDR4;
+                                                                            BCSR: The BCSR-based implementation from the TACO library
+                                                                            [40]; (iii) MKL-CSR: CSR-based SpMV and SpMM implementa-
+              Table 3: Evaluated sparse matrices
+                                                                            tions from Intel MKL [1]; (iv) Software-only SMASH: SMASH’s
+                                                                            hierarchical bitmap encoding implemented purely in software with-
+                                              Non-Zero
+                 Name           # Rows                 Sparsity (%)         out the BMU; and (iv) SMASH: our complete proposed scheme,
+                                              Elements
+                                                                            with the hierarchical bitmap encoding and the BMU. The matrices
+   M1:     descriptor_xingo6u      20,738         73,916        0.01        we evaluate vary in sparsity and hence, for SMASH implementation
+   M2:     g7jac060sc              17,730        183,325        0.06
+                                                                            of each matrix, we use different compression ratios in the bitmap
+   M3:     Trefethen_20000         20,000        554,466        0.14
+                                                                            hierarchy for SMASH . We denote the bitmap configuration of each
+   M4:     IG5-16                  18,846        588,326        0.17
+   M5:     TSOPF_RS_b162_c3        15,374        610,299        0.26        matrix (and graph) i as Mi .b2.b1.b0, where Mi denotes the matrix
+   M6:     ns3Da                   20,414      1,679,599        0.40        id and b2.b1.b0 denotes the compression ratios of each level in the
+   M7:     tsyl201                 20,685      2,454,957        0.57        bitmap hierarchy. We evaluate 4 different use cases: SpMV, SpMM
+   M8:     pkustk07                16,860      2,418,804        0.85        (Section 7.2), PageRank, and Betweenness Centrality (Section 7.3).
+   M9:     ramage02                16,830      2,866,352        1.01
+   M10:    pattern1                19,242      9,323,432        2.52        7.1    Software-only Approaches
+   M11:    gupta3                  16,783      9,323,427        3.31        We first compare the performance of three state-of-the-art sparse
+   M12:    nd3k                     9,000      3,279,690        4.05        matrix formats (TACO-CSR [40], TACO-BCSR [40], and MKL [1])
+   M13:    human_gene1             22,283     24,669,643        4.97        and the hierarchical bitmap encoding used in SMASH (i.e., Software-
+   M14:    exdata_1                 6,001      2,269,500        6.30        only SMASH) on our real Intel Xeon system (Table 5). Our goals
+   M15:    human_gene2             14,340     18,068,388        8.79        with this experiment are to 1) compare existing state-of-the-art
+                                                                            software solutions to identify a baseline for our simulation experi-
+       Table 4: Input graphs                Table 5: Real system            ments and 2) evaluate the performance of SMASH’s hierarchical
+                                            configuration                   bitmap encoding without any hardware support. The TACO and
+           Graph Vertices Edges
+                                            CPU Intel Xeon Gold 5118        MKL formats employ a range of software optimizations that are
+     G1: com-Youtube 1.1M   2.9M            2.30 GHz 14nm [2]               orthogonal to the matrix format itself and the indexing mechanism.
+     G2: com-DBLP 317K      1M              L1 384 KB, 8-way                To ensure a fair comparison, our implementation of Software-only
+     G3: roadNet-CA 1.9M    2.7M
+     G4: amazon0601 403K    3.3M            L2 12 MB, 16-way                SMASH includes all the software optimizations used by the TACO
+                                            L3 16.5MB, 11-way
+                                                                            compiler, but uses SMASH’s hierarchical bitmap encoding instead
+                                                                            of CSR.
+                                            Main memory DDR4-2400
+                                                                               Figure 9 depicts the speedup of TACO-BCSR, MKL, and software-
+For input datasets, we use a diverse set of 15 sparse matrices from         only SMASH, normalized to TACO-CSR, for SpMV and SpMM.
+the Sparse Suite Collection [19]. The matrices have different spar-         We make two observations, averaged across the 15 matrices we
+sities and distributions of non-zero elements. The term sparsity            evaluate. First, MKL outperforms TACO-CSR in both SpMV and
+refers to the fraction of non-zero elements in the matrix over the          SpMM by 15% and 25% respectively. MKL also outperforms TACO-
+total number of elements. Table 3 presents these matrices, sorted           BCSR, but by a smaller margin: 3% in SpMV and 4% in SpMM.
+in ascending order of their sparsity. We use the term Mi to refer           While MKL uses the same CSR format as the TACO compiler, it
+to each matrix in Section 7. We open source SMASH’s software                also employs a range of proprietary software optimizations that
+implementations of these sparse matrix kernels [3].                         lead to better performance than the TACO implementations. We
+   Workloads: Graph Processing. We implement PageRank and                   can only compare to the TACO implementations in the simulation
+Betweenness Centrality from the Ligra Benchmark Suite [9] as                experiments as the additional optimizations in the closed-source
+SpMV computation and evaluate the performance of SMASH over                 MKL library cannot be added to SMASH (or to any other technique)
+the default CSR-based versions of these two algorithms. PageRank            to enable a fair and insightful comparison. Second, we observe that
+[65] was first used by Google to rank website pages. Specifically, it       Software-only SMASH outperforms TACO-CSR by 5% in SpMV and
+takes as input a graph and computes the rank of each vertex, which          10% in SpMM, but is outperformed by both TACO-BCSR and MKL.
+represents the relative importance of each node (e.g., webpage).            Software-only SMASH incurs a performance overhead because 1)
+PageRank iteratively uses SpMV to calculate the ranks of nodes in           indexing the hierarchical bitmap entirely in software requires more
+the graph [91].                                                             instructions than indexing the CSR format and 2) unlike CSR, which
+
+
+
+                                                                        9
+
+
+===== Page 10 =====
+
+                                       1.5
+                                       1.0                                                                          encoding to adapt the compression ratio to the matrix sparsity.
+                                       0.5                                           SpMV                           Third, we observe that the effectiveness of Software-only SMASH
+                             Speedup
+                                       0.0                                                                          depends on the sparsity of the matrix. Software-only SMASH incurs
+                                       1.5
+                                       1.0
+                                                                                                                    a higher performance overhead when the sparsity is higher because
+                                       0.5                                                                          Software-only SMASH performs more unnecessary computation
+                                                                                     SpMM
+                                       0.0                                                                          on zero elements and executes more instructions searching the
+                                                    -CSR        -BCS
+                                                                    R      -CSR          are-o
+                                                                                               nly                  bitmaps for non-zero bits. In these cases, TACO-CSR outperforms
+                                             TACO           TACO        MKL
+                                                                                   SoftwSMASH                       Software-only SMASH. When the matrix is denser, the benefits of
+ Figure 9: Performance of software-only approaches on a real                                                        avoiding pointer-chasing and indirect indexing outweigh the addi-
+ Intel Xeon system (normalized to TACO-CSR).                                                                        tional computation and search operations on zero elements. Thus,
+                                                                                                                    Software-only SMASH outperforms both TACO-CSR and TACO-
+ eliminates all zeros, SMASH’s hierarchical bitmap encoding may
+                                                                                                                    BCSR for less sparse matrices. This strong impact of sparsity on
+ require unnecessary computations on zero values, depending on
+                                                                                                                    overall performance is not seen as strongly in SMASH because the
+ the choice of compression ratios in the bitmap hierarchy. However,
+                                                                                                                    hardware support makes the indexing highly efficient even when
+ despite these overheads, the hierarchical bitmap encoding avoids
+                                                                                                                    the matrix is extremely sparse. As a result, SMASH outperforms all
+ the expensive indexing and pointer-chasing operations in CSR and
+                                                                                                                    other approaches regardless of the matrix sparsity.
+ outperforms TACO-CSR.
+                                                                                                                       Figures 12 and 13 depict the speedup and the number of executed
+ 7.2                 Sparse Matrix Kernels                                                                          instructions, respectively, for the SpMM kernel.
+ 7.2.1 Performance Results. Figure 10 shows the speedup of TACO-
+                                                                                                                                                    TACO-CSR     TACO-BCSR    Software-only SMASH    SMASH
+ CSR, TACO-BCSR, Software-only SMASH, and SMASH, normalized
+                                                                                                                              1.50
+ to TACO-CSR, for the SpMV kernel. Figure 11 shows the number
+                                                                                                                   Speedup
+ of executed instructions in each mechanism, normalized to TACO-                                                              1.25
+ CSR. We make three observations.                                                                                             1.00
+                                                                                                                              0.75
+                                 TACO-CSR              TACO-BCSR         Software-only SMASH         SMASH
+             1.50                                                                                                             0.50
+
+
+
+
+                                                                                                                                                   G
+                                                                                                                                          M2 .4.2
+                                                                                                                                          M3 .4.2
+                                                                                                                                          M4 .4.2
+                                                                                                                                          M5 .4.2
+                                                                                                                                          M6 .4.2
+                                                                                                                                          M7 .4.2
+                                                                                                                                          M8 .4.2
+                                                                                                                                          M9 .4.2
+                                                                                                                                         M1 6.4.2
+                                                                                                                                          M1 6.4.2
+                                                                                                                                          M1 .4.2
+                                                                                                                                          M1 .4.2
+                                                                                                                                          M1 .4.2
+                                                                                                                                          M1 .4.2
+
+                                                                                                                                               AV.2
+  Speedup
+
+
+
+
+             1.25
+
+
+
+
+                                                                                                                                                .4
+                                                                                                                                            .16
+                                                                                                                                            .16
+                                                                                                                                            .16
+                                                                                                                                            .16
+                                                                                                                                            .16
+                                                                                                                                            .16
+                                                                                                                                            .16
+                                                                                                                                            .16
+
+
+
+                                                                                                                                            1.2
+                                                                                                                                            2.8
+                                                                                                                                            3.8
+                                                                                                                                            4.2
+                                                                                                                                            5.8
+                                                                                                                                            .1
+                                                                                                                                           0.1
+                                                                                                                                       M1
+
+
+
+             1.00
+             0.75                                                                                                      Figure 12: Speedup (normalized to TACO-CSR) for SpMM.
+                                                                                                                   Normalized Number
+
+
+
+
+             0.50                                                                                                                                     TACO-CSR    TACO-BCSR    Software-only SMASH   SMASH
+                                                                                                                     of Instructions
+
+
+
+
+                                                                                                                                       1.00
+                                 G
+                        M2 .4.2
+                        M3 .4.2
+                        M4 .4.2
+                        M5 .4.2
+                        M6 .4.2
+                        M7 .4.2
+                        M8 .4.2
+                        M9 .4.2
+                       M1 6.4.2
+                        M1 6.4.2
+                        M1 .4.2
+                        M1 .4.2
+                        M1 .4.2
+                        M1 .4.2
+
+                             AV.2
+                              .4
+                          .16
+                          .16
+                          .16
+                          .16
+                          .16
+                          .16
+                          .16
+                          .16
+
+
+
+                          1.2
+                          2.8
+                          3.8
+                          4.2
+                          5.8
+                          .1
+                         0.1
+
+
+
+
+                                                                                                                                       0.75
+                     M1
+
+
+
+
+     Figure 10: Speedup (normalized to TACO-CSR) for SpMV.                                                                             0.50
+                                                                                                                                       0.25
+Normalized Number
+
+
+
+
+                                   TACO-CSR                TACO-BCSR          Software-only SMASH     SMASH
+                                                                                                                                       0.00
+  of Instructions
+
+
+
+
+                    1.00
+
+
+
+
+                                                                                                                                                         G
+                                                                                                                                                M2 .4.2
+                                                                                                                                                M3 .4.2
+                                                                                                                                                M4 .4.2
+                                                                                                                                                M5 .4.2
+                                                                                                                                                M6 .4.2
+                                                                                                                                                M7 .4.2
+                                                                                                                                                M8 .4.2
+                                                                                                                                                M9 .4.2
+                                                                                                                                               M1 6.4.2
+                                                                                                                                                M1 6.4.2
+                                                                                                                                                M1 .4.2
+                                                                                                                                                M1 .4.2
+                                                                                                                                                M1 .4.2
+                                                                                                                                                M1 .4.2
+
+                                                                                                                                                     AV.2
+                                                                                                                                                      .4
+                                                                                                                                              .16
+                                                                                                                                                  .16
+                                                                                                                                                  .16
+                                                                                                                                                  .16
+                                                                                                                                                  .16
+                                                                                                                                                  .16
+                                                                                                                                                  .16
+                                                                                                                                                  .16
+
+
+
+                                                                                                                                                  1.2
+                                                                                                                                                  2.8
+                                                                                                                                                  3.8
+                                                                                                                                                  4.2
+                                                                                                                                                  5.8
+                    0.75
+                                                                                                                                                  .1
+                                                                                                                                                 0.1
+                                                                                                                                          M1
+
+
+
+
+                    0.50
+                                                                                                                    Figure 13: Number of executed instructions (normalized to
+                    0.25
+                                                                                                                    TACO-CSR) for SpMM.
+                    0.00
+                                                                                                                       We observe the same trends and make the same observations for
+                                        G
+                            .4.2
+                               M3 .4.2
+                               M4 .4.2
+                               M5 .4.2
+                               M6 .4.2
+                               M7 .4.2
+                               M8 .4.2
+                               M9 .4.2
+                              M1 6.4.2
+                               M1 6.4.2
+                               M1 .4.2
+                               M1 .4.2
+                               M1 .4.2
+                               M1 .4.2
+
+                                    AV.2
+                                     .4
+                           .16
+                                 .16
+                                 .16
+                                 .16
+                                 .16
+                                 .16
+                                 .16
+                                 .16
+
+
+
+                                 1.2
+                                 2.8
+                                 3.8
+                                 4.2
+                                 5.8
+                                 .1
+                                0.1
+
+
+
+
+                                                                                                                    SpMM as we do for SpMV, but with an important difference. SpMM
+                       M1
+                            M2
+
+
+
+
+                                                                                                                    requires twice the number of indexing operations as SpMV per dot
+ Figure 11: Number of executed instructions (normalized to
+                                                                                                                    product. As a result, the performance benefits of SMASH are even
+ TACO-CSR) for SpMV.
+                                                                                                                    higher over TACO-CSR for SpMM than for SpMV: SMASH outper-
+     First, SMASH significantly outperforms all other mechanisms: it                                                forms TACO-CSR by 44% and TACO-BCSR by 30%, on average.
+ is 38% faster over TACO-CSR and 32% over TACO-BCSR, on average.                                                       We conclude that SMASH is a highly effective mechanism to
+ SMASH’s speedup is mainly due to executing fewer indexing in-                                                      accelerate sparse matrix computation, regardless of the sparsity of
+ structions (47% less than TACO-CSR and 30% less than TACO-BCSR,                                                    the matrix, and it significantly outperforms state-of-the-art com-
+ on average) and avoiding expensive pointer-chasing operations in                                                   pression schemes for all matrices we evaluate.
+ memory. Second, SMASH is highly effective regardless of the spar-                                                  7.2.2 Sensitivity to Compression Ratio. As discussed in Section
+ sity of the matrix. For the matrices with the highest sparsity in                                                  4.1.1, the compression ratio between Bitmap-0 and the NZA defines
+ our evaluation (M 1 and M 2 ), TACO-BCSR is inefficient because it                                                 an important tradeoff between 1) smaller bitmaps and 2) more zero
+ encodes data in blocks, which leads to unnecessary computation                                                     elements in the NZA that lead to unnecessary computation on
+ on zero elements. SMASH avoids such overhead by leveraging the                                                     zero elements. In Figures 14 and 15, we quantitatively evaluate this
+ configurability of compression ratios in our hierarchical bitmap                                                   tradeoff for SpMV and SpMM respectively, by showing the speedups
+
+
+
+                                                                                                              10
+
+
+===== Page 11 =====
+
+SMASH provides with different compression ratios. The speedups                        would have no zero elements in any NZA block (i.e., all the non-
+are normalized to a configuration that uses a 2:1 compression ratio                   zero elements are clustered at the granularity of the NZA block
+between Bitmap-0 and the NZA (i.e., each bit in Bitmap-0 encodes                      size). A matrix with 12.5% locality, on the other hand, has exactly
+two elements in the NZA).                                                             one non-zero element per NZA block assuming the NZA holds 8
+   We make two observations. First, increasing the compression                        elements per block.
+ratio from 2:1 to 8:1 degrades performance, by 4% on average (up                         Figures 16 and 17 compare the speedup of SMASH when the lo-
+to 13%) for SpMV and by 5% on average (up to 15%) for SpMM.                           cality of sparsity is varied for three different matrices (M 2 , M 8 , M 13 ).
+This is a direct result of more unnecessary computations on zero                      The results are normalized to the performance of SMASH when
+elements in the NZA which cannot be skipped as a result of the high                   the locality of sparsity is 12.5%. The three matrices are chosen to
+compression ratio.1 Second, we observe that matrices with higher                      have widely different sparsities (0.06%, 0.85%, and 4.97%).
+density can in some cases benefit from a higher compression ratio                                      1.25
+(performance increases by 18% in M 12 and 40% in M 14 , by going
+                                                                                                       1.00
+from a compression ratio of 2:1 to 8:1). These matrices exhibit a more                                                                                       M2.16.4.8
+                                                                                                       0.75
+clustered distribution of non-zero values (i.e., the non-zero elements
+                                                                                                       1.25
+
+
+
+
+                                                                                             Speedup
+are close to each other). As a result, even though the compression
+                                                                                                       1.00
+ratio is higher, the number of zeros in the NZA (and hence the                                                                                               M8.16.4.8
+unnecessary computation on zero elements) does not increase in                                         0.75
+                                                                                                       1.25
+proportion. Instead, SMASH benefits from scanning smaller bitmaps
+                                                                                                       1.00
+during the indexing operation with a higher compression ratio.                                                                                               M13.8.4.8
+                                                                                                       0.75
+          1.50                                                                                                12.5   25   37.5     50      62.5        75     87.5       100
+                            B0-2:1       B0-4:1      B0-8:1
+                                                                                                                            Locality of sparsity (%)
+          1.25
+Speedup
+
+
+
+
+                                                                                            Figure 16: Sensitivity to locality of sparsity in SpMV.
+          1.00
+                                                                                                       1.25
+          0.75
+                                                                                                       1.00
+                                                                                                                                                            M2.16.4.8
+          0.50                                                                                         0.75
+                                                                                             Speedup
+                  M2 .4
+                  M3 .4
+                  M4 .4
+                  M5 .4
+                  M6 .4
+                  M7 .4
+                  M8 .4
+                  M9 .4
+                 M1 6.4
+                  M1 6.4
+                  M1 .4
+                  M1 .4
+                  M1 .4
+                  M1 .4
+                    AV 4
+                        G
+
+
+
+
+                                                                                                       1.25
+                        .
+                    .16
+                    .16
+                    .16
+                    .16
+                    .16
+                    .16
+                    .16
+                    .16
+
+
+
+                    1.2
+                    2.8
+                    3.8
+                    4.2
+                    5.8
+                    .1
+                   0.1
+                 M1
+
+
+
+
+                                                                                                       1.00
+                                                                                                                                                            M8.16.4.8
+Figure 14: Sensitivity of SMASH speedup to the compression                                             0.75
+
+ratio between Bitmap-0 and the NZA for SpMV.                                                           1.25
+                                                                                                       1.00
+          1.50                                                                                         0.75
+                                                                                                                                                            M13.8.4.8
+                            B0-2:1       B0-4:1      B0-8:1
+                                                                                                              12.5   25   37.5     50     62.5     75        87.5        100
+          1.25
+                                                                                                                            Locality of sparsity (%)
+Speedup
+
+
+
+
+          1.00                                                                            Figure 17: Sensitivity to locality of sparsity in SpMM.
+          0.75                                                                           We make two observations. First, the speedup of SMASH in-
+          0.50                                                                        creases with an increase in locality of sparsity (by up to 25% in M 13
+                                                                                      for SpMV when going from 12.5% to 100% locality of sparsity). This
+                  M2 .4
+                  M3 .4
+                  M4 .4
+                  M5 .4
+                  M6 .4
+                  M7 .4
+                  M8 .4
+                  M9 .4
+                 M1 6.4
+                  M1 6.4
+                  M1 .4
+                  M1 .4
+                  M1 .4
+                  M1 .4
+                    AV 4
+                        G
+                        .
+                    .16
+                    .16
+                    .16
+                    .16
+                    .16
+                    .16
+                    .16
+                    .16
+
+
+
+                    1.2
+                    2.8
+                    3.8
+                    4.2
+                    5.8
+
+
+
+
+                                                                                      is because the NZA blocks contain fewer zeros when locality is
+                    .1
+                   0.1
+                 M1
+
+
+
+
+                                                                                      higher, and this leads to fewer unnecessary computations on zero
+Figure 15: Sensitivity of SMASH speedup to the compression                            elements and faster scans of bitmaps during indexing. Second, the
+ratio between Bitmap-0 and the NZA for SpMM.                                          performance impact of locality of sparsity depends on the number
+   We conclude that the compression ratio between Bitmap-0 and                        of non-zero elements in the matrix, i.e., sparsity. The benefits of
+the NZA plays an important role on the effectiveness of SMASH.                        locality diminish when the matrix is more sparse. This is because
+Our evaluations indicate that a compression ratio of 2:1 is most                      indexing of the matrices dominates the overall computation time
+effective on average and should be used when the structure of                         when the sparsity is very low and very little time is spent on com-
+sparsity in unknown. However, a matrix that has a known clustered                     puting over the non-zero values. As a result, reducing the amount
+distribution of non-zero elements may significantly benefit from a                    of unnecessary computation on zero elements in the NZA blocks
+higher compression ratio.                                                             does not provide significant performance benefit.
+7.2.3 Locality of Sparsity. In Figures 16 and 17, we illustrate the                   7.3        Graph Applications
+impact of the distribution of non-zero elements in a sparse matrix                    Figure 18 compares the default CSR-based and the SMASH-based
+on the effectiveness of SMASH. We define a new metric, locality                       implementations of the PageRank and Betweenness Centrality ap-
+of sparsity, which is the ratio of the average number of non-zero                     plications from the Ligra benchmark suite [74] in terms of perfor-
+elements per block of the NZA to the size of each NZA block (ex-                      mance and the number of executed instructions.
+pressed as a percentage). A matrix with a 100% locality of sparsity                      We observe that the SMASH-based implementations outperform
+1 Note that we assume there is enough memory to store matrices with any bitmap        the CSR-based implementations by 27% and 31% respectively, for
+compression ratio.                                                                    PageRank and Betweenness Centrality. Similar to SpMV and SpMM,
+
+
+
+                                                                                 11
+
+
+===== Page 12 =====
+
+                                                                    PageRank-SMASH        BC-SMASH
+                                                        1.50                                                   is likely to unnecessarily store fewer zero elements in the NZA. Sec-
+                                                                                                               ond, at higher matrix densities, the cost of storing one additional
+                                       Speedup          1.25
+                                                                                                               integer index per non-zero element in the CSR format becomes
+                                                        1.00
+                                                                                                               higher than encoding the zero and non-zero regions of the sparse
+                                                        1.00   0       1      2      3        4
+                                                                                                               matrix using bitmaps. Hence, in Figure 19, we observe that SMASH
+                                         instructions
+                                 Normalized
+
+
+
+                                                        0.75
+                                                        0.50                                                   generally has a significantly higher (up to 2.48x) total compression
+                                                        0.25
+                                                        0.00                                                   ratio than CSR for matrices with higher densities. In some cases
+                                                               G1      G2      G3    G4      AVG               (e.g., M13, M15), even though the matrix has high density, SMASH
+Figure 18: Speedup and normalized number of executed in-                                                       does not provide a greatly higher compression ratio than CSR. This
+structions for PageRank and Betweenness Centrality using                                                       is because these matrices have low locality of sparsity, which causes
+SMASH (normalized to the CSR-based implementations).                                                           SMASH to store more zero elements in the NZA and more zero bits
+SMASH’s speedups in graph workloads come from executing fewer                                                  in the bitmap hierarchy.
+instructions to index the sparse matrices and avoiding the expensive                                               We conclude that SMASH provides high compression ratios
+pointer-chasing operations in memory. However, SMASH’s benefits                                                when encoding sparse matrices, enabling highly-efficient storage
+are lower in graph workloads than in the SpMV and SpMM kernels                                                 of sparse matrices in memory. The hierarchical bitmap structure is
+since sparse matrix indexing operations in PageRank and BC form                                                highly effective in exploiting any locality of sparsity in the matrix
+a smaller component of the overall execution time. We conclude                                                 to provide even higher compression ratios.
+that SMASH is effective in graph applications.
+                                                                                                               7.5               Format Conversion Overhead
+7.4                          Storage Efficiency                                                                In cases where the sparse matrix is already stored in another for-
+A key goal of a sparse matrix compression scheme is to efficiently                                             mat (such as CSR), it first needs to be converted to the hierarchi-
+store the matrix in a manner that avoids saving zero elements                                                  cal bitmap encoding in order to leverage the indexing benefits of
+and minimizes the amount of metadata required. In Figure 19, we                                                SMASH. Figure 20 depicts the total time spent on such conversion
+compare the storage efficiency of SMASH and CSR by measuring                                                   operations relative to the computation itself for SpMV, SpMM, and
+the ratio of the size of the original uncompressed matrix to the total                                         PageRank, assuming that the sparse matrix has to be stored in the
+size of all the data structures required to encode the matrix with                                             CSR format but processed using SMASH. In SpMM and PageRank,
+SMASH or the CSR format (called the total compression ratio).                                                  the total time spent on conversion from CSR to SMASH and vice
+                                                                                                               versa is only a small fraction of the overall computation (10% in
+ Total compression ratio
+
+
+
+
+                           104
+                                                                                                  CSR          SpMM and 0.5% in PageRank), and hence imposes only a small
+                           103                                                                    SMASH        conversion overhead. SpMV, on the other hand, is a short-running
+                           102                                                                                 kernel and hence, the conversion time dominates SpMV’s total
+                                                                                                               execution time (55% of the overall execution time).
+                           101
+                                                                                                                                                   CSRtoSMASH     Kernel      SMASHtoCSR
+                           100
+                                                                                                                                                                                        0.3%
+                                                                                                                             Breakdown (%)
+
+
+
+
+                                                                                                                                                                       6%
+                                                                                                                     Execution Time
+
+
+
+
+                                                                                                                                             100
+                                                                                                                                                          30%
+                                  M2 .4
+                                  M3 .4
+                                  M4 .4
+                                  M5 .4
+                                  M6 .4
+                                  M7 .4
+                                  M8 .4
+                                  M9 .4
+                                 M1 6.4
+                                  M1 6.4
+                                  M1 .4
+                                  M1 .4
+                                  M1 .4
+                                  M1 .4
+                                  GM .4
+                                         N
+
+
+
+
+                                                                                                                                              75
+                                     EA
+                                     .16
+                                     .16
+                                     .16
+                                     .16
+                                     .16
+                                     .16
+                                     .16
+                                     .16
+
+
+
+                                     1.2
+                                     2.8
+                                     3.8
+                                     4.2
+                                     5.8
+                                     .1
+                                   0.1
+
+
+
+
+                                                                                                                                                          45%          90%              99.5%
+                                  M1
+
+
+
+
+                                                                                                                                              50
+Figure 19: Total compression ratios of SMASH and CSR. Y-                                                                                      25
+                                                                                                                                                          25%
+axis is in log scale.                                                                                                                          0                       4%               0.2%
+                                                                                                                                                   SpMV         SpMM         PageRank
+   CSR stores only the non-zero elements and uses one integer per                                              Figure 20: Breakdown of end-to-end execution time, assum-
+non-zero element to save the non-zero element’s position in the                                                ing the matrix has to be stored in CSR format but processed
+matrix, regardless of the sparsity or the locality of sparsity of the                                          using SMASH.
+matrix. SMASH, on the other hand, encodes each block in the NZA
+using a single bit (we assume each block to hold 2 elements in Figure                                             We conclude that the conversion overhead is negligible com-
+19). If the non-zero elements are not contiguously located, the NZA                                            pared to the demonstrated benefits of SMASH for long running
+may hold zero elements in its blocks.                                                                          applications and cases where SpMV and SpMM are invoked multiple
+   As a result, when the matrices are highly sparse, CSR only stores                                           times (e.g., in neural networks and graph applications). However,
+the few non-zero elements and their positions in the matrix. In                                                for short-running kernels that are invoked only once, the benefits
+contrast, SMASH may store a large number of zero elements in                                                   of SMASH may not justify the conversion overhead from another
+the NZA and many zero bits in the bitmap hierarchy to encode the                                               format, assuming that other format is necessary for storage.
+positions of the few non-zero elements. Hence, as we observe in                                                7.6                    SMASH Area Overhead
+Figure 19, CSR has a higher total compression ratio than SMASH                                                 The major area overhead in SMASH comes from the buffers and
+for matrices that are highly sparse (M 1 -M 4 ).                                                               the registers in the BMU. Assuming a BMU with 4 groups of 3
+   However, as the matrices become denser, SMASH provides ei-                                                  bitmap buffers (where the size of each buffer is 256 bytes), the total
+ther a similar compression ratio to or a much higher compression                                               additional SRAM required for the bitmaps is 3KB and 140 bytes
+ratio than CSR. The reason is twofold. First, the non-zero elements                                            for the registers. We evaluate the area overhead of the BMU using
+are more likely to be located close to each other at higher matrix                                             CACTI 6.5 [47]. In a modern Intel Xeon E5-2698 CPU core, with a
+densities (i.e., the locality of sparsity is higher). SMASH, as a result,                                      32 KiB L1, 256 KiB L2 and 2.5 MiB L3 Cache, the BMU incurs an
+                                                                                                               area overhead of at most 0.076%.
+
+                                                                                                          12
+
+
+===== Page 13 =====
+
+8    RELATED WORK                                                               such as memristors [17] and 3D-stacked memories [99] to accel-
+To our knowledge, this is the first work to propose a hardware-                 erate sparse matrix kernels. These prior approaches are either 1)
+software cooperative compression scheme and indexing mechanism                  only applicable to certain applications, such as SpMV [32] or sparse
+that 1) enables highly-compressed storage of sparse matrices, 2)                neural networks [96, 98], or 2) assume hardware dedicated to a
+provides highly-efficient hardware-supported indexing of sparse                 specific type of sparse matrix kernel only. SMASH, in contrast, can
+matrices to accelerate sparse matrix kernels, and 3) is general and             be generally applied across a diverse set of sparse matrix operations
+applicable to any sparse matrix operation and matrices with any                 and does not require fully-dedicated hardware to any particular
+sparsity and structure.                                                         matrix/kernel type. The hierarchy of bitmaps in SMASH can be
+    Sparse matrix operations have been extensively studied in the               used purely in software without hardware support in any system,
+past. Prior work in this area falls into three categories: 1) sparse ma-        and the hardware unit proposed in SMASH can be added with low
+trix compression formats; 2) software optimizations for sparse ma-              overhead to general-purpose processors such as CPUs and GPUs.
+trix kernels; and 3) hardware accelerators and hardware-software                   Prior works propose a range of hardware-software cooperative
+cooperative mechanisms for sparse matrix kernels. In this section,              mechanisms [4, 5, 11, 28, 36, 60, 73, 76, 80, 81, 84, 85, 95, 100] to ac-
+we briefly discuss these prior works and contrast them with SMASH.              celerate memory-bound operations and can be applied to accelerate
+    Sparse Matrix Compression Formats. Prior works propose a                    sparse matrix computations. These approaches are designed to be
+range of compression formats for sparse matrices [38, 44, 53, 68, 72,           generally applicable to a very wide range of applications. SMASH, in
+86, 89, 93], including the state-of-the-art formats such as CSR [53],           contrast, addresses the challenges of designing a hardware-software
+CSR5 [53], and BCSR [38] that are widely used today. These formats              cooperative mechanism for sparse matrix computation. Hence,
+are designed to be highly-efficient in storage and can be generally             SMASH is largely orthogonal to these mechanisms and can be
+applied to any sparse matrix. However, as we demonstrate in this                integrated into them to accelerate sparse matrix computation.
+paper, these formats incur significant performance overheads as a
+result of inefficient indexing. We quantitatively compare SMASH to              9   CONCLUSION
+CSR [44] and BCSR [44] in Section 7 and demonstrate that SMASH’s                We introduce SMASH, a general hardware-software cooperative
+hierarchical bitmap compression mechanism, along with its hard-                 mechanism that accelerates sparse matrix operations and enables
+ware support for indexing, significantly outperforms these formats              highly-efficient indexing and storage of sparse matrices in memory.
+by enabling highly-efficient storage and indexing of sparse matrices.           The key idea of SMASH is to explicitly enable the hardware to recog-
+    Several sparse matrix compression formats [7, 16, 30, 41, 42, 46,           nize and exploit data sparsity. To this end, we develop a flexible and
+77] leverage specific characteristics of the sparse matrix to enable            efficient sparse matrix encoding, based on a hierarchy of bitmaps,
+more efficient storage and indexing. For example, CSX [42] first                that is recognized by both hardware and software. This encoding
+processes each matrix to detect patterns such as dense diagonals or             enables efficient compression of any sparse matrix, regardless of
+repeated values and then encodes them using compression formats                 the structure of its sparsity. We develop a hardware mechanism that
+tailored to the detected pattern. CSR-DU [41] and CSR-VI [41]                   can directly interpret sparse matrices encoded with hierarchical
+leverage repetition or similarity among non-zero values to compress             bitmaps and accelerate computation on those matrices. The bitmap
+the sparse matrix more efficiently. These works have three major                representation, along with the hardware support, greatly reduces
+shortcomings. First, they are limited in applicability to matrices              the performance overheads of the expensive indexing operations
+that possess specific patterns in sparsity. SMASH, in contrast, can             that make state-of-the-art sparse matrix formats inefficient in com-
+be used to compress any sparse matrix and accelerate any operation              putation. The expressive SMASH ISA provides programmability of
+on it. Second, these approaches require expensive preprocessing                 the hardware support and generality across a wide variety of sparse
+of matrices to identify patterns in sparsity. Third, similar to the             matrix kernels. Our evaluation over a diverse set of 15 matrices and
+general compression formats, these approaches incur significant                 four graphs demonstrates that SMASH significantly improves the
+performance overheads due to inefficient indexing.                              performance of SpMV, SpMM, and two graph algorithms (PageRank
+    Software Optimizations for Sparse Matrix Kernels. There                     and Betweenness Centrality), compared to the state-of-the-art CSR
+is a large body of prior work on software optimizations to accelerate           format. We believe that the new ideas introduced in SMASH are
+sparse matrix computation by making sparse matrix kernels more                  applicable beyond CPUs and can be a good fit for GPUs, hardware
+memory or cache efficient [6, 15, 62, 78] and more amenable towards             accelerators, and processing in/near memory engines.
+parallelization [1, 13, 54, 58]. A range of prior works also include
+general software frameworks, such as MKL [1] and TACO [40], that                ACKNOWLEDGMENTS
+leverage these optimizations to produce more efficient code for                 We thank the anonymous reviewers for feedback. We thank the
+CPUs [1, 14, 15, 22, 23, 34, 37, 40, 56, 57, 62, 79, 87, 88, 90], GPUs          SAFARI Research Group members for feedback and the stimulat-
+[10, 18, 31, 35, 51, 91, 93], or heterogeneous CPU-GPU systems [52,             ing intellectual environment they provide. We acknowledge the
+55]. SMASH is orthogonal to these software optimizations and can                generous gifts provided by our industrial partners: Alibaba, Face-
+be seamlessly integrated into software frameworks that employ                   book, Google, Huawei, Intel, Microsoft, and VMware. This research
+such optimizations to further improve the performance and energy                was supported in part by the Semiconductor Research Corporation.
+efficiency of sparse matrix computation.                                        Christina Giannoula is funded for her postgraduate studies from
+    Hardware Accelerators and Hardware-Software Coopera-                        the General Secretariat for Research and Technology (GSRT) and
+tive Mechanisms for Sparse Matrix Kernels. Prior works pro-                     the Hellenic Foundation for Research and Innovation (HFRI).
+pose a range of hardware accelerators [59, 63, 64, 66, 94, 96, 98] or
+FPGA designs [26, 32, 48, 82] for sparse matrix computation. Sev-
+eral of these works also leverage emerging memory technologies
+
+
+
+                                                                           13
+
+
+===== Page 14 =====
+
+REFERENCES                                                                                          [35] C. Hong, A. Sukumaran-Rajam, B. Bandyopadhyay, J. Kim, S. E. Kurt, I. Nisa,
+ [1] Intel Math Kernel Library. http://software.intel.com/en-us/articles/intel-mkl/                      S. Sabhlok, Ü. V. Çatalyürek, S. Parthasarathy, and P. Sadayappan, “Efficient
+ [2] Intel Xeon Gold 5118. https://ark.intel.com/content/www/us/en/ark/products/                         Sparse-Matrix Multi-Vector Product on GPUs,” in HPDC, 2018.
+     120473/intel-xeon-gold-5118-processor-16-5m-cache-2-30-ghz.html.                               [36] K. Hsieh, S. M. Khan, N. Vijaykumar, K. K. Chang, A. Boroumand, S. Ghose, and
+ [3] SMASH code. https://github.com/CMU-SAFARI/SMASH                                                     O. Mutlu, “Accelerating Pointer Chasing in 3D-Stacked memory: Challenges,
+ [4] J. Ahn, S. Hong, S. Yoo, O. Mutlu, and K. Choi, “A Scalable Processing-in-Memory                    Mechanisms, Evaluation,” 2016.
+     Accelerator for Parallel Graph Processing,” in ISCA, 2015.                                     [37] E.-J. Im, K. Yelick, and R. Vuduc, “Sparsity: Optimization Framework for Sparse
+ [5] J. Ahn, S. Yoo, O. Mutlu, and K. Y. Choi, “PIM-Enabled Instructions: A Low-                         Matrix Kernels,” IJHPCA, 2004.
+     Overhead, Locality-Aware Processing-in-Memory Architecture,” 2015.                             [38] E.-J. Im and K. A. Yelick, “Optimizing Sparse Matrix Vector Multiplication on
+ [6] K. Akbudak and C. Aykanat, “Exploiting Locality in Sparse Matrix-Matrix Mul-                        SMP.” in PPSC, 1999.
+     tiplication on Many-Core Architectures,” TPDS, 2017.                                           [39] J. Kestyn, V. Kalantzis, E. Polizzi, and Y. Saad, “PFEAST: A High Performance
+ [7] M. Belgin, G. Back, and C. J. Ribbens, “Pattern-Based Sparse Matrix Representa-                     Sparse Eigenvalue Solver Using Distributed-memory Linear Solvers,” in SC,
+     tion for Memory-Efficient SMVM Kernels,” in ISC, 2009.                                              2016.
+ [8] M. Besta, F. Marending, E. Solomonik, and T. Hoefler, “SlimSell: A Vectorizable                [40] F. Kjolstad, S. Chou, D. Lugato, S. Kamil, and S. Amarasinghe, “taco: A Tool to
+     Graph Representation for Breadth-First Search,” in IPDPS, 2017.                                     Generate Tensor Algebra Kernels,” in ASE, 2017.
+ [9] M. Besta, M. Podstawski, L. Groner, E. Solomonik, and T. Hoefler, “To Push or                  [41] K. Kourtis, G. Goumas, and N. Koziris, “Optimizing Sparse Matrix-Vector Multi-
+     To Pull: On Reducing Communication and Synchronization in Graph Computa-                            plication using Index and Value Compression,” in CF, 2008.
+     tions,” in HPDC, 2017.                                                                         [42] K. Kourtis, V. Karakasis, G. Goumas, and N. Koziris, “CSX: An Extended Com-
+[10] J. Bolz, I. Farmer, E. Grinspun, and P. Schröder, “Sparse Matrix Solvers on the                     pression Format for SpMV on Shared Memory Systems,” in PPoPP, 2011.
+     GPU: Conjugate Gradients and Multigrid,” SIGGRAPH, 2003.                                       [43] N. Kurd, S. Bhamidipati, C. Mozak, J. L. Miller, T. M. Wilson, M. Nemani, and
+[11] A. Boroumand, S. Ghose, Y. Kim, R. Ausavarungnirun, E. Shiu, R. Thakur, D. Kim,                     M. Chowdhury, “Westmere: A Family of 32nm IA Processors,” in ISSCC, 2010.
+     A. Kuusela, A. Knies, P. Ranganathan, and O. Mutlu, “Google Workloads for                      [44] D. Langr and P. Tvrdik, “Evaluation Criteria for Sparse Matrix Storage Formats,”
+     Consumer Devices: Mitigating Data Movement Bottlenecks,” ser. ASPLOS, 2018.                         in TPDS, 2016.
+[12] S. Brin and L. Page, “The Anatomy of a Large-scale Hypertextual Web Search                     [45] J. Leskovec and R. Sosič, “Snap: A General-Purpose Network Analysis and
+     Engine,” in WWW, 1998.                                                                              Graph-Mining Library,” TIST, 2016.
+[13] A. Buluc and J. R. Gilbert, “Challenges and Advances in Parallel Sparse Matrix-                [46] J. Li, G. Tan, M. Chen, and N. Sun, “SMAT: An Input Adaptive Auto-tuner for
+     Matrix Multiplication,” in ICPP, 2008.                                                              Sparse Matrix-vector Multiplication,” in PLDI, 2013.
+[14] A. Buluç and J. R. Gilbert, “Parallel Sparse Matrix-Matrix Multiplication and                  [47] S. Li, K. Chen, J. H. Ahn, J. B. Brockman, and N. P. Jouppi, “CACTI-P:
+     Indexing: Implementation and Experiments,” SISC, 2012.                                              Architecture-Level Modeling for SRAM-Based Structures with Advanced Leak-
+[15] A. Buluc, S. Williams, L. Oliker, and J. Demmel, “Reduced-Bandwidth Multi-                          age Reduction Techniques,” in CAD, 2011.
+     threaded Algorithms for Sparse Matrix-Vector Multiplication,” in IPDPS, 2011.                  [48] C. Y. Lin, N. Wong, and H. K.-H. So, “Design Space Exploration for Sparse
+[16] A. Buluç, J. T. Fineman, M. Frigo, J. R. Gilbert, and C. E. Leiserson, “Parallel Sparse             Matrix-Matrix Multiplication on FPGAs,” FPT, 2013.
+     Matrix-Vector and Matrix-Transpose-Vector Multiplication Using Compressed                      [49] G. Linden, B. Smith, and J. York, “Amazon.com Recommendations: Item-to-Item
+     Sparse Blocks,” in SPAA, 2009.                                                                      Collaborative Filtering,” IC, 2003.
+[17] J. Cui and Q. Qiu, “Towards Memristor based Accelerator for Sparse Matrix                      [50] B. Liu, M. Wang, H. Foroosh, M. Tappen, and M. Pensky, “Sparse Convolutional
+     Vector Multiplication,” in ISCAS, 2016.                                                             Neural Networks,” in CVPR, 2015.
+[18] S. Dalton, L. Olson, and N. Bell, “Optimizing Sparse Matrix-Matrix Multiplication              [51] W. Liu and B. Vinter, “An Efficient GPU General Sparse Matrix-Matrix Multipli-
+     for the GPU,” TMS, 2015.                                                                            cation for Irregular Data,” in IPDPS, 2014.
+[19] T. A. Davis and Y. Hu, “The University of Florida Sparse Matrix Collection,”                   [52] W. Liu and B. Vinter, “A Framework for General Sparse Matrix-matrix Multipli-
+     TOMS, 2011.                                                                                         cation on GPUs and Heterogeneous Processors,” JPDC, 2015.
+[20] J. Dongarra, A. Lumsdaine, X. Niu, R. Pozoz, and K. Remington, “Sparse Matrix                  [53] W. Liu and B. Vinter, “CSR5: An Efficient Storage Format for Cross-Platform
+     Libraries in C++ for High Performance Architectures,” 1994.                                         Sparse Matrix-Vector Multiplication,” in ICS, 2015.
+[21] A. Dziekonski and M. Mrozowski, “A GPU Solver for Sparse Generalized Eigen-                    [54] X. Liu, M. Smelyanskiy, E. Chow, and P. Dubey, “Efficient Sparse Matrix-Vector
+     value Problems with Symmetric Complex-Valued Matrices Obtained Using                                Multiplication on x86-Based Many-Core Processors,” in SC, 2013.
+     Higher-Order FEM,” IEEE Access, 2018.                                                          [55] K. K. Matam, S. R. K. B. Indarapu, and K. Kothapalli, “Sparse Matrix-Matrix
+[22] A. Elafrou, G. Goumas, and N. Koziris, “Performance Analysis and Optimiza-                          Multiplication on Modern Architectures,” in HiPC, 2012.
+     tion of Sparse Matrix-Vector Multiplication on Modern Multi-and Many-Core                      [56] J. Mellor-Crummey and J. Garvin, “Optimizing Sparse Matrix-Vector Product
+     Processors,” in ICPP, 2017.                                                                         Computations using Unroll and Jam,” IJHPCA, 2004.
+[23] A. Elafrou, V. Karakasis, T. Gkountouvas, K. Kourtis, G. Goumas, and N. Koziris,               [57] D. Merrill and M. Garland, “Merge-Based Parallel Sparse Matrix-Vector Multi-
+     “SparseX: A Library for High-Performance Sparse Matrix-Vector Multiplication                        plication,” in SC, 2016.
+     on Multicore Platforms,” TOMS, 2018.                                                           [58] D. Merrill and M. Garland, “Merge-Based Sparse Matrix-Vector Multiplication
+[24] R. D. Falgout, “An Introduction to Algebraic Multigrid,” Computing in Science                       (SpMV) using the CSR Storage Format,” in PPoPP, 2016.
+     Engineering, 2006.                                                                             [59] A. K. Mishra, E. Nurvitadhi, G. Venkatesh, J. Pearce, and D. Marr, “Fine-Grained
+[25] R. D. Falgout and U. M. Yang, “hypre: A Library of High Performance Precondi-                       Accelerators for Sparse Machine Learning Workloads,” in ASP-DAC, 2017.
+     tioners,” in ICCS, 2002.                                                                       [60] A. Mukkara, N. Beckmann, M. Abeydeera, X. Ma, and D. Sanchez, “Exploiting Lo-
+[26] J. Fowers, K. Ovtcharov, K. Strauss, E. S. Chung, and G. Stitt, “A High Memory                      cality in Graph Analytics Through Hardware-Accelerated Traversal Scheduling,”
+     Bandwidth FPGA Accelerator for Sparse Matrix-Vector Multiplication,” in FCCM,                       in MICRO, 2018.
+     2014.                                                                                          [61] M. Naumov, D. Mudigere, H. M. Shi, J. Huang, N. Sundaraman, J. Park, X. Wang,
+[27] L. Freeman, “A Set of Measures of Centrality Based on Betweenness,” Sociometry,                     U. Gupta, C. Wu, A. G. Azzolini, D. Dzhulgakov, A. Mallevich, I. Cherniavskii,
+     1977.                                                                                               Y. Lu, R. Krishnamoorthi, A. Yu, V. Kondratenko, S. Pereira, X. Chen, W. Chen,
+[28] M. Gao, J. Pu, X. Yang, M. Horowitz, and C. Kozyrakis, “TETRIS: Scalable and                        V. Rao, B. Jia, L. Xiong, and M. Smelyanskiy, “Deep Learning Recommendation
+     Efficient Neural Network Acceleration with 3D Memory,” in ASPLOS, 2017.                             Model for Personalization and Recommendation Systems,” CoRR, 2019.
+[29] B. Graham, “Spatially-Sparse Convolutional Neural Networks,” arXiv, 2014.                      [62] R. Nishtala, R. W. Vuduc, J. W. Demmel, and K. A. Yelick, “When Cache Blocking
+[30] J. L. Greathouse and M. Daga, “Efficient Sparse Matrix-vector Multiplication on                     of Sparse Matrix Vector Multiply Works and Why,” AAECC, 2007.
+     GPUs Using the CSR Storage Format,” in SC, 2014.                                               [63] E. Nurvitadhi, A. Mishra, and D. Marr, “A Sparse Matrix Vector Multiply Accel-
+[31] F. Gremse, A. Höfter, L. O. Schwen, F. Kiessling, and U. Naumann, “GPU-                             erator for Support Vector Machine,” in CASES, 2015.
+     Accelerated Sparse Matrix-Matrix Multiplication by Iterative Row Merging,”                     [64] E. Nurvitadhi, A. Mishra, Y. Wang, G. Venkatesh, and D. Marr, “Hardware
+     SIAM, 2015.                                                                                         Accelerator for Analytics of Sparse Data,” in DAC, 2016.
+[32] P. Grigoras, P. Burovskiy, E. Hung, and W. Luk, “Accelerating SpMV on FPGAs                    [65] L. Page, S. Brin, R. Motwani, and T. Winograd, “The PageRank Citation Ranking:
+     by Compressing Nonzero Values,” in FCCM, 2015.                                                      Bringing Order to the Web.” Stanford InfoLab, Tech. Rep., 1999.
+[33] U. Gupta, X. Wang, M. Naumov, C. Wu, B. Reagen, D. Brooks, B. Cottel, K. M.                    [66] S. Pal, J. Beaumont, D.-H. Park, A. Amarnath, S. Feng, C. Chakrabarti, H.-S. Kim,
+     Hazelwood, B. Jia, H. S. Lee, A. Malevich, D. Mudigere, M. Smelyanskiy, L. Xiong,                   D. Blaauw, T. Mudge, and R. Dreslinski, “OuterSPACE: An Outer Product Based
+     and X. Zhang, “The Architectural Implications of Facebook’s DNN-based Per-                          Sparse Matrix Multiplication Accelerator,” in HPCA, 2018.
+     sonalized Recommendation,” CoRR, 2019.                                                         [67] G. Penn, “Efficient Transitive Closure of Sparse Matrices over Closed Semirings,”
+[34] P. Hénon, P. Ramet, and J. Roman, “PASTIX: A High-Performance Parallel Direct                       AMiLP, 2006.
+     Solver for Sparse Symmetric Positive Definite Systems,” PMAA, 2002.                            [68] A. Pinar and M. T. Heath, “Improving Performance of Sparse Matrix-Vector
+                                                                                                         Multiplication,” in SC, 1999.
+
+
+
+
+                                                                                               14
+
+
+===== Page 15 =====
+
+ [69] L. Ren, X. Chen, Y. Wang, C. Zhang, and H. Yang, “Sparse LU Factorization for
+      Parallel Circuit Simulation on GPU,” in DAC, 2012.
+ [70] Y. Saad, Iterative Methods for Sparse Linear Systems, 2003.
+ [71] D. Sanchez and C. Kozyrakis, “ZSim: Fast and Accurate Microarchitectural
+      Simulation of Thousand-Core Systems,” in ISCA, 2013.
+ [72] S. Sengupta, M. Harris, Y. Zhang, and J. D. Owens, “Scan Primitives for GPU
+      Computing,” in GH, 2007.
+ [73] V. Seshadri, G. Pekhimenko, O. Ruwase, O. Mutlu, P. B. Gibbons, M. A. Kozuch,
+      T. C. Mowry, and T. Chilimbi, “Page Overlays: An Enhanced Virtual Memory
+      Framework to Enable Fine-grained Memory Management,” in ISCA, 2015.
+ [74] J. Shun and G. E. Blelloch, “Ligra: A Lightweight Graph Processing Framework
+      for Shared Memory,” in PPoPP, 2013.
+ [75] A. Smith. 6 New Facts About Facebook. http://mediashift.org
+ [76] L. Song, Y. Zhuo, X. Qian, H. Li, and Y. Chen, “GraphR: Accelerating Graph
+      Processing using ReRAM,” in HPCA, 2018.
+ [77] B.-Y. Su and K. Keutzer, “clSpMV: A Cross-Platform OpenCL SpMV Framework
+      on GPUs,” in ICS, 2012.
+ [78] P. D. Sulatycke and K. Ghose, “Caching-Efficient Multithreaded Fast Multiplica-
+      tion of Sparse Matrices,” in IPPS, 1998.
+ [79] S. Toledo, “Improving the Memory-System Performance of Sparse-Matrix Vector
+      Multiplication,” IBM Journal of research and development, 1997.
+ [80] P.-A. Tsai, Y. L. Gan, and D. Sanchez, “Rethinking the Memory Hierarchy for
+      Modern Languages,” in MICRO, 2018.
+ [81] P.-A. Tsai and D. Sanchez, “Compress Objects, Not Cache Lines: An Object-Based
+      Compressed Memory Hierarchy,” in ASPLOS, 2019.
+ [82] Y. Umuroglu and M. Jahre, “An Energy Efficient Column-major Backend for
+      FPGA SpMV Accelerators,” in ICCD, 2014.
+ [83] S. Van Dongen, “Graph Clustering via a Discrete Uncoupling Process,” SIMAX,
+      2008.
+ [84] N. Vijaykumar, E. Ebrahimi, K. Hsieh, P. B. Gibbons, and O. Mutlu, “The Locality
+      Descriptor: A Holistic Cross-Layer Abstraction to Express Data Locality In
+      GPUs,” in ISCA, 2018.
+ [85] N. Vijaykumar, A. Jain, D. Majumdar, K. Hsieh, G. Pekhimenko, E. Ebrahimi,
+      N. Hajinazar, P. B. Gibbons, and O. Mutlu, “A Case for Richer Cross-layer
+      Abstractions: Bridging the Semantic Gap with Expressive Memory,” in ISCA,
+      2018.
+ [86] R. W. Vuduc and H.-J. Moon, “Fast Sparse Matrix-vector Multiplication by
+      Exploiting Variable Block Structure,” in HPCC, 2005.
+ [87] Q. Wang, X. Zhang, Y. Zhang, and Q. Yi, “AUGEM: Automatically Generate
+      High Performance Dense Linear Algebra Kernels on x86 CPUs,” in SC, 2013.
+ [88] J. B. White and P. Sadayappan, “On Improving the Performance of Sparse Matrix-
+      Vector Multiplication,” in HiPC, 1997.
+ [89] J. Willcock and A. Lumsdaine, “Accelerating Sparse Matrix Computations via
+      Data Compression,” in ICS, 2006.
+ [90] S. Williams, L. Oliker, R. Vuduc, J. Shalf, K. Yelick, and J. Demmel, “Optimization
+      of Sparse Matrix-Vector Multiplication on Emerging Multicore Platforms,” in
+      SC, 2007.
+ [91] T. Wu, B. Wang, Y. Shan, F. Yan, Y. Wang, and N. Xu, “Efficient PageRank and
+      SpMV Computation on AMD GPUs,” in ICPP, 2010.
+ [92] Z. Xianyi, W. Qian, and Z. Yunquan, “Model-driven Level 3 BLAS Performance
+      Optimization on Loongson 3A processor,” in ICPADS, 2012.
+ [93] S. Yan, C. Li, Y. Zhang, and H. Zhou, “yaSpMV: Yet Another SpMV Framework
+      on GPUs,” in PPoPP, 2014.
+ [94] L. Yavits and R. Ginosar, “Sparse Matrix Multiplication on CAM Based Acceler-
+      ator,” CoRR, 2017.
+ [95] M. Zhang, Y. Zhuo, C. Wang, M. Gao, Y. Wu, K. Chen, C. Kozyrakis, and X. Qian,
+      “GraphP: Reducing Communication for PIM-based Graph Processing with Effi-
+      cient Data Partition,” in HPCA, 2018.
+ [96] S. Zhang, Z. Du, L. Zhang, H. Lan, S. Liu, L. Li, Q. Guo, T. Chen, and Y. Chen,
+      “Cambricon-X: An Accelerator for Sparse Neural Networks,” in MICRO, 2016.
+ [97] Y. Zhao, J. Li, C. Liao, and X. Shen, “Bridging the Gap between Deep Learning
+      and Sparse Matrix Format Selection,” in PPoPP, 2018.
+ [98] X. Zhou, Z. Du, Q. Guo, S. Liu, C. Liu, C. Wang, X. Zhou, L. Li, T. Chen, and
+      Y. Chen, “Cambricon-S: Addressing Irregularity in Sparse Neural Networks
+      Through a Cooperative Software/Hardware Approach,” in MICRO, 2018.
+ [99] Q. Zhu, T. Graf, H. E. Sumbul, L. Pileggi, and F. Franchetti, “Accelerating Sparse
+      Matrix-Matrix Multiplication with 3D-Stacked Logic-in-Memory Hardware,” in
+      HPEC, 2013.
+[100] Y. Zhuo, C. Wang, M. Zhang, R. Wang, D. Niu, Y. Wang, and X. Qian, “GraphQ:
+      Scalable PIM-Based Graph Processing,” in MICRO, 2019.
+
+
+
+
+                                                                                            15

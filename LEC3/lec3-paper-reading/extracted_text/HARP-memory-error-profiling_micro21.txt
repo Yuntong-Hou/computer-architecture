@@ -1,0 +1,1519 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/HARP-memory-error-profiling_micro21.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/HARP-memory-error-profiling_micro21.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+                              HARP: Practically and Effectively
+                     Identifying Uncorrectable Errors in Memory Chips
+                          That Use On-Die Error-Correcting Codes
+                                         Minesh Patel                           Geraldo F. Oliveira                       Onur Mutlu
+                                            ETH Zürich                                  ETH Zürich                          ETH Zürich
+ABSTRACT                                                                                            profiler impacts the system’s overall bit error rate (BER) when using
+Aggressive storage density scaling in modern main memories causes                                   a repair mechanism to tolerate DRAM data-retention errors. We
+increasing error rates that are addressed using error-mitigation                                    show that HARP identifies all errors faster than the best-performing
+techniques. State-of-the-art techniques for addressing high error                                   baseline algorithm (e.g., by 3.7× for a raw per-bit error probability
+rates identify and repair bits that are at risk of error from within                                of 0.75). We conclude that HARP effectively overcomes the three
+the memory controller. Unfortunately, modern main memory chips                                      error profiling challenges introduced by on-die ECC.
+internally use on-die error correcting codes (on-die ECC) that ob-
+fuscate the memory controller’s view of errors, complicating the                                    CCS CONCEPTS
+process of identifying at-risk bits (i.e., error profiling).                                        • Computer systems organization → Dependable and fault-
+    To understand the problems that on-die ECC causes for error                                     tolerant systems and networks; • Hardware → Memory test
+profiling, we analytically study how on-die ECC changes the way                                     and repair.
+that memory errors appear outside of the memory chip (e.g., to the
+memory controller). We show that on-die ECC introduces statistical                                  KEYWORDS
+dependence between errors in different bit positions, raising three                                 On-Die ECC, DRAM, Memory Test, Repair, Error Profiling, Error
+key challenges for practical and effective error profiling: on-die                                  Modeling, Memory Scaling, Reliability, Fault Tolerance
+ECC (1) exponentially increases the number of at-risk bits the pro-
+                                                                                                    ACM Reference Format:
+filer must identify; (2) makes individual at-risk bits more difficult                               Minesh Patel, Geraldo F. Oliveira, and Onur Mutlu. 2021. HARP: Practically
+to identify; and (3) interferes with commonly-used memory data                                      and Effectively Identifying Uncorrectable Errors in Memory Chips That Use
+patterns that are designed to make at-risk bits easier to identify.                                 On-Die Error-Correcting Codes. In Proceedings of the 54th Annual IEEE/ACM
+    To address the three challenges, we introduce Hybrid Active-                                    International Symposium on Microarchitecture (MICRO ’21), October 18–22,
+Reactive Profiling (HARP), a new error profiling algorithm that                                     2021, Virtual Event, Greece. ACM, New York, NY, USA, 18 pages. https:
+rapidly achieves full coverage of at-risk bits based on two key in-                                 //doi.org/10.1145/3466752.3480061
+sights. First, errors that on-die ECC fails to correct have two sources:
+(1) direct errors from raw bit errors in the data portion of the ECC                                1    INTRODUCTION
+word and (2) indirect errors that on-die ECC introduces when fac-                                   Modern memory technologies that are suitable for main mem-
+ing uncorrectable errors. Second, the maximum number of indirect                                    ory (e.g., Dynamic Random Access Memory (DRAM) [38, 116],
+errors that can occur concurrently is limited to the correction ca-                                 Phase-Change Memory (PCM) [17, 101, 102, 151, 177], Spin-Transfer
+pability of on-die ECC. HARP’s key idea is to first identify all bits                               Torque RAM (STT-RAM) [56, 97]) all suffer from various error mech-
+at risk of direct errors using existing profiling techniques with the                               anisms that play a key role in determining reliability, manufacturing
+help of small modifications to the on-die ECC mechanism. Then,                                      yield, and operating characteristics such as performance and energy
+a secondary ECC within the memory controller with correction                                        efficiency [17, 21, 45, 62, 74, 87, 97, 101, 102, 107, 116, 144, 174, 184].
+capability equal to or greater than that of on-die ECC can safely                                   Unfortunately, as memory designers shrink (i.e., scale) memory pro-
+identify bits at-risk of indirect errors, if and when they fail.                                    cess technology node sizes to meet ambitious capacity, cost, perfor-
+    We evaluate HARP in simulation relative to two state-of-the-art                                 mance, and energy efficiency targets, worsening reliability becomes
+baseline error profiling algorithms. We show that HARP achieves                                     an increasingly significant challenge to surmount [10, 21, 54, 74, 87,
+full coverage of all at-risk bits faster (e.g., 99th-percentile coverage                            89, 91, 107, 116, 129, 132, 136, 144, 150, 170]. For example, DRAM
+20.6%/36.4%/52.9%/62.1% faster, on average, given 2/3/4/5 raw bit er-                               process technology scaling exacerbates cell-to-cell variation and
+rors per ECC word) than the baseline algorithms, which sometimes                                    noise margins, severely impacting error mechanisms that constrain
+fail to achieve full coverage. We perform a case study of how each                                  yield, including cell data-retention [21, 46, 47, 54, 74, 76, 77, 93, 110,
+                                                                                                    136, 144, 147, 161, 171] and read-disturb [40, 52, 87, 91, 131, 132, 141]
+Permission to make digital or hard copies of all or part of this work for personal or
+classroom use is granted without fee provided that copies are not made or distributed               phenomena. Similarly, emerging main memory technologies suffer
+for profit or commercial advantage and that copies bear this notice and the full citation           from various error mechanisms that can lead to high error rates if
+on the first page. Copyrights for components of this work owned by others than the                  left unchecked, such as limited endurance, resistance drift, and write
+author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or
+republish, to post on servers or to redistribute to lists, requires prior specific permission       disturbance in PCM [10, 62, 73, 88, 101, 105] and data retention, en-
+and/or a fee. Request permissions from permissions@acm.org.                                         durance, and read disturbance in STT-RAM [9, 25, 28, 134, 152, 170].
+MICRO ’21, October 18–22, 2021, Virtual Event, Greece                                               Therefore, enabling reliable system operation in the presence of
+© 2021 Copyright held by the owner/author(s). Publication rights licensed to ACM.
+ACM ISBN 978-1-4503-8557-2/21/10. . . $15.00                                                        scaling-related memory errors is a critical research challenge for
+https://doi.org/10.1145/3466752.3480061                                                             allowing continued main memory scaling.
+
+
+                                                                                                1
+
+
+===== Page 2 =====
+
+    Error mitigation mechanisms and on-die ECC. Modern sys-                            action to search for at-risk memory locations or passively monitors
+ tems tolerate errors using error-mitigation mechanisms, which pre-                    memory to identify errors as they occur during normal system
+ vent errors that occur within the memory chip from manifesting                        operation. Prior works [11, 12, 24, 27, 29, 30, 40, 48, 76–79, 82, 84,
+ as software-visible bit flips. Different error-mitigation mechanisms                  86, 87, 103, 104, 109–111, 132, 145, 147, 149, 150, 159, 168, 171, 183]
+ target different types of errors, ranging from fine- to coarse-grained                propose a variety of algorithms for active profiling. In general, these
+ mitigation using hardware and/or software techniques. §2.1 reviews                    algorithms all search for errors using multiple rounds of tests that
+ main memory error-mitigation mechanisms.                                              each attempt to induce and identify errors (e.g., by taking exclusive
+    To address increasing memory error rates, memory chip manu-                        control of the memory chip [110, 145, 147, 168]). The algorithms
+ facturers have started to incorporate on-die error-correcting codes                   maximize the chance of observing errors to identify as many at-risk
+ (on-die ECC).1 On-die ECC is already prevalent among modern                           bits as possible by testing under worst-case conditions (e.g., data and
+ DRAM (e.g., LPDDR4 [98, 99, 121, 140, 145, 146], DDR5 [67]) and                       access patterns, operating conditions). Only BEEP [145] accounts
+ STT-RAM [39] chips because it enables memory manufacturers to                         for the effects of on-die ECC by first reverse-engineering the on-die
+ aggressively scale their technologies while maintaining the appear-                   ECC implementation, so we refer to all other active profiling algo-
+ ance of a reliable memory chip. Unfortunately, on-die ECC changes                     rithms as Naive in the context of this work. In contrast, proposals
+ how memory errors appear outside the memory chip (e.g., to the                        for reactive profiling passively monitor an error-detection mech-
+ memory controller or the system software). This introduces new                        anism (typically an ECC) to identify errors as they occur during
+ challenges for designing additional error-mitigation mechanisms at                    normal system operation [14, 63, 119, 128, 149, 150, 156, 159].
+ the system level [21, 32, 43, 69, 115, 137, 142, 162] or test a memory                   Regardless of the profiling algorithm, any at-risk bits that the
+ chip’s reliability characteristics [41, 44, 145, 146].                                profiler misses will not be repaired by the repair mechanism that
+    In this work, we focus on enabling a class of state-of-the-art                     the profiler supports. Therefore, achieving practical and effective
+ hardware-based error-mitigation mechanisms known as repair                            repair requires a profiling algorithm that quickly and efficiently
+ mechanisms2 [61, 92, 93, 109, 111, 112, 135, 136, 150, 157, 158,                      achieves high coverage of at-risk memory locations.
+ 162, 168, 171, 176, 179, 180] when used alongside memory chips                           On-die ECC’s impact on error profiling. Unfortunately, on-
+ with on-die ECC. These repair mechanisms operate from out-                            die ECC fundamentally changes how memory errors appear outside
+ side the memory chip (e.g., from the memory controller) to iden-                      of the memory chip: instead of errors that follow well-understood
+ tify and repair memory locations that are at risk of error (i.e.,                     semiconductor error models [66], the system observes obfuscated
+ are known or predicted to experience errors). In particular, prior                    error patterns that vary with the particular on-die ECC implemen-
+ works [92, 136, 157, 158, 168] show that bit-granularity repair mech-                 tation [145, 146]. This is a serious challenge for existing profiling
+ anisms efficiently tackle high error rates (e.g., > 10−4 ) resulting                  algorithms because, as §4 shows, on-die ECC both (1) increases the
+ from aggressive technology scaling by focusing error-mitigation                       number of at-risk bits that need to be identified and (2) makes those
+ resources on bits that are known to be susceptible to errors.                         bits harder to identify. Even a profiler that knows the on-die ECC
+    Fig. 1 illustrates a system that uses both a repair mechanism                      implementation (e.g., BEEP [145]) cannot easily identify all at-risk
+ (within the memory controller) and on-die ECC (within the memory                      bits because it lacks visibility into the error-correction process.
+ chip). On-die ECC encodes all data provided by the CPU before                            Our goal is to study and address the challenges that on-die
+ writing it to the memory. On a read operation, on-die ECC first                       ECC introduces for bit-granularity error profiling. To this end, we
+ decodes the stored data, correcting any correctable errors. The                       perform the first analytical study of how on-die ECC affects error
+ repair mechanism then repairs the data before returning it to the                     profiling. We find that on-die ECC introduces statistical dependence
+ CPU. The repair mechanism performs repair operations using a list                     between errors in different bit positions such that, even if raw bit
+ of bits known to be at risk of error, called an error profile.                        errors (i.e., pre-correction errors) occur independently, errors ob-
+                                                                                       served by the system (i.e., post-correction errors) do not. This raises
+                                                                                       three new challenges for practical and effective bit-granularity error
+to/from CPU
+
+
+
+
+              write data                   write           encoded                     profiling (discussed in detail in §4).
+                           Error Profile   data    On-Die write data Error-Prone
+                                                    ECC               Data Store          First, on-die ECC transforms a small set of bits at risk of pre-
+               repaired     Repair         read             encoded
+              read data    Mechanism       data           read data                    correction errors into a combinatorially larger set of bits at risk
+                                                                                       of post-correction errors. §4.1 shows how this exponentially in-
+                      Memory Controller                  Memory Chip                   creases the number of bits the profiler must identify. Second, on-die
+                                                                                       ECC ties post-correction errors to specific combinations of pre-
+ Figure 1: High-level block diagram of a system that uses a repair                     correction errors. Only when those specific pre-correction error
+ mechanism with a memory chip that uses on-die ECC.                                    combinations occur, can the profiler identify the corresponding
+                                                                                       bits at risk of post-correction errors. §4.2 shows how this signif-
+    Error profiling. Repair mechanisms depend on having a practi-                      icantly slows down profiling. Third, on-die ECC interferes with
+ cal algorithm for identifying at-risk memory locations to repair. We                  commonly-used memory data patterns that profilers use to maxi-
+ refer to this as an error profiling algorithm. We classify a profiling                mize the chance of observing errors. This is because post-correction
+ algorithm as either active or reactive depending on whether it takes                  errors appear only when multiple pre-correction errors occur con-
+ 1 Our work applies to any memory chip that is packaged with a proprietary ECC         currently, which the data patterns must account for. §4.3 discusses
+ mechanism; on-die ECC is one embodiment of such a chip.                               the difficulty of defining new data patterns for use with on-die ECC.
+ 2 We discuss repair mechanisms in detail in §2.2.
+
+
+
+
+                                                                                   2
+
+
+===== Page 3 =====
+
+   To address these three challenges, we introduce Hybrid Active-                              on our evaluations, we conclude that HARP effectively overcomes
+Reactive Profiling (HARP), a new bit-granularity error profiling                               the three profiling challenges. We publicly release our simulation
+algorithm that operates within the memory controller to support                                tools as open-source software on Zenodo [148] and Github [3].
+a repair mechanism for memory chips with on-die ECC. HARP is                                      To demonstrate the end-to-end importance of having an effective
+based on two key insights. First, given that on-die ECC uses system-                           profiling mechanism, we also perform a case study of how HARP,
+atic encoding (i.e., data bits are preserved one-to-one during ECC                             Naive, and BEEP profiling can impact the overall bit error rate of a
+encoding3 ), there are only two possible types of post-correction er-                          system equipped with an ideal bit-repair mechanism that perfectly
+rors: (1) direct errors, corresponding to pre-correction errors within                         repairs all identified at-risk bits. We show that, because HARP
+the systematically encoded data bits; and (2) indirect errors, result-                         achieves full coverage of bits at risk of direct errors, it enables the
+ing from mistaken correction operations (i.e., miscorrections) on-die                          bit-repair mechanism to repair all errors. Although Naive eventually
+ECC performs for uncorrectable errors. Second, because on-die ECC                              achieves full coverage, it takes substantially longer to do so (by 3.7×
+corrects a fixed number N of errors, at most N indirect errors can                             for a raw per-bit error probability of 0.75). In contrast, BEEP does
+occur concurrently (e.g., N = 1 for a Hamming code [49]).                                      not achieve full coverage, so the bit-repair mechanism is unable to
+   Based on these insights, the key idea of HARP is to reduce the                              repair all errors that occur during system operation.
+problem of profiling a chip with on-die ECC into that of a chip                                   We make the following contributions:
+without on-die ECC by separately identifying direct and indirect                                • We conduct the first analytical study of how on-die ECC affects
+errors. HARP consists of two phases. First, an active profiling phase                              system-level bit-granularity error profiling. We identify three
+that uses existing profiling techniques to identify bits at risk of                                key challenges that must be addressed to enable practical and
+direct errors with the help of a simple modification to the on-die                                 effective error profiling in main memory chips with on-die ECC.
+ECC read operation that allows the memory controller to read raw                                • We introduce Hybrid Active-Reactive Profiling (HARP), a new
+data (but not the on-die ECC metadata) values. Second, a reactive                                  bit-granularity error profiling algorithm that quickly achieves
+profiling phase that safely identifies bits at risk of indirect errors                             full coverage of at-risk bits by profiling errors in two phases: (1)
+using a secondary N -error-correcting ECC within the memory                                        active profiling using raw data bit values to efficiently identify
+controller. The secondary ECC is used only for reactive profiling:                                 all bits at risk of direct errors; and (2) reactive profiling with the
+upon identifying an error, the corresponding bit is marked as at-risk,                             guarantee that all remaining at-risk bits can be safely identified.
+which signals the repair mechanism to repair the bit thereafter.                                • We introduce two HARP variants, HARP-Unaware (HARP-U)
+   Prior work [145] shows that knowing the on-die ECC’s internal                                   and HARP-Aware (HARP-A). HARP-A exploits knowledge of
+implementation (i.e., its parity-check matrix)4 enables calculating                                the on-die ECC parity-check matrix to achieve full coverage of
+which post-correction errors a given set of pre-correction errors                                  at-risk bits faster by precomputing at-risk bit locations.
+can cause. Therefore, we introduce two HARP variants: HARP-                                     • We evaluate HARP relative to two baseline profiling algo-
+Aware (HARP-A) and HARP-Unaware (HARP-U), which do and do                                          rithms. An example result shows that HARP achieves 99th-
+not know the parity-check matrix, respectively. HARP-A does not                                    percentile coverage of all bits at risk of direct error in
+improve coverage over HARP-U because it has no additional visibil-                                 20.6%/36.4%/52.9%/62.1% of the profiling rounds required by
+ity into the pre-correction errors. However, HARP-A demonstrates                                   the best baseline technique given 2/3/4/5 pre-correction errors.
+that, although knowing the parity-check matrix alone does not over-                             • We present a case study of how HARP and the two baseline pro-
+come the three profiling challenges, it does provide a head-start for                              filers impact the overall bit error rate of a system equipped with
+reactive profiling based on the results of active profiling.                                       an ideal repair mechanism that perfectly repairs all identified
+   We evaluate HARP in simulation relative to two state-of-the-art                                 at-risk bits. We show that HARP enables the repair mechanism
+baseline error profiling algorithms: Naive (which represents the                                   to mitigate all errors faster than the best-performing baseline
+vast majority of previous-proposed profiling algorithms [11, 12,                                   (e.g., by 3.7× for a raw per-bit error probability of 0.75).
+24, 27, 29, 30, 40, 48, 76–79, 82, 84, 86, 87, 103, 104, 109–111, 132,
+145, 147, 149, 150, 159, 168, 171, 183]) and BEEP [145]. We show                               2     BACKGROUND AND MOTIVATION
+that HARP quickly achieves coverage of all bits at risk of direct
+                                                                                               This section briefly discusses repair mechanisms, error profiling,
+errors while Naive and BEEP are either slower or unable to achieve
+                                                                                               our assumed error model, and on-die ECC. For more detailed back-
+full coverage. For example, when there are 2/3/4/5 bits at risk of
+                                                                                               ground information, we refer the reader to other publications on
+pre-correction error that each fail with probability 0.5, HARP5
+                                                                                               repair [55, 61, 92, 93, 109, 112, 136, 157, 158, 168, 176, 179], profil-
+achieves 99th-percentile6 coverage in 20.6%/36.4%/52.9%/62.1% of
+                                                                                               ing [11, 27, 30, 40, 48, 76–79, 87, 103, 111, 147, 150, 159, 171, 183]
+the profiling rounds required by the best baseline algorithm. Based
+                                                                                               and main memory error mechanisms [9, 25, 28, 46, 47, 62, 73, 77,
+                                                                                               87, 88, 91, 93, 101, 105, 110, 120, 134, 136, 152, 170, 178].
+3 Nonsystematic designs require additional decoding effort (i.e., more logic operations)
+because data cannot be read directly from stored values [181]. This increases the energy
+consumption of read operations and either reduces the overall read timing margins              2.1    Addressing Scaling-Related Errors
+available for other memory operations or increases the memory read latency.
+4 Potentially provided through manufacturer support, datasheet information, or                 Continual increases to memory storage density exacerbate vari-
+previously-proposed reverse engineering techniques [145].                                      ous technology-specific error mechanisms (e.g., DRAM data reten-
+5 HARP-U and HARP-A have identical coverage of bits at risk of direct error.
+6 We report 99th percentile coverage to compare against baseline configurations that do
+                                                                                               tion [21, 46, 47, 54, 74, 76, 77, 93, 110, 136, 144, 147, 161, 162, 171])
+not achieve full coverage within the maximum simulated number of profiling rounds              that result in increasing error rates. To address these errors, main
+(due to simulation time constraints, as discussed in §7.1.2).                                  memory manufacturers have already begun to use on-die ECC (e.g.,
+
+
+                                                                                           3
+
+
+===== Page 4 =====
+
+LPDDR4 [98, 99, 121, 140], DDR5 [67], STT-RAM [39]) as a black-                               only a few spare rows (e.g., one per bank in DDR4 [81, 122]) and
+box error mitigation technique within the memory chip, regardless                             suffers from similar drawbacks as page retirement due to operating
+of whether or not it is the most efficient solution for a given system.                       at a coarse granularity (i.e., DRAM row). In contrast, hardware-
+On-die ECC addresses uncorrelated single-bit errors that limit a                              based repair mechanisms represent the state-of-the-art in address-
+manufacturers’ factory yield [21, 43, 60, 74, 121, 145, 146, 162] and                         ing scaling-related main memory errors.
+is already prevalent among commodity DRAM chips today. There-                                    We note that other error mitigation techniques may be used
+fore, it is imperative that system-level error-mitigation mechanisms                          synergistically with hardware-based repair, potentially to address
+take on-die ECC into account, as clearly motivated by several prior                           different error models simultaneously. Our work both (1) identifies
+works [21, 32, 43, 69, 137, 145, 162].                                                        the challenges that on-die ECC introduces for repair mechanisms;
+                                                                                              and (2) demonstrates a concrete way (i.e., HARP) to address these
+2.1.1 Mitigating High Error Rates. As memory technologies                                     challenges with minimal changes to existing systems. Given that
+continue to scale, prior works [21, 92, 109, 135, 136, 162] argue                             on-die ECC is highly prevalent today (e.g., LPDDR4 [121, 140],
+that raw bit error rates will grow to very high values (e.g., > 10−4                          DDR5 [67], STT-RAM [39]), our ideas are applicable to and eval-
+in DRAM [21, 136]).7 Enabling robust memory operation at these                                uated based on current state-of-the-art solutions. In doing so, we
+error rates is an established research area for future DRAM and                               believe our work will help guide future solutions that develop new
+nonvolatile memories [34, 92, 93, 109, 112, 133, 135, 136, 157, 162,                          abstractions to step beyond simple on-die ECC as it exists today.
+174, 180] because it allows for both continued memory density
+scaling and enables new system operating points and use-cases                                 2.2      Enabling Repair Alongside On-Die ECC
+(e.g., reliably reducing memory timings and voltages [22–24, 72, 84,
+95, 103, 138, 160, 182]) that are not feasible today. In general, fine-                       Repair mechanisms [55, 61, 84, 92, 93, 103, 109, 112, 116, 136, 157,
+grained (e.g., bit or word granularity) hardware repair mechanisms                            158, 162, 168, 176, 179] perform repair at granularities ranging from
+can mitigate high error rates more efficiently than conventional                              kilobytes to single bits. The granularity at which a repair mecha-
+hardware error-mitigation techniques (e.g., ECC) [92, 93, 109, 112,                           nism identifies at-risk locations is its profiling granularity. For exam-
+136, 150, 162]. §2.2 discusses repair mechanisms in further detail.                           ple, on-die row and column sparing [21, 55, 64, 67, 74, 116, 136, 162]
+                                                                                              requires identifying at-risk locations at (or finer than) the granular-
+2.1.2 Consolidating In-Memory and Memory Controller                                           ity of a single memory row. Table 1 categorizes key repair mecha-
+Error Mitigations. Unlike Flash memory [18–20, 113, 114], main                                nisms based their profiling granularities. In general, coarse-grained
+memory is generally designed separately from the memory con-                                  repair requires less intrusive changes to the system datapath be-
+troller [130]. Unfortunately, this separation discourages building                            cause repair operations can align with data blocks in the datapath
+a unified error-mitigation mechanism across the memory and its                                (e.g., DRAM rows, cache lines, processor words). However, this
+controller. This is exemplified by the widespread use of proprietary                          means that the repair mechanism suffers from more internal frag-
+DRAM on-die ECC, which introduces new reliability challenges                                  mentation because each repair operation sacrifices more memory
+for designing error mitigation mechanisms within the DRAM con-                                capacity regardless of how few bits are actually at risk of error.
+troller [21, 32, 43, 137, 145, 162]. In general, the standardized inter-
+face between the memory and the controller (e.g., JEDEC DRAM                                   Profiling Granularity Size (Bits) Examples
+                                                                                                                                 RAPID [171], RIO [12],
+standards [64, 67, 68]) must be modified to develop a joint solu-                              System page           32 K
+                                                                                                                                 Page retirement [12, 58, 118, 139, 171]
+tion, which impacts all manufacturers and consumers involved,                                  DRAM external row     2-64 K
+                                                                                                                                 PPR [21, 55, 64, 67, 74, 116, 136, 162], Agnos [150],
+                                                                                                                                 RAIDR [111], DIVA [103]
+and thus is a laborious and long (and often politically-charged)                               DRAM internal row/col 512-1024 Row/col sparing [21, 55, 74, 116, 136, 162], Solar [84]
+process. Therefore, we and other state-of-the-art hardware-based                               Cache block           256-512     FREE-p [179], CiDRA [162]
+                                                                                               Processor word        32-64       ArchShield [136]
+repair mechanisms focus on minimizing the changes required to the                              Byte                  8           DRM [61]
+interface or memory chips themselves [80, 81, 109, 136, 150, 162].                                                               ECP8 [157], SECRET [109], REMAP [168], SFaultMap [92],
+                                                                                               Single bit            1
+                                                                                                                                 HOTH [112], FLOWER [93], SAFER [158], Bit-fix [176]
+2.1.3 Synergy with Other Error Mitigation Approaches. Ef-                                           Table 1: Survey of prevalent memory repair mechanisms.
+fective main memory error management is a large research space
+with solutions spanning the entire hardware-software stack. There                                Because of this tradeoff between intrusiveness and fragmenta-
+are many promising solution directions, including software-driven                             tion, finer repair granularities are more efficient at higher error
+repair techniques such as page retirement [12, 58, 118, 120, 139, 171]                        rates [21, 136, 162]. Fig. 2 illustrates this by showing the expected
+and software-assisted techniques such as post-package repair                                  proportion of unnecessarily repaired bits (i.e., the amount of non-
+(PPR) [21, 55, 64, 67, 74, 116, 136, 162]. Unfortunately, these mecha-                        erroneous memory capacity that is sacrificed alongside truly erro-
+nisms have limitations that make them ill-suited to address the high                          neous bits due to internal fragmentation) (y-axis) at various raw
+error rates that we target. For example, page retirement operates at                          bit error rates (x-axis) when mitigating uniform-random single-bit
+a coarse (i.e., system memory page) granularity, so it both wastes                            errors at different repair granularities. We see that coarse-grained
+significant capacity to repair the many errors at high error rates                            repair becomes extremely wasteful as errors become more frequent,
+and cannot easily repair in-use pages [106, 118, 120]. PPR provides                           e.g., wasting over 99% of total memory capacity in the worst case
+                                                                                              for a 1024-bit granularity at a raw bit error rate of 6.8 × 10−3 . Note
+7 Exact error rate values of real memory chips are proprietary secrets because they can       that the expected wasted storage decreases once the error rate is
+reveal manufacturing details and/or information relating to market competitiveness [42,
+136]. Prior works draw reasonable estimates from circuit metrics, e.g., coefficient of        8 ECP corrects individual bits, but its pointer size can be adjusted to different granular-
+variation [61, 93, 135].                                                                      ities as required.
+
+
+
+
+                                                                                          4
+
+
+===== Page 5 =====
+
+sufficiently high because an increasing proportion of bits become                                      (1) Bernoulli process: independent of previous errors.
+truly erroneous, which reduces the wasted bits for each repair op-                                     (2) Isolated: independent of errors in other bits.
+eration. In contrast, bit-granularity repair (denoted with the line                                    (3) Data-dependent: dependent on the stored data pattern.
+for ‘1’) does not suffer from internal fragmentation. For this reason,                                    To first order, this error model suits a broad range of error mech-
+repair mechanisms designed for higher error rates generally employ                                     anisms that relate to technology scaling and motivate the use of
+finer-granularity profiling and repair [92, 93, 109, 112].                                             bit-granularity repair, including DRAM data-retention [12, 46, 47,
+                                                                                                       70, 71, 77, 90, 92–94, 108, 110, 136, 147, 171, 175] and read distur-
+                                     1.0
+      (Ratio of Original Capacity)
+
+
+
+
+                                                                                                       bance [87, 91, 143]; PCM endurance, resistance drift, and write
+       Expected Wasted Storage
+
+
+
+
+                                           Repair Granularity (Bits)
+                                                      1024                                             disturbance [62, 73, 88, 101, 105, 157]; and STT-RAM data retention,
+                                     0.8              512
+                                                      64                                               endurance, and read disturbance [9, 25, 28, 134, 152, 170]. We use
+                                     0.6              32
+                                                                                                       DRAM data-retention errors in our evaluations as a well-studied
+                                                      1
+                                     0.4                                                               and relevant example. However, a profiler is fundamentally agnostic
+                                     0.2                                                               to the underlying error mechanism; it identifies at-risk bits based on
+                                     0.0                                                               whether or not they are observed to fail during profiling. Therefore,
+                                                  10 7             10 5          10 3       10 1       our analysis applies directly to any error mechanism that can be
+                                                                Raw Bit Error Rate (RBER)              described using the aforementioned three properties.
+                                                                                                       Correlated Errors. Prior DRAM studies show evidence of cor-
+Figure 2: Expected amount of wasted storage capacity when repair-                                      related errors [5, 120, 163–165, 167]. However, we are not aware
+ing single-bit errors at various repair granularities.                                                 of evidence that such errors are a first-order concern of modern
+                                                                                                       DRAM technology scaling. Correlated errors often result from faults
+2.3                   Practical and Effective Error Profiling                                          outside the memory array [120] and are mitigated using fault-
+Any repair mechanism’s effectiveness strongly depends on the                                           specific error-mitigation mechanisms (e.g., write CRC [64, 100],
+effectiveness of the error profiling algorithm that it uses because the                                chipkill [8, 37, 137] or even stronger rank-level ECC [64, 83, 167]).
+repair mechanism can only repair memory locations that it knows                                        Low-Probability Errors. Other main memory error mechanisms
+are at risk of error. In this section, we define the key properties of                                 exist that do not conform to our model, including time-dependent
+practical and effective active and reactive profilers.                                                 errors such as DRAM variable retention time [76, 110, 124, 150, 153,
+2.3.1 Active Profiling. Active profiling algorithms take exclu-                                        161, 178] and single-event upsets such as particle strikes [117]. In
+sive control of a memory chip in order to (possibly destruc-                                           general, these errors are either (1) inappropriate to address using
+tively) test worst-case data and access patterns [11, 30, 40, 48, 77–                                  a profile-guided repair mechanism, e.g., single-event upsets that
+79, 87, 103, 111, 147, 171, 183], so the system cannot perform useful                                  do not repeat; or (2) rare or unpredictable enough that no realistic
+work while profiling. Therefore, an active profiler must identify                                      amount of active profiling is likely to identify them, so they are left
+at-risk bits as quickly and comprehensively as possible. We quantify                                   to reactive profiling for detection and/or mitigation [150]. Identi-
+this by measuring the fraction of all at-risk bits that a given profiler                               fying low-probability errors is a general challenge for any error
+identifies (i.e., its coverage) across a fixed number of testing rounds.                               profiler and is an orthogonal problem to our work. Prior approaches
+                                                                                                       to identifying low-probability errors during active (e.g., increas-
+2.3.2 Reactive Profiling. Reactive profiling algorithms (e.g.,                                         ing the probability of error [147]) or reactive (e.g., periodic ECC
+ECC scrubbing [6, 27, 50, 134, 150, 159]) passively monitor error-                                     scrubbing [10, 150]) profiling are complementary to our proposed
+detection mechanisms during normal system operation, so their                                          techniques and can be combined with HARP (e.g., during the active
+performance and energy impact is relatively low and can be amor-                                       profiling phase described in §6.2, or by strengthening the secondary
+tized across runtime [50, 150]. However, because reactive profilers                                    ECC as described in §6.3.2) to help identify low-probability errors.
+operate during runtime, they must ensure that they can not only
+detect, but also correct any errors that occur. Any errors that are                                    2.5     Block Codes and Syndrome Decoding
+not detected and corrected by the reactive profiler risk introduc-
+                                                                                                       Typical on-die ECC implementations use linear block codes [21,
+ing failures to the rest of the system. In our work, we quantify
+                                                                                                       59, 69, 98, 99, 121, 140, 162] whose operation can be summarized
+the error-mitigation capability of a reactive profiler in terms of
+                                                                                                       using matrix arithmetic. In our work, we assume single-error cor-
+ECC correction capability, which is well-defined for ECCs used in
+                                                                                                       recting (SEC) Hamming codes [49] that are adopted in modern
+memory hardware design (i.e., linear block codes [55, 154, 155]).
+                                                                                                       LPDDR4 [121, 140] and DDR5 [67] DRAM chips.9 This section
+                                                                                                       briefly summarizes the operation of an SEC Hamming code in the
+2.4                   Errors and Error Models                                                          context of on-die ECC. For further information, we refer the reader
+Our work assumes uncorrelated single-bit errors because recent                                         to extensive literature on error-correction coding [31, 123, 154, 155].
+experimental studies and repair efforts from academia [15, 112, 135,
+136, 162], industry [74], and memory manufacturers themselves [21,                                     2.5.1 Encoding and Decoding. A Hamming code with k data
+60, 61, 121, 144] focus on single-bit errors as the primary reliability                                bits and p parity-check bits is defined by a (k, k +p) generator matrix
+challenge with increasing storage density. In particular, DRAM and                                     G and a (p, k +p) parity-check matrix H such that G ·H T = 0 within
+STT-RAM manufacturers use on-die ECC specifically to combat                                            9 Our analysis can theoretically generalize to stronger block codes (e.g., double-error
+these errors in recent high-density chips [21, 39, 43, 60, 74, 121, 140].                              correcting BCH [16, 53]), but we leave such generalization to future work given that
+Therefore, we assume that errors exhibit the following properties:                                     such codes are currently unlikely to be used in latency-sensitive memory chips.
+
+
+
+
+                                                                                                   5
+
+
+===== Page 6 =====
+
+the finite field GF (2). Equation 1 gives example H and G matrices                                                                                Ei as a Bernoulli random variable that is independent of E j,i but
+that define a k = 4 SEC Hamming code.                                                                                                             dependent on the data D i . In general, Ei can depend on the data
+                          "1 0 0 0 1 1 1#                      
+                                                                 1110 100
+                                                                                                                                                 stored in other cells D j,i , which expresses how a bit’s probability
+                      GT = 00 10 01 00 11 10 01              H= 1101 010                                                        (1)               of error changes with the data stored in nearby cells. Equation 2
+                                                                 1011 001
+                            0001 011                                                                                                              shows the resulting probability mass function, parameterized by p,
+Fig. 3 illustrates how a system interfaces with a memory module                                                                                   the probability that the bit will experience an error.
+whose chip(s) use on-die ECC. To encode a k-bit dataword d, the                                                                                                                          (
+ECC encoder computes a (k + p)-bit codeword c as c = G · d. Upon                                                                                                                          p(D i , D j , · · · )      if x = 1
+                                                                                                                                                         P(Ei = x |D i , D j , · · · ) =                                      (2)
+incurring raw bit error(s), we denote the erroneous codeword as c ′ .                                                                                                                      1 − p(D i , D j , · · · ) if x = 0
+To decode c ′ into a post-correction dataword d ′ , the ECC decoder
+performs syndrome decoding, where a syndrome s is calculated as                                                                                   In general, each bit has its own value of p depending on its intrinsic
+s = H · c ′ . If s is nonzero, one or more errors must be present, and                                                                            error characteristics. For example, prior work [147] experimentally
+the bit position of the detected error can then be identified as the                                                                              demonstrates that p values are normally distributed across different
+particular column of H that matches s.                                                                                                            bits for DRAM data-retention errors, i.e., p ∼ N (µ, σ 2 ), with some
+   If an uncorrectable error occurs, s may inadvertently match a                                                                                  normal distribution parameters {µ, σ } that depend on the particular
+parity-check matrix column that does not correspond to an actual                                                                                  memory chip and operating conditions such as temperature.
+error. In this case, the ECC decoder might introduce an additional
+error in the decoded data, which we refer to as a miscorrection.                                                                                  3.2     Incorporating On-Die ECC
+Note that the memory controller may interface with one or more                                                                                    With on-die ECC, we adjust our address space representation to
+memory chips at a time, potentially spreading a single data block                                                                                 include both logical bit addresses 𝒜 as observed by the memory
+across multiple on-die ECC words. We discuss this further in §6.3.                                                                                controller and physical bit addresses ℬ within the memory storage
+                                                                                                                                                  array. In general, |ℬ| > |𝒜| because ℬ includes addresses for parity-
+                                                                             c[k+p:0]                                                             check bits that are not visible outside of the memory chip. Next,
+                                                                                                                                Memory Chip
+
+
+
+
+                            Data Beats
+                                                                                                                                                  we introduce two additional Boolean random variables: D a (for
+                                                d[k:0]                   Internal Writes                            ...
+                                                                                  ...
+                                                                                           Row Buffer
+
+
+
+
+                      8
+                                 ...     Chip
+                                                           ECC Encoder                                              ...
+     Memory      64
+                                          I/O     128                    8
+                                                                                  ...                                                             dataword) and Cb (for codeword) that refer to the data values of
+                                                                                                        ...
+                                                                                                              ...
+
+
+                                                                                                                          ...
+
+
+
+
+    Controller
+                      ...
+
+
+
+
+                              Burst                        ECC Decoder                                              ...
+                                                dʹ[k:0]                  Internal Reads
+                 Data                                                        cʹ[k+p:0]
+                                                                                                                                                  logical bit a ∈ 𝒜 and physical bit b ∈ ℬ (i.e., before and after ECC
+                 Bus                                       On-Die ECC                       Storage Array
+     To CPU                                                                                                                                       encoding), respectively. Boolean variables Ea and Rb represent
+Host System                                               Memory Module                                                                           whether logical bit a and physical bit b experience post- and pre-
+                                                                                                                                                  correction errors, respectively. Note that E and D represent the
+Figure 3: On-die ECC operation within a memory chip. Grey anno-                                                                                   same information from §3.1. We use C ′ and D ′ to refer to codeword
+tations show example bit-widths of data transfers.                                                                                                and dataword values, respectively, that may contain errors.
+                                                                                                                                                     On-die ECC determines D ′ from C ′ through syndrome decoding
+2.5.2 Design Degrees of Freedom. When choosing H for a par-                                                                                       (described in §2.5) using the ECC parity-check matrix H comprised
+ticular implementation, the designer is free to arrange its columns                                                                               of columns H [k + p : 0]. The error syndrome is computed as s =
+at will. Recent work [142] shows that some column arrangements                                                                                    H [k + p : 0] · R[k + p : 0] (referred to as H · R to simplify notation).
+can lead to more miscorrections than others. However, designers                                                                                   Then, if s matches the i’th column H [i], the ECC decoder flips the bit
+may choose column arrangements based on circuit latency, energy,                                                                                  at position i. Given that H is systematically encoded (discussed in
+or area concerns, regardless of each choice’s effect on reliability. In                                                                           §2.5.1), c[k : 0] is equal to d[k : 0]. Therefore, a post-correction error
+our work, we assume that the code uses systematic encoding, which                                                                                 Ei (i.e., a mismatch between di and di′ ) can only occur in two cases:
+requires that H and G do not modify data bits during encoding (note                                                                               (1) an uncorrected raw bit error at position i (i.e., Ri ∧ s , H [i]); or
+the identity submatrices in Equation 1) but does not otherwise con-                                                                               (2) a miscorrection at position i (i.e., ¬Ri ∧ s = H [i].) We refer to
+strain the column arrangement. This encoding greatly simplifies                                                                                   these two cases as direct and indirect errors, respectively. Equation 3
+the hardware encoding and decoding circuitry and is a realistic                                                                                   summarizes both cases that lead to a post-correction error.
+assumption for low-latency main memory chips [181].
+                                                                                                                                                                        P(Ei ) = P(Ri ⊻ H · R = H [i])                       (3)
+3       FORMALIZING ERROR PROFILING                                                                                                               Equation 3 shows that bit i’s probability of error depends not only
+We express error profiling as a statistical process to understand the                                                                             on that of its encoded counterpart Ri , but also on those of all other
+effects of on-die ECC. To this end, we first formalize the concepts                                                                               codeword bits R[k + p : 0]. This means that on-die ECC introduces
+of errors and error profiling. Then, we examine how on-die ECC                                                                                    statistical dependence between all bits in a given ECC word through
+changes the way that errors appear outside of the memory chip.                                                                                    their mutual dependence on R. Furthermore, just as described in
+                                                                                                                                                  §3.1, Ri itself depends on the data value stored in cell i (i.e., Ci ). As
+3.1         Representing the Probability of Error                                                                                                 a result, bit i’s probability of error depends on both the data values
+We model memory as a one-dimensional bit-addressable array with                                                                                   and the pre-correction errors present throughout the codeword.
+address space 𝒜. To describe errors within this address space, we                                                                                    Consequently, a given post-correction error Ei may only occur
+define two Boolean random variables D i and Ei that represent the                                                                                 when a particular combination of pre-correction errors occurs. This
+data stored in bit i ∈ 𝒜 and whether or not the bit experiences                                                                                   is different from the case without on-die ECC, where Ei does not
+an error, respectively. Based on our discussion in §2.4, we model                                                                                 depend on the data or error state of any other bit j , i. We conclude
+
+
+                                                                                                                                              6
+
+
+===== Page 7 =====
+
+that on-die ECC transforms statistically independent pre-correction                       pre-correction error patterns. Of these, n are correctable error pat-
+errors into ECC-dependent, correlated post-correction errors.                             terns, leaving 2n − n − 1 uncorrectable pre-correction error patterns.
+                                                                                          Assuming that each of these patterns introduces a unique indirect
+4              ON-DIE ECC’S IMPACT ON PROFILING                                           error, the combination of bits at risk of direct and indirect error
+On-die ECC breaks the simple and intuitive assumption that profil-                        leads to 2n − 1 bits at risk of post-correction errors. Therefore, we
+ing for errors is the same as profiling each bit individually. In this                    conclude that on-die ECC exponentially increases the number of
+section, we identify three key challenges that on-die ECC introduces                      at-risk bits that the profiler must identify.
+for bit-granularity profiling.
+                                                                                           Bits at risk of pre-correction errors       n          1 2 3 4 8
+                                                                                           Unique pre-correction error patterns        2n − 1     1 3 7 15 255
+4.1                      Challenge 1: Combinatorial Explosion                              Uncorrectable pre-correction error patterns 2n − n − 1 0 2 4 11 247
+§3.2 shows that the position of an indirect error depends on the                           Bits at risk of post-correction errors      2n − 1     1 3 7 15 255
+locations of all pre-correction errors R. This means that different                       Table 2: On-die ECC amplifies a few bits at risk of pre-correction
+uncorrectable patterns of pre-correction errors can cause indirect                        errors into exponentially many bits at risk of post-correction errors.
+errors in different bits. In the worst case, every unique combination of
+pre-correction errors within a set of at-risk bits can lead to different                  4.2    Challenge 2: Profiling without Feedback
+indirect errors. This means that the set of bits that are at risk of                      Without on-die ECC, an at-risk bit is identified when the bit fails.
+post-correction errors is combinatorially larger than the set of bits                     This means that every profiling round provides useful feedback
+at risk of pre-correction error.                                                          about which bits are and are not at risk of error. Unfortunately,
+   As a concrete example, Fig. 4 shows a violin plot of each at-                          with on-die ECC, a bit at risk of post-correction errors can only be
+risk bit’s per-bit probability of error (y-axis) when the codeword                        identified when particular combination(s) of pre-correction errors
+contains a fixed number of bits at risk of pre-correction errors                          occur. This has two negative consequences.
+(x-axis) that each fail with probability 0.5. Each violin shows the                          First, because the profiler cannot observe pre-correction errors, it
+distribution (median marked in black) of per-bit error probabilities                      does not know whether a particular combination of pre-correction
+when simulating 70,000 ECC words for each of 1600 randomly-                               errors has been tested yet. Therefore, the profiler cannot draw
+generated (71, 64) Hamming code parity-check matrices assuming                            meaningful conclusions from observing a bit not to fail. Instead, the
+a data pattern of 0xFF. We make two observations. First, the pre-                         profiler must pessimistically suspect every bit to be at risk of post-
+correction error probabilities are all 0.5 (by design). This means                        correction errors, even after many profiling rounds have elapsed
+that, without on-die ECC, all bits at risk of pre-correction error                        without observing a given bit fail. Second, each ECC word can only
+are easy to identify, i.e., each bit will be identified with probability                  exhibit one pre-correction error pattern at a time (i.e., during any
+p = 1 − 0.5N given N profiling rounds. For large N (e.g., N > 10,                         given profiling round). This serializes the process of identifying any
+where p > 0.999), the vast majority of bits will be identified.                           two bits at risk of post-correction errors that fail under different
+                                                                                          pre-correction error patterns.
+                                     Pre-Correction                                          As a result, no profiler that identifies at-risk bits based on ob-
+                               0.8
+    of Post-Correction Error
+
+
+
+
+                                     Post-Correction                                      serving post-correction errors can quickly identify all bits at risk
+       Per-Bit Probability
+
+
+
+
+                               0.6                                                        of post-correction errors. We refer to this problem as bootstrapping
+                               0.4                                                        because the profiler must explore different pre-correction error
+                                                                                          patterns without knowing which patterns it is exploring. In §7.2.2,
+                               0.2                                                        we find that bootstrapping limits the profiler’s coverage of at-risk
+                               0.0                                                        bits to incremental improvements across profiling rounds.
+                                     2     3       4       5       6       7      8
+                                      Number of Pre-Correction Errors Per ECC Word        4.3    Challenge 3: Multi-Bit Data Patterns
+Figure 4: Distribution of each at-risk bit’s error probability before                     Designing data patterns that induce worst-case circuit conditions
+and after application of on-die ECC.                                                      is a difficult problem that depends heavily on the particular circuit
+                                                                                          design of a given memory chip and the error mechanisms it is
+   Second, in contrast, the per-bit probabilities of post-correction                      susceptible to [26, 33, 36, 75, 125, 126]. Without on-die ECC, a bit
+error exhibit a wide range. However, the probability density for                          can fail only in one way, i.e., when it exhibits an error. Therefore,
+each violin is tightly concentrated at Y ≈ 0.4 for X = 3 and shifts                       the worst-case pattern needs to only consider factors that affect
+towards Y = 0 as the number of pre-correction errors increases.                           the bit itself (e.g., data values stored in the bit and its neighbors).
+This means that the bits at risk of post-correction errors become                            Unfortunately, with on-die ECC, a given post-correction error
+harder to identify because they fail less often.                                          can potentially occur with multiple different pre-correction error
+   Table 2 shows the maximum number of bits at risk of post-                              patterns. Therefore, the worst-case data pattern must both (1) ac-
+correction errors that can be caused by a fixed number of bits at                         count for different ways in which the post-correction error can
+risk of pre-correction errors. This illustrates the worst-case scenario,                  occur; and (2) for each way, consider the worst-case conditions for
+where every uncorrectable combination of pre-correction errors (i.e.,                     the individual pre-correction errors to occur simultaneously. This is
+pre-correction error pattern) causes a unique indirect error. We see                      a far more complex problem than without on-die ECC [41, 44], and
+that n bits at risk of pre-correction errors can cause 2n − 1 unique                      in general, there may not even be a single worst-case data pattern
+
+
+                                                                                      7
+
+
+===== Page 8 =====
+
+that exercises all possible cases in which a given post-correction                register is readily exposed in certain DRAM datasheets [7]. Second,
+error might occur. To our knowledge, no prior work has developed                  prior works already reverse-engineer both the on-die ECC algo-
+a general solution to this problem, and we identify this as a key                 rithm [145] and raw bit error rate [146] without access to raw data
+direction for future research.                                                    bits or insight into the on-die ECC mechanism, so we do not believe
+                                                                                  exposing a decode bypass path reveals significantly more sensitive
+5     ADDRESSING THE THREE CHALLENGES                                             information. Third, we strongly suspect that such a bypass path al-
+We observe that all three profiling challenges stem from the lack of              ready exists for post-manufacturing testing [173]. This is reasonable
+access that the profiler has into pre-correction errors. Therefore, we            because systematically-encoded data bits can be read out directly
+conclude that some transparency into the on-die ECC mechanism                     without requiring further transformation. If so, exposing this capa-
+is necessary to enable practical error profiling in the presence of               bility as a feature would likely require minimal engineering effort
+on-die ECC. This section discusses options for enabling access to                 for the potential gains of new functionality. However, we recognize
+pre-correction errors and describes our design choices for HARP.                  that the details of the on-die ECC implementation depend on the
+                                                                                  particular memory chip design, and it is ultimately up to the system
+                                                                                  designer to choose the most suitable option for their system.
+5.1    Necessary Amount of Transparency
+To reduce the number of changes we require from the memory
+chip, we consider the minimum amount of information that the
+                                                                                  5.3    Applicability to Other Systems
+profiler needs to make error profiling as easy as if there were no                Any bit-granularity profiler operating without visibility into the
+interference from on-die ECC. To achieve this goal, we examine                    pre-correction errors suffers form the three profiling challenges
+the following two insights that are derived in §3.2.                              we identify in this work. Even a hypothetical future main memory
+(1) Post-correction errors arise from either direct or indirect errors.           system whose memory chips and controllers are designed by the
+(2) The number of concurrent indirect errors is limited to the cor-               same (or two trusted) parties will need to account for and overcome
+     rection capability of on-die ECC.                                            these profiling challenges when incorporating a repair mechanism
+   First, we observe that it is not necessary for the profiler to have            that relies on practical and effective profiling.
+full transparency into the on-die ECC mechanism or pre-correction
+errors. If all bits at risk of direct errors can be identified, all remain-       6     HYBRID ACTIVE-REACTIVE PROFILING
+ing indirect errors are upper-bounded by on-die ECC’s correction                  We introduce the Hybrid Active-Reactive Profiling (HARP) algo-
+capability. Therefore, the indirect errors can be safely identified               rithm, which overcomes the three profiling challenges introduced
+from within the memory controller, e.g., using a reactive profiler.               by on-die ECC discussed in §5. HARP separates profiling into active
+   Second, we observe that the profiler can determine exactly which               and reactive phases that independently identify bits at risk of direct
+pre-correction errors occurred within the data bits (though not the               and indirect errors, respectively.
+parity-check bits) simply by knowing at which bit position(s) on-
+die ECC performed a correction operation. This is because the
+data bits are systematically encoded (as explained in §2.5.2), so
+                                                                                  6.1    HARP Design Overview
+their programmed values must match their encoded values. By                       Fig. 5 illustrates the high-level architecture of a HARP-enabled
+observing which bits experienced direct error(s), the profiler knows              system, with the required error-mitigation resources shown in blue.
+which pre-correction errors occurred within the encoded data bits.                The memory chip exposes a read operation with the ability to bypass
+   Based on these observations, we require that the profiler be able              on-die ECC and return the raw data (though not parity-check)
+to identify which direct errors occur on every access, including                  bits. The memory controller contains a repair mechanism with an
+those that on-die ECC corrects. Equivalently, on-die ECC may ex-                  associated error profile alongside both an active and reactive profiler.
+pose the error-correction operation that it performs so that the                  During active profiling, the active profiler uses the ECC bypass path
+profiler can infer the direct errors from the post-correction data.               to search for bits at risk of direct errors. Because the active profiler
+                                                                                  interfaces directly with the raw data bits, its profiling process is
+5.2    Exposing Direct Errors to the Profiler                                     equivalent to profiling a memory chip without on-die ECC. If and
+                                                                                  when direct errors are observed, the active profiler communicates
+We consider two different ways to inform the profiler about pre-
+                                                                                  their locations to the repair mechanism’s error profile.
+correction errors within the data bits.
+                                                                                     After active profiling is complete, the reactive profiler (i.e., a
+(1) Syndrome on Correction. On-die ECC reports the error syndrome
+                                                                                  secondary ECC code with correction capability at least as strong as
+    calculated on all error correction events, which corresponds to
+                                                                                  that of on-die ECC) continuously monitors for bits at risk of indirect
+    the bit position(s) that on-die ECC corrects.
+                                                                                  errors. The reactive profiler is responsible only for identifying bits
+(2) Decode Bypass. On-die ECC provides a read access path that
+                                                                                  at risk of indirect errors the first time that they fail. If and when
+    bypasses error correction and returns the raw values stored in
+                                                                                  the reactive profiler identifies an indirect error, the location of the
+    the data portion of the codeword.
+                                                                                  error is recorded to the error profile for subsequent repair.
+We choose to build upon decode bypass because we believe it to
+be the easiest to adopt for three key reasons. First, there exists
+precedent for similar on-die ECC decode bypass paths from both                    6.2    Active Profiling Implementation
+academia [43] and industry [13] with trivial modifications to in-                 The active profiler follows the general round-based algorithm em-
+ternal DRAM hardware, and an on-die ECC disable configuration                     ployed by state-of-the-art error profilers, as discussed in §1. Each
+
+
+                                                                              8
+
+
+===== Page 9 =====
+
+round of testing first programs memory cells with a standard mem-              on-die ECC parity-check matrix H , respectively. HARP-A uses this
+ory data pattern that is designed to maximize the chance of ob-                knowledge to precompute10 bits at risk of indirect error given the
+serving errors (e.g., 0xF F , 0x00, random data) [4, 77, 87, 110, 126].        bits at risk of direct error that are identified during active profil-
+Patterns may or may not change across testing rounds depending                 ing. HARP-A does not provide benefits over HARP-U during active
+on the requirements of the particular data pattern. Once sufficiently          profiling. However, HARP-A reduces the number of bits at risk of
+many rounds are complete, the set of at-risk bits identified com-              indirect error that remain to be identified by reactive profiling.
+prises the union of all bits identified across all testing rounds.
+                                                                               6.3.2 Increasing the Secondary ECC Strength. The sec-
+   We assume that the active profiler achieves full coverage of bits at
+                                                                               ondary ECC is used for reactive profiling and must provide equal
+risk of direct errors by leveraging any or all of the worst-case testing
+                                                                               or greater correction capability than on-die ECC to safely identify
+techniques developed throughout prior works [77, 79, 126, 127, 147].
+                                                                               indirect errors. Current on-die ECC designs are limited to simple
+This is feasible because the active profiler can read and write to the
+                                                                               single-error correcting codes due to area, energy, and latency con-
+raw data bits exploiting the ECC bypass path and the systematically-
+                                                                               straints within the memory die [43, 121, 162], so the secondary ECC
+encoded data bits, respectively. Therefore, the active profiler can
+                                                                               can be correspondingly simple. However, if either (1) future on-die
+use techniques developed for memory chips without on-die ECC.
+                                                                               ECC designs become significantly more complex; or (2) the system
+                                                                               designer wishes to address other failure modes (e.g., component-
+6.3    Reactive Profiling Implementation
+                                                                               level failures) using the secondary ECC, the system designer will
+HARP requires that the secondary ECC have correction capability                need to increase the secondary ECC strength accordingly. Whether
+at least as high as the number of indirect errors that on-die ECC              profile-based repair remains a feasible error-mitigation strategy in
+can cause at one time. This requires the layout of secondary ECC               this case is ultimately up to the system designer and their reliability
+words to account for the layout of on-die ECC words: the two must              goals, so we leave further exploration to future work.
+combine in such a way that every on-die ECC word is protected
+with the necessary correction capability by the secondary ECC. For             6.4      Limitations
+example, with a single-error correcting on-die ECC that uses 128-
+                                                                               HARP relies on the active profiler to achieve full coverage of bits
+bit words, the memory controller must ensure that every 128-bit
+                                                                               at risk of direct errors so that the reactive profiler never observes
+on-die ECC word is protected with at least single-error correction.
+                                                                               a direct error (i.e., the reactive profiler’s correction capability is
+   How this is achieved depends heavily on a given system’s mem-
+                                                                               never exceeded). Consequently, if the active profiler fails to achieve
+ory architecture. For example, depending on the size of an on-die
+                                                                               full coverage, the reactive profiler may experience indirect errors
+ECC word and how many memory chips the memory controller
+                                                                               in addition to direct error(s) missed by active profiling.
+interfaces with, on-die ECC words may be split across different data
+                                                                                  We acknowledge this as a theoretical limitation of HARP, but we
+transfers. In this case, the system designer must choose a design
+                                                                               do not believe it restricts HARP’s potential impact to future designs
+that matches their design goals, e.g., dividing secondary ECC words
+                                                                               and scientific studies. This is because achieving full coverage of
+across multiple transfers (which introduces its own reliability chal-
+                                                                               at-risk bits without on-die ECC is a long-standing problem that is
+lenges [43]), or interleaving secondary ECC words across multiple
+                                                                               complementary to our work. Prior works have studied this problem
+on-die ECC words (which could require stronger secondary ECC).
+                                                                               in detail [76, 79, 147, 150], and any solution developed for chips
+   Without loss of generality, we assume that the memory controller
+                                                                               without on-die ECC can be immediately applied to HARP’s active
+interfaces with a single memory chip at a time (e.g., similar to some
+                                                                               profiling phase, effectively reducing the difficulty of profiling chips
+LPDDR4 systems [65]) and provisions a single-error correcting code
+                                                                               with on-die ECC to that of chips without on-die ECC.
+per on-die ECC word. Such a system is sufficient for demonstrating
+the error profiling challenges that we address in this work. Matching
+the granularity of secondary and on-die ECC words for arbitrary
+                                                                               7     EVALUATIONS
+systems is not a problem unique to our work since any secondary                In this section, we study how HARP’s coverage of direct and indirect
+ECC that is designed to account for the effects of on-die ECC must             errors changes with different pre-correction error counts and per-
+consider how the two interact [21, 43]. Therefore, we leave a general          bit error probabilities to both (1) demonstrate the effect of the three
+exploration of the tradeoffs involved to future work.                          profiling challenges introduced by on-die ECC and (2) show that
+                                                                               HARP overcomes the three challenges.
+6.3.1 HARP-U and HARP-A.. We introduce two variants of
+HARP: HARP-A and HARP-U, which are aware and unaware of the                    10 Using the methods described in detail in prior work [145].
+
+
+
+
+                                          write data           Repair                              write                  On-Die
+                                                              Mechanism                                                    ECC
+   to/from        Reactive Profiler                                                  Active                                                    Error-Prone
+     CPU          (Secondary ECC)      repaired read data                            Profiler       read                                        Data Store
+                                                              Error Profile
+                                       on detected error                                                     read with ECC bypass
+
+                                         Memory Controller                                                                 Memory Chip
+
+                  Figure 5: Block diagram summarizing the error-mitigation resources (in blue) of a HARP-enabled system.
+
+
+
+                                                                           9
+
+
+===== Page 10 =====
+
+7.1    Evaluation Methodology                                                           SAT solver, we accurately measure the bit error rate of all possible
+We evaluate error coverage in simulation because, unlike with a                         at-risk bits across all possible data patterns.
+real device, we can accurately compute error coverage using precise                        We simulate three different data patterns to exercise data-
+knowledge of which errors are and are not possible. This section                        dependent behavior: random, charged (i.e., all bits are ‘1’s), and
+describes our simulation methodology.                                                   checkered (i.e., consecutive bits alternate between ‘0’ and ‘1’). For
+                                                                                        the random and checkered data patterns, we invert the data pat-
+7.1.1 Baselines for Comparison. We compare HARP-U and                                   tern each round of profiling. For the random pattern, we change
+HARP-A with two baseline profiling algorithms that use multiple                         the random pattern after every two profiling rounds (i.e., after both
+rounds of testing with different data patterns to identify at-risk bits                 the pattern and its inverse are tested). We ensure that each profiler
+based only on observing post-correction errors.                                         is evaluated with the exact same set of ECC words, pre-correction
+(1) Naive, which represents the vast majority of prior profilers that                   error patterns, and data patterns in order to preserve fairness when
+    operate without knowledge of on-die ECC [11, 12, 24, 27, 29,                        comparing coverage values. Unless otherwise stated, all data pre-
+    30, 40, 48, 76–79, 82, 84, 86, 87, 103, 104, 109–111, 132, 145, 147,                sented uses the random pattern, which we find performs on par or
+    149, 150, 159, 168, 171, 183] (described in §6.2).                                  better than the static charged and checkered patterns that do not
+(2) BEEP, the profiling algorithm supported by the reverse-                             explore different pre-correction error combinations.
+    engineering methodology BEER [145]. BEEP carefully con-
+    structs data patterns intended to systematically expose post-                       7.2                   Active Phase Evaluation
+    correction errors based on having reverse-engineered the on-                       We study the number of profiling rounds required by each profiling
+    die ECC parity-check matrix. We follow the SAT-solver-based                        algorithm to achieve coverage of direct errors. We omit HARP-A
+    methodology as described by [145] and use a random data pat-                       because its coverage of direct errors is equal to that of HARP-U.
+    tern before the first post-correction error is confirmed.
+                                                                                       7.2.1 Direct Error Coverage. Fig. 6 shows the coverage of bits
+7.1.2 Simulation Strategy. We extend the open-source DRAM                              at risk of direct errors that each profiler cumulatively achieves
+on-die ECC analysis infrastructure released by prior work [1, 145]                     (y-axis) over 128 profiling rounds (x-axis) assuming four differ-
+to perform Monte-Carlo simulations of DRAM data retention errors.                      ent values of pre-correction errors per ECC word (2, 3, 4, and 5).
+We release our simulation tools on Zenodo [148] and Github [3].                        We report results for four different per-bit error probabilities of
+We simulate error injection and correction using single-error cor-                     the injected pre-correction errors (25%, 50%, 75%, 100%). For each
+recting Hamming codes [49] representative of those used in DRAM                        data point, we compute coverage as the proportion of at-risk bits
+on-die ECC (i.e., (71, 64) [59, 137] and (136, 128) [98, 99, 121, 140]                 identified out of all at-risk bits across all simulated ECC words.
+code configurations). All presented data is shown for a (71, 64)                                                         Per-Bit Probability of Pre-Correction Error
+code, and we verified that our observations hold for longer (136,                                                 25%             50%              75%            100%
+                                                                                                        1.0
+                                                                                Direct Error Coverage
+
+
+
+
+128) codes. We simulate 1,036,980 total ECC words across 2769
+randomly-generated parity-check matrices over ≈20 days of simu-
+lation time (discussed in §A.8.2). For each profiler configuration, we
+simulate 128 profiling rounds because this is enough to understand                                      0.5
+the behavior of each configuration (e.g., the shapes of each curve                                                                            Pre-Correction Errors   HARP-U
+in Fig. 6), striking a good balance with simulation time.                                                                                            5          3     Naive
+   We inject errors according to the model discussed in §2.4 to
+                                                                                                        0.0                                          4          2     BEEP
+
+simulate the effect of uniform-random, data-dependent errors. We
+                                                                                                              1 4 16 64 1 4 16 64 1 4 16 64 1 4 16 64
+assume that all bits are true-cells [96, 110] that experience errors
+                                                                                                                         Number of Profiling Rounds
+only when programmed with data ‘1’, which is consistent with
+                                                                                                               Figure 6: Coverage of bits at risk of direct errors.
+experimental observations made by prior work [96, 145]. To study
+how varying error rates impact profiling, we simulate bit errors                           We make two observations. First, HARP consistently and quickly
+with Bernoulli probabilities of 1.0, 0.75, 0.5, and 0.25 and separate                   achieves full coverage, regardless of the number or per-bit error
+our results based on the total number of pre-correction errors n                        probabilities of the injected pre-correction errors. This is because
+injected into a given ECC word. Using this approach, one can easily                     HARP bypasses on-die ECC correction, identifying each at-risk bit
+determine the effect of an arbitrary raw bit error rate by summing                      independently, regardless of which error occurs in which testing
+over the individual per-bit error probabilities.                                        round. In contrast, both Naive and BEEP (1) require more testing
+   We define coverage as the proportion of all at-risk bits that are                    rounds to achieve coverage parity with HARP and (2) exhibit sig-
+identified. We calculate coverage using the Z3 SAT solver [35], com-                    nificant dependence on the number of pre-correction errors. This
+puting the total number of post-correction errors that are possible                     is a direct result of on-die ECC: each post-correction error depends
+for a given (1) parity-check matrix; (2) set of pre-correction errors;                  on particular combination(s) of pre-correction errors, and achiev-
+and (3) (possibly empty) set of already-discovered post-correction                      ing high coverage requires these combinations to occur in distinct
+errors. Note that a straightforward computation of coverage given                       testing rounds. We conclude that that HARP effectively overcomes
+on-die ECC is extremely difficult for data-dependent errors: each                       the first profiling challenge by directly observing pre-correction
+data pattern programs the parity-check bits differently, thereby pro-                   errors, while Naive and BEEP must both rely on uncorrectable error
+voking different pre-correction error patterns. Therefore, using the                    patterns to incrementally improve coverage in each round.
+
+
+                                                                           10
+
+
+===== Page 11 =====
+
+      Second, although, HARP and Naive both eventually achieve full                           a single-error correcting code (studied in §7.3.2), regardless of the
+   coverage, BEEP fails to do so in certain cases. This is because BEEP                       profiler’s coverage of bits at risk of indirect errors.
+   does not explore all pre-correction error combinations necessary to
+                                                                                             7.3.1 Indirect Error Coverage. Fig. 8 shows the proportion of
+   expose each bit at risk of direct errors. We attribute this behavior
+                                                                                             all bits that are at risk of indirect errors that each profiler has missed
+   to a nuance of the BEEP algorithm: BEEP crafts data patterns that
+                                                                                             per ECC word throughout 128 rounds of profiling. This is equivalent
+   increase the likelihood of indirect errors. Unfortunately, these pat-
+                                                                                             to the number of at-risk bits that reactive profiling has to identify.
+   terns are slow to explore different combinations of pre-correction
+                                                                                             We evaluate an additional configuration, HARP-A+BEEP, which
+   errors, which leads to incomplete coverage. This is consistent with
+                                                                                             employs BEEP to identify the remaining at-risk bits once HARP-A
+   prior work [145], which finds that BEEP exhibits low coverage
+                                                                                             has identified all bits at risk of direct errors.
+   when pre-correction errors are sparse or occur with low probability.
+   We find that Naive also fails to achieve full coverage when using                                                            Number of Pre-Correction Errors per ECC Word
+   static data patterns (e.g., checkered) for the same reason.                                                                  2             3              4            5
+
+
+
+
+                                                                                         Missed Indirect Errors
+                                                                                                                         Per-Bit Probability   HARP-A
+    7.2.2 Bootstrapping Analysis. Fig. 7 shows the distribution                                                   10      of Pre-Correction    HARP-U
+                                                                                                                                               Naive
+
+
+
+
+                                                                                             per ECC Word
+                                                                                                                               Error
+    (median marked with a horizontal line) of the number of profiling                                                                          BEEP
+                                                                                                                                   25%         HARP-A+BEEP
+                                                                                                                                   50%
+    rounds required for each profiler to observe at least one direct error                                                         75%
+    in each ECC word. If no post-correction errors are identified, we                                             5                100%
+
+    conservatively plot the data point as requiring 128 rounds, which
+    is the maximum number of rounds evaluated (discussed in §7.1.2).                                              0
+    The data illustrates the difficulty of bootstrapping because observ-                                                1 4 16 64 1 4 16 64 1 4 16 64 1 4 16 64
+    ing any post-correction error with on-die ECC requires a specific                                                             Number of Profiling Rounds
+    combination of pre-correction errors to occur.
+                                                                                                                       Figure 8: Coverage of bits at risk of indirect errors.
+                               Naive           BEEP           HARP-U
+                      128
+Spent Bootstrapping
+
+
+
+
+                                                             Pre-Correction Error
+ Number of Rounds
+
+
+
+
+                                                              Per-Bit Probability                We make three observations. First, HARP-U does not identify any
+                                                                       25%
+                       96                                              50%
+                                                                       75%                    bits at risk of indirect errors11 because it bypasses the on-die ECC
+                                                                       100%
+                       64                                                                     correction process that causes indirect errors. In contrast, HARP-A
+                                                                                              quickly identifies a subset of all bits at risk of indirect errors by
+                       32                                                                     predicting them from the identified direct errors. Note that HARP-A
+                                                                                              cannot identify all bits at risk of indirect errors because doing so
+                        0
+                                                                                              would require knowing which parity-check bits are at risk of error,
+                            2 3 4 5        2 3 4 5             2 3 4 5
+                               Number of Pre-Correction Errors Injected                       which the on-die ECC bypass path does not reveal.
+                                                                                                 Second, combining HARP-A with BEEP effectively overcomes
+    Figure 7: Distribution of the number of profiling rounds required to                      HARP-A’s inability to identify pre-correction errors within the
+    identify the first direct error across all simulated ECC words.                           parity-check bits. This is because HARP-A+BEEP synergistically
+                                                                                              combines (1) HARP’s ability to quickly identify bits at risk of direct
+                                                                                              errors with (2) BEEP’s ability to exploit known at-risk bits to expose
+      We make three observations. First, we see that HARP identifies                          others. The combined configuration quickly identifies bits at risk
+   the first error far more quickly than Naive or BEEP profiling across                       of indirect errors, achieving coverage similar to Naive and BEEP
+   all configurations. Second, HARP never fails to identify at least                          profiling in less than half the number of profiling rounds.
+   one error within 128 rounds. Third, in contrast, BEEP sometimes                               Third, both Naive and BEEP achieve relatively high coverage of
+   cannot identify an error at all due to a combination of (1) the low                        indirect errors after many (i.e., > 64) rounds compared to HARP-U
+   per-bit pre-correction error probability and (2) the bootstrapping                         and HARP-A. This is because both Naive and BEEP continually
+   problem (i.e., more testing rounds does not guarantee higher cover-                        explore different uncorrectable error patterns, steadily exposing
+   age unless those rounds explore different uncorrectable patterns).                         more and more indirect errors. BEEP achieves higher coverage
+   We conclude that HARP effectively addresses the bootstrapping                              because its algorithm deliberately seeks out pre-correction error
+   challenge by directly observing pre-correction errors instead of                           combinations that are more likely to cause post-correction errors,
+   relying on exploring different uncorrectable error patterns.                               thereby exposing more indirect errors in the long run.
+                                                                                                 We conclude that knowing the on-die ECC parity-check matrix
+    7.3                Reactive Phase Evaluation                                              helps HARP-A and BEEP identify bits at risk of indirect errors,
+    In this section, we study each error profiler’s coverage of bits at risk                  thereby reducing the number of indirect errors that must be identi-
+    of indirect errors and examine the correction capability required                         fied by by the secondary ECC during reactive profiling.
+    from the secondary ECC to safely identify the at-risk bits remaining
+                                                                                              7.3.2 Secondary ECC Correction Capability. Fig. 9 shows the
+    after active profiling. It is important to note that, unlike HARP,
+                                                                                              worst-case (i.e., maximum) number of post-correction errors that
+    neither Naive nor BEEP profiling achieve full coverage of bits at risk
+                                                                                              can occur simultaneously within an ECC word after active profiling.
+    of direct errors for all configurations. In such cases, multi-bit errors
+    can occur during reactive profiling that are not safely identified by                     11 Except for a small number of direct and indirect errors that overlap.
+
+
+
+
+                                                                                    11
+
+
+===== Page 12 =====
+
+       This number is the correction capability required from secondary                                                                               7.4     Case Study: DRAM Data Retention
+       ECC to safely perform reactive profiling.                                                                                                      In this section, we show how error profiling impacts end-to-end
+       Maximum Error Count. Fig. 9a shows a normalized histogram                                                                                      reliability. We study the bit error rate of a system that uses a
+       of the maximum number of post-correction errors that can occur                                                                                 bit-granularity repair mechanism (e.g., such as those discussed
+       simultaneously within each simulated ECC word given all at-risk                                                                                in §2.2) to reduce the DRAM refresh rate, which prior work
+       bits missed after 128 rounds of active profiling. We observe that                                                                              shows can significantly improve overall system performance and
+       both HARP-U and HARP-A exhibit at most one post-correction                                                                                     energy-efficiency [111, 147, 150, 171] and enable continued den-
+       error across all configurations. This is because HARP identifies all                                                                           sity scaling [136]. We assume that data-retention errors follow
+       bits at risk of direct errors within 128 profiling rounds (shown in                                                                            the error model described in §2.4 (i.e., uniformly with a fixed raw
+       Fig. 6), so only one error may occur at a time (i.e., an indirect error).                                                                      bit error rate, which is consistent with prior experimental stud-
+       In contrast, both Naive and BEEP are susceptible to multi-bit errors.                                                                          ies [12, 47, 85, 146, 147, 161, 166]) and that the repair mechanism
+       In particular, BEEP’s relatively low coverage of bits at risk of direct                                                                        perfectly repairs any at-risk bits that are identified by either active
+       errors means that many multi-bit error patterns remain possible.                                                                               or reactive profiling. We assume a (71, 64) SEC on-die ECC code
+       We conclude that, after 128 rounds of active profiling, a single-error                                                                         and a secondary ECC capable of detecting and correcting a single
+       correcting secondary ECC is sufficient to perform reactive profiling                                                                           error in each on-die ECC word during reactive profiling.
+       for HARP but insufficient to do so for Naive and BEEP.                                                                                            Fig. 10 illustrates the fraction of all bits that are at risk of post-
+       Maximum Error Count. Fig. 9b shows how many active profiling                                                                                   correction errors (i.e., the bit error rate) before (Fig. 10, left) and
+       rounds are required to ensure that no more than an x-axis value of                                                                             after (Fig. 10, right) secondary ECC is applied (i.e., before and after
+       post-correction errors can occur simultaneously in a single ECC                                                                                performing reactive profiling) given an x-axis number of active
+       word during reactive profiling. We conservatively report results                                                                               profiling rounds. Each line marker shows a different data-retention
+       for the 99th percentile of all simulated ECC words because neither                                                                             RBER (e.g., due to operating at different refresh rates).
+       Naive nor BEEP achieve full coverage of bits at risk of direct errors                                                                             We make three observations. First, all profilers in Fig. 10 (left)
+       for all configurations within 128 profiling rounds. In cases where 128                                                                         behave consistently with the coverage analysis of §7.2.1. HARP
+       profiling rounds are insufficient to achieve 99th-percentile values,                                                                           quickly identifies all bits at risk of direct error, but leaves indirect
+       we align the bar with the top of the plot.                                                                                                     errors to be identified by reactive profiling. Both Naive and BEEP
+          We make two observations. First, both HARP configurations                                                                                   slowly explore different combinations of pre-correction errors, with
+       perform significantly faster than Naive and BEEP. For example,                                                                                 Naive steadily reducing the BER given more profiling rounds while
+       with a 50% pre-correction per-bit error probability, HARP en-                                                                                  BEEP fails to do so.
+       sures that no more than one post correction error can occur in                                                                                    Second, Fig. 10 (left) shows the benefit of HARP-A knowing the
+       20.6%/36.4%/52.9%/62.1% of the profiling rounds required by Naive                                                                              on-die ECC function. While both HARP-U and HARP-A quickly
+       given 2/3/4/5 pre-correction errors. This is because HARP quickly                                                                              identify all bits at risk of direct errors, HARP-A also identifies bits
+       identifies all bits at risk of direct errors, while Naive and BEEP both                                                                        at risk of indirect errors, thereby considerably reducing the overall
+       either (1) take longer to do so; or (2) fail to do so altogether (e.g.,                                                                        BER (and therefore, the total number of bits) that remain to be
+       for the 100th percentile at a 50% per-bit error probability). Second,                                                                          identified by reactive profiling.
+       BEEP performs much worse than any other profiler because it ex-                                                                                   Third, Fig. 10 (right) shows that both HARP12 and Naive reach a
+       hibits extremely low coverage of bits at risk of direct error (studied                                                                         BER of zero after sufficiently many profiling rounds, though Naive
+       in §7.2.1). We conclude that achieving high coverage of bits at risk
+       of direct errors is essential for minimizing the correction capability                                                                     12 HARP-A is not shown in Fig. 10 (right) because it exhibits identical BER to HARP-U
+
+       of the secondary ECC.                                                                                                                          after applying secondary ECC (i.e., because both profilers have identical coverage of
+                                                                                                                                                      bits at risk of direct errors).
+
+                                      Number of Pre-Correction Errors per ECC Word                                                                                    Number of Pre-Correction Errors per ECC Word
+                                  2               3                 4              5                                                                              2               3                 4              5
+                        1.0          Naive
+                                                                                                                                                      96              Naive
+                                                                                              100% 75% 50% 25%
+
+
+
+
+                                     BEEP
+                                                                                                                                                                                                                                   100% 75% 50% 25%
+                                                                                                                                                                      BEEP
+                                                                                                                                                      64
+                                                                                                                         Number of Profiling Rounds
+
+
+
+
+                                     HARP-U
+                        0.5          HARP-A
+                                                                                                                                                      32
+                                                                                                                                                                      HARP-U
+                                                                                                                                                                      HARP-A
+                        0.0                                                                                                                            0
+                                                                                                  Pre-Correction Error
+
+
+
+
+                                                                                                                                                                                                                                      Pre-Correction Error
+Fraction of ECC Words
+
+
+
+
+                                                                                                   Per-Bit Probability
+
+
+
+
+                                                                                                                                                                                                                                       Per-Bit Probability
+
+                        1.0                                                                                                                           96
+                        0.5                                                                                                                           64
+                                                                                                                                                      32
+                        0.0                                                                                                                            0
+                        1.0                                                                                                                           96
+                        0.5                                                                                                                           64
+                                                                                                                                                      32
+                        0.0                                                                                                                            0
+                        1.0                                                                                                                           96
+                        0.5                                                                                                                           64
+                                                                                                                                                      32
+                        0.0 0 1 2 3 4 5 6 0 1 2 3 4 5 6 0 1 2 3 4 5 6 0 1 2 3 4 5 6                                                                    0
+                                                                                                                                                            1 2 3 4 5 6 1 2 3 4 5 6 1 2 3 4 5 6 1 2 3 4 5 6
+                             Maximum Number of Simultaneous Post-Correction Errors Possible                                                                 Maximum Number of Simultaneous Post-Correction Errors Possible
+       (a) Normalized histogram of the maximum number of simultane-                                                               (b) Number of profiling rounds (y-axis) required to achieve 99th-
+       ous post-correction errors (x-axis) possible across all simulated ECC                                                      percentile values of the maximum number of simultaneous post-
+       words after 128 rounds of profiling.                                                                                       correction errors possible (x-axis).
+
+                         Figure 9: Maximum number of simultaneous post-correction errors possible given all at-risk bits missed after 128 rounds of profiling.
+
+
+
+                                                                                                                  12
+
+
+===== Page 13 =====
+
+                                   Per-Bit Probability of Pre-Correction Error                                            Per-Bit Probability of Pre-Correction Error
+                                 25%           50%             75%          100%                                        25%           50%             75%          100%
+                      10 6
+ Reactive Profiling
+
+
+
+
+                                                                                        Reactive Profiling
+                                                                                                             10 9
+   BER Before
+
+
+
+
+                      10 10
+
+
+
+
+                                                                                           BER After
+                                                                                                             10 13
+                                                                         RBER 4                                                                                 RBER 4
+                      10 14                                  BEEP
+                                                             HARP-A        10
+                                                                                                             10 17                                  BEEP          10
+                                                             HARP-U        10 6                                                                     HARP-U        10 6
+                                                             Naive         10 8                                                                     Naive         10 8
+
+                              1 4 16 64 1 4 16 64 1 4 16 64 1 4 16 64                                                1 4 16 64 1 4 16 64 1 4 16 64 1 4 16 64
+                                       Number of Profiling Rounds                                                             Number of Profiling Rounds
+
+    Figure 10: Data-retention bit error rate (BER) using an ideal repair mechanism before (left) and after (right) applying the secondary ECC.
+
+
+takes significantly more profiling rounds to do so (e.g., 3.7× for                        identifies the challenges that on-die ECC introduces for error pro-
+a per-bit pre-correction error probability of 75%). This behavior                         filing. Of these works, only BEEP [145] is a profiling algorithm
+is consistent with the fact that both profilers eventually achieve                        that accounts for on-die ECC. However, BEEP focuses on reverse-
+full coverage of bits at risk of direct error (shown in §7.2.1) In                        engineering pre-correction error locations using a slow algorithm
+contrast, BEEP fails to reach a zero probability value because it                         that we show is not well suited for identifying bits at risk of post-
+fails to achieve full coverage of bits at risk of direct error. Note that                 correction error and still suffers from the three profiling challenges.
+HARP-U immediately identifies all bits at risk of direct errors in the                    In contrast, we comprehensively study the three key challenges
+first profiling round with a per-bit pre-correction error probability                     that on-die ECC introduces for bit-granularity error profiling (§4),
+of 100%, so it is not visible in the rightmost plot.                                      which we address by proposing and evaluating HARP.
+   We conclude that HARP effectively identifies all bits at-risk of
+error faster than the baseline profilers, thereby enabling the repair                      9             CONCLUSION
+mechanism to safely operate at the evaluated raw bit error rates.                         We study how on-die ECC affects memory error profiling and iden-
+Although this case study uses a simple data-retention error model                         tify three key challenges that it introduces: on-die ECC (1) exponen-
+that does not include low-probability errors or other failure modes                       tially increases the number of at-risk bits the profiler must identify;
+(discussed in §2.4), it demonstrates (1) the importance of a prac-                        (2) makes individual at-risk bits more difficult to identify; and (3)
+tical and effective error profiling algorithm in enabling a repair                        interferes with commonly-used memory data patterns. To over-
+mechanism to mitigate errors; and (2) the advantages that HARP                            come these three challenges, we introduce Hybrid Active-Reactive
+provides in an end-to-end setting by overcoming the error profiling                       Profiling (HARP), a new bit-granularity error profiling algorithm
+challenges introduced by on-die ECC.                                                      that enables practical and effective error profiling for memory chips
+                                                                                          that use on-die ECC. HARP exploits the key idea that on-die ECC
+8           RELATED WORK                                                                  introduces two different sources of post-correction errors: (1) direct
+To our knowledge, this is the first work to (i) conduct an analytical                     errors that result from pre-correction errors within the data portion
+study of how system-level error profiling interacts with on-die                           of the ECC codeword; and (2) indirect errors that are a result of
+ECC, and (ii) propose a bit-granularity error profiling algorithm                         the on-die ECC correction process. If all bits at risk of direct error
+to support memory chips with on-die ECC. Main memory error                                are identified, the number of concurrent indirect errors is upper-
+profiling is a long-standing and difficult problem that prior works                       bounded by the correction capability of on-die ECC. Therefore,
+have tackled in many different ways. In our work, we focus on error                       HARP uses simple modifications to the on-die ECC mechanism to
+profiling algorithms in the context of on-die ECC. We briefly review                      quickly identify bits at risk of direct errors and relies on a secondary
+related works which we already compared to in prior sections.                             ECC within the memory controller to safely identify indirect er-
+Profiling Without On-die ECC. Prior works propose various                                 rors. Our evaluations show that HARP achieves full coverage of all
+error profiling algorithms in the context of DRAM [11, 12, 24, 27,                        at-risk bits in memory chips that use on-die ECC faster than prior
+29, 30, 40, 76–79, 82, 84, 86, 87, 103, 104, 109–111, 132, 145, 147,                      approaches to error profiling. We hope that the studies, analyses,
+150, 159, 171] and emerging main memory technologies such as                              and ideas we provide in this work will enable researchers and prac-
+PCM and STT-RAM [48, 149, 168, 183]. To our knowledge, none of                            titioners alike to think about and overcome the challenge of how to
+these works identify or address the effects that on-die ECC has on                        handle error detection and correction across the hardware-software
+error profiling. Furthermore, many of the insights and/or solutions                       stack in the presence of on-die ECC.
+developed by these works (e.g., algorithms for identifying low-
+probability errors [77, 147, 149, 150, 159]) are complementary to                          ACKNOWLEDGMENTS
+our work and can be integrated with HARP (e.g., during active                             We thank the anonymous reviewers of MICRO 2021 for their feed-
+profiling) to improve error coverage.                                                     back and the SAFARI Research Group members for their feedback
+Profiling With On-die ECC. To our knowledge, only two                                     and the stimulating intellectual environment they provide. We ac-
+works [145, 146] study how on-die ECC impacts memory error                                knowledge the generous gift funding provided by our industrial
+characterization and profiling in detail. Unfortunately, neither work                     partners: Google, Huawei, Intel, Microsoft, and VMware.
+
+
+
+                                                                                   13
+
+
+===== Page 14 =====
+
+REFERENCES                                                                                    [30] Lucian Cojocar, Kaveh Razavi, Cristiano Giuffrida, and Herbert Bos. Exploiting
+ [1] BEER Source Code. https://github.com/CMU-SAFARI/BEER.                                         Correcting Codes: On the Effectiveness of ECC Memory Against RowHammer
+ [2] EINSim Source Code. https://github.com/CMU-SAFARI/EINSim.                                     Attacks. In S&P. 2019.
+ [3] HARP Source Code. https://github.com/CMU-SAFARI/HARP.                                    [31] Daniel J Costello and Shu Lin. Error Control Coding: Fundamentals and Applica-
+ [4] R Dean Adams. High Performance Memory Testing: Design Principles, Fault                       tions. Prentice Hall. 1982.
+     Modeling and Self-Test. Springer SBM. 2002.                                              [32] Kjersten Criss, Kuljit Bains, Rajat Agarwal, Tanj Bennett, Terry Grunzke, Jan-
+ [5] Zaid Al-Ars. DRAM Fault Analysis and Test Generation. Ph.D. Dissertation. TU                  gryul Keith Kim, et al. Improving Memory Reliability by Bounding DRAM
+     Delft. 2005.                                                                                  Faults: DDR5 Improved Reliability Features. In MEMSYS. 2020.
+ [6] Alaa R Alameldeen, Ilya Wagner, Zeshan Chishti, Wei Wu, Chris Wilkerson,                 [33] Xiaole Cui, Zuolin Cheng, Chunglen Lee, Xinnan Lin, Yiqun Wei, Xiaogang
+     and Shih-Lien Lu. Energy-Efficient Cache Design Using Variable-Strength                       Chen, et al. A Snake Addressing Scheme for Phase Change Memory Testing.
+     Error-Correcting Codes. ISCA. 2011.                                                           SCIS. 2016.
+ [7] Alliance Memory. 2Gb/4Gb/8Gb LPDDR4. Alliance Memory. 2020. Rev. 1.0.                    [34] Howard David, Chris Fallin, Eugene Gorbatov, Ulf R Hanebutte, and Onur Mutlu.
+ [8] AMD. BKDG for AMD NPT Family 0Fh Processors. http://developer.amd.com/                        Memory Power Management via Dynamic Voltage/Frequency Scaling. In ICAC.
+     wordpress/media/2012/10/325591.pdf. 2009.                                                     2011.
+ [9] Dmytro Apalkov, Alexey Khvalkovskiy, Steven Watts, Vladimir Nikitin, Xueti               [35] Leonardo De Moura and Nikolaj Bjørner. Z3: An Efficient SMT Solver. In TACAS.
+     Tang, Daniel Lottis, et al. Spin-Transfer Torque Magnetic Random Access                       2008.
+     Memory (STT-MRAM). JETC. 2013.                                                           [36] Rob Dekker, Frans Beenker, and Loek Thijssen. A Realistic Fault Model and
+[10] Manu Awasthi, Manjunath Shevgoor, Kshitij Sudan, Bipin Rajendran, Rajeev                      Test Algorithms for Static Random Access Memories. TCAD. 1990.
+     Balasubramonian, and Viii Srinivasan. Efficient Scrub Mechanisms for Error-              [37] Timothy J Dell. A White Paper on the Benefits of Chipkill-Correct ECC for PC
+     Prone Emerging Memories. In HPCA. 2012.                                                       Server Main Memory. IBM Microelectronics Division. 1997.
+[11] Angelo Bacchini, Marco Rovatti, Gianluca Furano, and Marco Ottavi. Charac-               [38] Robert H Dennard. Field-Effect Transistor Memory. US Patent 3,387,286. 1968.
+     terization of Data Retention Faults in DRAM Devices. In DFT. 2014.                       [39] Everspin Technologies. 16Mb MRAM MR4A16B. https://www.everspin.com/
+[12] Seungjae Baek, Sangyeun Cho, and Rami Melhem. Refresh Now and Then. In                        16mb-mram-parallel-interface. 2021.
+     TC. 2014.                                                                                [40] Pietro Frigo, Emanuele Vannacci, Hasan Hassan, Victor van der Veen, Onur
+[13] Kuljit S. Bains, Rajat Agarwal, and Jongwon Lee. Read Retry To Selectively                    Mutlu, Cristiano Giuffrida, et al. TRRespass: Exploiting the Many Sides of Target
+     Disable On-Die ECC. US Patent Application 20,200,278,906. 2020.                               Row Refresh. In IEEE S&P. 2020.
+[14] Michael A Bajura, Younes Boulghassoul, Riaz Naseer, Sandeepan DasGupta,                  [41] Spencer M Gold and Arun B Hegde. Providing Test Coverage of Integrated ECC
+     Arthur F Witulski, Jeff Sondeen, et al. Models and Algorithmic Limits for an                  Logic en Embedded Memory. US Patent 8,914,687. 2014.
+     ECC-Based Approach To Hardening Sub-100-nm SRAMs. Trans. on Nucl. Sci.                   [42] Seong-Lyong Gong, Jungrae Kim, and Mattan Erez. DRAM Scaling Error Evalu-
+     2007.                                                                                         ation Model Using Various Retention Time. In DSN-W. 2017.
+[15] Leonardo Bautista-Gomez, Ferad Zyulkyarov, Osman Unsal, and Simon                        [43] Seong-Lyong Gong, Jungrae Kim, Sangkug Lym, Michael Sullivan, Howard
+     McIntosh-Smith. Unprotected Computing: A Large-Scale Study of DRAM Raw                        David, and Mattan Erez. DUO: Exposing On-Chip Redundancy to Rank-Level
+     Error Rate on a Supercomputer. In SC. 2016.                                                   ECC for High Reliability. In HPCA. 2018.
+[16] Raj Chandra Bose and Dwijendra K Ray-Chaudhuri. On a Class of Error Cor-                 [44] Kevin W Gorman, Michael R Ouellette, and Patrick E Perry. Memory Test With
+     recting Binary Group Codes. Information and Control. 1960.                                    In-Line Error Correction Code Logic. US Patent 9,224,503. 2015.
+[17] Geoffrey W Burr, Matthew J Breitwisch, Michele Franceschini, Davide Garetto,             [45] Xiaochen Guo, Mahdi Nazm Bojnordi, Qing Guo, and Engin Ipek. Sanitizer:
+     Kailash Gopalakrishnan, Bryan Jackson, et al. Phase Change Memory Technol-                    Mitigating the Impact of Expensive ECC Checks on STT-MRAM Based Main
+     ogy. J Vac Sci Technol B. 2010.                                                               Memories. TOC. 2017.
+[18] Yu Cai, Saugata Ghose, Erich F Haratsch, Yixin Luo, and Onur Mutlu. Error                [46] T Hamamoto, S Sugiura, and S Sawada. Well Concentration: A Novel Scaling
+     Characterization, Mitigation, and Recovery In Flash-Memory-Based Solid-State                  Limitation Factor Derived From DRAM Retention Time and Its Modeling. In
+     Drives. Proc. IEEE. 2017.                                                                     IEDM. 1995.
+[19] Yu Cai, Saugata Ghose, Erich F Haratsch, Yixin Luo, and Onur Mutlu. Errors in            [47] Takeshi Hamamoto, Soichi Sugiura, and Shizuo Sawada. On the Retention Time
+     Flash-Memory-Based Solid-State Drives: Analysis, Mitigation, and Recovery.                    Distribution of Dynamic Random Access Memory (DRAM). In TED. 1998.
+     Inside Solid State Drives. 2018.                                                         [48] Said Hamdioui, Peyman Pouyan, Huawei Li, Ying Wang, Arijit Raychowdhur,
+[20] Yu Cai, Erich F Haratsch, Onur Mutlu, and Ken Mai. Error Patterns in MLC                      and Insik Yoon. Test and Reliability of Emerging Non-Volatile Memories. In
+     NAND Flash Memory: Measurement, Characterization, and Analysis. In DATE.                      ATS. 2017.
+     2012.                                                                                    [49] Richard W Hamming. Error Detecting and Error Correcting Codes. In Bell Labs
+[21] Sanguhn Cha, O Seongil, Hyunsung Shin, Sangjoon Hwang, Kwangil Park,                          Technical Journal. 1950.
+     Seong Jin Jang, et al. Defect Analysis and Cost-Effective Resilience Architecture        [50] Yinhe Han, Ying Wang, Huawei Li, and Xiaowei Li. Data-Aware DRAM Refresh
+     for Future DRAM Devices. In HPCA. 2017.                                                       to Squeeze the Margin of Retention Time in Hybrid Memory Cube. In ICCAD.
+[22] Karthik Chandrasekar, Sven Goossens, Christian Weis, Martijn Koedam, Benny                    2014.
+     Akesson, Norbert Wehn, et al. Exploiting Expendable Process-Margins in                   [51] Charles R. Harris, K. Jarrod Millman, Stéfan J. van der Walt, Ralf Gommers,
+     DRAMs for Run-Time Performance Optimization. In DATE. 2014.                                   Pauli Virtanen, David Cournapeau, et al. Array Programming with NumPy.
+[23] Kevin K Chang, Abhijith Kashyap, Hasan Hassan, Saugata Ghose, Kevin Hsieh,                    Nature. 2020.
+     Donghyuk Lee, et al. Understanding Latency Variation in Modern DRAM Chips:               [52] Hasan Hassan, Yahya C. Tugrul, Jeremie S. Kim, Victor Van der Veen, Kaveh
+     Experimental Characterization, Analysis, and Optimization. In SIGMETRICS.                     Razavi, and Onur Mutlu. Uncovering In-DRAM RowHammer Protection Mech-
+     2016.                                                                                         anisms: A New Methodology, Custom RowHammer Patterns, and Implications.
+[24] Kevin K Chang, A Giray Yaălikçi, Saugata Ghose, Aditya Agrawal, Niladrish                     In MICRO. 2021.
+     Chatterjee, Abhijith Kashyap, et al. Understanding Reduced-Voltage Opera-                [53] Alexis Hocquenghem. Codes Correcteurs D’erreurs. Chiffres. 1959.
+     tion in Modern DRAM Devices: Experimental Characterization, Analysis, and                [54] Sungjoo Hong. Memory Technology Trend and Future Challenges. In IEDM.
+     Mechanisms. In SIGMETRICS. 2017.                                                              2010.
+[25] E Chen, D Apalkov, Z Diao, A Driskill-Smith, D Druist, D Lottis, et al. Advances         [55] Masashi Horiguchi and Kiyoo Itoh. Nanoscale Memory Repair. Springer SBM.
+     and Future Prospects of Spin-Transfer Torque Random Access Memory. TOM.                       2011.
+     2010.                                                                                    [56] Yiming Huai et al. Spin-Transfer Torque MRAM (STT-MRAM): Challenges and
+[26] Kuo-Liang Cheng, Ming-Fu Tsai, and Cheng-Wen Wu. Neighborhood Pattern-                        Prospects. AAPPS Bulletin. 2008.
+     Sensitive Fault Testing and Diagnostics for Random-Access Memories. TCADICS.             [57] J. D. Hunter. Matplotlib: A 2D Graphics Environment. Computing in Science &
+     2002.                                                                                         Engineering. 2007.
+[27] Haerang Choi, Dosun Hong, Jaesung Lee, and Sungjoo Yoo. Reducing DRAM                    [58] Andy A Hwang, Ioan A Stefanovici, and Bianca Schroeder. Cosmic Rays Don’t
+     Refresh Power Consumption by Runtime Profiling of Retention Time and Dual-                    Strike Twice: Understanding the Nature of DRAM Errors and the Implications
+     Row Activation. Microprocessors and Microsystems. 2020.                                       for System Design. In ASPLOS. 2012.
+[28] Ki Chul Chun, Hui Zhao, Jonathan D Harms, Tae-Hyoung Kim, Jian-Ping Wang,                [59] Intelligent Memory. I’M ECC DRAM with Integrated Error Correcting Code.
+     and Chris H Kim. A Scaling Roadmap and Performance Evaluation of In-Plane                     Product Brief. 2016.
+     and Perpendicular MTJ Based STT-MRAMs for High-Density Cache Memory.                     [60] Intelligent Memory. I’M ECC DRAM with Integrated Error Correcting Code.
+     JSSC. 2012.                                                                                   Product Brief. 2020.
+[29] Lucian Cojocar, Jeremie Kim, Minesh Patel, Lillian Tsai, Stefan Saroiu, Alec Wol-        [61] Engin Ipek, Jeremy Condit, Edmund B Nightingale, Doug Burger, and Thomas
+     man, et al. Are We Susceptible to RowHammer? An End-to-End Methodology                        Moscibroda. Dynamically Replicated Memory: Building Reliable Systems from
+     for Cloud Providers. In S&P. 2020.                                                            Nanoscale Resistive Memories. In ASPLOS. 2010.
+                                                                                              [62] ITRS. More Moore. 2015. www.itrs2.net.
+
+
+
+
+                                                                                         14
+
+
+===== Page 15 =====
+
+[63] Bruce Jacob, David Wang, and Spencer Ng. Memory Systems: Cache, DRAM, Disk.           [95] Skanda Koppula, Lois Orosa, A Giray Yağlıkçı, Roknoddin Azizi, Taha Shahroodi,
+     Morgan Kaufmann. 2010. Chapter 30.3: “Memory Errors and Error Correction”.                 Konstantinos Kanellopoulos, et al. EDEN: Enabling Energy-Efficient, High-
+[64] JEDEC. DDR4 SDRAM Specification. 2012.                                                     Performance Deep Neural Network Inference Using Approximate DRAM. In
+[65] JEDEC. Low Power Double Data Rate 4 (LPDDR4) SDRAM Specification. JEDEC                    MICRO. 2019.
+     Standard JESD209–4B. 2014.                                                            [96] Kira Kraft, Chirag Sudarshan, Deepak M Mathew, Christian Weis, Norbert Wehn,
+[66] JEDEC. JEP122H: Failure Mechanisms and Models for Semiconductor Devices.                   and Matthias Jung. Improving the Error Behavior of DRAM by Exploiting its
+     2016.                                                                                      Z-Channel Property. In DATE. 2018.
+[67] JEDEC. DDR5 SDRAM Specification. 2020.                                                [97] Emre Kültürsay, Mahmut Kandemir, Anand Sivasubramaniam, and Onur Mutlu.
+[68] JEDEC. Main Memory: DDR4 & DDR5 SDRAM. https://www.jedec.org/                              Evaluating STT-RAM as an Energy-Efficient Main Memory Alternative. In
+     category/technology-focus-area/main-memory-ddr3-ddr4-sdram. 2021.                          ISPASS. 2013.
+[69] Sangmok Jeong, SeungYup Kang, and Joon-Sung Yang. PAIR: Pin-Aligned In-               [98] Nohhyup Kwak, Saeng-Hwan Kim, Kyong Ha Lee, Chang-Ki Baek, Mun Seon
+     DRAM ECC Architecture Using Expandability of Reed-Solomon Code. In DAC.                    Jang, Yongsuk Joo, et al. A 4.8 Gb/s/pin 2Gb LPDDR4 SDRAM with Sub-100 µ A
+     2020.                                                                                      Self-Refresh Current for IoT Applications. In ISSCC. 2017.
+[70] Seonghoon Jin, Jeong-Hyong Yi, Jae Hoon Choi, Dae Gwan Kang, Young June               [99] Hye-Jung Kwon, Eunsung Seo, Chan-Yong Lee, Young-Hun Seo, Gong-Heum
+     Park, and Hong Shick Min. Prediction of Data Retention Time Distribution of                Han, Hye-Ran Kim, et al. An Extremely Low-Standby-Power 3.733 Gb/s/pin
+     DRAM by Physics-Based Statistical Simulation. TED. 2005.                                   2Gb LPDDR4 SDRAM for Wearable Devices. In ISSCC. 2017.
+[71] Matthias Jung, Deepak M Mathew, Carl C Rheinländer, Christian Weis, and              [100] Sanghyuk Kwon, Young Hoon Son, and Jung Ho Ahn. Understanding DDR4 in
+     Norbert Wehn. A Platform to Analyze DDR3 DRAM’s Power and Retention                        Pursuit of In-DRAM ECC. In ISOCC. 2014.
+     Time. IEEE Design & Test. 2017.                                                      [101] Benjamin C Lee, Engin Ipek, Onur Mutlu, and Doug Burger. Architecting Phase
+[72] Matthias Jung, Deepak M Mathew, Christian Weis, and Norbert Wehn. Approx-                  Change Memory as a Scalable DRAM Alternative. In ISCA. 2009.
+     imate Computing With Partially Unreliable Dynamic Random Access Memory-              [102] Benjamin C Lee, Ping Zhou, Jun Yang, Youtao Zhang, Bo Zhao, Engin Ipek, et al.
+     Approximate DRAM. In DAC. 2016.                                                            Phase-Change Technology and the Future of Main Memory. IEEE Micro. 2010.
+[73] Sangbeom Kang, Woo Yeong Cho, Beak-Hyung Cho, Kwang-Jin Lee, Chang-Soo               [103] Donghyuk Lee, Samira Khan, Lavanya Subramanian, Saugata Ghose, Rachata
+     Lee, Hyung-Rok Oh, et al. A 0.1-um 1.8-V 256-Mb Phase-Change Random Access                 Ausavarungnirun, Gennady Pekhimenko, et al. Design-Induced Latency Varia-
+     Memory (PRAM) With 66-MHz Synchronous Burst-Read Operation. JSSC. 2006.                    tion in Modern DRAM Chips: Characterization, Analysis, and Latency Reduction
+[74] Uksong Kang, Hak-soo Yu, Churoo Park, Hongzhong Zheng, John Halbert,                       Mechanisms. In SIGMETRICS. 2017.
+     Kuljit Bains, et al. Co-Architecting Controllers and DRAM to Enhance DRAM            [104] D. Lee, Y. Kim, G. Pekhimenko, S. Khan, V. Seshadri, K. Chang, et al. Adaptive-
+     Process Scaling. In The Memory Forum. 2014.                                                Latency DRAM: Optimizing DRAM Timing for the Common-Case. In HPCA.
+[75] Mohammad Nasim Imtiaz Khan and Swaroop Ghosh. Test Challenges and                          2015.
+     Solutions for Emerging Non-Volatile Memories. In VTS. 2018.                          [105] Suyoun Lee, Jeung-hyun Jeong, Taek Sung Lee, Won Mok Kim, and Byung-ki
+[76] Samira Khan, Donghyuk Lee, Yoongu Kim, Alaa R Alameldeen, Chris Wilkerson,                 Cheong. A Study on the Failure Mechanism of a Phase-Change Memory in
+     and Onur Mutlu. The Efficacy of Error Mitigation Techniques for DRAM                       Write/Erase Cycling. EDL. 2009.
+     Retention Failures: A Comparative Experimental Study. In SIGMETRICS. 2014.           [106] Seunghak Lee, Nam Sung Kim, and Daehoon Kim. Exploiting OS-Level Memory
+[77] Samira Khan, Donghyuk Lee, and Onur Mutlu. PARBOR: An Efficient System-                    Offlining for DRAM Power Management. CAL. 2019.
+     Level Technique to Detect Data-Dependent Failures in DRAM. In DSN. 2016.             [107] Seok-Hee Lee. Technology Scaling Challenges and Opportunities of Memory
+[78] Samira Khan, Chris Wilkerson, Donghyuk Lee, Alaa R Alameldeen, and Onur                    Devices. In IEDM. 2016.
+     Mutlu. A Case for Memory Content-Based Detection and Mitigation of Data-             [108] Udo Lieneweg, D Nguyen, and B Blaes. Assesment of DRAM Reliability from
+     Dependent Failures in DRAM. In CAL. 2016.                                                  Retention Time Measurements. Flight Readiness Technol. Assessment NASA EEE
+[79] Samira Khan, Chris Wilkerson, Zhe Wang, Alaa R Alameldeen, Donghyuk Lee,                   Parts Prog. 1998.
+     and Onur Mutlu. Detecting and Mitigating Data-Dependent DRAM Failures by             [109] Chung Hsiang Lin, De-Yu Shen, Yi-Jung Chen, Chia-Lin Yang, and Michael
+     Exploiting Current Memory Content. In MICRO. 2017.                                         Wang. SECRET: Selective Error Correction for Refresh Energy Reduction in
+[80] Dong Wan Kim and Mattan Erez. Balancing Reliability, Cost, and Performance                 DRAMs. In ICCD. 2012.
+     Tradeoffs With FreeFault. In HPCA. 2015.                                             [110] Jamie Liu, Ben Jaiyen, Yoongu Kim, Chris Wilkerson, and Onur Mutlu. An
+[81] Dong Wan Kim and Mattan Erez. RelaxFault Memory Repair. In ISCA. 2016.                     Experimental Study of Data Retention Behavior in Modern DRAM Devices:
+[82] Joohee Kim and Marios C Papaefthymiou. Block-Based Multiperiod Dynamic                     Implications for Retention Time Profiling Mechanisms. In ISCA. 2013.
+     Memory Design for Low Data-Retention Power. In TVLSI. 2003.                          [111] Jamie Liu, Ben Jaiyen, Richard Veras, and Onur Mutlu. RAIDR: Retention-Aware
+[83] Jungrae Kim, Michael Sullivan, and Mattan Erez. Bamboo ECC: Strong, Safe,                  Intelligent DRAM Refresh. In ISCA. 2012.
+     and Flexible Codes For Reliable Computer Memory. In HPCA. 2015.                      [112] Stephen Longofono, Donald Kline Jr, Rami Melhem, and Alex K Jones. Predicting
+[84] Jeremie S Kim, Minesh Patel, Hasan Hassan, and Onur Mutlu. Solar-DRAM:                     and Mitigating Single-Event Upsets in DRAM Using HOTH. Microelectronics
+     Reducing DRAM Access Latency by Exploiting the Variation in Local Bitlines.                Reliability. 2021.
+     In ICCD. 2018.                                                                       [113] Yixin Luo, Saugata Ghose, Yu Cai, Erich F Haratsch, and Onur Mutlu. Heat-
+[85] Jeremie S. Kim, Minesh Patel, Hasan Hassan, and Onur Mutlu. The DRAM                       Watch: Improving 3D NAND Flash Memory Device Reliability by Exploiting
+     Latency PUF: Quickly Evaluating Physical Unclonable Functions by Exploiting                Self-Recovery and Temperature Awareness. In HPCA. 2018.
+     the Latency-Reliability Tradeoff in Modern Commodity DRAM Devices. In                [114] Yixin Luo, Saugata Ghose, Yu Cai, Erich F Haratsch, and Onur Mutlu. Improving
+     HPCA. 2018.                                                                                3D NAND Flash Memory Lifetime by Tolerating Early Retention Loss and
+[86] Jeremie S Kim, Minesh Patel, Hasan Hassan, Lois Orosa, and Onur Mutlu. D-                  Process Variation. In SIGMETRICS. 2018.
+     RaNGe: Using Commodity DRAM Devices to Generate True Random Numbers                  [115] Yixin Luo, Sriram Govindan, Bikash Sharma, Mark Santaniello, Justin Meza,
+     With Low Latency And High Throughput. In HPCA. 2019.                                       Aman Kansal, et al. Characterizing Application Memory Error Vulnerability
+[87] Jeremie S. Kim, Minesh Patel, Abdullah Giray Yaglikci, Hasan Hassan, Roknod-               to Optimize Datacenter Cost via Heterogeneous-Reliability Memory. In DSN.
+     din Azizi, Lois Orosa, et al. Revisiting RowHammer: An Experimental Analysis               2014.
+     of Modern Devices and Mitigation Techniques. In ISCA. 2020.                          [116] Jack A Mandelman, Robert H Dennard, Gary B Bronner, John K DeBrosse, Rama
+[88] Kinarn Kim and Su Jin Ahn. Reliability Investigations for Manufacturable High              Divakaruni, Yujun Li, et al. Challenges and Future Directions for the Scaling of
+     Density PRAM. In IRPS. 2005.                                                               Dynamic Random-Access Memory (DRAM). In IBM JRD. 2002.
+[89] Kinam Kim, Chang-Gyu Hwang, and Jong Gil Lee. DRAM Technology Perspec-               [117] Timothy C May and Murray H Woods. Alpha-Particle-Induced Soft Errors in
+     tive for Gigabit Era. TED. 1998.                                                           Dynamic Memories. TED. 1979.
+[90] Kinam Kim and Jooyoung Lee. A New Investigation of Data Retention Time in            [118] mcelog. Bad Page Offlining. mcelog. 2021. https://mcelog.org/badpageofflining.
+     Truly Nanoscaled DRAMs. In EDL. 2009.                                                      html.
+[91] Yoongu Kim, Ross Daly, Jeremie Kim, Chris Fallin, Ji Hye Lee, Donghyuk Lee,          [119] J Meza et al. A Large-Scale Study of Flash Memory Errors in the Field. In
+     et al. Flipping Bits in Memory Without Accessing Them: An Experimental                     SIGMETRICS. 2015.
+     Study of DRAM Disturbance Errors. In ISCA. 2014.                                     [120] Justin Meza, Qiang Wu, Sanjeev Kumar, and Onur Mutlu. Revisiting Memory
+[92] Donald Kline, Rami Melhem, and Alex K Jones. Sustainable Fault Management                  Errors in Large-Scale Production Data Centers: Analysis and Modeling of New
+     and Error Correction for Next-Generation Main Memories. In IGSC. 2017.                     Trends from the Field. In DSN. 2015.
+[93] Donald Kline, Jiangwei Zhang, Rami Melhem, and Alex K Jones. Flower and              [121] Micron Technology Inc. 2017. ECC Brings Reliability and Power Efficiency to
+     Fame: A Low Overhead Bit-Level Fault-Map and Fault-Tolerance Approach for                  Mobile Devices. Technical Report. Micron Technology Inc.
+     Deeply Scaled Memories. In HPCA. 2020.                                               [122] Micron Technology Inc. 2020. TN-40-40: DDR4 Point-to-Point Design Guide.
+[94] Wei Kong, Paul C Parries, G Wang, and Subramanian S Iyer. Analysis of Re-                  Technical Report. Micron Technology Inc.
+     tention Time Distribution of Embedded DRAM-A New Method to Characterize              [123] Todd K Moon. Error Correction Coding: Mathematical Methods and Algorithms.
+     Across-Chip Threshold Voltage Variation. In ITC. 2008.                                     John Wiley & Sons. 2005.
+
+
+
+
+                                                                                     15
+
+
+===== Page 16 =====
+
+[124] Y. Mori, K. Ohyu, K. Okonogi, and R. i. Yamada. The Origin of Variable Retention        [155] Ron M Roth. Introduction to Coding Theory. Cambridge University Press. 2006.
+      Time in DRAM. In IEDM. 2005.                                                            [156] Abdallah M Saleh, Juan J Serrano, and Janak H Patel. Reliability of Scrubbing
+[125] Ireneusz Mrozek. Analysis of Multibackground Memory Testing Techniques.                       Recovery-Techniques for Memory Systems. TR. 1990.
+      2010.                                                                                   [157] Stuart Schechter, Gabriel H Loh, Karin Strauss, and Doug Burger. Use ECP, Not
+[126] Ireneusz Mrozek. Multi-Run Memory Tests for Pattern Sensitive Faults. Springer.               ECC, for Hard Failures in Resistive Memories. ISCA. 2010.
+      2019.                                                                                   [158] Nak Hee Seong, Dong Hyuk Woo, Vijayalakshmi Srinivasan, Jude A Rivers,
+[127] Lev Mukhanov, Dimitrios S Nikolopoulos, and Georgios Karakonstantis. DStress:                 and Hsien-Hsin S Lee. SAFER: Stuck-at-Fault Error Recovery for Memories. In
+      Automatic Synthesis of DRAM Reliability Stress Viruses Using Genetic Algo-                    MICRO. 2010.
+      rithms. In MICRO. 2020.                                                                 [159] Rasool Sharifi and Zainalabedin Navabi. Online Profiling for Cluster-Specific
+[128] Shubhendu S Mukherjee, Joel Emer, Tryggve Fossum, and Steven K Reinhardt.                     Variable Rate Refreshing in High-Density DRAM Systems. In ETS. 2017.
+      Cache Scrubbing in Microprocessors: Myth or Necessity?. In SDC. 2004.                   [160] Wongyu Shin, Jungwhan Choi, Jaemin Jang, Jinwoong Suh, Youngsuk Moon,
+[129] Onur Mutlu. Memory Scaling: A Systems Architecture Perspective. In IMW.                       Yongkee Kwon, et al. DRAM-Latency Optimization Inspired by Relationship
+      2013.                                                                                         Between Row-Access Time and Refresh Timing. TOC. 2015.
+[130] Onur Mutlu. Main Memory Scaling: Challenges and Solution Directions. In                 [161] C Glenn Shirley and W Robert Daasch. Copula Models of Correlation: A DRAM
+      More than Moore Technologies for Next Generation Computer Design. Springer,                   Case Study. In TC. 2014.
+      127–153. 2015.                                                                          [162] Young Hoon Son, Sukhan Lee, O Seongil, Sanghyuk Kwon, Nam Sung Kim, and
+[131] Onur Mutlu. The RowHammer Problem and Other Issues We May Face as                             Jung Ho Ahn. CiDRA: A Cache-Inspired DRAM Resilience Architecture. In
+      Memory Becomes Denser. In DATE. 2017.                                                         HPCA. 2015.
+[132] Onur Mutlu and Jeremie Kim. RowHammer: A Retrospective. In TCAD. 2019.                  [163] Vilas Sridharan, Nathan DeBardeleben, Sean Blanchard, Kurt B Ferreira, Jon
+[133] Onur Mutlu and Lavanya Subramanian. Research Problems and Opportunities                       Stearley, John Shalf, et al. Memory Errors in Modern Systems: The Good, the
+      in Memory Systems. In SUPERFRI. 2014.                                                         Bad, and the Ugly. In ASPLOS. 2015.
+[134] Helia Naeimi, Charles Augustine, Arijit Raychowdhury, Shih-Lien Lu, and James           [164] Vilas Sridharan and Dean Liberty. A Study of DRAM Failures in the Field. In
+      Tschanz. STTRAM Scaling and Retention Failure. Intel Technology Journal. 2013.                SC. 2012.
+[135] Prashant J Nair, Bahar Asgari, and Moinuddin K Qureshi. SuDoku: Tolerating              [165] Vilas Sridharan, Jon Stearley, Nathan DeBardeleben, Sean Blanchard, and Sud-
+      High-Rate of Transient Failures for Enabling Scalable STTRAM. In DSN. 2019.                   hanva Gurumurthi. Feng Shui of Supercomputer Memory: Positional Effects in
+[136] Prashant J Nair, Dae-Hyun Kim, and Moinuddin K Qureshi. ArchShield: Ar-                       DRAM and SRAM Faults. In SC. 2013.
+      chitectural Framework for Assisting DRAM Scaling by Tolerating High Error               [166] Soubhagya Sutar, Arnab Raha, and Vijay Raghunathan. D-PUF: An Intrinsically
+      Rates. In ISCA. 2013.                                                                         Reconfigurable DRAM PUF for Device Authentication in Embedded Systems.
+[137] Prashant J Nair, Vilas Sridharan, and Moinuddin K Qureshi. XED: Exposing                      In CASES. 2016.
+      On-Die Error Detection Information for Strong Memory Reliability. In ISCA.              [167] Synopsys. 2015. Reliability, Availability and Serviceability (RAS) for Memory
+      2016.                                                                                         Interfaces. Technical Report. Synopsys.
+[138] Omar Naji, Christian Weis, Matthias Jung, Norbert Wehn, and Andreas Hansson.            [168] Mohammad Khavari Tavana, Amir Kavyan Ziabari, Mohammad Arjomand, Mah-
+      A High-Level DRAM Timing, Power And Area Exploration Tool. In SAMOS.                          mut Kandemir, Chita Das, and David Kaeli. REMAP: A Reliability/Endurance
+      2015.                                                                                         Mechanism for Advancing PCM. In MEMSYS. 2017.
+[139] NVIDIA. Dynamic Page Retirement. NVIDIA. 2020. https://docs.nvidia.com/                 [169] Guido Van Rossum and Fred L. Drake. Python 3 Reference Manual. CreateSpace.
+      deploy/dynamic-page-retirement/index.html.                                                    2009.
+[140] Tae-Young Oh, Hoeju Chung, Jun-Young Park, Ki-Won Lee, Seunghoon Oh, Su-                [170] Elena Ioana Vatajelu, Peyman Pouyan, and Said Hamdioui. State of the Art and
+      Yeon Doo, et al. A 3.2 Gbps/pin 8 Gbit 1.0 V LPDDR4 SDRAM with Integrated                     Challenges for Test and Reliability of Emerging Nonvolatile Resistive Memories.
+      ECC Engine for Sub-1 V DRAM Core Operation. JSSC. 2014.                                       JCTA. 2018.
+[141] Lois Orosa, Abdullah Giray Yağlıkçı, Haocong Luo, Ataberk Olgun, Jisung                 [171] Ravi K Venkatesan, Stephen Herr, and Eric Rotenberg. Retention-Aware Place-
+      Park, Hasan Hassan, et al. A Deeper Look into RowHammer’s Sensitivities:                      ment in DRAM (RAPID): Software Methods for Quasi-Non-Volatile DRAM. In
+      Experiemental Analysis of Real DRAM Chips and Implications on Future Attacks                  HPCA. 2006.
+      and Defenses. In MICRO. 2021.                                                           [172] Pauli Virtanen, Ralf Gommers, Travis E Oliphant, Matt Haberland, Tyler Reddy,
+[142] Sung-Il Pae, Vivek Kozhikkottu, Dinesh Somasekar, Wei Wu, Shankar Ganesh Ra-                  David Cournapeau, et al. SciPy 1.0: Fundamental Algorithms For Scientific
+      masubramanian, Melin Dadual, et al. Minimal Aliasing Single-Error-Correction                  Computing In Python. Nature Methods. 2020.
+      Codes for DRAM Reliability Improvement. IEEE Access. 2021.                              [173] Matt Von Thun. Qualification and Reliability of MRAM Toggle Memory De-
+[143] Kyungbae Park, Donghyuk Yun, and Sanghyeon Baeg. Statistical Distributions                    signed for Space Applications. https://www.everspin.com/file/157395/download.
+      of Row-Hammering Induced Failures in DDR3 Components. Microelectronics                        2020.
+      Reliability. 2016.                                                                      [174] Hao Wang. Architecting Memory Systems Upon Highly Scaled Error-Prone Memory
+[144] Sung-Kye Park. Technology Scaling Challenge and Future Prospects of DRAM                      Technologies. Ph.D. Dissertation. Rensselaer Polytechnic Institute. 2017.
+      and NAND Flash Memory. In IMW. 2015.                                                    [175] Christian Weis, Matthias Jung, Peter Ehses, Cristiano Santos, Pascal Vivet, Sven
+[145] Minesh Patel, Jeremie Kim, Taha Shahroodi, Hasan Hassan, and Onur Mutlu.                      Goossens, et al. Retention Time Measurements and Modelling of Bit Error Rates
+      Bit-Exact ECC Recovery (BEER): Determining DRAM On-Die ECC Functions                          of Wide I/O DRAM in MPSoCs. In DATE. 2015.
+      by Exploiting DRAM Data Retention Characteristics. In MICRO. 2020.                      [176] Chris Wilkerson, Hongliang Gao, Alaa R Alameldeen, Zeshan Chishti, Muham-
+[146] Minesh Patel, Jeremie S Kim, Hasan Hassan, and Onur Mutlu. Understanding                      mad Khellah, and Shih-Lien Lu. Trading Off Cache Capacity for Reliability to
+      and Modeling On-Die Error Correction in Modern DRAM: An Experimental                          Enable Low Voltage Operation. ISCA. 2008.
+      Study Using Real Devices. In DSN. 2019.                                                 [177] H-S Philip Wong, Simone Raoux, SangBum Kim, Jiale Liang, John P Reifenberg,
+[147] Minesh Patel, Jeremie S Kim, and Onur Mutlu. The Reach Profiler (REAPER):                     Bipin Rajendran, et al. Phase Change Memory. Proc. IEEE. 2010.
+      Enabling the Mitigation of DRAM Retention Failures via Profiling at Aggressive          [178] David S Yaney, Chih-Yuan Lu, Ross A Kohler, Michael J Kelly, and James T Nelson.
+      Conditions. In ISCA. 2017.                                                                    A Meta-Stable Leakage Phenomenon in DRAM Charge Storage-Variable Hold
+[148] Minesh Patel, Geraldo F. Oliveira, and Onur Mutlu. HARP Artifacts. ZENODO.                    Time. In IEDM. 1987.
+      2021. doi:10.5281/zenodo.5148592.                                                       [179] Doe Hyun Yoon, Naveen Muralimanohar, Jichuan Chang, Parthasarathy Ran-
+[149] Moinuddin K Qureshi. Pay-As-You-Go: Low-Overhead Hard-Error Correction                        ganathan, Norman P Jouppi, and Mattan Erez. FREE-p: Protecting Non-Volatile
+      for Phase Change Memories. In MICRO. 2011.                                                    Memory Against Both Hard and Soft Errors. In HPCA. 2011.
+[150] Moinuddin K Qureshi, Dae-Hyun Kim, Samira Khan, Prashant J Nair, and Onur               [180] Jiangwei Zhang, Donald Kline, Liang Fang, Rami Melhem, and Alex K Jones.
+      Mutlu. AVATAR: A Variable-Retention-Time (VRT) Aware Refresh for DRAM                         Dynamic Partitioning To Mitigate Stuck-At Faults in Emerging Memories. In
+      Systems. In DSN. 2015.                                                                        ICCAD. 2017.
+[151] Moinuddin K Qureshi, Vijayalakshmi Srinivasan, and Jude A Rivers. Scalable              [181] Xinmiao Zhang. In VLSI Architectures for Modern Error-Correcting Codes. 53.
+      High Performance Main Memory System Using Phase-Change Memory Tech-                           2015.
+      nology. In ISCA. 2009.                                                                  [182] Xianwei Zhang, Youtao Zhang, Bruce R Childers, and Jun Yang. Restore Trunca-
+[152] Arijit Raychowdhury, Dinesh Somasekhar, Tanay Karnik, and Vivek De. De-                       tion for Performance Improvement in Future DRAM Systems. In HPCA. 2016.
+      sign Space and Scalability Exploration of 1T-1STT MTJ Memory Arrays in the              [183] Zhe Zhang, Weijun Xiao, Nohhyun Park, and David J Lilja. Memory Module-
+      Presence of Variability and Disturbances. In IEDM. 2009.                                      Level Testing and Error Behaviors for Phase Change Memory. In ICCD. 2012.
+[153] Phillip J Restle, JW Park, and Brian F Lloyd. DRAM Variable Retention Time. In          [184] Bo Zhao. Improving Phase Change Memory (PCM) and Spin-Torque-Transfer
+      IEDM. 1992.                                                                                   Magnetic-RAM (STT-MRAM) as Next-Generation Memories: A Circuit Perspective.
+[154] Tom Richardson and Ruediger Urbanke. Modern Coding Theory. Cambridge                          Ph.D. Dissertation. University of Pittsburgh. 2014.
+      University Press. 2008.
+
+
+
+
+                                                                                         16
+
+
+===== Page 17 =====
+
+A ARTIFACT DESCRIPTION APPENDIX                                                          via their respective Makefile projects. For convenience, we provide
+                                                                                         scripts lib/build_z3.sh and lib/build_einsim.sh that the user
+A.1 Abstract
+                                                                                         may refer to for building the dependencies in-place.
+Our artifacts provide the source code needed to replicate all exper-                        The primary C++ application, called harp-artifacts, is built
+iments in the paper, including all figures. The artifacts comprise                       using the top-level Makefile project. After building Z3 within
+two parts: (1) Monte-Carlo simulations that generate raw data; and                       the subdirectory lib/z3 (which installs Z3’s C++ headers and
+(2) data analysis scripts to parse, aggregate, and plot the data. This                   library within that directory), the top-level Makefile will build
+appendix describes both parts and how to run them to replicate our                       harp-artifacts within the top-level directory.
+experiments.
+                                                                                         A.5    Experiment Workflow
+A.2       Artifact Check-list (Meta-information)
+                                                                                         The artifacts are used to run three different experiments: Fig. 2,
+                                                                                         Fig. 4, and Figs. 6-10. We have provided example scripts under
+ Parameter                            Value
+ Program                              C++ program and Python3/shell scripts
+                                                                                         evaluations/ for automatically running the latter two; however,
+ Compilation                          C++11 compiler (tested with GCC 8)                 we recommend the reader to extend these scripts based on their
+ Run-time environment                 Debian 10 (or similar) Linux                       own compute environment in order to parallelize the simulation
+ Hardware                             Standard linux system (>= 40 GB RAM                tasks (discussed in §A.7).
+                                      recommended for the analysis scripts)
+                                                                                         A.5.1 Fig. 2: Motivational Data. This is a standalone Python
+ Output                               Plaintext data files and PDF files contain-
+                                                                                         script that runs in ≈10 seconds with 120 MB of memory using an
+                                      ing plots
+                                                                                         Intel i7-7700HQ CPU @ 2.80GHz. The script replicates Fig. 2 in a
+ Experiment workflow                  Run simulations, aggregate output files,
+                                      and run analysis scripts on the outputs            PDF output file (or can generate an interactive Matplotlib figure
+ Experiment customization             Number of simulation jobs (i.e., Monte-            per command-line arguments).
+                                      Carlo samples)                                     A.5.2 Fig. 4: Post-correction Probability. This experiment
+ Disk space requirement               ≈10-100 GB
+                                                                                         comprises two steps: (1) data generation from C++ Monte-Carlo
+ Workflow preparation time            ≈1 day
+                                                                                         simulations and (2) data analysis using Python scripts.
+ Experiment completion time           ≈1-2 weeks
+                                                                                         Step 1: Data generation. harp-artifacts simulates how differ-
+ Publicly available?                  Zenodo [148] and GitHub [3]
+                                                                                         ent representative ECC functions (i.e., single-error correcting Ham-
+ Code licenses                        MIT
+                                                                                         ming codes with randomly-generated parity-check matrices) affect
+                                                                                         ECC words that exhibit uniform-randomly generated pre-correction
+A.3       Description                                                                    error patterns. Each simulated error pattern comprises a single
+A.3.1 How to Access. The artifacts are available on Zenodo with                          Monte-Carlo simulation sample. The Python scripts then aggregate
+DOI 10.5281/zenodo.5148592 [148] and on GitHub [3].                                      these samples as part of Step 2.
+                                                                                            The harp-artifacts binary takes several command-line argu-
+A.3.2 Hardware Dependencies. The artifacts are designed to
+                                                                                         ments that are used to configure the experiment:
+run on a typical Linux system. As §A.7 discusses in detail, the
+                                                                                           • Analysis: The experiment to run, either probabilities for the
+C++ simulations are highly parallelziable with low memory re-
+                                                                                             Fig. 4 experiment or evaluations for the Figs. 6-10 experiment.
+quirements, so a system with more CPUs will reduce the overall
+                                                                                           • ECC dataword length (k): The length (in bits) of a single-error
+simulation time required. In contrast, the analysis scripts run as
+                                                                                             correcting Hamming code dataword. This parameter defines the
+single tasks that consume memory in proportion to the amount
+                                                                                             type of ECC code that will be generated and simulated (i.e., its
+of simulation data (up to 40 GB of memory for the full evaluation
+                                                                                             generator and parity-check matrix dimensions). Our evaluations
+configuration described in §A.7). Therefore a single machine with
+                                                                                             are all shown with k = 64, though we verified that all results
+a large memory may be necessary.
+                                                                                             and conclusions are consistent with other representative values,
+A.3.3 Software Dependencies.                                                                 such as k = 128 (§7.1.2).
+ • GNU Make                                                                                • Number of ECC codes: The number of Hamming code instances
+ • C++11 build toolchain (tested with GCC 8 on Debian 10)                                    to generate and simulate. Each code’s generator and parity-
+ • Python 3 [169] with matplotlib [57], scipy [172], numpy [51]                              check matrices are created uniform-randomly according to the
+                                                                                             random seed command-line parameter.
+A.4       Installation                                                                     • Number of ECC words: The number of ECC words to simulate
+No system installation is required; the C++ code can all be built                            for each randomly-generated ECC code.
+and run in place. The C++ application depends on both Z3 [35] and                          • Random seed: The random seed to use for the first ECC code gen-
+EINSim [2], and we have: (1) included copies of both source distri-                          erated. The random seed is then incremented when generating
+butions in the Zenodo distribution for sake of convenience; and (2)                          each subsequent ECC code.
+integrated them in the GitHub source as submodules. However, the                         To run the simulations for this experiment, the analysis parameter
+user may also obtain their source files directly from the projects’                      should be provided as probabilities. §A.7 summarizes different
+repositories. Both tools can be built using standard C++ toolchains13                    configurations for the remaining parameters and their expected
+13 Note that C++17 is required to build the latest version of Z3.
+                                                                                         runtime and memory usage impact. All simulation output will be
+
+
+
+                                                                                    17
+
+
+===== Page 18 =====
+
+given on stdout, which must be redirected to a text file to pass the          discuss different configurations of harp-artifacts and how they
+data to the Python analysis scripts in the next step.                         impact runtime and memory usage when running on a compute
+Step 2: Data analysis. The Python script script/figure_                       cluster comprising Intel Xeon Gold 5118 systems.
+4-parse_postcorrection_probabilities_data.py accepts an
+                                                                              A.8.1 Fig. 4 Estimation. Table 3 summarizes the expected run-
+input file containing the raw output from the previous step. The
+                                                                              time and disk usage of a single task for different harp-artifacts
+script will then parse, aggregate, analyze, and plot the data using
+                                                                              configurations when running the Fig. 4 experiment. In the eval-
+matplotlib (either interactively or saved to a PDF file, based on a
+                                                                              uations we present in §7, we run 16 instances of the “Evaluated”
+command-line switch).
+                                                                              configuration shown in Table 3, amounting to a total of 74 GB of
+A.5.3 Figs. 6-10: Profiler Evaluation. This experiment runs in                disk usage and approximately 1 CPU-day of total execution time.
+two parts: (1) data generation from C++ Monte-Carlo simulations               In general, the Fig. 4 simulations dump a large amount of raw data.
+and (2) data analysis using Python scripts. The experiment workflow           However, the runtime and memory usage are relatively low, so the
+is nearly identical to that of §A.5.2.                                        reader may feasibly replicate our full evaluation configuration.
+Step 1: Data generation. All harp-artifacts command-line pa-
+rameters operate the same way as in §A.5.2, except the analysis                Configuration K ECC codes ECC words Runtime Disk Usage
+parameter must be given as evaluations for this experiment.                    Reduced        64 10         100          ≈30 sec. 4.8 MB
+   In evaluations mode, harp-artifacts simulates the coverage                  Evaluated      64 100        10000        ≈90 min. 4.6 GB
+achieved by the different profiling mechanisms that we evaluate               Table 3: Estimated runtime and disk usage for one instance of
+in §7. These simulations are extremely time consuming due to the              harp-artifacts when running the Fig. 4 experiment.
+complexity of calculating error coverage, which requires a large
+number of computations, including repeated SAT solver invocations.            A.8.2 Figs. 6-10 Estimation. Table 4 summarizes the ex-
+§A.7 provides the expected runtimes for different configurations              pected runtime and disk usage of a single task for different
+that the reader may use to estimate a viable configuration based on           harp-artifacts configurations when running the Figs. 6-10 ex-
+their available compute resources.                                            periments. In the evaluations we present in §7, we run 256 instances
+Step 2: Data analysis. The Python script script/figures_                      of the “Evaluated” configuration shown in Table 4, amounting to
+6to10-parse_evaluation_data.py accepts an input file contain-                 a total of 3.4 GB of disk usage and approximately 14 CPU-years
+ing the raw output from the previous step and is run the same way             of total execution time. In general, the memory and disk usage for
+as the script in §A.5.2. Each figure is output either interactively or        harp-artifacts is negligible in this experiment, but the runtime
+in individual PDF files based on a command line switch.                       can be a considerable limitation.
+
+A.6    Evaluation and Expected Results                                         Configuration K ECC codes ECC words Runtime Disk Usage
+                                                                               Reduced        8 1          1             ≈10 sec. -
+To replicate the results in this paper, it suffices to run each of
+                                                                               Reduced        16 1         1             ≈30 sec. -
+the experiments as discussed in §A.5. Note that, as we discuss in              Reduced        32 1         1             ≈5 min.  -
+§A.7, our full evaluation configuration is long-running due to the             Reduced        64 1         1             ≈30 min. -
+large number of Monte-Carlo samples that we simulate. It is not                Evaluated      64 10        100           ≈20 days 13 MB
+necessary to simulate this many samples to replicate our results;             Table 4: Estimated runtime and disk usage for one instance of
+even with relatively few samples, the data yields similar conclusions.        harp-artifacts when running the Figs. 6-10 experiment.
+In general, we leave the reader to determine how many samples they
+can realistically simulate based on their available compute resources.           As we mention in §A.6, it is not necessary to run the full “Evalu-
+To facilitate this, §A.7 provides runtime estimates measured during           ated” configuration to replicate our results. By the nature of Monte-
+our own evaluations.                                                          Carlo simulation, simulating more ECC codes and ECC words im-
+                                                                              proves the accuracy of the final estimates. However, the end con-
+A.7    Experiment Customization                                               clusions are already apparent with relatively few samples (albeit
+As §A.5.2 describes, harp-artifacts has independent command-                  with more noise in the data). Therefore, if running the full “Evalu-
+line parameters to control the number of ECC codes and ECC words              ated” configuration is infeasible, we recommend running a reduced
+simulated. Using the ECC code parameter, it is possible to parallelize        configuration based on the available compute resources. Note that
+the simulations across different invocations of harp-artifacts                the average runtime scales linearly with the number of samples
+(e.g., as independent jobs on different compute nodes). For example,          because the same computation is performed for each sample. For
+simulating 100 ECC words for each of 1000 ECC codes can be done               example, reducing the “Evaluated” configuration to 1 ECC code per
+by simulating 10 ECC codes per job across 100 independent jobs                task would reduce the average runtime by a factor of 10, resulting
+(and incrementing the random seed by 10 for each subsequent job               in jobs that comple in approximately 48 hours.
+to avoid repeating the same experiment). The Python data analysis                We find that the Python analysis for the full evaluated configu-
+scripts will aggregate the raw data, regardless of how the ECC codes          ration (i.e., all 3.4 GB of output) takes approximately 3 hours and
+are partitioned.                                                              consumes 40 GB of memory. We observe that the memory usage is
+                                                                              roughly linear in the number of evaluated ECC codes and words.
+A.8    Estimating Runtime and Memory Usage
+Running the experiments for Fig. 4, and Figs. 6-10 requires account-
+ing for available compute and memory resources. In this section, we
+
+                                                                         18

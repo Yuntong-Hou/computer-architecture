@@ -1,0 +1,506 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/panopticon.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/panopticon.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+                      Panopticon: A Complete In-DRAM
+                           Rowhammer Mitigation
+                              Tanj Bennett§ , Stefan Saroiu, Alec Wolman, and Lucian Cojocar
+                                                 Microsoft, § Avant-Gray LLC
+   Abstract—The shortcomings of previous Rowhammer mitiga-                  controller uses to instruct DRAM to refresh both rows adjacent
+tions prevent their adoption in practice. Their implementations             to an aggressor row. Costly changes across multiple layers are
+either need significant amounts of fast memory, such as CAM                 difficult to implement in practice. Incurring this cost is justified
+or SRAM, or require changes across multiple hardware and
+software layers. Panopticon is a complete in-DRAM Rowhammer                 only when all stakeholders perform the changes necessary to
+mitigation that is both inexpensive and, for DDR4, requires no              enable the Rowhammer mitigation. This requires overcoming
+changes to any hardware components other than DRAM. Panop-                  a challenging first step: hardware and software vendors must
+ticon uses a novel DRAM mat design to implement counters and                first reach consensus on the “right” Rowhammer mitigation.
+the DRAM’s row decoding logic to access the row’s corresponding             Unfortunately, this situation raises an instance of Prisoner’s
+counter. Finally, for DDR4, Panopticon leverages ALERTn to
+stop a memory controller from issuing new DRAM commands                     Dilemma [39] making it difficult for DRAM vendors, CPU
+whenever it needs time to refresh potential victim rows.                    vendors, and software companies to cooperate.
+                                                                               This paper presents Panopticon1 , a complete Rowhammer
+                       I. I NTRODUCTION                                     mitigation that is both inexpensive and, in the case of DDR4,
+   Rowhammer remains a significant threat to DRAM’s se-                     requires no changes to any hardware components other than
+curity and reliability. Despite memory vendors’ claims that                 DRAM. Panopticon monitors all row activations inside the
+DDR4 is “Rowhammer free” and that Rowhammer attacks                         DRAM itself. Unlike previous tracking schemes that store
+are “a thing of the past” [23], [10], [20], DDR4 DRAM is                    counters in expensive forms of memory, such as CAM or
+in fact more vulnerable than DDR3 [15], [6]. While DDR4                     SRAM, Panopticon’s counters are stored in thin 16-bit wide
+is resilient to older forms of attack that access one or two                mats co-located with the DRAM mats. Panopticon uses an
+DRAM rows, DDR4 succumbs to multi-row-based attacks [6],                    open-space, staggered mat design for storing counters that
+[29]. Rowhammer affects all forms of DRAM and not just                      leaves ample space for the counter increment and test logic.
+DDR; for example, LPDDR4 has been also shown to be vul-                     Unlike prior work, Panopticon does not need to implement
+nerable [28], [6]. Nearly a decade after the first Rowhammer                a separate counter lookup circuit; instead, it re-uses DRAM’s
+publication [18], DRAM remains as vulnerable as ever.                       row decoding logic to access the counter for the activated row.
+   The current situation is not due to a lack of research in ad-               Each DRAM row is equipped with its own counter. When a
+dressing Rowhammer. The research community has proposed                     counter reaches the Rowhammer threshold, a signal is sent to
+many mitigation schemes that ensure data located in victim                  a service queue to enqueue the row address. Once enqueued,
+rows is safe from Rowhammer [18], [8], [14], [1], [12], [42],               Panopticon must refresh potential victim rows in a timely
+[9], [31], [33], [26], [30], [21], [22], [3], [32], [19], [34], [4],        manner to avoid the possibility of Rowhammer bit flips. One
+[24], [36], [37], [44], [2], [40], [7], [17], [27], [45], [41], [25].       option is to provide extra time for mitigations during regular
+Unfortunately, none of these research proposals are widely                  background refresh operations. With this design, Panopticon
+deployed yet, for two main reasons. First, they come with                   can service the queue when it receives a REF command (each
+significant cost and performance downsides. For example, to                 tREFI). However, should the DRAM have no extra time or
+implement Graphene [27], a state-of-the-art tracking proposal,              should the queue be full, the DRAM must find a way to
+a DDR4 memory controller requires an additional 39.23KB                     signal the memory controller that it needs time to perform
+of CAM memory per channel. Modern server-grade CPUs                         the Rowhammer remedies. Unfortunately, DRAM protocols
+are equipped with quad-channel memory controllers [38]                      do not specify a way for the DRAM to ask for free time.
+resulting in a total of 160KB of CAM memory, an amount                         Panopticon retrofits an existing signal in the DDR4 spec-
+that would significantly increase cost and power consumption.               ification, called ALERTn , to effectively “trick” the memory
+TWiCe [21], [22], an alternative tracking scheme, implements                controller to pause issuing new DDR commands. DRAM uses
+tracking inside the RCD chip on a DIMM. This requires a                     ALERTn to signal errors to the memory controller. Upon
+drastic redesign of the RCD chip while leaving DRAM lacking                 receiving this signal, the memory controller stops issuing
+RCD (e.g., unbuffered memory) vulnerable. Similarly, memory                 new DRAM commands and instead re-issues the old memory
+partitioning schemes [3], [19], [34], [2], [40], [25] and new               access. By making use of ALERTn , Panopticon requires no
+forms of DRAM [42], [30], [7] while promising also have                     modifications to any hardware other than DRAM itself.
+significant shortcomings.                                                      II. P RIOR P ROPOSALS FACE P RACTICAL H URDLES
+   A second practical barrier is requiring changes at multiple
+                                                                             Prior Rowhammer mitigation proposals face hurdles that
+hardware or software layers. For example, in addition to
+                                                                            make them expensive and unsuitable for adoption in practice.
+equipping a memory controller with significant amount of
+extra CAM memory, Graphene [27] requires DRAM to support                      1 For an open-source implementation of Panopticon see: https://github.com/
+a new command, called Nearby Row Refresh, that the memory                   microsoft/Panopticon.
+
+
+
+
+                                                                        1
+
+
+===== Page 2 =====
+
+Most previous approaches can be classified in four categories:                                              TABLE I
+• Tracking approaches. These approaches track microar-                        S TATE SIZE OF THREE STATE - OF - THE - ART ROWHAMMER MITIGATION
+                                                                             SCHEMES . A DDR4 CHANNEL HAS UP TO 128 BANKS , AND A MODERN
+chitectural events associated with Rowhammer to detect an                                SERVER - GRADE CPU HAS UP TO 4 CHANNELS .
+ongoing attack before it has a chance to succeed.
+• Sampling approaches. These approaches randomly sample                                              Per-Bank     Per-Channel       Per-CPU
+microarchitectural events associated with Rowhammer. They                                                (bits)    (kilo-bytes)   (kilo-bytes)
+proactively perform a Rowhammer mitigation on each sample.                     Graphene [27]             2,511           39.23          156.9
+• Partitioning approaches. These approaches compartmen-                        BlockHammer [41]         13,312          208.00          832.0
+                                                                               TWiCe [22]               22,200          346.88        1,387.5
+talize memory and isolate an adversary from other co-located
+potential victims. When memory is properly compartmental-
+                                                                               These previous approaches use CAM or SRAM memory to
+ized, a Rowhammer attack in one memory perimeter cannot
+                                                                            store their counter tables. Panopticon sidesteps this overhead
+affect co-located potential victims.
+                                                                            by storing each row counter in the DRAM row itself. Lookup
+• Clean slate approaches. These approaches require sig-
+                                                                            is essentially free because it leverages DRAM’s internal row
+nificant changes to the memory hardware including DRAM
+                                                                            decoding logic. When a row is activated, counter increments
+fabrication technology, DRAM devices, or DIMMs. The fun-
+                                                                            occur in parallel with the sensing and amplifying of the
+damental nature of these changes eliminate the threat of
+                                                                            DRAM row. Section V will describe the internal DRAM layout
+Rowhammer by design.
+                                                                            Panopticon uses for counters.
+A. Tracking Approaches                                                         CRA [14] is an earlier scheme that, like Panopticon,
+   Many previous mitigations track microarchitectural events                maintains a row activation counter for each row in DRAM.
+associated with Rowhammer whether DRAM row activa-                          However, unlike Panopticon, CRA carves a separate portion of
+tions [11], [8], [14], [31], [33], [26], [21], [22], [32], [4], [24],       DRAM for storing all row counters. CRA effectively doubles
+[36], [37], [44], [27], [41], cache misses [1], or a combination            memory access latencies; to reduce this concern, CRA equips
+of both [12]. Whenever such events occur at a high rate, these              the memory controller with a small SRAM-based cache of
+schemes perform a corrective action, such as refreshing victim              recently accessed counters. Another prior work equips DRAM
+rows or throttling aggressor rows. Since a Rowhammer attack                 with a detector that tracks aggressor rows [11].
+discharges a victim row’s capacitors, refreshing a victim row               2. Require changes at multiple layers.
+before any of its bits flip effectively undoes the Rowhammer                   Most tracking schemes store their counter tables outside of
+leakage effects. An alternate approach is to throttle aggressor             the DRAM device, either in the memory controller [41], [27]
+rows until the DRAM had a chance to refresh itself (known                   or in the RCD [22]. Unfortunately, such approaches preclude
+as an auto-refresh or background refresh) [41].                             the ability to refresh victim rows without the cooperation of
+   Tracking approaches are attractive because the mitigations               the DRAM device. By tracking aggressor rows, these schemes
+are performed only when the DRAM is in danger of bits                       cannot identify the affected victim rows unless they have
+flipping due to Rowhammer. When the DRAM is not under                       visibility into the DRAM’s internal physical row mappings.
+attack, which is the common case, the schemes avoid incurring                  Unfortunately, DRAM vendors regard internal row layout
+any mitigation overhead.                                                    (and the mappings of logical to physical DRAM rows) as
+   Unfortunately, prior tracking approaches have two short-                 proprietary and confidential [5], and are unwilling to share
+comings that prevent them from being adopted in practice.                   them even when they could help with mitigating Rowhammer.
+1. Significant cost and performance overhead. Three recent                  Instead, prior works propose a new DRAM command, called
+schemes have shown how to track an entire DRAM bank                         Nearby Row Refresh [27] or Adjacent Row Refresh [22] by
+using significantly less state than maintaining a counter per               which the memory controller reports an aggressor row’s ad-
+row [41], [27], [22]. Despite their impressive state reduction,             dress and instructs the DRAM to refresh all potential victims.
+the state required for all DRAM in a system is still very high                 Requiring changes at multiple layers makes tracking
+due to the large degree of bank parallelism found in DDR4                   schemes difficult to adopt in practice without the cooperation
+and DDR5 DRAM. For example, a DDR4 channel in modern                        of all stakeholders. For example, a CPU vendor is reluctant
+high-performance servers (e.g., cloud servers) might have to                to incur a tracking scheme’s cost and performance overhead
+accommodate two DIMMs where each DIMM has four ranks                        until all three major DRAM vendors implement Nearby Row
+with 16 banks/rank. Although Graphene requires an astonish-                 Refresh. Similarly, a single DRAM vendor is also reluctant
+ingly small amount of state per bank (only 2,511 bits/bank for              implementing Nearby Row Refresh until this command is stan-
+DDR4), this state adds up to 2, 511 × 2 × 4 × 16 = 321, 408                 dardized in JEDEC and supported by other DRAM vendors.
+bits or 39.23 kilo-bytes for a DDR4 channel. This analysis                     BlockHammer [41] is an earlier scheme that shares Panop-
+assumes a Rowhammer threshold of 50K row activations that                   ticon’s goal of avoiding changes at multiple hardware layers.
+we regard as optimistic. Recent work has shown that newer                   BlockHammer can be implemented entirely in the memory
+DDR4 DRAM has even lower Rowhammer thresholds [15].                         controller with no changes to DRAM internals. However,
+   BlockHammer [41] and TWiCe [22] both require more per-                   BlockHammer still requires significant amounts of SRAM.
+bank state than Graphene: 13,312 bits/bank for BlockHammer
+(1024 13-bit counters [41]) and 22,200 bits/bank for TWiCe                  B. Sampling Approaches
+(or 2.71KB [22]). Table I summarizes these schemes’ state                     An alternative to tracking is sampling: upon each row
+sizes. All other tracking schemes either require more state, or,            activate (or other microarchitectural event associated with
+when they do not, their Rowhammer protection is incomplete.                 Rowhammer), with a low probability p, treat the row as an
+
+
+
+                                                                        2
+
+
+===== Page 3 =====
+
+aggressor row [18], [14]. The lack of storing and managing
+counters makes sampling have two important benefits over
+tracking: statelessness and simplicity.
+   Unfortunately, all prior sampling approaches implement
+their logic in the memory controller and suffer from the same
+drawback of requiring DRAM vendors to share their propri-              Fig. 1. Three consecutive states of the counter table and service queue. b10
+                                                                       is the threshold bit.
+etary, internal row layouts. We are unaware of a prior sampling
+approach done in DRAM only. Such an implementation would               1. Low cost. Panopticon should store all row counters in
+need a way to generate random numbers because, to be secure,           DRAM and leverage DRAM’s row decoding logic to identify
+sampling must be done randomly. Generating random numbers              the counter to increment on a row activation.
+in DRAM is expensive and intrusive although recent work has            2. No changes to existing DRAM data mats and sense
+shown new promising avenues [16].                                      amplifiers. For efficiency reasons, DRAM uses tall mats with
+   Another drawback of sampling is that Rowhammer mitiga-              many DRAM rows. Sense amplifiers are tuned to reach the
+tion is always active. Unlike tracking, sampling cannot distin-        farthest row in the mat with their drive during the amplification
+guish between an adversarial and a normal system workload.             phase. Unfortunately, the current DRAM design leaves no time
+                                                                       for an additional operation, such as incrementing a counter.
+C. Partitioning Approaches                                                Two possibilities are (1) shortening the data mat sizes or
+   Partitioning approaches [3], [19], [34], [2], [40], [25] con-       (2) increasing the power of sense amplifiers. Unfortunately,
+fine an attacker to a memory perimeter (or memory security             both options impact DRAM design significantly, and as a
+domain) that cannot interfere with the perimeters of other             result have little chance to be deployed in practice. Instead,
+potential victims in the DRAM. An intuitive form of isolation          Panopticon should make no changes to existing DRAM mats
+is the physical partition of memory together with adding guard         and sense amplifiers.
+rows (i.e., rows that do not store any data) between different         3. No changes to the existing DDR4 protocol and memory
+memory perimeters to ensure that the rows in one perimeter             controllers. An important security requirement is to refresh
+are sufficiently far from another perimeter. This distance             all potential victim rows in a timely manner. We believe, upon
+guarantees that memory accesses in one domain cannot affect            receiving a refresh command (REF), some DRAM devices do
+the rows in a neighboring domain.                                      not make use of the entire allocated time (tRFC) to perform
+   The main difficulty with partitioning rises from the mis-           background refresh. In such a case, the DRAM could use this
+match between data addressing done by the DRAM vs. the                 idle time to refresh potential victim rows if needed.
+CPU. In DRAM partitioning approaches, the data unit is a                  Nevertheless, we also expect well-tuned high-density
+DRAM row. A row contains data from multiple CPU cache-                 DRAM to have little opportunity for additional idle time
+lines not guaranteed to be contiguous in the CPU physical ad-          to service the queue. In such cases, DRAM needs to stop
+dress space. In fact, for servers equipped with many DIMMs,            the memory controller from issuing new DRAM commands.
+a single row of DRAM data holds cachelines from multiple               Panopticon should perform this step without requiring changes
+different physical pages. In such scenarios, row protection is         to existing DDR4 protocol or to the memory controller.
+a poor abstraction because it means protecting an arbitrary set
+                                                                                          IV. H IGH -L EVEL OVERVIEW
+of cachelines found on an arbitrary set of physical pages.
+                                                                          Panopticon maintains a counter table in-DRAM where each
+D. Clean Slate Approaches                                              counter corresponds to a DRAM row and increments each time
+                                                                       the corresponding row is activated. Unlike previous schemes,
+   Researchers are investigating new DRAM that minimize
+                                                                       Panopticon does not maintain a Rowhammer threshold value,
+Rowhammer rootcauses [35]. One approach is reducing
+                                                                       but a threshold bit. Whenever this bit is toggled during a
+electro-magnetical coupling between nearby rows by intro-
+                                                                       counter increment, Panopticon enqueues the row address into
+ducing various forms of electron energy barriers between
+                                                                       a service queue.
+cells [42], [7]. Another approach is minimizing the number
+of electron traps [30]. Both electro-magnetical coupling and              Figure 1 illustrates three consecutive states of the counter
+electron traps have been shown to be rootcauses of Rowham-             table and service queue in a configuration where the threshold
+mer [18], [43].                                                        bit is b10 (b0 corresponds to the least significant bit), the
+                                                                       service queue has four entries, and the rows activated are row
+   A different approach is using dummy weak cells that are
+                                                                       0x2 and 0x0, respectively. In its initial state, b10 has a value
+quick to flip (more susceptible to leakage) in DRAM. Such
+                                                                       of 0 for row 0x2, and 1 for row 0x0. However, in each case,
+cells can act as early warnings of an ongoing attack [9].
+                                                                       an additional row activation toggles b10 causing Panopticon to
+   Finally, another clean-slate approach is a new RCD chip
+                                                                       enqueue each row address in the service queue, respectively.
+with extra pins that remaps row addresses from one DRAM
+                                                                          Using a threshold bit rather than a value lets Panopticon
+device to another [17]. Unfortunately, such forms of address
+                                                                       avoid having to reset its counters. While a trivial operation
+scrambling do not stop Rowhammer but only raise the diffi-
+                                                                       when performed in SRAM, resetting a DRAM counter is ex-
+culty of targeting an explicit victim row.
+                                                                       pensive because it would require extra circuitry and additional
+                                                                       latency to clear each DRAM cell. Panopticon ensures that a
+                     III. D ESIGN G OALS
+                                                                       row is serviced every 2i activates, where i is the threshold bit
+  We designed Panopticon with the following goals in mind:             (e.g., i = 10 for b10 ).
+
+
+
+                                                                   3
+
+
+===== Page 4 =====
+
+Fig. 2. Servicing row 0x2. DRAM row disturbance affects up to two nearby
+rows on each side of an aggressor. Servicing a row requires refreshing four
+potential victim rows.
+                                                                                        Fig. 3. Arrangement of sense amplifiers with full length mats.
+   Panopticon services rows from the queue when receiving
+a REF command (if there is time), or by signaling the
+memory controller to stop issuing new DRAM commands. To
+service a row, Panopticon refreshes all potential victim rows.
+DRAM vendors regard the number and identity of potential
+victim rows in their DRAM as highly confidential. However,
+with Panopticon, this information remains in the hands of
+the DRAM vendors; they need to fine-tune Panopticon to
+perform the correct remedy applicable to each DRAM device.
+Figure 2 shows servicing row 0x2 in a configuration where
+row disturbance affects up to two nearby rows on each side
+of the aggressor (±2).
+
+                  V. I N -DRAM A RCHITECTURE                                      Fig. 4. Panopticon’s open-space design and staggered layout of counter mats.
+                                                                                  The mats are half length leaving space for incrementer and testing logic.
+   Panopticon comprises of a set of narrow DRAM mats (i.e,
+sub-arrays) to store counters, a small piece of logic for each                       The open-space design comes with a cost: a single counter
+counter mat that increments and writes back the counters, and                     mat covers half the data rows only. To offer a complete set
+a tiny state machine in each bank that implements a service                       of counters, Panopticon alternates (staggers) half the counter
+queue and the ALERTn signaling.                                                   mats left and the remaining half right such that each row of a
+                                                                                  standard mat continues into a counter half-mat.
+A. Counter Mats                                                                      The open-space staggered layout leaves plenty of space for
+   Panopticon needs to increment, update, and store row                           incrementers. The incrementer logic is placed in the open
+counters without slowing down normal DRAM operations. A                           space next to both the upper and lower sense amps for short
+design that lays out counter cells in a manner similar to the                     distances and latencies. The row lines are not extended into
+DRAM data cells (i.e., the counters and the DRAM cells have                       the open spaces that can be further extended to the outside if
+the same geometry) will introduce significant latency overhead                    more room for logic is needed. Figure 4 shows the staggered
+due to the additional time needed to read and store back the                      layout of half length counter mats.
+counter value along the data lines. Instead, Panopticon uses an
+open-space design that places the counter mat in a staggered                      B. Incrementer
+manner leaving space for the incrementer logic.                                      The incrementer makes use of the read and writeback cycle
+Sense amplifiers’ arrangement with full length mats in                            inherent in DRAM row activation to perform its logic. A 16-
+today’s DRAM. Sense amplifiers bridge cell-mats and connect                       bit counter value is incremented each time a row is activated.
+to either the upper or lower data arrays depending on how the                     The incrementer is a chain of 16 flip-flops that latch the data
+DRAM circuit is activated. Mat selection is done using the                        acquired when the row is activated. A single clock then toggles
+equalizer (EQ_a and EQ_b) and isolation (ISO_a and ISO_b)                         the flip-flops, cascading down the chain in a classic sequential
+signals. Panopticon must keep the same spacing for the sensing                    adder. The resulting value is then coupled back from the flip-
+and routing of the counter bits that run beside these full length                 flops into the columns, where it updates the counter cells
+mats and use the same row lines. Figure 3 illustrates the sense                   following the classing read, modify, write timing comprising
+amplifiers layout between two cell mats above and below.                          the row activate command.
+Counter mats design and layout. The counter mats in                                  We also designed testing logic for the incrementer. With this
+Panopticon are half-length and support only half the number of                    logic, the DRAM vendor can inject a value into a counter,
+rows. Both a mat’s top and bottom have one-sided sense amps.                      generate an alarm when the Rowhammer threshold bit has
+Halving the counter mats’ size has two important benefits.                        toggled, and read back the counter values. Figure 5 illustrates
+First, the half-length data lines offer lower latency for counter                 the incrementer and its testing logic.
+increments within the time needed to read the data cells.
+Second, it creates a large open-space adjacent to the sense                       C. Service Queue
+amplifiers to place logic for an incrementer (and also for                          When a high-order bit of a counter toggles, Panopticon
+testing). The location is ideal because it has access to all                      sends a signal to the refresh logic to enqueue the row ad-
+process layers including interconnect to create the logic needed                  dress in a service queue. For example, an implementation of
+for controlling and operating the incrementer.                                    Panopticon that sends the signal whenever the 11th bit of a
+
+
+
+                                                                              4
+
+
+===== Page 5 =====
+
+                                                                             Fig. 6. Duration of an attack that aims to place a row in the service queue
+                                                                             in consecutive refresh intervals (tREFI).
+
+  Fig. 5. Incrementer. Control logic is used for DRAM counter testing.       that such attacks are relatively easy to mount. Relaxing these
+                                                                             assumptions will make the attacks even more potent.
+counter (b10 ) toggles would place the row address into the
+                                                                                Our first assumption is that the background refresh schedule
+service queue every 1,024 row activations. The signal uses
+                                                                             is regular: a REF command is sent every 7.8 µs [13]. Between
+the Alarm/Data line shown in Figure 5.
+                                                                             two consecutive REFs, an attacker has a budget of 156 row
+   Panopticon uses SRAM to implement the service queue.                      activations to activate any rows (or the same row). This is
+However, this queue is small; in our performance evaluation                  a simplifying assumption because the gap between two REF
+of Panopticon, we used a queue of 8 entries per bank. A row                  commands can be up to 9 × 7.8 µs in DDR4 (e.g., these gaps
+address is at most 18 bits long in DDR4; in this case, the                   are due to postponing or pulling-in REF commands). Such
+amount of SRAM required by Panopticon is 144 bits of SRAM                    gaps give the attacker an even larger budget of row activates.
+per bank (in contrast, Graphene [27] requires 2,511 bits/bank).
+                                                                                Second, the attacker cannot determine any counter’s value.
+D. Row Refresh & ALERTn Signaling                                            The assumption is unrealistic because of the following side-
+                                                                             channel: an attacker learns that the counter of the most recently
+   Once enqueued, a row must be serviced in a timely manner.                 activated row reached the threshold whenever the DRAM asks
+One option is to service the row each REF command, at                        the memory controller for free time. However, we wanted
+an average rate of 7.8 µs in DDR4. Upon receiving a REF                      to understand whether Panopticon can be made secure in
+command, the DRAM can re-purpose some of its time to                         the absence of such side channels. In this case, one could
+service an enqueued row by refreshing its neighbors.                         build DRAM that never needs to ask for time to perform
+   Servicing a row likely requires refreshing multiple rows.                 its Rowhammer mitigations as long as the service queue is
+DRAM disturbance often affects more than just the two rows                   appropriately sized so it is never full.
+adjacent to an aggressor row although these effects decay                       Under these assumptions, we answer two questions:
+with distance in a super-linear manner [18], [15], [5]. During               1. Is placing a row in the service queue in consecu-
+DRAM testing and qualifying, vendors can tune Panopticon to                  tive refresh intervals (tREFI) difficult? Well-tuned high-
+refresh all rows affected by DRAM disturbance to eliminate                   performance DRAM might not need all 8192 REFs received
+any possibility of Rowhammer.                                                in a refresh window [13] for performing background refresh
+   Whenever, Panopticon requires additional time to service                  and could re-purpose a small number (say less than 1%) for
+its queue entries, Panopticon asserts ALERTn in a manner                     servicing the queue. Upon receiving a REF, Panopticon would
+similar to a command and address parity error. In this case,                 check whether an entry is present in the service queue. In
+a DDR4 memory controller must wait and re-try the failing                    that case, the REF would be “hijacked” away from back-
+command [13]. The wait duration is specified using a register                ground refresh to perform the Rowhammer mitigation. This
+whose value is read when DDR first initializes. With this                    model works as long as the hijacked REFs are spread evenly
+mechanism, Panopticon can effectively pause the memory                       throughout a refresh window. An uneven spread in which rows
+controller by making it re-issue the same DRAM command.                      are placed in the queue in each several consecutive refresh
+During this time, the DRAM can service its queue and refresh                 intervals (tREFI) could cause undesirable interference with the
+all relevant potential victim rows. To resume functionality,                 background refresh schedule.
+Panopticon de-asserts ALERTn .                                                  We analyze an attack that chooses a random row and uses
+                                                                             the budget (156 ACTs) to activate the row in each tREFI.
+                   VI. S ECURITY A NALYSIS
+                                                                             Figure 6 shows the expected number of hours until the attack
+   In our threat model, the attacker has complete control over               is successful as a function of the number of consecutive REF
+all DDR4 commands sent to DRAM, but cannot violate the                       intervals. By choosing a random row each refresh interval
+DDR protocol including the commands’ ordering and timings.                   (tREFI), in less than an hour, an attacker can place a row
+We set the Rowhammer threshold value to 512 (corresponding                   in the service queue for 16 consecutive tREFIs. This result
+to toggling b9 ), conservatively.                                            demonstrates that it is trivial for an attacker to create scenarios
+   Our security analysis investigates the difficulty of creating             in which the DRAM must perform Rowhammer mitigations
+undesirable scenarios for Panopticon, such as placing rows                   for many consecutive REFs in a row.
+in the service queue during several consecutive, back-to-back                2. Is it realistic to use a large-sized queue to ensure it
+refresh intervals (tREFI) and filling up the service queue.                  can never be full? Each tREFI, the attack picks a set of Q
+We make two assumptions to simplify our analysis. Even                       random rows and activates all rows in a round-robin manner
+under these simplifying assumptions, our analysis will show                  (Q is the queue size). How long will such an attack take to
+
+
+
+                                                                         5
+
+
+===== Page 6 =====
+
+                                                                                       leads to additional undesirable overhead even when the system
+                                                                                       is not under attack.
+                                                                                          A naïve possibility is to reset a row’s counter whenever all
+                                                                                       its potential victims are refreshed by the DRAM’s background
+                                                                                       refresh cycle. However, we believe this is a dangerous design
+                                                                                       choice. For a given aggressor row, different victims could be
+                                                                                       refreshed at different points in time. In this case, no form
+                                                                                       of counter reset is safe: the counter is reset either too early,
+Fig. 7. Duration of an attack that aims to fill up the queue in a single refresh
+interval (tREFI) with 50% chance of success.                                           before some of the victim rows had a chance to be refreshed,
+                                                                                       or too late, after some of the victim rows have been affected
+have a 50% chance to place all Q rows in the queue during                              by the aggressor row. Either choice provides a way for row
+the same tREFI interval?                                                               activations to escape being tracked.
+   Figure 7 shows the number of hours until the attack has a                              A different, safer possibility is to clear a counter’s low order
+50% chance of success. When under attack, even a 20-entry                              bits (say lowest 5 bits) each time its corresponding row is
+queue will be full in less than 16 hours. To be safe (i.e., the                        refreshed (i.e., once every 64ms in DDR4). This would be
+rate of success must be negligible), Panopticon’s service queue                        very effective at reducing Panopticon’s overhead because most
+size must be prohibitively large.                                                      rows are not activated more than 32 times within a refresh
+Summary: Both results speak convincingly that an attacker                              window. To be safe, the Rowhammer threshold must be set
+has an easy time creating scenarios in which the DRAM must                             conservatively to accommodate the possibility that up to 32
+mitigate victim rows for many consecutive tREFI intervals or                           row activates are not accounted for.
+the DRAM is overwhelmed with mitigating victim rows. To                                   An additional optimization is clearing a single low order bit
+remain safe under such scenarios, the DRAM must be able to                             (say bit 5) rather than 5 bits. This would reduce the complexity
+ask the memory controller for additional free time.                                    of the clearing counters circuit. With this optimization in place,
+                                                                                       each counter would be decremented by a value between 0 and
+                           VII. D ISCUSSION                                            32 each refresh window.
+A. A Rowhammer Attack Turns into a DoS Attack
+   Should attackers know the row counters’ values, they could                          C. The Power and Space Overhead of Counter Mats
+craft a malicious workload that consistently fills up the service
+                                                                                          DRAM vendors must accommodate the power and space
+queue with aggressor rows. In such a case, DRAM would need
+                                                                                       overheads of counter mats in their DRAM devices. However,
+to spend a fraction of its time refreshing potential victim rows
+                                                                                       we believe this overhead to be low. The counters need not
+rather than servicing DRAM requests. This leads to a form of
+                                                                                       be larger than the Rowhammer threshold; a 16-bit counter can
+DoS because a portion of DRAM’s bandwidth is effectively
+                                                                                       accommodate threshold values of up to 65,536 row activations,
+disrupted and re-purposed for performing Rowhammer miti-
+                                                                                       and recent work has shown that modern DDR4’s Rowhammer
+gations.
+                                                                                       thresholds are much lower in fact [15], [6]. Thus, 32 columns
+   We believe any form of a Rowhammer defense would need
+                                                                                       of counters (counting both the left and right mat areas) are
+to consume resources to perform mitigations when the system
+                                                                                       sufficient to accommodate a full row that consists of thousands
+is under attack. This will inherently open up the possibility
+                                                                                       of columns.
+of DoS. However, we argue this trade-off is fundamental:
+when under attack, the DRAM needs to slow down (or stop)
+performing additional row activations and refresh victim rows                                               VIII. C ONCLUSIONS
+instead. Once the attack stops, the DRAM will resume normal                               This paper presents Panopticon, a complete in-DRAM
+operation servicing memory reads and writes.                                           Rowhammer mitigation scheme. Panopticon uses an open-
+   One potential optimization is initializing Panopticon’s coun-                       space, staggered mat design to equip each DRAM row with
+ters with random values at boot time. This will make it                                an exclusive counter. Panopticon leverages the DRAM row
+difficult (but not impossible) for the attacker to learn the row                       decoding logic to avoid a separate implementation of a
+counters’ values. Even lacking this information, an attacker                           counter lookup circuit. For DDR4, Panopticon leverages the
+could overwhelm the queue, but can do so only periodically                             ALERTn signal to pause a DRAM controller from issuing
+(see Section VI). It is much more difficult doing it consistently.                     any new, previously unseen DRAM commands. During this
+However, a determined attacker could use a side-channel (such                          time, Panopticon can perform its Rowhammer mitigation and
+as observing when ALERTn is asserted) to slowly determine                              refresh potential victim rows. Our security analysis shows that
+when counters reach their Rowhammer threshold. Neverthe-                               Panopticon must be able to ask for time from the memory
+less, we argue that initializing counter values randomly is                            controller, or, otherwise, an attacker could trivially overwhelm
+helpful because it would significantly raise the bar to mounting                       the DRAM with Rowhammer mitigation work.
+a DoS attack in practice.
+                                                                                       Acknowledgments. We would like to thank the anonymous
+B. The Impact of Normal Workloads                                                      reviewers for their insightful comments. We also received
+  As described, Panopticon never resets its counters. Thus,                            helpful feedback from Kuljit Bains, David Blankenbeckler,
+even under a normal workload, rows would need to be serviced                           Tim Cowles, Brett Dodds, Todd Farrell, Terry Grunzke, Todd
+when their counters reach the Rowhammer threshold. This                                Merritt, Bill Nale, and Kushagra Vaid.
+
+
+
+                                                                                   6
+
+
+===== Page 7 =====
+
+                             R EFERENCES                                            [23] J.-B. Lee, “Green Memory Solution,” http://aod.teletogether.com/sec/
+                                                                                         20140519/SAMSUNG_Investors_Forum_2014_session_1.pdf, 2014.
+ [1] Z. B. Aweke, S. F. Yitbarek, R. Qiao, R. Das, M. Hicks, Y. ORren,              [24] C. Li and J.-L. Gaudiot, “Detecting Malicious Attacks Exploiting
+     and T. Austin, “ANVIL: Software-Based Protection Against Next-                      Hardware Vulnerabilities Using Performance Counters,” in COMPSAC,
+     Generation Rowhammer Attacks,” in ASPLOS, 2016.                                     2019.
+ [2] C. Bock, F. Brasser, D. Gens, C. Liebchen, and A.-R. Sadeghi, “RIP-            [25] K. Loughlin, S. Saroiu, A. Wolman, and B. Kaskci, “Stop! Hammer
+     RH: Preventing Rowhammer-Based Inter-Process Attacks,” in ASIA-                     Time: Rethinking Our Approach To Rowhammer Mitigations,” in Ho-
+     CCS, 2019.                                                                          tOS, 2021.
+ [3] F. Brasser, L. Davi, D. Gens, C. Liebchen, and A.-R. Sadeghi, “CAn’t           [26] O. Mutlu, “The RowHammer Problem and Other Issues We May Face
+     Touch This: Practical and Generic Software-only Defenses Against                    as Memory Becomes Denser,” in DATE, 2017.
+     RowHammer Attacks,” USENIX Sec., 2017.                                         [27] Y. Park, W. Kwon, E. Lee, T. J. Han, J. H. Ahn, and J. W. Lee,
+ [4] A. Chakraborty, M. Alam, and D. Mukhopadhyay, “Deep Learning based                  “Graphene: Strong yet Lightweight Row Hammer Protection,” in MI-
+     Diagnostics for Rowhammer Protection of DRAM Chips ,” in ATS, 2019.                 CRO, 2020.
+ [5] L. Cojocar, J. Kim, M. Patel, L. Tsai, S. Saroiu, A. Wolman, and               [28] P. Pessl, D. Gruss, C. Maurice, M. Schwarz, and S. Mangard, “DRAMA:
+     O. Mutlu, “Are We Susceptible to Rowhammer? An End-to-End                           Exploiting DRAM Addressing for Cross-CPU Attacks,” in USENIX Sec.,
+     Methodology for Cloud Providers,” in IEEE S&P, 2020.                                2016.
+ [6] P. Frigo, E. Vannacci, H. Hassan, V. van der Veen, O. Mutlu, C. Giuf-          [29] F. Ridder, P. Frigo, E. Vannacci, H. Bos, C. Giuffrida, and
+     frida, H. Bos, and K. Razavi, “TRRespass: Exploiting the Many Sides                 K. Razavi, “SMASH: Synchronized Many-sided Rowhammer Attacks
+     of Target Row Refresh,” in S&P, 2020.                                               from JavaScript,” in USENIX Security, 2021.
+ [7] S. K. Gautam, S. K. Manhas, A. Kumar, M. Pakala, and E. Yieh, “Row             [30] S. Ryu, K. Min, J. Shin, H. Kwon, D. Nam, T. Oh, T. Jang, M. Yoo,
+     Hammering Mitigation Using Metal Nanowire in Saddle Fin DRAM,”                      Y. Kim, and S. Hong, “Overcoming the reliability limitation in the
+     IEEE T-ED, vol. 66, 2019.                                                           ultimately scaled DRAM using silicon migration technique by hydrogen
+ [8] M. Ghasempour, M. Lujan, and J. Garside, “ARMOR: A Run-Time                         annealing,” in IEEE IEDM, 2017.
+     Memory Hot-Row Detector,” http://apt.cs.manchester.ac.uk/projects/             [31] S. M. Seyedzadeh, A. K. Jones, and R. Melhem, “Counter-based Tree
+     ARMOR/RowHammer/armor.html, 2015.                                                   Structure for Row Hammering Mitigation in DRAM,” CAL, 2017.
+ [9] H. Gomez, A. Amaya, and E. Roa, “DRAM Row-hammer Attack                        [32] ——, “Mitigating Wordline Crosstalk Using Adaptive Trees of Coun-
+     Reduction using Dummy Cells,” in NORCAS, 2016.                                      ters,” in ISCA, 2018.
+[10] M. Greenberg, “Row Hammering: What it is, and how hackers could                [33] M. Son, H. Park, J. Ahn, and S. Yoo, “Making DRAM Stronger Against
+     use it to gain access to your system,” https://blogs.synopsys.com/                  Row Hammering,” in DAC, 2017.
+     committedtomemory/2015/03/09/row-hammering-what-it-is-and-how-                 [34] V. Van Der Veen, M. Lindorfer, Y. Fratantonio, H. P. Pillai, G. Vigna,
+     hackers-could-use-it-to-gain-access-to-your-system/, 2015.                          C. Kruegel, H. Bos, and K. Razavi, “GuardION: Practical Mitigation of
+[11] Z. Greenfield, J. B. Halbert, and K. S. Bains, “Method, apparatus and               DMA-Based Rowhammer Attacks on ARM,” in DIMVA, 2018.
+     system for determining a count of accesses to a row of memory,” Patent         [35] A. J. Walker, S. Lee, and D. Beery, “On DRAM Rowhammer and the
+     No. US 2014/0085995, 2014.                                                          Physics of Insecurity,” IEEE T-ED, vol. 68, 2021.
+[12] G. Irazoqui, T. Eisenbarth, and B. Sunar, “MASCAT: Stopping Microar-           [36] Y. Wang, Y. Liu, P. Wu, and Z. Zhang, “Detect DRAM Disturbance
+     chitectural Attacks Before Execution,” IACR, 2016.                                  Error by Using Disturbance Bin Counters,” in CAL, 2019.
+[13] JEDEC, Double Data Rate 4 (DDR4) SDRAM Standard, 2012.                         [37] ——, “Reinforce Memory Error Protection by Breaking DRAM Distur-
+[14] D.-H. Kim, P. J. Nair, and M. K. Qureshi, “Architectural Support for                bance Correlation Within ECC Words,” in ICCD, 2019.
+     Mitigating Row Hammering in DRAM Memories,” CAL, 2015.                         [38] Wikipedia, “Xeon,” https://en.wikipedia.org/wiki/Xeon.
+[15] J. Kim, M. Patel, A. G. Yaglikci, H. Hassan, R. Azizi, L. Orosa,               [39] Wikipedia, “Prisoner’s dilemma,” https://en.wikipedia.org/wiki/
+     and O. Mutlu, “Revisiting RowHammer: An Experimental Analysis of                    Prisoner%27s_dilemma, 2020.
+     Modern DRAM Devices and Mitigation Techniques,” in ISCA, 2020.                 [40] X.-C. Wu, T. Sherwood, F. T. Chong, and Y. Li, “Protecting Page Tables
+[16] J. S. Kim, M. Patel, H. Hassan, L. Orosa, and O. Mutlu, “D-RaNGe:                   from RowHammer Attacks using Monotonic Pointers in DRAM True-
+     Using Commodity DRAM Devices to Generate True Random Numbers                        Cells,” in ASPLOS, 2019.
+     with Low Latency and High Throughput,” in HPCA, 2019.                          [41] A. G. Yaglıkçı, M. Patel, J. S. Kim, R. Azizi, A. Olgun, L. Orosa,
+[17] M. Kim, J. Choi, H. Kim, and H.-J. Lee, “An Effective DRAM Address                  H. Hassan, J. Park, K. Kanellopoulos, T. Shahroodi, S. Ghose, and
+     Remapping for Mitigating Rowhammer Errors,” in TC, 2019.                            O. Mutlu, “BlockHammer: Preventing RowHammer at Low Cost by
+[18] Y. Kim, R. Daly, J. Kim, C. Fallin, J. H. Lee, D. Lee, C. Wilkerson,                Blacklisting Rapidly-Accessed DRAM Rows,” in HPCA, 2021.
+     K. Lai, and O. Mutlu, “Flipping Bits in Memory Without Accessing               [42] C.-M. Yang, C.-K. Wei, Y. J. Chang, T.-C. Wu, H.-P. Chen, and C.-S.
+     Them: An Experimental Study of DRAM Disturbance Errors,” in ISCA,                   Lai, “Suppression of Row Hammer Effect by Doping Profile Modifica-
+     2014.                                                                               tion in Saddle-Fin Array Devices for Sub-30-nm DRAM Technology,”
+[19] R. K. Konoth, M. Oliverio, A. Tatar, D. Andriesse, H. Bos, C. Giuffrida,            IEEE T-DMR, vol. 16, 2016.
+     and K. Razavi, “ZebRAM: Comprehensive and Compatible Software                  [43] T. Yang and X.-W. Lin, “Trap-assisted DRAM Row Hammer Effect,”
+     Protection Against Rowhammer Attacks,” in OSDI, 2018.                               EDL, 2019.
+[20] M. Lanteigne, “How Rowhammer Could be Used to Exploit Weaknesses               [44] J. M. You and J.-S. Yang, “MRLoc: Mitigating Row-hammering based
+     in Computer Hardware,” http://www.thirdio.com/rowhammer.pdf, 2016.                  on memory Locality,” in DAC, 2019.
+[21] E. Lee, S. Lee, G. E. Suh, and J. H. Ahn, “TWiCe: Time Window                  [45] Z. Zhang, Y. Cheng, M. Wang, W. He, W. Wangk, N. Surya,
+     Counter Based Row Refresh to Prevent Row-Hammering,” CAL, 2018.                     Y. Gao, K. Li, Z. Wang, and C. Wu, “SoftTRR: Protect Page Tables
+[22] ——, “TWiCe: Preventing Row-hammering by Exploiting Time Window                      Against RowHammer Attacks using Software-only Target Row Refresh,”
+     Counters,” in ISCA, 2019.                                                           arxiv.org, 2021.
+
+
+
+
+                                                                                7

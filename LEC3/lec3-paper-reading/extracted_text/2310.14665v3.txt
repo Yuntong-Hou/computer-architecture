@@ -1,0 +1,1456 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/2310.14665v3.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/2310.14665v3.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+                                                        Read Disturbance in High Bandwidth Memory:
+                                                     A Detailed Experimental Study on HBM2 DRAM Chips
+                                                             Ataberk Olgun1 Majd Osseiran1 A. Giray Yağlıkçı1 Yahya Can Tuğrul1
+                                                        Haocong Luo1 Steve Rhyner1 Behzad Salami2 Juan Gomez Luna1 Onur Mutlu1
+                                                                                               1 ETH Zürich          2 BSC
+
+
+
+                                           We experimentally demonstrate the effects of read distur-             using cutting-edge technology nodes.1 It is important to under-
+                                        bance (RowHammer and RowPress) and uncover the inner                     stand read disturbance in HBM DRAM chips because 1) they
+                                        workings of undocumented read disturbance defense mech-                  have new architectural characteristics (e.g., multiple layers of
+                                        anisms in High Bandwidth Memory (HBM). Detailed char-                    DRAM dies, area- and energy-intensive through-silicon vias),
+arXiv:2310.14665v3 [cs.CR] 2 May 2024
+
+
+
+
+                                        acterization of six real HBM2 DRAM chips in two different                which might affect the chip’s read disturbance vulnerability in
+                                        FPGA boards shows that (1) the read disturbance vulnera-                 currently-unknown ways, and 2) they are extensively used in
+                                        bility significantly varies between different HBM2 chips and             critical system infrastructures of today (e.g., machine learning
+                                        between different components (e.g., 3D-stacked channels) in-             training and inference [74, 78–82]). Such understanding can
+                                        side a chip, (2) DRAM rows at the end and in the middle                  help identify potential read-disturbance-induced security and
+                                        of a bank are more resilient to read disturbance, (3) fewer              reliability issues in HBM-based systems and allow for effective
+                                        additional activations are sufficient to induce more read dis-           and efficient defense mechanisms.
+                                        turbance bitflips in a DRAM row if the row exhibits the first               Our goal is to experimentally analyze how vulnerable HBM
+                                        bitflip at a relatively high activation count, (4) a modern              DRAM chips are to read disturbance. To this end, we provide
+                                        HBM2 chip implements undocumented read disturbance de-                   the first detailed experimental characterization of the RowHam-
+                                        fenses that track potential aggressor rows based on how many             mer and the RowPress vulnerabilities in six modern HBM2
+                                        times they are activated. We describe how our findings could             DRAM chips in two different FPGA boards. We provide four
+                                        be leveraged to develop more powerful read disturbance at-               main analyses in our study. First, we analyze the spatial varia-
+                                        tacks and more efficient defense mechanisms. We open source              tion in RowHammer vulnerability (§ 4) based on the physical
+                                        all our code and data to facilitate future research at https:            location of victim rows in terms of two metrics: the fraction of
+                                        //github.com/CMU-SAFARI/HBM-Read-Disturbance.                            DRAM cells that experience a bitflip in a DRAM row (BER)
+                                        1. Introduction                                                          and the minimum hammer count necessary to cause a Row-
+                                                                                                                 Hammer bitflip (HC f irst ). We use these two metrics to quantify
+                                           Modern DRAM chips suffer from read disturbance is-                    the RowHammer susceptibility of a DRAM row. For example,
+                                        sues [1–4] that can be exploited to break memory isolation,              a row with a small BER value is susceptible to only a small
+                                        threatening the robustness (including safety, security, and re-          number of RowHammer-induced bitflips. As such, this row is
+                                        liability) of modern DRAM-based computing systems. Row-                  more RowHammer-resilient than other DRAM rows with higher
+                                        Hammer [1] and RowPress [4] are two prominent examples of                BER values. Second, we analyze the number of aggressor row
+                                        read disturbance. Repeatedly opening/activating and closing a            activations (i.e., hammer count) necessary to induce the first
+                                        DRAM row (i.e., aggressor row) many times (e.g., thousands               10 bitflips in a DRAM row (§ 5). We demonstrate how many
+                                        of times) induces RowHammer bitflips in physically nearby                additional hammers over HC f irst are needed to induce each of
+                                        rows (i.e., victim rows). Keeping the aggressor row open for a           the first 10 bitflips. Third, we test RowPress and RowHammer’s
+                                        long period of time (i.e., a large aggressor row on time, tAggON )       sensitivities to the amount of time a row remains active, i.e.,
+                                        amplifies the effects of read disturbance and induces RowPress           the aggressor row on time (tAggON ) (§ 6). To do so, we sweep
+                                        bitflips, at much lower aggressor row activation counts [4].             tAggON from the minimum standard value of 29.0 ns to an ex-
+                                        Numerous studies demonstrate that a malicious attacker can               treme 16.0 ms. Fourth, we investigate undocumented in-DRAM
+                                        reliably cause read disturbance bitflips in a targeted manner            read disturbance defense mechanisms that are triggered by peri-
+                                        to compromise system integrity, confidentiality, and availabil-          odic refresh operations (e.g., Target Row Refresh [38, 44, 83],
+                                        ity [1, 5–67]. Read disturbance worsens in new DRAM chips                or TRR for short) in an HBM2 chip (§ 7).2 We summarize the
+                                        with smaller technology nodes, where RowHammer bitflips                  key observations from our four main analyses.
+                                        1) happen with fewer row activations, e.g., 10× reduction in
+                                                                                                                 1) Spatial variation in RowHammer (§ 4). First, DRAM
+                                        less than a decade [68] and 2) appear in more DRAM cells,
+                                                                                                                 rows near the end and in the middle of a DRAM bank (last
+                                        compared to old DRAM chips [3, 27, 35, 38, 68–71].
+                                                                                                                    1We use “chip” to refer to an HBM2 stack. An HBM2 stack contains one or
+                                           To meet the high-bandwidth requirements of modern data-
+                                        intensive applications (e.g., GPU workloads [72, 73], machine            multiple DRAM layers. We refer to each such layer using “DRAM die”.
+                                                                                                                    2 The HBM2 standard specifies a Target Row Refresh (TRR) Mode. To
+                                        learning training and inference models [74–76]), DRAM de-                enable TRR Mode, the memory controller issues a well-defined series of com-
+                                        signers develop High Bandwidth Memory (HBM) [77] DRAM                    mands. We investigate undocumented TRR mechanisms that function even
+                                        chips, which contain multiple layers of 3D-stacked DRAM dies,            when the DRAM chip is not in TRR mode.
+
+
+                                                                                                             1
+
+
+===== Page 2 =====
+
+and middle 832 rows) exhibit substantially smaller BER than                • We present the first detailed experimental characterization of
+other DRAM rows. Second, RowHammer BER and HC f irst                         read disturbance (RowHammer and RowPress) in six state-
+vary between DRAM chips. For example, the chip-level mean                    of-the-art HBM2 DRAM chips. We show that all of the
+BER and minimum HC f irst differ by up to 0.49 percentage                    tested HBM2 DRAM chips are susceptible to read disturbance
+points (pp) and 3556, respectively. Third, different 3D-stacked              bitflips.
+channels of an HBM2 chip exhibit significantly different levels            • We show that the RowHammer and RowPress vulnerability
+of RowHammer vulnerability in BER (e.g., the channel with                    in HBM2 varies significantly across chips and HBM2 com-
+the highest mean BER has 1.99× the mean BER of the channel                   ponents within each chip (e.g., 3D-stacked channels, pseudo
+with the lowest mean BER) and HC f irst . Fourth, the mean BER               channels, banks, and rows).
+variation across channels in multiple HBM2 chips is larger than            • We present the first analysis on hammer count to induce up
+the mean BER variation across all HBM2 chips, for all tested                 to 10 bitflips in a DRAM row. We show that a DRAM row
+data patterns (Table 1). For example, the channel with the                   with a large hammer count to induce the first bitflip is likely
+highest mean BER across all its rows in Chip 4 has 0.88 pp                   to require fewer additional hammer counts to exhibit the next
+higher BER than the channel with that of smallest and the chip               9 bitflips.
+with the highest BER across all its rows has 0.38 pp higher BER            • We characterize the RowPress vulnerability in six HBM2
+than the chip with that of smallest.                                         chips. Keeping the aggressor row open for the maximum
+2) RowHammer’s Sensitivity to Hammer Count (§ 5). We                         allowed time reduces the activation count to induce a bitflip by
+show that the hammer count to induce more than one or more                   three orders of magnitude on average across all tested chips.
+additional RowHammer bitflips (up to 10) in a row can be very                We show that all chips exhibit bitflips when the aggressor
+close to (1.15× larger than) or very far from (5.22× larger                  row is activated only once and kept open for a very long time
+than) the hammer count to induce the first RowHammer bitflip                 (16 ms).
+depending on the DRAM row. We find that, in general, it takes              • We uncover the inner workings of an undocumented in-HBM-
+fewer additional hammer counts (over HC f irst ) to induce up to             chip read disturbance defense mechanism. We analyze this
+10 RowHammer bitflips in a DRAM row that has a large HC f irst               defense mechanism and craft a specialized RowHammer ac-
+compared to a DRAM row that has a small HC f irst .                          cess pattern that bypasses the defense.
+3) RowHammer’s and RowPress’s Sensitivities to                             • We open-source all our infrastructure [84], test programs,
+tAggON (§ 6). We observe that as the time an aggressor row                   and raw data to enable 1) reproduction and replication of our
+remains open (tAggON ) increases, DRAM cells become more                     results, and 2) further research on read disturbance in HBM
+vulnerable to read disturbance. For example, the HC f irst of a              chips.
+row at a tAggON of 35.1 µs (the maximum allowed time to keep               2. Background & Motivation
+a row open [77]) is 222.57× smaller than the HC f irst of the row
+                                                                             We describe the necessary background on HBM2 organi-
+at a tAggON of 29.0 ns, averaged across all tested DRAM rows.
+                                                                           zation and operation, and motivate read disturbance and its
+We observe that only one DRAM row activation is sufficient to
+                                                                           implications for real HBM2 systems.
+induce RowPress bitflips at an extreme tAggON of 16 ms.
+                                                                           2.1. HBM2 Organization
+4) In-DRAM RowHammer defenses (§ 7). We uncover that
+an HBM2 DRAM chip implements an in-DRAM RowHammer                             Fig. 1 shows the organization of an HBM2 DRAM chip [85]
+defense mechanism that is not disclosed in the HBM2 spec-                  used in an FPGA-based system. The memory controller commu-
+ification [77]. The undocumented target row refresh (TRR)                  nicates with multiple stacks of HBM using the HBM2 interface
+mechanism identifies as aggressor rows i) the first row that gets          (❶). An HBM2 stack contains multiple DRAM dies stacked
+activated after a TRR operation (a victim row refresh) and ii)             on top of the buffer die and connected using through-silicon
+the row whose activation count exceeds half the number of total            vias (TSVs) (❷). Each HBM2 die comprises one or multiple
+row activations within a refresh interval. We experimentally               HBM2 channels that can operate independently (❸). An HBM2
+demonstrate that an attacker could practically and reliably de-            channel contains multiple pseudo channels and each pseudo
+feat this undocumented TRR mechanism in real HBM2 DRAM                     channel has multiple banks (❹). A DRAM bank comprises
+chips by leveraging our observations.                                      multiple DRAM cells that are laid in a two-dimensional array
+   We highlight three of the six key implications of our obser-            of rows and columns (❺). DRAM cells are typically partitioned
+vations for future read disturbance attacks and defenses (§ 8):            into multiple DRAM subarrays [86–88] (not shown in the fig-
+1) the maximum BER (247 bitflips in a row of 8192 bits) is                 ure) that each contain a row buffer. When enabled, a wordline
+likely sufficient for conducting practical attacks (e.g., privilege        connects a DRAM cell to its bitline, copying the data stored in
+escalation) in modern HBM-based systems, 2) a read distur-                 the DRAM cell to the row buffer.
+bance attack could find exploitable bitflips faster by targeting the       2.2. HBM2 Operation
+most-read-disturbance-vulnerable HBM2 channels, and 3) read                   To access a DRAM chip, the memory controller needs to
+disturbance defense mechanisms could more efficiently prevent              issue the following sequence of commands. First, the controller
+read-disturb bitflips by adapting to the heterogeneous distri-             issues an activate (ACT) command targeting a DRAM row to
+bution of the RowHammer and RowPress vulnerability across                  access a DRAM cell. The row decoder enables the row’s word-
+channels and subarrays.                                                    line, copying the data in the row to the row buffer. Second,
+   We make the following contributions:                                    to read from or write to a particular column in that row, a RD
+
+
+                                                                       2
+
+
+===== Page 3 =====
+
+                   2 HBM2 Stack       3 HBM2      Pseudo Channel                                                       1.67 ns (i.e., the HBM2 interface clock speed is 600 MHz). All
+                                       Channel                         4                 DRAM Bank
+                    Channel Channel
+                                                                           5                               DRAM
+                                                                                                   Bitline Cell
+                                                                                                                       tested HBM2 chips have i) 8 channels, ii) 2 pseudo channels,
+                                        DRAM DRAM       DRAM DRAM
+   FPGA                DRAM Die                                                                                        iii) 16 banks, iv) 16384 rows, and v) 1 KiB rows.
+
+
+
+
+                                                                           Row Decoder
+                                        Bank Bank       Bank Bank
+                                                                                                        Wordline
+   Memory              DRAM Die                                                                                        Testing setup. Fig. 2 shows one of our six testing setups. We
+  Controller                             Through-Silicon Vias (TSVs)
+                       Buffer Die                                                                                      conduct experiments using one Bittware XUPVVH [91] (1) and
+               1                        DRAM DRAM      DRAM DRAM                                         DRAM
+                 HBM2 Interface         Bank Bank      Bank Bank
+                                                                                           Row Buffer    Row           five AMD Xilinx Alveo U50 FPGA boards [92] (not shown
+ Silicon Interposer
+                                                                                                                       in Fig. 2). We use the heating pad (2) and the cooling fan (3) to
+               Figure 1: HBM2 DRAM system organization                                                                 increase and reduce the temperature of the HBM2 chip, respec-
+or WR command needs to be issued. Finally, when accesses                                                               tively. The Arduino [93] temperature controller (4) communi-
+to the open row are complete, the memory controller issues a                                                           cates with i) the host machine to retrieve a target temperature
+precharge (PRE) command, which disables the enabled word-                                                              and ii) the FPGA board to retrieve the HBM2 chip’s tempera-
+line so that the memory controller can later access a different                                                        ture. A host machine executes the test programs described in
+cell in another DRAM row.                                                                                              § 3.1 on the FPGA board using the PCIe connection (5).
+   To maintain reliable DRAM operation, the memory controller
+                                                                                                                        (3) Cooling Fan                                (4) Temperature
+must obey manufacturer-recommended, standard timing param-
+                                                                                                                                                                           Controller
+eters. These timing parameters ensure that the DRAM circuitry
+has enough time to execute the operations dictated by DRAM
+commands. Two relevant timing parameters for our study are                                                                                                              (2) Heating Pad
+charge restoration latency (tRAS ) and refresh interval (tREFI ).
+                                                                                                                         (1) FPGA Board
+First, tRAS , the minimum time that a row should remain active                                                              with HBM2
+before a PRE command is sent to the row’s bank. tRAS guaran-
+tees that DRAM sense amplifiers have enough time to restore
+charge in cells of the open row before the row is closed. Second,
+tREFI , the periodic interval at which a refresh cycle is required.
+Since a DRAM cell stores data as charge in its capacitor and the                                                                                      (5) PCIe
+capacitor naturally loses charge over time, the capacitor must                                                                                      Host Interface
+be periodically refreshed to prevent data corruption. Conse-
+quently, the memory controller should issue a REF command                                                                        Figure 2: FPGA-based HBM2 DRAM tester.
+on average every 3.9 µs [77] (tREFI ), such that every DRAM cell
+is refreshed once at a fixed refresh window (e.g., 32 ms). The
+                                                                                                                       3.1. Testing Methodology
+memory controller may delay a REF command up to 35.1 µs                                                                Disabling Sources of Interference. We identify four sources
+(9 ∗tREFI ). However, any such large delay must be compensated                                                         that can interfere with our characterization results: 1) periodic
+by multiple smaller delays between successive REF commands                                                             refresh [77], 2) on-die read disturbance defense mechanisms
+following the large delay.                                                                                             (e.g., TRR [38,44,83]), 3) data retention failures [94,95], and 4)
+2.3. Motivation                                                                                                        ECC [77]. First, we do not issue periodic refresh commands in
+                                                                                                                       our experiments. Second, disabling periodic refresh disables all
+   Read-disturb phenomena (e.g., RowHammer [1] and Row-
+                                                                                                                       known on-die read disturbance defense mechanisms [44,68–70].
+Press [4]) break the fundamental building block of modern
+                                                                                                                       Third, we ensure that our experiments finish within the 32 ms
+system security principles, i.e., memory isolation. This prop-
+                                                                                                                       refresh interval where manufacturers guarantee no retention
+erty allows read-disturb phenomena to be used in system-level
+                                                                                                                       errors will occur [77]. Fourth, we disable ECC by setting the
+attacks that compromise system integrity, confidentiality, and
+                                                                                                                       corresponding HBM2 mode register bit to zero [77].
+availability in various real computing systems, as many prior
+                                                                                                                       RowHammer and RowPress Access Pattern. We use the
+works have shown [1, 5–67]. Therefore, it is critical to under-
+                                                                                                                       double-sided read disturbance access pattern [1, 14, 68, 70],
+stand the properties of the RowHammer and RowPress vul-
+                                                                                                                       which alternately activates each aggressor row. We record the
+nerabilities to design defense mechanisms and protect modern
+                                                                                                                       bitflips observed in the sandwiched victim row (i.e., the row
+DRAM chips against read-disturbance-based attacks. Unfor-
+                                                                                                                       between two aggressor rows).
+tunately, no prior work extensively studies the RowHammer
+                                                                                                                       Logical-to-Physical Row Mapping. DRAM manufacturers
+and RowPress vulnerabilities of modern HBM chips. To this
+                                                                                                                       use mapping schemes to translate logical (memory-controller-
+end, our goal is to experimentally evaluate and understand the
+                                                                                                                       visible) addresses to physical row addresses [1, 9, 28, 39, 70, 94,
+RowHammer and RowPress vulnerabilities in real HBM chips.
+                                                                                                                       96–105]. To identify aggressor rows that are physically adjacent
+To achieve this goal, we perform a rigorous experimental char-
+                                                                                                                       to a victim row, we reverse-engineer the row mapping scheme
+acterization study of read disturbance on six HBM2 chips in
+                                                                                                                       following the methodology described in prior work [70].
+two different types of integrated circuit packages.
+                                                                                                                       RowHammer and RowPress Test Parameters. We configure
+3. Experimental Infrastructure                                                                                         our tests by tuning three parameters: 1) Hammer count: We
+   We use a modified version of the DRAM Bender testing                                                                define the hammer count of a double-sided read disturbance
+infrastructure [89, 90]. This infrastructure allows us to pre-                                                         access pattern as the number of activations each aggressor row
+cisely control the HBM2 command timings at the granularity of                                                          receives. Therefore, during a double-sided RowHammer or a
+
+
+                                                                                                                   3
+
+
+===== Page 4 =====
+
+Figure 3: Tested HBM2 chips’ temperature over time (24 hours). We draw temperature measurements taken every 5 seconds over a 24
+hour time window.
+RowPress test with a hammer count of 10, we activate each                         this chip to 82 ◦ C. Fig. 3 shows how the temperature of each
+of the two aggressor rows 10 times, resulting in a total of 20                    chip varies during 24 hours based on measurements taken every
+row activations. 2) tAggON : The time each aggressor row stays                    5 seconds. Even though we do not have the same tempera-
+on with each activation during a RowHammer or a RowPress                          ture controller setups for the six chips, we observe that their
+test. 3) Data pattern: We use the four data patterns (Table 1)                    temperature is stable.3
+that are widely used in memory reliability testing [106] and by                   4. Spatial Variation in RowHammer
+prior work on DRAM characterization (e.g., [1, 4, 68, 70, 107]).
+                                                                                    We provide the first detailed spatial variation analysis of
+For each DRAM row, we define WCDP as the data pattern
+                                                                                  RowHammer across channels, pseudo channels, banks, and
+that causes the smallest HC f irst . When multiple data patterns
+                                                                                  rows in six HBM2 chips.
+cause the same HC f irst , we select WCDP as the data pattern
+that causes the largest BER at hammer count = 256K.                               4.1. RowHammer Across Chips
+          Table 1: Data patterns used in our experiments                            Fig. 4 shows the distribution of BER (y-axis) across all tested
+  Row Addresses        Rowstripe0   Rowstripe1    Checkered0   Checkered1         DRAM rows for each tested data pattern (x-axis) in all tested
+    Victim (V)           0x00         0xFF          0x55         0xAA             chips (color-coded). A higher BER indicates worse RowHam-
+ Aggressors (V ± 1)      0xFF         0x00          0xAA         0x55             mer vulnerability as more DRAM cells in a row exhibit Row-
+     V ± [2:8]           0x00         0xFF          0x55         0xAA
+                                                                                  Hammer bitflips.
+Read Disturbance Vulnerability Metrics. We measure the                                                                                       Chip
+read disturbance vulnerability based on two metrics: 1) HC f irst                                                  Chip 0      Chip 1    Chip 2     Chip 3    Chip 4   Chip 5
+                                                                                                      3.2
+                                                                                  RowHammer BER (%)
+
+
+
+
+and 2) BER as defined in § 1.                                                                         2.8
+                                                                                                      2.4
+Tested DRAM Components. To maintain a reasonable ex-                                                  2.0
+periment time, the number of DRAM components (channels,                                               1.6
+                                                                                                      1.2
+pseudo channels, banks, and rows) we test varies depending                                            0.8
+                                                                                                      0.4
+on the experiment type. Table 2 summarizes the number of                                              0.0
+                                                                                                            Rowstripe0      Rowstripe1   Checkered0      Checkered1    WCDP
+components tested for each experiment type.                                                                                              Data pattern
+ Table 2: Tested DRAM components for each experiment type
+                                                                                  Figure 4: BER across different HBM2 chips. Error bars show the
+  Experiment Type      Rows (Per Bank)   Banks   Pseudo Channels   Channels       range of BER across all tested rows in each chip.
+  RowHammer BER            16384           1            1             8
+ RowHammer HC f irst        3072           3            2             8            Obsv. 1. There are RowHammer bitflips in all tested DRAM
+   RowPress BER              384           1            1             3           rows in all chips. RowHammer BER varies across chips.
+  RowPress HC f irst         384           1            1             3
+                                                                                     For example, the BER for a DRAM row in Chip 0 can reach
+Experiment Repetitions. We repeat every experiment five                           up to 3.02% (i.e., 3.02% of all cells in a DRAM row exhibit
+times. We report 1) the average value across five repetitions                     RowHammer bitflips) and the mean BER across all DRAM
+for BER experiments and 2) the minimum value across five                          rows in Chip 0 is 1.04%. In Chip 5, the highest BER for a
+repetitions for HC f irst experiments.                                            DRAM row is 1.82% and the mean BER across all DRAM
+HBM2 Chip Labeling. We label the XUPVVH board’s HBM2                              rows is 0.66%. We observe the most significant difference in
+chip as Chip 0 and the five U50 boards’ HBM2 chips as Chip 1,                     mean BER across all rows in a chip between Chip 0 (1.28%)
+2, 3, 4, and 5.                                                                   and Chip 5 (0.80%) as 0.49 percentage points (pp) for the worst
+Estimated ages of the tested HBM2 chips. We do not know                           case data pattern (WCDP, see § 3.1).
+the precise model information details (including the manufac-                      Obsv. 2. Data pattern affects RowHammer BER.
+turing date) of the HBM2 chips we test, as the manufacturer                          As an example, the Checkered0 and Checkered1 data pat-
+does not disclose the specifications for the HBM2 chips in their                  terns result in substantially higher mean BER across rows for
+products [108] and as our custom memory controller does not                       every DRAM chip compared to the Rowstripe0 and Rowstripe1
+yet support accessing this information from the mode status                       data patterns. The mean BER across all tested DRAM rows
+registers of the HBM2 chip. We estimate the ages of the tested                    (across all chips) is 0.76% and 0.67% for Checkered0/1 and
+HBM2 chips based on the dates that we acquired them: Chip0                        Rowstripe0/1 data patterns, respectively.
+was 2 years and 9 months, Chip1 was 8 months, and Chip2-5                            Fig. 5 shows the distribution of HC f irst (y-axis) across all
+were 3 months old when we started our experiments.                                tested DRAM rows for each tested data pattern (x-axis). A
+Temperature Control. We use the temperature controller setup                                          3 We retrieve the temperature for these five chips from an in-HBM2-chip
+
+shown in Fig. 2 for Chip 0 and set the target temperature for                     temperature sensor using the IEEE 1500 test port [77].
+
+
+                                                                              4
+
+
+===== Page 5 =====
+
+lower HC f irst indicates worse RowHammer vulnerability as                                                                                                                          Channel
+                                                                                                                                                            CH0      CH1     CH2    CH3     CH4      CH5       CH6      CH7
+DRAM cells exhibit RowHammer bitflips with fewer aggressor
+                                                                                                                                                  3.2
+row activations (i.e., it takes a shorter time to induce the first                                                                                2.8    Chip 0
+                                                                                                                                                  2.4
+RowHammer bitflip in a row).                                                                                                                      2.0
+                                                                                                                                                  1.6
+                                                                          Chip                                                                    1.2
+                                                                                                                                                  0.8
+Minimum Hammer Count Needed
+
+
+
+
+                                                Chip 0      Chip 1    Chip 2     Chip 3    Chip 4   Chip 5                                        0.4
+                                                                                                                                                  0.0
+    to Induce the First Bitflip
+
+
+
+
+                                  240K                                                                                                            3.2
+                                  200K                                                                                                            2.8    Chip 1
+                                  160K                                                                                                            2.4
+                                                                                                                                                  2.0
+                                  120K                                                                                                            1.6
+                                   80K                                                                                                            1.2
+                                   40K                                                                                                            0.8
+                                     0                                                                                                            0.4
+                                         Rowstripe0      Rowstripe1   Checkered0      Checkered1    WCDP                                          0.0
+                                                                      Data pattern                                                                3.2
+                                                                                                                                                  2.8    Chip 2
+
+
+
+
+                                                                                                                 RowHammer Bit Error Rate (BER)
+                                                                                                                                                  2.4
+Figure 5: HC f irst across different chips. Error bars show the range                                                                             2.0
+                                                                                                                                                  1.6
+of HC f irst across all tested rows in each chip.                                                                                                 1.2
+                                                                                                                                                  0.8
+                                                                                                                                                  0.4
+ Obsv. 3. It takes only 14531 aggressor row activations to                                                                                        0.0
+induce a RowHammer bitflip.                                                                                                                       3.2
+                                                                                                                                                  2.8    Chip 3
+   The most RowHammer vulnerable DRAM row across all                                                                                              2.4
+                                                                                                                                                  2.0
+tested rows has an HC f irst of 14531. Causing this bitflip in a                                                                                  1.6
+                                                                                                                                                  1.2
+row in Chip 5 takes us 1.3 milliseconds.                                                                                                          0.8
+                                                                                                                                                  0.4
+ Obsv. 4. HC f irst varies across chips and there are rows in                                                                                     0.0
+                                                                                                                                                  3.2
+every chip that exhibit relatively small HC f irst values.                                                                                        2.8    Chip 4
+                                                                                                                                                  2.4
+   There is variation in HC f irst distributions between different                                                                                2.0
+                                                                                                                                                  1.6
+chips for the same data pattern. For example, the mean HC f irst                                                                                  1.2
+                                                                                                                                                  0.8
+value for Chip 5 is 10.59% higher than the mean HC f irst value                                                                                   0.4
+                                                                                                                                                  0.0
+for Chip 2 using the Rowstripe0 data pattern. The other tested                                                                                    3.2
+                                                                                                                                                  2.8    Chip 5
+chips (Chips 0-4) display similar minimum HC f irst values. It                                                                                    2.4
+                                                                                                                                                  2.0
+takes 18087, 16611, 15500, 17164, and 15500 aggressor row                                                                                         1.6
+                                                                                                                                                  1.2
+activations to induce the first RowHammer bitflip in Chips 0-4,                                                                                   0.8
+                                                                                                                                                  0.4
+respectively.                                                                                                                                     0.0
+                                                                                                                                                        Rowstripe0    Rowstripe1   Checkered0     Checkered1         WCDP
+              Takeaway 1. HBM2 chips exhibit different levels of Row-                                                                                                              Data pattern
+              Hammer vulnerability in terms of mean BER (up to 0.49                                                 Figure 6: BER across different DRAM channels. Error bars show
+              percentage points difference) and minimum HC f irst (up to                                            the range of BER across rows in each channel.
+              3556 difference).
+                                                                                                                   performance testing [109] (the difference in BER across groups
+4.2. RowHammer Across Channels                                                                                     of two channels is similar to how different DDR3/4 chips exhibit
+   Fig. 6 shows the distribution of BER (y-axis) across different                                                  different RowHammer characteristics [1, 68–70, 107, 110, 111]).
+DRAM rows for a given data pattern (x-axis) in a channel                                                            Obsv. 7. The distribution of BER across channels changes
+(color-coded).                                                                                                     from chip to chip.
+ Obsv. 5. Each tested DRAM row across all tested HBM2 chan-                                                           The most RowHammer vulnerable channel (i.e., a channel
+nels exhibits RowHammer bitflips. The worst-case data pattern                                                      with the highest RowHammer BER) is not necessarily the same
+(WCDP) BER across all tested rows in all chips can reach                                                           across every chip. For example, channels CH0 and CH7 have
+3.02% (i.e., 247 bitflips out of 8192 bits in a row).                                                              the highest average BER in Chip 0, whereas channels CH3 and
+ Obsv. 6. BER varies across channels in a chip.                                                                    CH4 have the highest average BER in Chip 1 for WCDP. We
+   For example, in Chip 0, channels CH0 and CH7 exhibit sig-                                                       hypothesize that this difference could be due to the effects of
+nificantly higher BER than other channels. CH7 (where we                                                           process variation across HBM2 chips and dies inside chips.
+observe the highest mean BER) has 1.99× the BER of CH3                                                              Obsv. 8. The mean BER across all rows in each channel has
+(where we observe the lowest mean BER) for WCDP. We ob-                                                            a wider distribution than the mean BER across all rows in each
+serve that channels can be classified into groups of two based on                                                  chip.
+the number of bitflips they exhibit. We highlight these groups                                                        For example, the difference between the maximum and the
+using different shades of the same color in Fig. 6. For exam-                                                      minimum mean BER across all rows in each channel in Chip
+ple, channels CH3 and CH4 exhibit a similar BER distribution                                                       4 is 0.88 pp, whereas the difference between the maximum
+across rows in every tested HBM2 chip. We hypothesize that                                                         and the minimum mean BER across all rows in each chip is
+groups of channels are spread across different HBM2 DRAM                                                           0.38 pp (see Fig. 6), for the Checkered0 data pattern. This
+dies. The difference in BER across the groups of channels could                                                    observation holds for all tested data patterns and chips except
+be due to process variation as a 3D-stacked chip is typically                                                      Chip 5. Chip 5 has a smaller difference between the maximum
+constructed by stacking DRAM dies that pass functionality and                                                      and the minimum mean BER across all rows in each channel
+
+
+                                                                                                             5
+
+
+===== Page 6 =====
+
+    than the difference across all rows in each chip. Manufacturing                                                                                       Takeaway 2. RowHammer BER and HC f irst vary between
+    process variation inherent to 3D die stacking process [109]                                                                                           different 3D-stacked channels in a chip and with the data
+    could explain this observation. 3D die stacking could alter                                                                                           patterns in aggressor and victim rows. The mean BER across
+    the RowHammer vulnerability characteristics (e.g., BER) of                                                                                            all rows in each channel has a wider distribution than the
+    DRAM dies that make up a chip stack. We hypothesize that this                                                                                         mean BER across all rows in each chip.
+    alteration is made in a way that widens the BER distribution                                                                                           Fig. 8 shows the BER over each DRAM row in a bank when
+    across 3D-stacked dies in an HBM2 chip.                                                                                                             we use the worst-case data pattern (WCDP) to initialize the
+      Fig. 7 shows the distribution of HC f irst (y-axis) across differ-                                                                                rows. Each color-coded BER curve represents the BER for
+   ent DRAM rows for a given data pattern (x-axis) in a channel                                                                                         rows in three different channels. The shaded regions indicate
+   (color-coded).                                                                                                                                       variable-sized subarray boundaries.4 For example, the green
+                                                                                                                                                        highlighted subarray (SA X) comprises 832, and the blue high-
+                                                                                                         Channel                                        lighted subarray (SA Y) comprises 768 DRAM rows.
+                                                                                 CH0      CH1     CH2    CH3     CH4      CH5       CH6      CH7
+                                                                    240K                                                                                                                                               Channel
+                                                                    200K      Chip 0                                                                                                                            CH0        CH1   CH2
+                                                                    160K                                                                                                              2.0
+                                                                    120K
+
+
+
+
+                                                                                                                                                                                            Chip 0
+                                                                     80K                                                                                                              1.3
+                                                                     40K                                                                                                                                 SA X   SA Y
+                                                                       0                                                                                                              0.7
+                                                                    240K                                                                                                              1.1
+                                                                    200K      Chip 1
+
+
+
+
+                                                                                                                                                                                            Chip 1
+                                                                                                                                                                                      0.8
+Minimum Hammer Count Needed to Induce the First Bitflip (HCfirst)
+
+
+
+
+                                                                    160K
+                                                                    120K                                                                                                              0.4
+
+
+
+                                                                                                                                                       RowHammer Bit Error Rate (%)
+                                                                     80K                                                                                                              1.5
+                                                                     40K
+
+
+
+
+                                                                                                                                                                                            Chip 2
+                                                                       0                                                                                                              1.0
+                                                                    240K      Chip 2                                                                                                  0.5
+                                                                    200K                                                                                                              1.7
+                                                                    160K
+                                                                                                                                                                                            Chip 3
+                                                                    120K                                                                                                              1.0
+                                                                     80K
+                                                                     40K                                                                                                              0.3
+                                                                       0
+                                                                    240K                                                                                                              2.0
+                                                                              Chip 3
+                                                                                                                                                                                            Chip 4
+
+
+                                                                    200K                                                                                                              1.2
+                                                                    160K
+                                                                    120K                                                                                                              0.4
+                                                                     80K                                                                                                              1.0
+                                                                     40K
+                                                                                                                                                                                            Chip 5
+
+
+
+
+                                                                       0                                                                                                              0.7
+                                                                    240K      Chip 4                                                                                                  0.4
+                                                                    200K                                                                                                                             0                                 16383
+                                                                    160K                                                                                                                                               Row ID
+                                                                    120K
+                                                                     80K                                                                                 Figure 8: BER for different rows across a bank in different chan-
+                                                                     40K
+                                                                       0                                                                                 nels. Dashed vertical lines indicate subarray boundaries.
+                                                                    240K
+                                                                    200K      Chip 5                                                                     Obsv. 10. BER periodically increases and decreases across
+                                                                    160K                                                                                DRAM rows.
+                                                                    120K
+                                                                     80K                                                                                   This observation is consistent in each tested chip. BER is
+                                                                     40K                                                                                higher in the middle of a subarray and lower towards either
+                                                                       0
+                                                                             Rowstripe0    Rowstripe1   Checkered0     Checkered1         WCDP          end. We hypothesize that the increasing and decreasing pattern
+                                                                                                        Data pattern
+                                                                                                                                                        results from the structure of the local DRAM array. For example,
+                                                                           Figure 7: HC f irst across different DRAM channels.                          the RowHammer vulnerability of a row could increase with the
+                                                                                                                                                        row’s distance from the row buffer.
+     Obsv. 9. Different channels exhibit different HC f irst distribu-
+    tions. These distributions are affected by the data pattern.                                                                                         Obsv. 11. The last and the middle subarrays in a bank exhibit
+                                                                                                                                                        relatively low BER.
+       For example, channels CH3 and CH4 in chip 1 contain more                                                                                            The last and the middle subarrays in a bank (highlighted with
+    rows with smaller HC f irst values than other channels. Because                                                                                     red color in Fig. 8), which contain the last and the middle 832
+    these channels also exhibit more RowHammer bitflips than                                                                                            DRAM rows, exhibit significantly lower BER than the other
+    other channels in chip 1 (see Fig. 6), we hypothesize that these                                                                                    subarrays. We hypothesize that these subarrays exhibit smaller
+    channels belong to the die with the worst RowHammer vulnera-                                                                                        BER due to the micro-architectural characteristics of the DRAM
+    bility across all dies. The median HC f irst for Rowstripe0 and                                                                                     bank. First, assuming that proximity to the shared I/O circuitry
+    Rowstripe1 in channel CH0 in chip 1 are 103905 and 75990,                                                                                           on the DRAM die affects the RowHammer vulnerability of a
+    respectively. Testing with different data patterns is necessary to                                                                                       4We reverse engineer subarray boundaries by performing single-sided Row-
+    assess the RowHammer vulnerability of an HBM2 DRAM chip,                                                                                             Hammer [1, 68] that induces bitflips in only one of the victim rows if the
+    as no data pattern individually achieves the smallest HC f irst or                                                                                   aggressor row is at the edge of a subarray. We find that a subarray contains
+    the highest BER (Fig. 6).                                                                                                                            either 832 (SA X in Fig. 8) or 768 (SA Y in Fig. 8) DRAM rows.
+
+
+                                                                                                                                                   6
+
+
+===== Page 7 =====
+
+subarray, the last and the middle subarrays might be placed near                                                        different channels is more important than testing different banks
+this shared I/O circuitry [112]. Second, an edge subarray (a sub-                                                       or pseudo channels in providing a comprehensive understanding
+array at either edge of a bank) typically harbors different design                                                      of the RowHammer vulnerability in HBM2 DRAM chips.
+characteristics than other subarrays [113, 114]. Edge subarrays                                                                   Takeaway 4. RowHammer BER varies across pseudo chan-
+(e.g., the last and the middle subarrays) in the tested chips could                                                               nels and banks. This variation is less prominent than the
+exhibit a design characteristic that results in their DRAM word-                                                                  BER variation between channels.
+lines to be driven to a smaller wordline voltage (VPP ) than other
+subarrays’ wordlines’, which could explain the relatively low                                                           4.4. The Effect of Aging
+BER values in the middle and last subarrays [69]. Third, the                                                              A DRAM row’s RowHammer vulnerability can change over
+tested data pattern may not be replicated in the same way in                                                           time. A rigorous characterization study on many HBM2 chips
+edge subarrays due to inaccessible “dummy bitlines” [113] and                                                          over a large timespan is required to comprehensively demon-
+thus the data pattern in the last and middle subarrays could be                                                        strate the effects of aging. Due to time and space limitations,
+inducing a smaller read disturbance effect.                                                                            we leave such a study for future work while presenting a pre-
+                   Takeaway 3. A subset of HBM2 rows (the middle and the                                               liminary analysis using four HBM2 chips (Chips 2-5, which
+                   last 832 rows) are significantly more RowHammer resilient                                           have the same estimated age) as our best effort. We repeat our
+                   than the other rows in an HBM2 channel.                                                             BER experiments for 3072 rows in 3 channels after 7 months
+                                                                                                                       of keeping the HBM2 chips powered on. Fig. 10 (left) shows
+4.3. RowHammer Across Banks and Pseudo Channels
+                                                                                                                       the distribution of a row’s BER after aging (New BER) over its
+   To investigate the variation in the RowHammer vulnerability                                                         BER before aging (Old BER) for the Checkered1 data pattern.
+across HBM2 banks and pseudo channels, we measure BER on                                                               Fig. 10 (right) shows the distribution of a row’s BER before
+300 rows from 256 banks in chip 0.5 Fig. 9 compares different                                                          aging over its BER after aging. The left subplot shows only the
+banks’ BER distributions across channels (color) and pseudo                                                            distribution for the rows whose BERs increase after aging and
+channels (marker style) in terms of the coefficient of variation                                                       the right subplot shows the distribution for the rest of the rows.
+(CV)6 (x-axis) and mean BER (y-axis). We draw one marker                                                               The x-axis is marked with percentiles ranging from P1 to P99.
+for each bank. At a high level, a marker close to the y-axis (e.g.,
+                                                                                                                      New BER/Old BER
+
+
+
+
+                                                                                                                                                                                       Old BER/New BER
+                                                                                                                                                        Chip 4         Chip 2
+the leftmost markers) indicates that the variation in BER across                                                                                        Chip 5         Chip 3                            3
+                                                                                                                                        3
+rows in that bank is smaller. A marker close to the x-axis (e.g.,                                                                           Number of rows: 18713                                        2
+                                                                                                                                                                                                             Number of rows: 17973
+                                                                                                                                        2
+the bottommost markers) suggests that the mean BER across
+rows in that bank is smaller.                                                                                                           1                                                                1
+                                                                                                                                             P1
+                                                                                                                                             P5
+                                                                                                                                            P10
+
+                                                                                                                                                  P25
+
+
+                                                                                                                                                                 P50
+
+
+                                                                                                                                                                           P75
+
+                                                                                                                                                                                 P90
+                                                                                                                                                                                 P95
+                                                                                                                                                                                 P99
+
+
+
+                                                                                                                                                                                                              P1
+                                                                                                                                                                                                              P5
+                                                                                                                                                                                                             P10
+
+                                                                                                                                                                                                                   P25
+
+
+                                                                                                                                                                                                                            P50
+
+
+                                                                                                                                                                                                                                     P75
+
+                                                                                                                                                                                                                                           P90
+                                                                                                                                                                                                                                           P95
+                                                                                                                                                                                                                                           P99
+                                                                                                 Channel                                            DRAM rows (sorted in                                             DRAM rows (sorted in
+                                                                                                                                                increasing New BER/Old BER)                                      increasing Old BER/New BER)
+Mean of RowHammer BER (%)
+
+
+
+
+                                                                                                 0
+                            1.6                                                                  1
+                                                            Each point is a bank                 2                      Figure 10: Distribution of the deviation of BER after aging from
+                            1.4                                                                  3
+                                                                                                 4
+                                                                                                                        BER before aging across tested DRAM rows.
+                            1.2                                                                  5
+                                                                                                 6                       Obsv. 13. The BER of a DRAM row changes after aging. A
+                            1.0                                                                  7
+                                                                                                 Pseudo Channel         larger fraction of the tested DRAM rows have higher BER after
+                            0.8                                                                  0
+                                  0.22   0.24    0.26        0.28        0.30      0.32   0.34   1                      aging.
+                                                Coefficient of Variation
+                                                                                                                           18713 and 17973 of the tested DRAM rows have a higher
+Figure 9: BER variation across banks. Each bank is represented                                                          New BER and a lower New BER, respectively (we omit 178
+by the average BER (y-axis) and the coefficient of variation in BER                                                     outlier rows from the figure). We observe similar distributions
+(x-axis) across all rows within the bank.
+                                                                                                                        for all tested HBM2 chips.
+ Obsv. 12. RowHammer BER varies across banks and pseudo                                                                 5. RowHammer’s Sensitivity to Hammer Count
+channels. The BER variation across banks is dominated by
+variation across channels.                                                                                                We analyze the number of aggressor row activations (hammer
+   For example, there is up to 0.23 pp difference in mean BER                                                           count) needed to induce up to 10 bitflips in a DRAM row. Our
+across banks in channel 7. The markers follow a bimodal dis-                                                            HC f irst analysis (§ 4) already examined the hammer count to
+tribution (i.e., the markers are clustered around two points in                                                         induce one (the first) bitflip in a row. We use the same naming
+the plot). The two clusters indicate that 1) a bank with a higher                                                       convention used with HC f irst to refer to these 9 new hammer
+mean BER across its rows also has a smaller deviation (i.e.,                                                            counts that we determine in this analysis. For example, we call
+smaller coefficient of variation) from the average BER across                                                           the hammer count to induce the second bitflip HCsecond and
+its rows and 2) a bank with a smaller mean BER across its rows                                                          the tenth bitflip HCtenth . We report each of the 9 new hammer
+also has a larger deviation from the average BER across its rows.                                                       counts as a value normalized to HC f irst . For example, if a row’s
+Banks in different channels tend to have a larger BER difference                                                        HC f irst is 10 and its HCsecond normalized to HC f irst is 2, the
+than banks in the same channel (Fig. 6), indicating that testing                                                        absolute HCsecond of the row is 20. We record the hammer
+   5 First, middle, and last 100 rows in each of the 256 banks spread across
+                                                                                                                        counts to induce up to 10 bitflips in 32 rows from each of the
+eight channels and two pseudo channels.
+                                                                                                                        beginning, middle, and end of one bank in two channels (that
+   6 Coefficient of variation is the standard deviation of a distribution normal-                                       exhibit the smallest HC f irst across all channels) in every HBM2
+ized to the mean.                                                                                                       chip. Fig. 11 plots the distribution of all 10 hammer counts
+
+
+                                                                                                                  7
+
+
+===== Page 8 =====
+
+(x-axis) normalized to HC f irst (y-axis) for all tested DRAM                                                                                                                                HC f irst ) to induce the 10th RowHammer bitflip for a DRAM
+rows (1152 such rows across all chips).                                                                                                                                                      row with a large HC f irst compared to a DRAM row with a small
+                                                                                                                          Data Pattern
+                                                                                                                                                                                             HC f irst .
+                                                                                  Rowstripe0                  Rowstripe1                 Checkered0                  Checkered1                 We observe that increasing HC f irst is correlated with decreas-
+Normalized to HCfirst
+
+
+
+
+                                                                       5                                                                                                                     ing additional hammer count to induce the 10th bitflip. We com-
+  Hammer Count
+
+
+
+
+                                                                       4                                                                                                                     pute the Pearson correlation coefficient for each distribution to
+                                                                       3                                                                                                                     quantify the correlation. We conclude that increasing HC f irst is
+                                                                       2                                                                                                                     moderately correlated with decreasing additional hammer count
+                                                                       1                                                                                                                     to induce the 10th bitflip, based on the weakest (−0.34) and
+                                                                            HC1st HC2nd HC3rd HC4th HC5th HC6th HC7th HC8th HC9th HC10th                                                     the strongest (−0.45) Pearson correlation we observe across
+ Figure 11: Distribution of hammer counts (y-axis) to induce up                                                                                                                              distributions for each chip (displayed on each subplot).
+ to 10 bitflips in a DRAM row (x-axis), normalized to the row’s
+ HC f irst .                                                                                                                                                                                   Takeaway 5. It can take fewer aggressor row activations to
+                                                                                                                                                                                               induce multiple (e.g., 10) bitflips in a DRAM row if it takes
+ Obsv. 14. Hammer count needed to induce up to 10 bitflips in                                                                                                                                  many activations to induce the first bitflip in the row.
+a row significantly varies between rows.
+   The hammer count to induce up to 10 bitflips in a row can                                                                                                                                    Fig. 13 shows the distribution of the maximum change of
+be as small as 1.15× and as large as 5.22× the HC f irst of the                                                                                                                              HC f irst from the minimum observed HC f irst for a DRAM row
+DRAM row. Fewer than 2× HC f irst hammers are enough to                                                                                                                                      over 50 experiment iterations using the Rowstripe0 data pattern.
+induce 10 bitflips in a DRAM row on average across all tested                                                                                                                                The x-axis shows all tested rows (768 rows from channel 0
+DRAM rows. For example, an average DRAM row’s HCsecond ,                                                                                                                                     in every tested HBM2 chip), sorted by increasing maximum
+HC f ourth , HCeighth , and HCtenth are 1.19×, 1.41×, 1.66×, and                                                                                                                             change of HC f irst and marked with percentiles ranging from P1
+1.76× that of the row’s HC f irst for the Rowstripe1 data pattern.                                                                                                                           to P99.7
+
+
+                                                                                                                                                                                                    Max. HCfirst / Min. HCfirst
+ Obsv. 15. The hammer counts to induce up to 10 bitflips are
+moderately affected by data patterns.                                                                                                                                                                                             2.0
+   For example, the difference between the largest (Rowstripe0)                                                                                                                                                                   1.5
+and the smallest (Rowstripe1) mean normalized HCtenth is
+12.59%. The variation in normalized hammer count across data                                                                                                                                                                      1.0
+                                                                                                                                                                                                                                         P1
+                                                                                                                                                                                                                                         P5
+                                                                                                                                                                                                                                        P10
+
+                                                                                                                                                                                                                                                P25
+
+
+                                                                                                                                                                                                                                                            P50
+
+
+                                                                                                                                                                                                                                                                        P75
+
+                                                                                                                                                                                                                                                                                   P90
+                                                                                                                                                                                                                                                                                   P95
+                                                                                                                                                                                                                                                                                   P99
+patterns resembles the variation in HC f irst across data patterns
+(see Fig. 5).                                                                                                                                                                                                                                 DRAM rows (sorted by increasing
+                                                                                                                                                                                                                                              Maximum HCfirst / Minimum HCfirst)
+   Fig. 12 plots the additional hammer count (over HC f irst )
+to induce the 10th bitflip (y-axis) for all tested DRAM rows                                                                                                                                 Figure 13: Distribution of the maximum observed HC f irst over the
+                                                                                                                                                                                             minimum observed HC f irst for a DRAM row across experiments,
+whose HC f irst values are depicted on the x-axis. We compute
+                                                                                                                                                                                             across all tested 4608 DRAM rows for the Rowstripe0 data pattern.
+the additional hammer count for a row as the row’s HCtenth −
+HC f irst . Fig. 12 shows one subplot for each of the 6 tested                                                                                                                                  We make two key observations. First, the HC f irst of a
+HBM2 chips.                                                                                                                                                                                  DRAM row can significantly change from the minimum ob-
+                                                                                     pearson correlation coefficient = -0.36                   pearson correlation coefficient = -0.45
+                                                                                                                                                                                             served HC f irst across experiment iterations (i.e., over time).
+ Additional (over HCfirst) hammer count to induce the 10th bitflip
+
+
+
+
+                                                                     200k                                                      200k
+                                                                                                                   Chip 0                                                    Chip 1          The greatest change that we observe for a row is 2.23× (the
+                                                                     100k                                                      100k                                                          row’s maximum observed HC f irst is 2.23× of its minimum
+                                                                                                                                                                                             observed HC f irst ). Second, the majority of rows experience
+                                                                       0k                                                        0k
+                                                                            50k      100k            150k            200k             50k      100k            150k            200k          a small HC f irst change. For example, 90% of all tested rows
+                                                                                     pearson correlation coefficient = -0.45                   pearson correlation coefficient = -0.34       experience an HC f irst change smaller than 1.09×.
+                                                                     200k                                                      200k
+                                                                                                                   Chip 2                                                    Chip 3
+                                                                     100k                                                      100k                                                          6. RowHammer and RowPress’s Sensitivities to
+                                                                       0k                                                        0k
+                                                                                                                                                                                                Aggressor Row On Time
+                                                                            50k      100k            150k            200k             50k      100k            150k            200k
+                                                                                     pearson correlation coefficient = -0.39                   pearson correlation coefficient = -0.41
+                                                                                                                                                                                                With aggressive technology node scaling, DRAM suffers
+                                                                     200k                                                      200k
+                                                                                                                   Chip 4                                                    Chip 5          from worsening read disturbance effects. One prominent ex-
+                                                                     100k                                                      100k                                                          ample of read disturbance in DRAM is RowHammer, which
+                                                                                                                                                                                             we have already extensively characterized in our HBM2 chips.
+                                                                       0k                                                 0k
+                                                                            50k      100k           150k      200k             50k            100k             150k            200k          We also investigate the characteristics of another widespread
+                                                                                                   Hammer count to induce the first bitflip (HCfirst)
+                                                                                                                                                                                             read disturbance effect called RowPress, recently experimen-
+ Figure 12: Additional (over HC f irst , x-axis) hammer count needed                                                                                                                         tally demonstrated in real DDR4 chips [4]. RowPress is the
+ to induce the tenth bitflip (y-axis) for each tested DRAM row in                                                                                                                            phenomenon that keeping an aggressor row open for a long
+ each tested chip (labeled Chip 0 to Chip 5 in the figure). We                                                                                                                                   7 To maintain a reasonable testing time, we investigate the maximum change
+ plot a polynomial curve fit (orange curve) for each distribution
+ to highlight the decreasing additional hammer count trend with                                                                                                                              of HC f irst using one data pattern and 4608 DRAM rows. We leave the detailed
+ increasing HC f irst .                                                                                                                                                                      analysis of the maximum change of HC f irst that covers more data patterns,
+                                                                                                                                                                                             HBM2 components (e.g., channels, pseudo channels, banks, rows), and access
+                   Obsv. 16. It takes fewer additional hammer counts (over                                                                                                                   patterns for future work.
+
+
+                                                                                                                                                                                         8
+
+
+===== Page 9 =====
+
+period of time (i.e., a large aggressor row on time, tAggON ) in-                                                                                      Channel
+                                                                                                                           CH0      CH1       CH2      CH3     CH4       CH5    CH6         CH7
+duces bitflips in physically nearby DRAM rows with orders of
+magnitude smaller hammer counts compared to a traditional                                                         2    Chip 0                              50
+RowHammer access pattern which keeps the aggressor row                                                            1                                        25
+open for a short period of time. We provide the first extensive
+                                                                                                                  0                                        0
+analysis of RowPress in six real HBM2 chips.                                                                           Chip 1
+   Fig. 14 depicts how BER (y-axis) varies with increasing                                                        2                                        50
+tAggON (x-axis) across the first, middle, and last 128 rows in one                                                1                                        25
+
+
+
+
+                                                                          Read Disturbance Bit Error Rate (BER)
+DRAM bank for 8 channels when we use a hammer count of                                                            0                                        0
+150K (i.e., activate each aggressor row 150K times) and the                                                       2    Chip 2                              50
+Checkered0 data pattern. We plot the results for four relatively                                                  1                                        25
+small (left subplots) and two relatively large (right subplots)
+                                                                                                                  0                                        0
+tAggON values. The minimum tAggON is the tRAS timing param-
+                                                                                                                  2    Chip 3                              50
+eter [77, 85]. We choose two relatively large tAggON values of
+interest as tREFI , the average interval between two successive                                                   1                                        25
+periodic refresh commands, and as 9 ∗ tREFI , the maximum in-                                                     0                                        0
+terval between two subsequent periodic refresh commands (i.e.,
+                                                                                                                  2    Chip 4                              50
+the maximum time a row can remain open according to the
+                                                                                                                  1                                        25
+HBM2 standard) [77].
+Factoring in Retention Errors. tAggON values above 116.0 ns                                                       0                                        0
+combined with the 150K hammer count results in experiment                                                         2    Chip 5                              50
+times that are longer than the 32 ms refresh window (e.g.,                                                        1                                        25
+150K hammers at tAggON = 35.1µs takes 10.53 seconds), where                                                       0                                        0
+DRAM cells can exhibit retention failures. Because we want                                                              tRAS   58.0ns     87.0ns 116.0ns        tREFI (3.9 s)   9 * tREFI (35.1 s)
+                                                                                                                      (29.0ns)               Aggressor row on time (tAggON)
+to analyze only the read disturbance bitflips, we remove bitflips
+that are caused by retention failures (0.109% of all bitflips we                                                                Figure 14: BER with increasing tAggON .
+observe) from the set of bitflips we observe at every such tAggON .
+                                                                              The average BER across every channel in every chip is 0.08%,
+To do so, we perform retention profiling experiments where we
+                                                                           0.24%, 0.40%, 0.73%, 31.00%, and 50.35% at tAggON of 29.0 ns,
+initialize a tested DRAM row with the Checkered 0 data pattern,
+                                                                           58.0 ns, 87.0 ns, 116.0 ns, 3.9 µs, and 35.1 µs, respectively.
+wait for the tested retention time to pass (34.8 ms, 1.17 s, and
+10.53 s for tAggON =116.0 ns, 3.9 µs, and 35.1 µs, respectively),           Obsv. 18. Channels with high BER at low tAggON values tend
+and read back the DRAM row. We perform each such exper-                    to have high BER also at high tAggON values.
+iment 5 times and consider a cell to exhibit retention failures               For example, CH 1 in Chip 3 has the highest mean BER
+at the tested retention time if the cell exhibits a retention fail-        across all tested tAggON values. We observe that all BER values
+ure in any of the 5 experiments. The average retention BER                 converge to around 50% for the tAggON of 35.1 µs across all
+for 34.8 ms, 1.17 s, and 10.53 s is 0%, 0.013%, and 0.134%,                tested channels. We hypothesize that this is due to the combined
+respecitvely.                                                              effect of 1) the data pattern that we use which initializes a
+tAggON in commodity systems. In general, the time a DRAM                   victim DRAM row with alternating logic-1 and logic-0 (i.e.,
+row is kept open depends on two factors: 1) tREFI in the DRAM              10101010...) and 2) RowPress causing bitflips from logic-1
+specification, and 2) the memory request scheduling algorithm              to logic-0 more frequently than from logic-0 to logic-1 (as
+implemented in the memory controller. For HBM2, the default                demonstrated in [4] for a wide variety of DDR4 chips).
+tREFI is 3.9µs. The memory controller in a commodity CPU                      Fig. 15 depicts how the HC f irst values (y-axis) across 384
+or a GPU may delay up to 8 periodic refresh commands and                   tested DRAM rows in a channel change with increasing tAggON
+thereby keep a row open for as long as 9*tREFI (35.1µs). The               (x-axis) for 3 channels when we use the Checkered0 data pat-
+memory request scheduling algorithm is typically not disclosed             tern. From left to right, 1) the default tRAS value (29.0 ns), 2)
+by system manufacturers. However, it is reasonable to assume               tREFI , the average time interval between two successive periodic
+that a high-performance scheduling algorithm implemented in                refresh commands, 3) 9 ∗ tREFI , the maximum time a row can
+a commodity CPU or GPU’s memory controller would keep                      remain open according to the HBM2 specification, and 4) half
+a DRAM row open at least for as long as required to serve a                the refresh window (tREFW ) [77] (such that each aggressor row
+regular memory access pattern that “streams” through a row                 can be activated once in a tREFW ). Fig. 15 shows one subplot for
+(i.e., accesses every cache line in the row one by one) [115–              every tested HBM2 chip. The grey boxes indicate the number
+118], to exploit row buffer locality and thus maximize memory              of rows we show in each subplot. We only show rows for which
+throughput. We estimate the time it takes to stream through                we observe the first read-disturb bitflip in a refresh window (un-
+a row as 128.0ns (32*tCCD_L) based on the HBM2 timing                      der 32 ms) at every tested tAggON value. We display the results
+parameter values depicted in [85].                                         for four tAggON values on the x-axis.
+ Obsv. 17. RowPress BER in each chip consistently increases                 Obsv. 19. As the aggressor row remains open longer (i.e., as
+with tAggON in all tested channels.                                        tAggON increases), DRAM rows experience bitflips at smaller
+
+
+                                                                      9
+
+
+===== Page 10 =====
+
+                                                                                                   Channel                                cialized access pattern that bypasses the TRR mechanism and
+                                                                                             CH0       CH1       CH2
+                                                                                                                                          induces RowHammer bitflips.8
+                                                                    105
+                                                                    104
+                                                                                                                                          Methodology. We use U-TRR’s [44] methodology to uncover
+                                                                    103                                                                   the proprietary TRR mechanism. The key idea of this methodol-
+                                                                    102
+                                                                                                                          153 rows
+                                                                          Chip 0                                                          ogy is to use retention failures as a side channel to infer whether
+                                                                    101                   tREFI              9 * tREFI                    or not TRR refreshes a DRAM row. Our analysis consists of
+                                                                    100
+                                                                                                                                          two steps. First, we identify multiple DRAM rows with similar
+                                                                    105
+                                                                    104                                                                   retention times (e.g., two rows that can correctly retain data
+Minimum Hammer Count Needed to Induce the First Bitflip (HCfirst)
+
+
+
+
+                                                                    103                                                   649 rows        when they are not refreshed for the same amount of time) by
+                                                                    102   Chip 1
+                                                                    101                   tREFI              9 * tREFI                    profiling DRAM rows for their retention times. We test all
+                                                                    100                                                                   of the DRAM rows in bank 0 for retention failures starting
+                                                                    105                                                                   with a retention time of 64 ms with increments of 64 ms. We
+                                                                    104                                                                   deem a row to have a retention time of T if any of the DRAM
+                                                                    103                                                   225 rows
+                                                                    102   Chip 2
+                                                                                                                                          cells in the row exhibit a bitflip at a retention time of T. We
+                                                                    101                   tREFI              9 * tREFI                    find the smallest T that causes at least one retention bitflip for
+                                                                    100                                                                   each tested row. Second, to understand if the TRR mechanism
+                                                                    105                                                                   samples an aggressor row, we execute a four-step process: 1)
+                                                                    104
+                                                                    103                                                                   We initialize DRAM rows that have a retention time of T (we
+                                                                    102
+                                                                                                                          56 rows
+                                                                          Chip 3                                                          call these rows side-channel rows) and wait for T/2 without
+                                                                    101                   tREFI              9 * tREFI                    refreshing these rows. 2) We activate each of the DRAM rows
+                                                                    100
+                                                                                                                                          adjacent to the side-channel rows once. We hypothesize that
+                                                                    105
+                                                                    104                                                                   the TRR mechanism samples an activation to an adjacent row
+                                                                    103                                                   145 rows        as an aggressor row activation. 3) We issue a REF command to
+                                                                    102   Chip 4
+                                                                    101                   tREFI              9 * tREFI
+                                                                                                                                          trigger the TRR mechanism. If the TRR mechanism samples
+                                                                    100                                                                   any of the activated adjacent rows in step 2, we expect the TRR
+                                                                    105                                                                   mechanism to refresh the side-channel rows. 4) We wait for
+                                                                    104                                                                   T/2, read the data in the side-channel rows and check for any re-
+                                                                    103                                                   62 rows
+                                                                    102                                                                   tention bitflips. The side-channel rows exhibit retention bitflips
+                                                                          Chip 5
+                                                                    101                   tREFI              9 * tREFI                    only if they are not refreshed by the TRR mechanism. We use
+                                                                    100                                                                   this information to understand how the TRR mechanism works.
+                                                                          29.0ns          3.9 s                35.1 s     16.0ms
+                                                                                        Aggressor row on time (tAggON)                       We repeat our experiment with various carefully crafted Row-
+                                                                          Figure 15: HC f irst with increasing tAggON .                   Hammer access patterns to understand how the TRR mechanism
+                                                                                                                                          tracks the aggressor rows.
+    hammer counts.                                                                                                                         Obsv. 20. Every 17th REF command can perform a TRR vic-
+       This observation is consistent across the three tested HBM2                                                                        tim row refresh (i.e., every 17th REF command is TRR-capable).
+    channels. The average (minimum) HC f irst values across all
+                                                                                                                                           Obsv. 21. The TRR mechanism refreshes both of the adjacent
+    chips are 83689 (29183), 1519 (335), 376 (123), and 1 (1), for
+                                                                                                                                          rows of an aggressor row.
+    the four tested tAggON values, respectively.
+                                                                                                                                             If TRR identifies row R as an aggressor row, it refreshes rows
+                                         Takeaway 6. The read disturbance vulnerability of tested                                         R+1 and R-1. Obs. 20 & 21 resemble the TRR mechanism
+                                         HBM2 chips worsens (i.e., BER increases and HC f irst re-                                        employed in real DDR4 chips from Vendor C in U-TRR [44].
+                                         duces) with increasing tAggON .                                                                   Obsv. 22. The first row that gets activated after a TRR-
+       Our observations are in line with prior works that investigate                                                                     capable REF is always identified as an aggressor row by the
+    the effects of tAggON in real DDR4 chips [4, 70].                                                                                     TRR mechanism.
+                                                                                                                                           Obsv. 23. The TRR mechanism records the activation count
+    7. In-DRAM RowHammer Defenses
+                                                                                                                                          of activated rows and uses this record to identify if a row is an
+     To prevent RowHammer bitflips, DRAM manufacturers                                                                                    aggressor row.
+  equip their chips with a mitigation mechanism broadly referred                                                                             Between two REF commands, if a row is activated more
+  to as Target Row Refresh (TRR) [38, 44, 83]. Unfortunately,                                                                             than half the total activation count, TRR identifies that row
+  manufacturers do not disclose the operational principles or im-                                                                         as an aggressor row. For example, if we issue 10 activations
+  plementations of proprietary TRR versions (e.g., in DDR4).                                                                              between two REF commands, the row that receives the first
+  At a high level, TRR 1) identifies potential aggressor rows as                                                                          ACT command and the row that receives 5 ACT commands are
+  the memory controller issues activate commands to the DRAM                                                                              identified by the TRR mechanism. We compare our findings on
+  chip and 2) preventively refreshes their victim rows when the                                                                           the HBM2 chip’s TRR mechanism to U-TRR’s findings [44] in
+  memory controller issues a periodic REF command [38, 44].                                                                               DDR4 chips. U-TRR does not make similar observations to Ob-
+     We demonstrate that a tested HBM2 chip (Chip 0) imple-                                                                                   8 We note that the profiling required to perform system-level RowHammer
+  ments a form of proprietary TRR (similar to the ones used                                                                               attacks [1, 5–67] is not as extensive as what we do in this work and can be done
+  in DDR4).2 We analyze the TRR mechanism and craft a spe-                                                                                using user-level programs, as shown in various works (e.g., [38, 43, 45]).
+
+
+                                                                                                                                     10
+
+
+===== Page 11 =====
+
+          servations 22 and 23. Thus, the HBM2 chip likely implements                                    (i.e., BER is 0 for x = 1, 2, and 3). Third, the number of dummy
+          a previously-unknown type of TRR.                                                              rows does not significantly affect the distribution of the bit error
+            Takeaway 7. An HBM2 chip implements a proprietary                                            rate. For example, the mean bit error rate varies by 0.003 pp
+            TRR mechanism that tracks aggressor rows and proactively                                     between the largest (4 dummy rows) and the smallest (7 dummy
+            refreshes their victim rows.                                                                 rows) value at an aggressor activation count of 34. Fourth, the
+                                                                                                         number of bitflips per row increases as the aggressor activation
+          Bypassing the proprietary TRR mechanism. Based on our
+                                                                                                         count increases. For example, the mean bit error rate increases
+          observations, we craft a specialized access pattern that bypasses
+                                                                                                         by 2.79×, 6.72×, and 10.28× as the aggressor activation count
+          the TRR mechanism and causes RowHammer bitflips. We cal-
+                                                                                                         increases from 18 to 24, 30, and 34, respectively, when the
+          culate the total activation count budget (i.e., the maximum num-
+                                                                                                         number of dummy rows is 8.
+          ber of ACT commands that the memory controller can issue)
+          between two REF commands as ⌊(tREFI − tRFC)/tRC⌋ =                                                      Takeaway 8. A specialized access pattern that bypasses the
+          78 [77, 85] for the tested HBM2 chip and fully utilize the ac-                                          undocumented TRR mechanism in HBM2 chips can induce
+          tivation count budget in our access pattern. The key idea of                                            many RowHammer bitflips.
+          this access pattern is to trick TRR into not identifying a real                                8. Implications on Future Read Disturbance At-
+          aggressor row by repeatedly accessing multiple dummy rows
+          many times. The access pattern 1) activates dummy rows (we
+                                                                                                            tacks and Defenses
+          vary the number of dummy rows and the activation count of the                                    We describe and analyze the important implications of our
+          dummy rows) and 2) performs double-sided RowHammer using                                       observations on future read disturbance attacks and defenses.
+          two real aggressor rows. We create this access pattern such that                               8.1. Read Disturbance Attacks
+          the number of real aggressor activations does not exceed half of
+          the total activation count budget. We repeat the access pattern                                   Observation 5 and Takeaways 2, 6, and 7 have the following
+          8205 ∗ 2 times (i.e., approximately for two tREFW, 64 ms) for                                  four implications for future read disturbance attacks on HBM2
+          each DRAM row in a bank so that we activate aggressor rows                                     chips. First, the maximum BER (247 bitflips in a row of 8192
+          as many times as possible before each DRAM cell is refreshed.                                  bits) we observe across tested chips exceeds the correction
+             We test all rows in a bank of the HBM2 chip using this access                               capabilities of widely used error correcting codes (ECC), such
+          pattern while obeying manufacturer-recommended timing pa-                                      as SECDED [119–122] which can detect two bitflips and correct
+          rameters (e.g., we issue a REF command every tREFI, 3.9µs).                                    one bitflip in a codeword (Observation 5).9 247 bitflips in a
+          Fig. 16 shows the distribution of BER for different numbers of                                 row are already sufficient to induce uncorrectable bitflips in
+          dummy rows (x-axis) and aggressor activation counts (different                                 multiple 64-bit words in the same DRAM row (by pigeonhole
+          boxes). Since we have a total activation count budget of 78 and                                principle) and are likely to induce undetectable bitflips in at
+          we utilize the whole budget for aggressor row and dummy row                                    least one 64-bit word.
+          activations, the number of dummy row activations varies be-                                    Analysis of the effectiveness of ECC. We investigate the dis-
+          tween boxes displayed on the plot. For example, for 4 dummy                                    tribution of word-level RowHammer bitflips (i.e., bitflips that
+          rows and an aggressor activation count of 18 (leftmost box                                     occur in all non-overlapping consecutive 64 bits) in Chip 4.
+          in Fig. 16), each dummy row is activated ⌊(78−18∗2)/4⌋ = 10                                    Fig. 17 plots the number of words that exhibit at least one bit-
+          times.                                                                                         flip (out of all 18M tested words) on the y-axis over 1, 2, ...,
+                                             Aggressor row activation count in a tREFI                   and more than 7 bitflips in a word depicted on the x-axis for
+                                        18   20       22   24     26     28     30       32   34         different data patterns (different bars). The word counts across
+RowHammer Bit Error Rate (BER)
+
+
+
+
+                                 0.08                                                                    clusters of bars are non-overlapping; for example, the middle
+                                                                                                         cluster depicts the number of words with exactly two bitflips.
+                                 0.06                                                                                              2.0M
+                                                                                                        Number of words (8 byte)
+                                                                                                          that exhibit bitflips
+
+
+
+
+                                                                                                                                   1.5M                                                   Data pattern
+                                 0.04                                                                                                                                                        Rowstripe0
+                                                                                                                                   1.0M                                                      Rowstripe1
+                                                                                                                                                                                             Checkered0
+                                 0.02                                                                                              0.5M                                                      Checkered1
+
+                                                                                                                                     0
+                                 0.00                                                                                                     1   2     3      4      5      6       7   >7
+                                         4        5     6       7     8    9             10                                                       Number of bitflips in a word
+                                                      Number of dummy rows                               Figure 17: Number of words (y-axis) that exhibit 1, 2, ..., and more
+           Figure 16: RowHammer BER distribution across all tested rows                                  than 7 bitflips (x-axis) in Chip 4.
+           for the specialized access pattern with different number of dummy                                 9 Single symbol correcting codes (e.g., Chipkill) [123–125] are widely used
+           rows (x-axis) and different aggressor row activation counts (differ-
+           ent colored boxes).                                                                           in DDRx server systems. A prior work [121] proposes implementing a Chipkill-
+                                                                                                         like scheme for HBM3 where 1) the HBM3 chip is carefully architected to
+              We make four key observations from Fig. 16. First, our                                     ensure a hard fault in a DRAM component manifests as errors only within an
+                                                                                                         isolation boundary (e.g., 16 consecutive bits), 2) a single symbol correcting
+           specialized access patterns can induce RowHammer errors with                                  code is used where each symbol corresponds to an isolation boundary. Such
+           a reasonably high BER. Second, the access pattern needs to                                    a scheme alone is likely not a good read disturbance countermeasure as read
+           activate at least 4 dummy rows to bypass the TRR mechanism                                    disturbance errors typically appear in multiple isolation boundaries.
+
+
+                                                                                                   11
+
+
+===== Page 12 =====
+
+   We make two observations. First, the number of unique                     specialized RowHammer access pattern (Takeaway 8).
+words with more than two bitflips is large. We observe 974’935
+words with more than two bitflips when we use the Checkered0
+                                                                             9. Related Work
+data pattern. These bitflips would not be detected by SECDED                    We present the first detailed experimental characterization of
+ECC. Second, most words with at least one bitflip actually have              the read disturbance vulnerability (RowHammer and RowPress)
+more than one bitflip. In other words, if RowHammer bitflips                 in modern HBM2 DRAM chips.
+can be induced in a word, it is very likely that more than one bit           HBM2 RowHammer Characterization [113, 191]. A prior
+location in the word will experience errors. Simple SECDED                   work [191] experimentally characterizes the RowHammer vul-
+ECC cannot correct such bitflips.                                            nerability in an HBM2 DRAM chip. Another work [113] studies
+   We find that an HBM word can have 16 bitflips (not shown                  the internal DRAM structure by analyzing RowHammer error
+in the figure) in Chip 4. A (7,4) Hamming code [126] could                   characteristics of two HBM2 chips. Our work presents a de-
+correct such bitflips at very large DRAM storage overheads                   tailed experimental characterization of both RowHammer and
+(75%, 3 parity bits for every 4 data bits). Thus, relying on ECC             RowPress using six HBM2 chips. In addition to analyzing the
+alone to prevent RowHammer bitflips in HBM2 is a very ex-                    spatial variation of read disturbance vulnerability, we analyze
+pensive solution. The bitflip distributions indicate that attackers          the hammer counts needed to induce the first 10 bitflips in a
+could exploit RowHammer bitflips to escalate privilege and leak              row. We uncover entirely the inner workings of the read distur-
+security-critical and secret data in HBM2 chips, similarly to                bance defense mechanism in an HBM2 chip and demonstrate
+real RowHammer attacks on DDR4-based computing systems.                      RowHammer access patterns that bypass this defense mecha-
+Even if an HBM2 chip is highly RowHammer resilient (i.e.,                    nism. Our new analyses and results lead to completely new
+has small mean BER across its rows), malicious parties could                 observations (Observations 2, 4, 7, 8, 11, 13-23) and takeaways
+exploit RowHammer bitflips to practically increase the rate of               (Takeaway 1, 2, 5-8) that [191] and [113] do not contain.
+correctable or detectable bitflips. This could reduce the lifetime           (LP)DDR3/4 Read Disturbance Characterization [1, 4, 68–
+of modern HBM-based systems (e.g., GPUs) by accelerating                     70,107,110,111,192–196]. These works experimentally demon-
+the rate of memory page retirements [127] beyond design-time                 strate and analyze new aspects of the read disturbance vulnera-
+estimates and exacerbate system maintenance costs.                           bility by testing real (LP)DDR3/4 DRAM chips. They do not
+   Second, a RowHammer attack could target the most-                         experimentally analyze real HBM2 chips.
+RowHammer-vulnerable HBM2 channel to reduce the time                            Besides demonstrating the interaction between the read dis-
+it spends on i) preparing for an attack, by finding exploitable              turbance vulnerability of an HBM2 chip with unique HBM
+RowHammer bitflips faster (i.e., by accelerating memory tem-                 characteristics for the first time, we make new observations
+plating), and ii) performing the attack, by benefitting from a               (Observations 10, 11, 13, 14, 15, 16) that could also shed light
+small HC f irst value (Takeaway 2). Third, an attacker could keep            on the read disturbance vulnerability behavior in (LP)DDRx
+the aggressor row on for longer by executing specialized access              chips. For example, our observation of the RowHammer bit er-
+patterns (as demonstrated by RowPress in a real DDR4-based                   ror rate peaking towards the middle of a subarray (Observation
+system [4]) to benefit from the increased BER and reduced                    10) could be widespread across many different types of DRAM
+HC f irst when an aggressor row is kept open for longer (Take-               chips. § 8 highlights the importance of our new observations
+away 6). Fourth, the RowHammer attack must uncover and take                  in the form of several key implications for future RowHammer
+into account the functionality of the undocumented TRR mech-                 attacks and defenses.
+anism in addition to the functionality of the documented TRR                 Other HBM2 Characterization [197–199]. These works char-
+mode [77] to come up with an effective access pattern that by-               acterize real HBM2 chips to understand their 1) soft error
+passes all RowHammer defense mechanisms in an HBM2-based                     resilience characteristics by high-energy neutron beam test-
+system (Takeaway 7). However, the attackers can also benefit                 ing [199], 2) performance and reliability characteristics under
+from the undocumented TRR mechanism. Victim row refresh                      reduced supply voltage [197], and 3) data retention characteris-
+operations could be used as a near aggressor row activation,                 tics [198].
+carrying over the read disturbance effects of the far aggressor
+row to the victim row in a HalfDouble access pattern [47].                   10. Conclusion
+8.2. Read Disturbance Defenses                                                  We present the results of our detailed characterization study
+   Takeaways 2, 3, and 8 have the following two implications                 on the read disturbance (RowHammer and RowPress) vulner-
+for future read disturbance defenses on HBM2 chips. First, a                 ability in six modern HBM2 chips. Our study leads to 23
+defense mechanism can adapt to the heterogeneous distribution                observations and 8 takeaways, which we believe have important
+of the RowHammer and RowPress vulnerabilities across chan-                   implications for future read disturbance attacks and defenses.
+nels and subarrays, which may allow the defense mechanism to                 We uncover the inner workings of the proprietary read distur-
+more efficiently prevent read disturbance bitflips (Takeaways 2              bance mitigation mechanism implemented in an HBM2 chip
+and 3). Second, HBM2 memory controller designers likely                      and develop a practical access pattern that bypasses it and in-
+need to implement other read disturbance defense mechanisms                  duces read disturbance bitflips. We hope and expect that our
+(e.g., [1, 3, 24, 31, 38, 44, 105, 128–190]) in their designs because        findings will lead to a deeper understanding of and new so-
+designers cannot rely on the undocumented TRR mechanism to                   lutions to the read disturbance vulnerabilities in HBM-based
+mitigate read disturbance bitflips, as it is easily bypassed with a          systems.
+
+
+                                                                        12
+
+
+===== Page 13 =====
+
+Acknowledgements                                                                                  [30] M. Lipp, M. T. Aga, M. Schwarz, D. Gruss, C. Maurice, L. Raab, and L. Lam-
+                                                                                                       ster, “Nethammer: Inducing Rowhammer Faults Through Network Requests,”
+   We thank the anonymous reviewers of HPCA 2024 and DSN                                               arXiv:1805.04956, 2018.
+                                                                                                  [31] V. van der Veen, M. Lindorfer, Y. Fratantonio, H. P. Pillai, G. Vigna, C. Kruegel,
+2024 for feedback and the SAFARI Research Group members                                                H. Bos, and K. Razavi, “GuardION: Practical Mitigation of DMA-Based Rowham-
+for constructive feedback and the stimulating intellectual envi-                                       mer Attacks on ARM,” in DIMVA, 2018.
+                                                                                                  [32] P. Frigo, C. Giuffrida, H. Bos, and K. Razavi, “Grand Pwning Unit: Accelerating
+ronment. We acknowledge the generous gift funding provided                                             Microarchitectural Attacks with the GPU,” in S&P, 2018.
+by our industrial partners (especially Google, Huawei, Intel, Mi-                                 [33] L. Cojocar, K. Razavi, C. Giuffrida, and H. Bos, “Exploiting Correcting Codes: On
+                                                                                                       the Effectiveness of ECC Memory Against Rowhammer Attacks,” in S&P, 2019.
+crosoft), which has been instrumental in enabling the research                                    [34] S. Ji, Y. Ko, S. Oh, and J. Kim, “Pinpoint Rowhammer: Suppressing Unwanted Bit
+we have been conducting on read disturbance in DRAM in par-                                            Flips on Rowhammer Attacks,” in ASIACCS, 2019.
+                                                                                                  [35] O. Mutlu, “RowHammer and Beyond,” in COSADE, 2019.
+ticular and memory systems in general. This work was in part                                      [36] S. Hong, P. Frigo, Y. Kaya, C. Giuffrida, and T. Dumitras, “Terminal Brain Damage:
+supported by the Google Security and Privacy Research Award                                            Exposing the Graceless Degradation in Deep Neural Networks Under Hardware
+                                                                                                       Fault Attacks,” in USENIX Security, 2019.
+and the Microsoft Swiss Joint Research Center.                                                    [37] A. Kwong, D. Genkin, D. Gruss, and Y. Yarom, “RAMBleed: Reading Bits in
+                                                                                                       Memory Without Accessing Them,” in S&P, 2020.
+References                                                                                        [38] P. Frigo, E. Vannacci, H. Hassan, V. van der Veen, O. Mutlu, C. Giuffrida, H. Bos,
+                                                                                                       and K. Razavi, “TRRespass: Exploiting the Many Sides of Target Row Refresh,” in
+ [1] Y. Kim, R. Daly, J. Kim, C. Fallin, J. H. Lee, D. Lee, C. Wilkerson, K. Lai, and
+                                                                                                       S&P, 2020.
+     O. Mutlu, “Flipping Bits in Memory Without Accessing Them: An Experimental
+                                                                                                  [39] L. Cojocar, J. Kim, M. Patel, L. Tsai, S. Saroiu, A. Wolman, and O. Mutlu, “Are We
+     Study of DRAM Disturbance Errors,” in ISCA, 2014.
+                                                                                                       Susceptible to Rowhammer? An End-to-End Methodology for Cloud Providers,” in
+ [2] O. Mutlu and J. Kim, “RowHammer: A Retrospective,” IEEE TCAD Special Issue
+                                                                                                       S&P, 2020.
+     on Top Picks in Hardware and Embedded Security, 2019.
+                                                                                                  [40] Z. Weissman, T. Tiemann, D. Moghimi, E. Custodio, T. Eisenbarth, and B. Sunar,
+ [3] O. Mutlu, A. Olgun, and A. G. Yaglikci, “Fundamentally Understanding and Solving
+                                                                                                       “JackHammer: Efficient Rowhammer on Heterogeneous FPGA–CPU Platforms,”
+     RowHammer,” in ASP-DAC, 2023.
+                                                                                                       arXiv:1912.11523, 2020.
+ [4] H. Luo, A. Olgun, A. G. Yağlıkcı, Y. C. Tuğrul, S. Rhyner, M. B. Cavlak, J. Lindeg-
+                                                                                                  [41] Z. Zhang, Y. Cheng, D. Liu, S. Nepal, Z. Wang, and Y. Yarom, “PTHammer:
+     ger, M. Sadrosadati, and O. Mutlu, “RowPress: Amplifying Read Disturbance in
+                                                                                                       Cross-User-Kernel-Boundary Rowhammer Through Implicit Accesses,” in MICRO,
+     Modern DRAM Chips,” in ISCA, 2023.
+                                                                                                       2020.
+ [5] A. P. Fournaris, L. Pocero Fraile, and O. Koufopavlou, “Exploiting Hardware Vulner-
+                                                                                                  [42] F. Yao, A. S. Rakin, and D. Fan, “Deephammer: Depleting the Intelligence of Deep
+     abilities to Attack Embedded System Devices: A Survey of Potent Microarchitectural
+                                                                                                       Neural Networks Through Targeted Chain of Bit Flips,” in USENIX Security, 2020.
+     Attacks,” Electronics, 2017.
+                                                                                                  [43] F. de Ridder, P. Frigo, E. Vannacci, H. Bos, C. Giuffrida, and K. Razavi, “SMASH:
+ [6] D. Poddebniak, J. Somorovsky, S. Schinzel, M. Lochter, and P. Rösler, “Attacking
+                                                                                                       Synchronized Many-Sided Rowhammer Attacks from JavaScript,” in USENIX Secu-
+     Deterministic Signature Schemes using Fault Attacks,” in EuroS&P, 2018.
+                                                                                                       rity, 2021.
+ [7] A. Tatar, R. K. Konoth, E. Athanasopoulos, C. Giuffrida, H. Bos, and K. Razavi,
+                                                                                                  [44] H. Hassan, Y. C. Tugrul, J. S. Kim, V. van der Veen, K. Razavi, and O. Mutlu,
+     “Throwhammer: Rowhammer Attacks Over the Network and Defenses,” in USENIX
+                                                                                                       “Uncovering In-DRAM RowHammer Protection Mechanisms: A New Methodology,
+     ATC, 2018.
+                                                                                                       Custom RowHammer Patterns, and Implications,” in MICRO, 2021.
+ [8] S. Carre, M. Desjardins, A. Facon, and S. Guilley, “OpenSSL Bellcore’s Protection
+                                                                                                  [45] P. Jattke, V. van der Veen, P. Frigo, S. Gunter, and K. Razavi, “Blacksmith: Scalable
+     Helps Fault Attack,” in DSD, 2018.
+                                                                                                       Rowhammering in the Frequency Domain,” in S&P, 2022.
+ [9] A. Barenghi, L. Breveglieri, N. Izzo, and G. Pelosi, “Software-only Reverse Engi-
+                                                                                                  [46] M. C. Tol, S. Islam, B. Sunar, and Z. Zhang, “Toward Realistic Backdoor Injection
+     neering of Physical DRAM Mappings for Rowhammer Attacks,” in IVSW, 2018.
+                                                                                                       Attacks on DNNs using RowHammer,” arXiv:2110.07683, 2022.
+[10] Z. Zhang, Z. Zhan, D. Balasubramanian, X. Koutsoukos, and G. Karsai, “Triggering
+                                                                                                  [47] A. Kogler, J. Juffinger, S. Qazi, Y. Kim, M. Lipp, N. Boichat, E. Shiu, M. Nissler,
+     Rowhammer Hardware Faults on ARM: A Revisit,” in ASHES, 2018.
+                                                                                                       and D. Gruss, “Half-Double: Hammering From the Next Row Over,” in USENIX
+[11] S. Bhattacharya and D. Mukhopadhyay, “Advanced Fault Attacks in Software:
+                                                                                                       Security, 2022.
+     Exploiting the Rowhammer Bug,” in Fault Tolerant Architectures for Cryptography
+                                                                                                  [48] L. Orosa, U. Rührmair, A. G. Yaglikci, H. Luo, A. Olgun, P. Jattke, M. Patel, J. Kim,
+     and Hardware Security, 2018.
+                                                                                                       K. Razavi, and O. Mutlu, “SpyHammer: Using RowHammer to Remotely Spy on
+[12] M. Seaborn and T. Dullien, “Exploiting the DRAM Rowhammer Bug to Gain Kernel
+                                                                                                       Temperature,” arXiv:2210.04084, 2022.
+     Privileges,” http://googleprojectzero.blogspot.com.tr/2015/03/exploiting-dram-ro
+                                                                                                  [49] Z. Zhang, W. He, Y. Cheng, W. Wang, Y. Gao, D. Liu, K. Li, S. Nepal, A. Fu, and
+     whammer-bug-to-gain.html, 2015.
+                                                                                                       Y. Zou, “Implicit Hammer: Cross-Privilege-Boundary Rowhammer through Implicit
+[13] SAFARI Research Group, “RowHammer — GitHub Repository,” https://github.c
+                                                                                                       Accesses,” IEEE TDSC, 2022.
+     om/CMU-SAFARI/rowhammer, 2014.
+                                                                                                  [50] L. Liu, Y. Guo, Y. Cheng, Y. Zhang, and J. Yang, “Generating Robust DNN with
+[14] M. Seaborn and T. Dullien, “Exploiting the DRAM Rowhammer Bug to Gain Kernel
+                                                                                                       Resistance to Bit-Flip based Adversarial Weight Attack,” IEEE TC, 2022.
+     Privileges,” Black Hat, 2015.
+                                                                                                  [51] Y. Cohen, K. S. Tharayil, A. Haenel, D. Genkin, A. D. Keromytis, Y. Oren, and
+[15] V. van der Veen, Y. Fratantonio, M. Lindorfer, D. Gruss, C. Maurice, G. Vigna,
+                                                                                                       Y. Yarom, “HammerScope: Observing DRAM Power Consumption Using Rowham-
+     H. Bos, K. Razavi, and C. Giuffrida, “Drammer: Deterministic Rowhammer Attacks
+                                                                                                       mer,” in CCS, 2022.
+     on Mobile Platforms,” in CCS, 2016.
+                                                                                                  [52] M. Zheng, Q. Lou, and L. Jiang, “TrojViT: Trojan Insertion in Vision Transformers,”
+[16] D. Gruss, C. Maurice, and S. Mangard, “Rowhammer.js: A Remote Software-
+                                                                                                       arXiv:2208.13049, 2022.
+     Induced Fault Attack in Javascript,” in DIMVA, 2016.
+                                                                                                  [53] M. Fahr Jr, H. Kippen, A. Kwong, T. Dang, J. Lichtinger, D. Dachman-Soled,
+[17] K. Razavi, B. Gras, E. Bosman, B. Preneel, C. Giuffrida, and H. Bos, “Flip Feng
+                                                                                                       D. Genkin, A. Nelson, R. Perlner, A. Yerukhimovich et al., “When Frodo Flips:
+     Shui: Hammering a Needle in the Software Stack,” in USENIX Security, 2016.
+                                                                                                       End-to-End Key Recovery on FrodoKEM via Rowhammer,” CCS, 2022.
+[18] P. Pessl, D. Gruss, C. Maurice, M. Schwarz, and S. Mangard, “DRAMA: Exploiting
+                                                                                                  [54] Y. Tobah, A. Kwong, I. Kang, D. Genkin, and K. G. Shin, “SpecHammer: Combining
+     DRAM Addressing for Cross-CPU Attacks,” in USENIX Security, 2016.
+                                                                                                       Spectre and Rowhammer for New Speculative Attacks,” in S&P, 2022.
+[19] Y. Xiao, X. Zhang, Y. Zhang, and R. Teodorescu, “One Bit Flips, One Cloud Flops:
+                                                                                                  [55] A. S. Rakin, M. H. I. Chowdhuryy, F. Yao, and D. Fan, “DeepSteal: Advanced
+     Cross-VM Row Hammer Attacks and Privilege Escalation,” in USENIX Security,
+                                                                                                       Model Extractions Leveraging Efficient Weight Stealing in Memories,” in S&P,
+     2016.
+                                                                                                       2022.
+[20] E. Bosman, K. Razavi, H. Bos, and C. Giuffrida, “Dedup Est Machina: Memory
+                                                                                                  [56] H. Aydin and A. Sertbaş, “Cyber Security in Industrial Control Systems (ICS): A
+     Deduplication as An Advanced Exploitation Vector,” in S&P, 2016.
+                                                                                                       Survey of RowHammer Vulnerability,” Applied Computer Science, 2022.
+[21] S. Bhattacharya and D. Mukhopadhyay, “Curious Case of RowHammer: Flipping
+                                                                                                  [57] K. Mus, Y. Doröz, M. C. Tol, K. Rahman, and B. Sunar, “Jolt: Recovering TLS
+     Secret Exponent Bits using Timing Analysis,” in CHES, 2016.
+                                                                                                       Signing Keys via Rowhammer Faults,” Cryptology ePrint Archive, 2022.
+[22] W. Burleson, O. Mutlu, and M. Tiwari, “Invited: Who is the Major Threat to
+                                                                                                  [58] J. Wang, H. Xu, C. Xiao, L. Zhang, and Y. Zheng, “Research and Implementation of
+     Tomorrow’s Security? You, the Hardware Designer,” in DAC, 2016.
+                                                                                                       Rowhammer Attack Method based on Domestic NeoKylin Operating System,” in
+[23] R. Qiao et al., “A New Approach for RowHammer Attacks,” in HOST, 2016.
+                                                                                                       ICFTIC, 2022.
+[24] F. Brasser, L. Davi, D. Gens, C. Liebchen, and A.-R. Sadeghi, “Can’t Touch This:
+                                                                                                  [59] S. Lefforge, “Reverse Engineering Post-Quantum Cryptography Schemes to Find
+     Software-Only Mitigation Against Rowhammer Attacks Targeting Kernel Memory,”
+                                                                                                       Rowhammer Exploits,” Bachelor’s Thesis, University of Arkansas, 2023.
+     in USENIX Security, 2017.
+                                                                                                  [60] M. J. Fahr, “The Effects of Side-Channel Attacks on Post-Quantum Cryptography:
+[25] Y. Jang, J. Lee, S. Lee, and T. Kim, “SGX-Bomb: Locking Down the Processor via
+                                                                                                       Influencing FrodoKEM Key Generation Using the Rowhammer Exploit,” Master’s
+     Rowhammer Attack,” in SysTEX, 2017.
+                                                                                                       thesis, University of Arkansas, 2022.
+[26] M. T. Aga, Z. B. Aweke, and T. Austin, “When Good Protections Go Bad: Exploiting
+                                                                                                  [61] A. Kaur, P. Srivastav, and B. Ghoshal, “Work-in-Progress: DRAM-MaUT: DRAM
+     Anti-DoS Measures to Accelerate Rowhammer Attacks,” in HOST, 2017.
+                                                                                                       Address Mapping Unveiling Tool for ARM Devices,” in CASES, 2022.
+[27] O. Mutlu, “The RowHammer Problem and Other Issues We May Face as Memory
+                                                                                                  [62] K. Cai, Z. Zhang, and F. Yao, “On the Feasibility of Training-time Trojan Attacks
+     Becomes Denser,” in DATE, 2017.
+                                                                                                       through Hardware-based Faults in Memory,” in HOST, 2022.
+[28] A. Tatar, C. Giuffrida, H. Bos, and K. Razavi, “Defeating Software Mitigations
+                                                                                                  [63] D. Li, D. Liu, Y. Ren, Z. Wang, Y. Sun, Z. Guan, Q. Wu, and J. Liu, “Cyber-
+     Against Rowhammer: A Surgical Precision Hammer,” in RAID, 2018.
+                                                                                                       Radar: A PUF-based Detecting and Mapping Framework for Physical Devices,”
+[29] D. Gruss, M. Lipp, M. Schwarz, D. Genkin, J. Juffinger, S. O’Connell, W. Schoechl,
+                                                                                                       arXiv:2201.07597, 2022.
+     and Y. Yarom, “Another Flip in the Wall of Rowhammer Defenses,” in S&P, 2018.
+
+
+
+                                                                                             13
+
+
+===== Page 14 =====
+
+ [64] A. Roohi and S. Angizi, “Efficient Targeted Bit-Flip Attack Against the Local Binary                   the Spatial Locality of Non-Unit Strided Accesses,” in MICRO, 2015.
+      Pattern Network,” in HOST, 2022.                                                                 [101] S. Khan, D. Lee, and O. Mutlu, “PARBOR: An Efficient System-Level Technique to
+ [65] F. Staudigl, H. Al Indari, D. Schön, D. Sisejkovic, F. Merchant, J. M. Joseph, V. Rana,                Detect Data-Dependent Failures in DRAM,” in DSN, 2016.
+      S. Menzel, and R. Leupers, “NeuroHammer: Inducing Bit-Flips in Memristive                        [102] S. Khan, C. Wilkerson, Z. Wang, A. R. Alameldeen, D. Lee, and O. Mutlu, “Detect-
+      Crossbar Memories,” in DATE, 2022.                                                                     ing and Mitigating Data-Dependent DRAM Failures by Exploiting Current Memory
+ [66] L.-H. Yang, S.-S. Huang, T.-L. Cheng, Y.-C. Kuo, and J.-J. Kuo, “Socially-Aware                        Content,” in MICRO, 2017.
+      Collaborative Defense System against Bit-Flip Attack in Social Internet of Things                [103] D. Lee, S. Khan, L. Subramanian, S. Ghose, R. Ausavarungnirun, G. Pekhimenko,
+      and Its Online Assignment Optimization,” in ICCCN, 2022.                                               V. Seshadri, and O. Mutlu, “Design-induced Latency Variation in Modern DRAM
+ [67] S. Islam, K. Mus, R. Singh, P. Schaumont, and B. Sunar, “Signature Correction                          Chips: Characterization, Analysis, and Latency Reduction Mechanisms,” POMACS,
+      Attack on Dilithium Signature Scheme,” in Euro S&P, 2022.                                              2017.
+ [68] J. S. Kim, M. Patel, A. G. Yağlıkcı, H. Hassan, R. Azizi, L. Orosa, and O. Mutlu, “Re-          [104] M. Patel, J. Kim, T. Shahroodi, H. Hassan, and O. Mutlu, “Bit-Exact ECC Recovery
+      visiting RowHammer: An Experimental Analysis of Modern Devices and Mitigation                          (BEER): Determining DRAM On-Die ECC Functions by Exploiting DRAM Data
+      Techniques,” in ISCA, 2020.                                                                            Retention Characteristics,” in MICRO, 2020.
+ [69] A. G. Yağlıkcı, H. Luo, G. F. De Oliviera, A. Olgun, M. Patel, J. Park, H. Hassan,              [105] A. G. Yağlıkcı, M. Patel, J. S. Kim, R. Azizibarzoki, A. Olgun, L. Orosa, H. Hassan,
+      J. S. Kim, L. Orosa, and O. Mutlu, “Understanding RowHammer Under Reduced                              J. Park, K. Kanellopoullos, T. Shahroodi, S. Ghose, and O. Mutlu, “BlockHammer:
+      Wordline Voltage: An Experimental Study Using Real DRAM Devices,” in DSN,                              Preventing RowHammer at Low Cost by Blacklisting Rapidly-Accessed DRAM
+      2022.                                                                                                  Rows,” in HPCA, 2021.
+ [70] L. Orosa, A. G. Yağlıkcı, H. Luo, A. Olgun, J. Park, H. Hassan, M. Patel, J. S. Kim,            [106] A. van de Goor and I. Schanstra, “Address and Data Scrambling: Causes and Impact
+      and O. Mutlu, “A Deeper Look into RowHammer’s Sensitivities: Experimental                              on Memory Tests,” in DELTA, 2002.
+      Analysis of Real DRAM Chips and Implications on Future Attacks and Defenses,”                    [107] A. G. Yağlıkçı, G. F. Oliveira, Y. C. Tuğrul, I. E. Yuksel, A. Olgun, H. Luo, and
+      in MICRO, 2021.                                                                                        O. Mutlu, “Spatial Variation-Aware Read Disturbance Defenses: Experimental
+ [71] O. Mutlu, “RowHammer,” https://people.inf.ethz.ch/omutlu/pub/onur-Rowhammer                            Analysis of Real DRAM Chips and Implications on Future Solutions,” in HPCA,
+      -TopPicksinHardwareEmbeddedSecurity-November-8-2018.pdf, 2018, Top Picks                               2024.
+      in Hardware and Embedded Security.                                                               [108] AMD Xilinx, “AMD Xilinx Support Website,” https://support.xilinx.com/s/questio
+ [72] A. Bakhoda, G. L. Yuan, W. W. L. Fung, H. Wong, and T. M. Aamodt, “Analyzing                           n/0D54U00007iVe9ESAS/where-can-we-find-the-dram-timing-parameters-for-t
+      CUDA Workloads Using a Detailed GPU Simulator,” in ISPASS, 2009.                                       he-hbm2-stacks-in-alveo-u50?language=en_US, 2024.
+ [73] S. Che, M. Boyer, J. Meng, D. Tarjan, J. W. Sheaffer, S.-H. Lee, and K. Skadron,                 [109] A. Farmahini-Farahani, S. Gurumurthi, G. Loh, and M. Ignatowski, “Challenges of
+      “Rodinia: A Benchmark Suite for Heterogeneous Computing,” in IISWC, 2009.                              High-Capacity DRAM Stacks and Potential Directions,” in Workshop on Memory
+ [74] N. Jouppi, G. Kurian, S. Li, P. Ma, R. Nagarajan, L. Nai, N. Patil, S. Subramanian,                    Centric High Performance Computing, 2018.
+      A. Swing, B. Towles, C. Young, X. Zhou, Z. Zhou, and D. A. Patterson, “TPU v4:                   [110] K. Park, D. Yun, and S. Baeg, “Statistical Distributions of Row-hammering Induced
+      An Optically Reconfigurable Supercomputer for Machine Learning with Hardware                           Failures in DDR3 Components,” Microelectronics Reliability, 2016.
+      Support for Embeddings,” in ISCA, 2023.                                                          [111] K. Park, C. Lim, D. Yun, and S. Baeg, “Experiments and Root Cause Analysis for
+ [75] T. B. Brown, B. Mann, N. Ryder, M. Subbiah, J. Kaplan, P. Dhariwal, A. Nee-                            Active-precharge Hammering Fault in DDR3 SDRAM under 3× nm Technology,”
+      lakantan, P. Shyam, G. Sastry, A. Askell, S. Agarwal, A. Herbert-Voss, G. Krueger,                     Microelectronics Reliability, 2016.
+      T. Henighan, R. Child, A. Ramesh, D. M. Ziegler, J. Wu, C. Winter, C. Hesse,                     [112] H. Jun, J. Cho, K. Lee, H.-Y. Son, K. Kim, H. Jin, and K. Kim, “HBM (High
+      M. Chen, E. Sigler, M. Litwin, S. Gray, B. Chess, J. Clark, C. Berner, S. McCan-                       Bandwidth Memory) DRAM Technology and Architecture,” in (IMW), 2017.
+      dlish, A. Radford, I. Sutskever, and D. Amodei, “Language Models are Few-Shot                    [113] H. Nam, S. Baek, M. Wi, M. J. Kim, J. Park, C. Song, N. S. Kim, and J. H. Ahn,
+      Learners,” in NIPS, 2020.                                                                              “X-ray: Discovering DRAM Internal Structure and Error Characteristics by Issuing
+ [76] J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova, “BERT: Pre-training of Deep                          Memory Commands,” IEEE CAL, 2023.
+      Bidirectional Transformers for Language Understanding,” in NAACL, 2019.                          [114] S. M. Kim, B. Song, and S.-O. Jung, “Imbalance-Tolerant Bit-Line Sense Amplifier
+ [77] JEDEC, JESD235D: High Bandwidth Memory DRAM (HBM1, HBM2), 2021.                                        for Dummy-Less Open Bit-Line Scheme in DRAM,” IEEE Transactions on Circuits
+ [78] NVIDIA, “NVIDIA A100 Tensor Core GPU Architecture,” Whitepaper, 2020.                                  and Systems I: Regular Papers, 2021.
+ [79] NVIDIA, “NVIDIA H100 Tensor Core GPU Architecture,” Whitepaper, 2022.                            [115] A. Jog, O. Kayiran, T. Kesten, A. Pattnaik, E. Bolotin, N. Chatterjee, S. W. Keckler,
+ [80] N. P. Jouppi, D. H. Yoon, G. Kurian, S. Li, N. Patil, J. Laudon, C. Young, and D. Pat-                 M. T. Kandemir, and C. R. Das, “Anatomy of GPU Memory System for Multi-
+      terson, “A Domain-Specific Supercomputer for Training Deep Neural Networks,”                           Application Execution,” in MEMSYS, 2015.
+      Communications of the ACM, 2020.                                                                 [116] B. S. Nordquist and S. D. Lew, “Apparatus, System, and Method for Coalescing
+ [81] AMD, “Introducing AMD CDNA Architecture,” Whitepaper, 2020.                                            Parallel Memory Requests,” 2009, U.S. Patent 7,492,368.
+ [82] AMD, “Introducing AMD CDNA™ 2 Architecture,” Whitepaper, 2021.                                   [117] A. Jog, O. Kayiran, A. Pattnaik, M. T. Kandemir, O. Mutlu, R. Iyer, and C. R. Das,
+ [83] Micron, 16Gb: x4, x8, x16 DDR4 SDRAM Features - MT40A4G4, MT40A2G8,                                    “Exploiting Core Criticality for Enhanced GPU Performance,” in SIGMETRICS,
+      MT40A1G16, 2018.                                                                                       2016.
+ [84] SAFARI Research Group, “HBM Read Disturbance — GitHub Repository,” https:                        [118] R. Ausavarungnirun, K. K.-W. Chang, L. Subramanian, G. H. Loh, and O. Mutlu,
+      //github.com/CMU-SAFARI/HBM-Read-Disturbance, 2024.                                                    “Staged Memory Scheduling: Achieving High Performance and Scalability in Het-
+ [85] J. M. O’Connor, “Energy Efficient High Bandwidth DRAM for Throughput Proces-                           erogeneous Systems,” in ISCA, 2012.
+      sors,” Ph.D. dissertation, UT Austin, 2021.                                                      [119] S. Mukherjee, Architecture Design for Soft Errors. Morgan Kaufmann Publishers
+ [86] Y. Kim, V. Seshadri, D. Lee, J. Liu, and O. Mutlu, “A Case for Subarray-Level                          Inc., 2008.
+      Parallelism (SALP) in DRAM,” in ISCA, 2012.                                                      [120] NVIDIA, “NVIDIA Tesla P100,” https://www.nvidia.com/en-us/data-center/resourc
+ [87] V. Seshadri, Y. Kim, C. Fallin, D. Lee, R. Ausavarungnirun, G. Pekhimenko, Y. Luo,                     es/pascal-architecture-whitepaper, 2016.
+      O. Mutlu, P. B. Gibbons, M. A. Kozuch, and T. Mowry, “RowClone: Fast and                         [121] S. Gurumurthi, K. Lee, M. Jang, V. Sridharan, A. Nygren, Y. Ryu, K. Sohn, T. Kim,
+      Energy-Efficient In-DRAM Bulk Data Copy and Initialization,” in MICRO, 2013.                           and H. Chung, “HBM3 RAS: Enhancing Resilience at Scale,” IEEE CAL, 2021.
+ [88] K. K. Chang, D. Lee, Z. Chishti, A. R. Alameldeen, C. Wilkerson, Y. Kim, and                     [122] R. Krashinsky, O. Giroux, S. Jones, N. Stam, and S. Ramaswamy, “NVIDIA Ampere
+      O. Mutlu, “Improving DRAM Performance by Parallelizing Refreshes with Ac-                              Architecture In-Depth,” https://developer.nvidia.com/blog/nvidia-ampere-architectu
+      cesses,” in HPCA, 2014.                                                                                re-in-depth/, 2020.
+ [89] A. Olgun, H. Hassan, A. G. Yağlıkcı, Y. C. Tuğrul, L. Orosa, H. Luo, M. Patel,                 [123] AMD, “BIOS and Kernel Developer’s Guide (BKDG) for AMD Family 15h Models
+      E. Oğuz, and O. Mutlu, “DRAM Bender: An Extensible and Versatile FPGA-based                           00h-0Fh Processors,” Developer’s Guide, 2013.
+      Infrastructure to Easily Test State-of-the-art DRAM Chips,” TCAD, 2023.                          [124] R. Yeleswarapu and A. K. Somani, “Addressing Multiple Bit/Symbol Errors in
+ [90] SAFARI Research Group, “DRAM Bender — GitHub Repository,” https://github.c                             DRAM Subsystem,” arXiv:1908.01806, 2020.
+      om/CMU-SAFARI/DRAM-Bender, 2022.                                                                 [125] C. Chen, “Symbol Error Correcting Codes for Memory Applications,” in FTCS,
+ [91] “Bittware XUPVVH FPGA Board,” https://www.bittware.com/fpga/xup-vvh/.                                  1996.
+ [92] Xilinx Inc., “Xilinx Alveo U50 FPGA Board,” https://www.xilinx.com/products/bo                   [126] R. W. Hamming, “Error Detecting and Error Correcting Codes,” The Bell system
+      ards-and-kits/alveo/u50.html.                                                                          technical journal, 1950.
+ [93] “Arduino MEGA Documentation,” https://docs.arduino.cc/hardware/mega-2560/.                       [127] NVIDIA, “Dynamic Page Retirement,” https://docs.nvidia.com/deploy/pdf/Dynam
+ [94] J. Liu, B. Jaiyen, Y. Kim, C. Wilkerson, O. Mutlu, J. Liu, B. Jaiyen, Y. Kim,                          ic_Page_Retirement.pdf, 2019.
+      C. Wilkerson, and O. Mutlu, “An Experimental Study of Data Retention Behavior                    [128] Apple Inc., “About the Security Content of Mac EFI Security Update 2015-001,”
+      in Modern DRAM Devices,” in ISCA, 2013.                                                                https://support.apple.com/en-us/HT204934, 2015.
+ [95] M. Patel, J. S. Kim, and O. Mutlu, “The Reach Profiler (REAPER): Enabling the                    [129] Hewlett-Packard Enterprise, “HP Moonshot Component Pack Version 2015.05.0,”
+      Mitigation of DRAM Retention Failures via Profiling at Aggressive Conditions,” in                      http://h17007.www1.hp.com/us/en/enterprise/servers/products/moonshot/compon
+      ISCA, 2017.                                                                                            ent-pack/index.aspx, 2015.
+ [96] R. T. Smith, J. D. Chlipala, J. F. Bindels, R. G. Nelson, F. H. Fischer, and T. F. Mantz,        [130] Lenovo, “Row Hammer Privilege Escalation,” https://support.lenovo.com/us/en/pro
+      “Laser Programmable Redundancy and Yield Improvement in a 64K DRAM,” JSSC,                             duct_security/row_hammer, 2015.
+      1981.                                                                                            [131] Z. Greenfield and T. Levy, “Throttling Support for Row-Hammer Counters,” 2016,
+ [97] M. Horiguchi, “Redundancy Techniques for High-Density DRAMs,” in ISIS, 1997.                           U.S. Patent 9,251,885.
+ [98] B. Keeth and R. Baker, DRAM Circuit Design: A Tutorial. Wiley, 2001.                             [132] D.-H. Kim, P. J. Nair, and M. K. Qureshi, “Architectural Support for Mitigating
+ [99] K. Itoh, VLSI Memory Chip Design. Springer, 2001.                                                      Row Hammering in DRAM Memories,” IEEE CAL, 2014.
+[100] V. Seshadri, T. Mullins, A. Boroumand, O. Mutlu, P. B. Gibbons, M. A. Kozuch, and                [133] K. S. Bains and J. B. Halbert, “Distributed Row Hammer Tracking,” US Patent:
+      T. C. Mowry, “Gather-Scatter DRAM: In-DRAM Address Translation to Improve                              9,299,400, 2016.
+
+
+
+                                                                                                  14
+
+
+===== Page 15 =====
+
+[134] K. Bains et al., “Method, Apparatus and System for Providing a Memory Refresh,”               [168] S. Saroiu, A. Wolman, and L. Cojocar, “The Price of Secrecy: How Hiding Internal
+      US Patent: 9,030,903, 2015.                                                                         DRAM Topologies Hurts Rowhammer Defenses,” in IRPS, 2022.
+[135] Z. B. Aweke, S. F. Yitbarek, R. Qiao, R. Das, M. Hicks, Y. Oren, and T. Austin,               [169] S. Saroiu and A. Wolman, “How to Configure Row-Sampling-Based Rowhammer
+      “ANVIL: Software-Based Protection Against Next-Generation Rowhammer Attacks,”                       Defenses,” DRAMSec, 2022.
+      in ASPLOS, 2016.                                                                              [170] K. Loughlin, S. Saroiu, A. Wolman, Y. A. Manerkar, and B. Kasikci, “MOESI-Prime:
+[136] K. Bains et al., “Row Hammer Refresh Command,” US Patents: 9,117,544 9,236,110                      Preventing Coherence-Induced Hammering in Commodity Workloads,” in ISCA,
+      10,210,925, 2015.                                                                                   2022.
+[137] M. Son, H. Park, J. Ahn, and S. Yoo, “Making DRAM Stronger Against Row                        [171] R. Zhou, S. Tabrizchi, A. Roohi, and S. Angizi, “LT-PIM: An LUT-Based Processing-
+      Hammering,” in DAC, 2017.                                                                           in-DRAM Architecture With RowHammer Self-Tracking,” IEEE CAL, 2022.
+[138] S. M. Seyedzadeh, A. K. Jones, and R. Melhem, “Mitigating Wordline Crosstalk                  [172] S. Hong, D. Kim, J. Lee, R. Oh, C. Yoo, S. Hwang, and J. Lee, “DSAC: Low-Cost
+      Using Adaptive Trees of Counters,” in ISCA, 2018.                                                   Rowhammer Mitigation Using In-DRAM Stochastic and Approximate Counting
+[139] G. Irazoqui, T. Eisenbarth, and B. Sunar, “MASCAT: Stopping Microarchitectural                      Algorithm,” arXiv:2302.03591, 2023.
+      Attacks Before Execution,” IACR Cryptology, 2016.                                             [173] M. Marazzi, F. Solt, P. Jattke, K. Takashi, and K. Razavi, “ProTRR: Principled yet
+[140] J. M. You and J.-S. Yang, “MRLoc: Mitigating Row-Hammering Based on Memory                          Optimal In-DRAM Target Row Refresh,” in S&P, 2023.
+      Locality,” in DAC, 2019.                                                                      [174] A. Di Dio, K. Koning, H. Bos, and C. Giuffrida, “Copy-on-Flip: Hardening ECC
+[141] E. Lee, I. Kang, S. Lee, G. E. Suh, and J. H. Ahn, “TWiCe: Preventing Row-                          Memory Against Rowhammer Attacks,” in NDSS, 2023.
+      Hammering by Exploiting Time Window Counters,” in ISCA, 2019.                                 [175] S. Sharma, D. Sanyal, A. Mukhopadhyay, and R. H. Shaik, “A Review on Study of
+[142] Y. Park, W. Kwon, E. Lee, T. J. Ham, J. H. Ahn, and J. W. Lee, “Graphene: Strong                    Defects of DRAM-RowHammer and Its Mitigation,” Journal For Basic Sciences,
+      yet Lightweight Row Hammer Protection,” in MICRO, 2020.                                             2022.
+[143] A. G. Yağlıkcı, J. S. Kim, F. Devaux, and O. Mutlu, “Security Analysis of the Silver         [176] J. Woo, G. Saileshwar, and P. J. Nair, “Scalable and Secure Row-Swap: Efficient
+      Bullet Technique for RowHammer Prevention,” arXiv:2106.07084, 2021.                                 and Safe Row Hammer Mitigation in Memory Systems,” in HPCA, 2023.
+[144] I. Kang, E. Lee, and J. H. Ahn, “CAT-TWO: Counter-Based Adaptive Tree, Time                   [177] J. H. Park, S. Y. Kim, D. Y. Kim, G. Kim, J. W. Park, S. Yoo, Y.-W. Lee, and M. J.
+      Window Optimized for DRAM Row-Hammer Prevention,” IEEE Access, 2020.                                Lee, “RowHammer Reduction Using a Buried Insulator in a Buried Channel Array
+[145] M. Qureshi, A. Rohan, G. Saileshwar, and P. J. Nair, “Hydra: Enabling Low-                          Transistor,” IEEE Transactions on Electron Devices, 2022.
+      Overhead Mitigation of Row-Hammer at Ultra-Low Thresholds via Hybrid Tracking,”               [178] M. Wi, J. Park, S. Ko, M. J. Kim, N. S. Kim, E. Lee, and J. H. Ahn, “SHADOW:
+      in ISCA, 2022.                                                                                      Preventing Row Hammer in DRAM with Intra-Subarray Row Shuffling,” in HPCA.
+[146] G. Saileshwar, B. Wang, M. Qureshi, and P. J. Nair, “Randomized Row-Swap:                           IEEE, 2023.
+      Mitigating Row Hammer by Breaking Spatial Correlation Between Aggressor and                   [179] W. Kim, C. Jung, S. Yoo, D. Hong, J. Hwang, J. Yoon, O. Jung, J. Choi, S. Hyun,
+      Victim Rows,” in ASPLOS, 2022.                                                                      M. Kang et al., “A 1.1 V 16Gb DDR5 DRAM with Probabilistic-Aggressor Track-
+[147] R. K. Konoth, M. Oliverio, A. Tatar, D. Andriesse, H. Bos, C. Giuffrida, and                        ing, Refresh-Management Functionality, Per-Row Hammer Tracking, a Multi-Step
+      K. Razavi, “ZebRAM: Comprehensive and Compatible Software Protection Against                        Precharge, and Core-Bias Modulation for Security and Reliability Enhancement,” in
+      Rowhammer Attacks,” in OSDI, 2018.                                                                  ISSCC. IEEE, 2023.
+[148] S. Vig, S. Bhattacharya, D. Mukhopadhyay, and S.-K. Lam, “Rapid Detection of                  [180] C. Gude Ramarao, K. T. Kumar, G. Ujjinappa, and B. V. D. Naidu, “Defending SoCs
+      Rowhammer Attacks Using Dynamic Skewed Hash Tree,” in HASP, 2018.                                   with FPGAs from Rowhammer Attacks,” Material Science, 2023.
+[149] M. J. Kim, J. Park, Y. Park, W. Doh, N. Kim, T. J. Ham, J. W. Lee, and J. H. Ahn,             [181] K. Guha and A. Chakrabarti, “Criticality based Reliability from Rowhammer Attacks
+      “Mithril: Cooperative Row Hammer Protection on Commodity DRAM Leveraging                            in Multi-User-Multi-FPGA Platform,” in VLSID. IEEE, 2022.
+      Managed Refresh,” in HPCA, 2022.                                                              [182] L. France, F. Bruguier, M. Mushtaq, D. Novo, and P. Benoit, “Modeling Rowhammer
+[150] G.-H. Lee, S. Na, I. Byun, D. Min, and J. Kim, “CryoGuard: A Near Refresh-Free                      in the gem5 Simulator,” in CHES 2022-Conference on Cryptographic Hardware
+      Robust DRAM Design for Cryogenic Computing,” in ISCA, 2021.                                         and Embedded Systems, 2022.
+[151] M. Marazzi, P. Jattke, F. Solt, and K. Razavi, “REGA: Scalable Rowhammer Mitiga-              [183] L. France, F. Bruguier, D. Novo, M. Mushtaq, and P. Benoit, “Reducing the Silicon
+      tion with Refresh-Generating Activations,” in S&P, 2022.                                            Area Overhead of Counter-Based Rowhammer Mitigations,” in 18th CryptArchi
+[152] Z. Zhang, Y. Cheng, M. Wang, W. He, W. Wang, S. Nepal, Y. Gao, K. Li, Z. Wang,                      Workshop, 2022.
+      and C. Wu, “SoftTRR: Protect Page Tables against Rowhammer Attacks using                      [184] T. Bennett, S. Saroiu, A. Wolman, and L. Cojocar, “Panopticon: A Complete
+      Software-only Target Row Refresh,” in USENIX ATC, 2022.                                             In-DRAM Rowhammer Mitigation,” in DRAMSec, 2021.
+[153] B. K. Joardar, T. K. Bletsch, and K. Chakrabarty, “Learning to Mitigate RowHammer             [185] K. Arıkan, A. Palumbo, L. Cassano, P. Reviriego, S. Pontarelli, G. Bianchi, O. Ergin,
+      Attacks,” in DATE, 2022.                                                                            and M. Ottavi, “Processor security: Detecting microarchitectural attacks via count-
+[154] J. Juffinger, L. Lamster, A. Kogler, M. Eichlseder, M. Lipp, and D. Gruss, “CSI:                    min sketches,” VLSI, 2022.
+      Rowhammer–Cryptographic Security and Integrity against Rowhammer (to appear),”                [186] C. Tomita, M. Takita, K. Fukushima, Y. Nakano, Y. Shiraishi, and M. Morii, “Ex-
+      in S&P, 2023.                                                                                       tracting the secrets of openssl with rambleed,” Sensors, 2022.
+[155] A. G. Yağlikci, A. Olgun, M. Patel, H. Luo, H. Hassan, L. Orosa, O. Ergin, and               [187] A. Saxena, G. Saileshwar, J. Juffinger, A. Kogler, D. Gruss, and M. Qureshi, “PT-
+      O. Mutlu, “HiRA: Hidden Row Activation for Reducing Refresh Latency of Off-the-                     Guard: Integrity-Protected Page Tables to Defend Against Breakthrough Rowham-
+      Shelf DRAM Chips,” in MICRO, 2022.                                                                  mer Attacks,” in DSN, 2023.
+[156] A. Saxena, G. Saileshwar, P. J. Nair, and M. Qureshi, “AQUA: Scalable Rowhammer               [188] R. Zhou, S. Ahmed, A. S. Rakin, and S. Angizi, “DNN-Defender: An in-
+      Mitigation by Quarantining Aggressor Rows at Runtime,” in MICRO, 2022.                              DRAM Deep Neural Network Defense Mechanism for Adversarial Weight Attack,”
+[157] S. Enomoto, H. Kuzuno, and H. Yamada, “Efficient Protection Mechanism for CPU                       arXiv:2305.08034, 2023.
+      Cache Flush Instruction Based Attacks,” IEICE Transactions on Information and                 [189] S. C. Woo, W. Elsasser, M. Hamburg, E. Linstadt, M. R. Miller, T. Song, and
+      Systems, 2022.                                                                                      J. Tringali, “RAMPART: RowHammer Mitigation and Repair for Server Memory
+[158] E. Manzhosov, A. Hastings, M. Pancholi, R. Piersma, M. T. I. Ziad, and S. Sethu-                    Systems,” in MEMSYS, 2023.
+      madhavan, “Revisiting Residue Codes for Modern Memories,” in MICRO, 2022.                     [190] M. J. Kim, M. Wi, J. Park, S. Ko, J. Choi, H. Nam, N. S. Kim, J. H. Ahn, and E. Lee,
+[159] S. M. Ajorpaz, D. Moghimi, J. N. Collins, G. Pokam, N. Abu-Ghazaleh, and                            “How to Kill the Second Bird with One ECC: The Pursuit of Row Hammer Resilient
+      D. Tullsen, “EVAX: Towards a Practical, Pro-active & Adaptive Architecture for                      DRAM,” in MICRO, 2023.
+      High Performance & Security,” in MICRO, 2022.                                                 [191] A. Olgun, M. Osseiran, A. G. Yaglikci, Y. C. Tugrul, H. Luo, S. Rhyner, B. Salami,
+[160] A. Naseredini, M. Berger, M. Sammartino, and S. Xiong, “ALARM: Active LeArn-                        J. Gomez Luna, and O. Mutlu, “An Experimental Analysis of RowHammer in
+      ing of Rowhammer Mitigations,” https://users.sussex.ac.uk/~mfb21/rh-draft.pdf,                      HBM2 DRAM Chips,” in DSN Disrupt, 2023.
+      2022.                                                                                         [192] C. Lim, K. Park, and S. Baeg, “Active Precharge Hammering to Monitor Displace-
+[161] B. K. Joardar, T. K. Bletsch, and K. Chakrabarty, “Machine Learning-based Row-                      ment Damage Using High-Energy Protons in 3x-nm SDRAM,” TNS, 2017.
+      hammer Mitigation,” TCAD, 2022.                                                               [193] S.-W. Ryu, K. Min, J. Shin, H. Kwon, D. Nam, T. Oh, T.-S. Jang, M. Yoo, Y. Kim,
+[162] H. Hassan, A. Olgun, A. G. Yaglikci, H. Luo, and O. Mutlu, “A Case for Self-                        and S. Hong, “Overcoming the Reliability Limitation in the Ultimately Scaled
+      Managing DRAM Chips: Improving Performance, Efficiency, Reliability, and                            DRAM using Silicon Migration Technique by Hydrogen Annealing,” in IEDM,
+      Security via Autonomous in-DRAM Maintenance Operations,” arXiv:2207.13358,                          2017.
+      2022.                                                                                         [194] D. Yun, M. Park, C. Lim, and S. Baeg, “Study of TID Effects on One Row Hammer-
+[163] Z. Zhang, Z. Zhan, D. Balasubramanian, B. Li, P. Volgyesi, and X. Koutsoukos,                       ing using Gamma in DDR4 SDRAMs,” in IRPS, 2018.
+      “Leveraging EM Side-Channel Information to Detect Rowhammer Attacks,” in S&P,                 [195] C. Lim, K. Park, G. Bak, D. Yun, M. Park, S. Baeg, S.-J. Wen, and R. Wong,
+      2020.                                                                                               “Study of Proton Radiation Effect to Row Hammer Fault in DDR4 SDRAMs,”
+[164] K. Loughlin, S. Saroiu, A. Wolman, and B. Kasikci, “Stop! Hammer Time: Rethink-                     Microelectronics Reliability, 2018.
+      ing Our Approach to Rowhammer Mitigations,” in HotOS, 2021.                                   [196] Z. Lang, P. Jattke, M. Marazzi, and K. Razavi, “BLASTER: Characterizing the Blast
+[165] F. Devaux and R. Ayrignac, “Method and Circuit for Protecting a DRAM Memory                         Radius of Rowhammer,” in DRAMSec, 2023.
+      Device from the Row Hammer Effect,” US Patent: 10,885,966, 2021.                              [197] S. S. Nabavi Larimi, B. Salami, O. S. Unsal, A. C. Kestelman, H. Sarbazi-Azad, and
+[166] J.-W. Han, J. Kim, D. Beery, K. D. Bozdag, P. Cuevas, A. Levi, I. Tain, K. Tran, A. J.              O. Mutlu, “Understanding Power Consumption and Reliability of High-Bandwidth
+      Walker, S. V. Palayam, A. Arreghini, A. Furnémont, and M. Meyyappan, “Surround                      Memory with Voltage Underscaling,” in DATE, 2021.
+      Gate Transistor With Epitaxially Grown Si Pillar and Simulation Study on Soft Error           [198] J. Kwon, S.-J. Wen, R. Fung, and S. Baeg, “Temperature Estimation of HBM2
+      and Rowhammer Tolerance for DRAM,” IEEE TED, 2021.                                                  Channels with Tail Distribution of Retention Errors in FPGA-HBM2 Platform,”
+[167] A. Fakhrzadehgan, Y. N. Patt, P. J. Nair, and M. K. Qureshi, “SafeGuard: Reducing                   Electronics, 2023.
+      the Security Risk from Row-Hammer via Low-Cost Integrity Protection,” in HPCA,                [199] M. B. Sullivan, N. Saxena, M. O’Connor, D. Lee, P. Racunas, S. Hukerikar, T. Tsai,
+      2022.                                                                                               S. K. S. Hari, and S. W. Keckler, “Characterizing And Mitigating Soft Errors in
+
+
+
+                                                                                               15
+
+
+===== Page 16 =====
+
+GPU DRAM,” in MICRO, 2021.
+
+
+
+
+                             16

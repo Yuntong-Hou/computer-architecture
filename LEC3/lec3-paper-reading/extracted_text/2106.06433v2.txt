@@ -1,0 +1,964 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/2106.06433v2.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/2106.06433v2.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+                                                       This is an extended and updated version of a paper published in
+                                                             IEEE Micro, vol. 41, no. 4, pp. 39-48, 1 July-Aug. 2021
+                                                                  https:// doi.or g/ 10.1109/ MM.2021.3088396
+
+
+
+
+                                        FPGA-Based Near-Memory Acceleration
+                                         of Modern Data-Intensive Applications
+                                                     Gagandeep Singh          Mohammed Alser           Damla Senol Calio
+                                                                                                                         n
+
+                                                            Dionysios DiamantopoulosO            Juan Gómez-Luna
+                                                                      Henk Corporaal?         Onur Mutluo
+arXiv:2106.06433v2 [cs.AR] 3 Jul 2021
+
+
+
+
+                                                                                                         n
+                                                                     ETH Zürich    n
+                                                                                     oCarnegie Mellon University
+                                                          ? Eindhoven University of Technology     O IBM Research Europe
+
+
+
+                                        Abstract—Modern data-intensive applications demand high computation capabilities with strict
+                                        power constraints. Unfortunately, such applications suffer from a significant waste of both
+                                        execution cycles and energy in current computing systems due to the costly data movement
+                                        between the computation units and the memory units. Genome analysis and weather prediction
+                                        are two examples of such applications. Recent FPGAs couple a reconfigurable fabric with
+                                        high-bandwidth memory (HBM) to enable more efficient data movement and improve overall
+                                        performance and energy efficiency. This trend is an example of a paradigm shift to near-memory
+                                        computing. We leverage such an FPGA with high-bandwidth memory (HBM) for improving the pre-
+                                        alignment filtering step of genome analysis and representative kernels from a weather prediction
+                                        model. Our evaluation demonstrates large speedups and energy savings over a high-end IBM
+                                        POWER9 system and a conventional FPGA board with DDR4 memory. We conclude that FPGA-
+                                        based near-memory computing has the potential to alleviate the data movement bottleneck for
+                                        modern data-intensive applications.
+
+
+
+                                           M ODERN COMPUTING SYSTEMS suffer from             for genome analysis [23] and two compound
+                                        a large gap between the performance and en-          stencil kernels from the widely-used COSMO
+                                        ergy efficiency of computation units and memory      (Consortium for Small-Scale Modeling) weather
+                                        units. These systems follow a processor-centric      prediction model [16]. A key observation is that
+                                        approach where data has to move back and forth       both applications have low arithmetic intensity
+                                        from the memory units using a relatively slow        with complex memory access behavior. The pre-
+                                        and power-hungry off-chip bus to the computation     alignment filtering algorithm, SneakySnake,
+                                        units for processing. As a result, data-intensive    builds a special matrix (called a chip maze in
+                                        workloads (e.g., genome analysis [1–15] and          Section “Case Study 1: Pre-Alignment Filtering
+                                        weather modeling [16–19]) require continuous         in Genome Analysis”) used to calculate an opti-
+                                        memory-CPU-memory data movement, which               mal solution for the pre-alignment filtering prob-
+                                        imposes an extremely large overhead in terms of      lem. SneakySnake calculates only portions of
+                                        execution time and energy efficiency [20].           this chip maze to maintain speed. This involves
+                                                                                             irregular visits to different entries of the chip
+                                            We provide in Figure 1 the roofline model [21]
+                                                                                             maze, leading to a strong mismatch between the
+                                        on an IBM POWER9 CPU (IC922) [22] for the
+                                                                                             nature of data access patterns and the layout
+                                        state-of-the-art pre-alignment filtering algorithm
+
+
+                                        IEEE MICRO
+                                                                                                                                                  1
+
+
+===== Page 2 =====
+
+                 of data in memory for SneakySnake. Such                                                                            these modern FPGAs adopt a more data-
+                 a mismatch leads to limited spatial locality and                                                                   centric approach to computing.
+                 cache effectiveness, causing frequent data move-                                                                2) FPGA manufacturers have introduced Ultra-
+                 ment between the memory subsystem and the                                                                          RAM (URAM) [55] along with the Block
+                 processing units. The weather kernels (vadvc                                                                       RAM (BRAM) that offers large on-chip
+                 and hdiff) consist of compound stencils that                                                                       memory next to the logic.
+                 perform a series of element-wise computations                                                                   3) Recent FPGA boards with new cache-
+                 on a three-dimensional grid [24]. Such com-                                                                        coherent interconnects (e.g., IBM Coherent
+                 pound kernels are dominated by DRAM-latency-                                                                       Accelerator Processor Interface (CAPI) [56],
+                 bound operations due to complex memory access                                                                      Cache Coherent Interconnect for Accelera-
+                 patterns. As a result, the performance of these                                                                    tors (CCIX) [57], and Compute Express Link
+                 applications is significantly lower than the peak                                                                  (CXL) [58]) employ a shared memory space
+                 CPU performance. This is a common trend in                                                                         that allows tight integration of FPGAs with
+                 various data-intensive workloads [25–53].                                                                          CPUs at high bidirectional bandwidth (on
+                                                                                                                                    the order of tens of GB/s). This integration
+                                           104                                                                                      allows the FPGA to coherently access the
+    Attainable Performance [G(Fl)op/sec]
+
+
+
+
+                                               AD9H7 FPGA (3.6 TFLOP/s, 410GBps HBM, 7.26 TBps BRAM, 400MHz)
+                                                                                                                                    host system’s memory using a pointer, rather
+                                           103 AD9V3 FPGA 486.4
+                                                          (0.97 TFLOP/s, 32GBps DRAM, 1.62 TBps BRAM, 200MHz)
+                                                                GFLOP/s/socket (3.8GHz x 16 cores x 8 flops/cycle)
+                                                                    ps                                                              than requiring multiple copies of the data.
+                                                         che 337GB
+                                                  L3-c7a)x16=3                        Attainable performance is constrained      4) Newer FPGAs are manufactured with an
+                                           102 (208.5                                 by memory bandwidth, as CPU
+                                                                      M 58.5GFlop/s   micro-architecture features
+                                                      DRBAWM on STREA                 become ineffective for a given                advanced technology node of 7-14nm Fin-
+                                                    B p s              29.1GFlop/s    arithmetic intensity and
+                                           10 110
+                                             1    G                                   access patterns do not favor
+                                                                     5.13GFlop/s      the memory hierarchy.                         FET [59,60] that offers higher performance.
+                                                                  3.3GFlop/s
+                                           100                                        hdiff (P9 64 threads)                     These four trends suggest that modern FPGA
+                                                                                      hdiff (P9 1 thread)
+                                                          0.28Gop/s                   vadvc (P9 64 threads)                     architectures deliver unprecedented levels of in-
+                                           10 1                                       vadvc (P9 1 thread)
+                                                          0.07Gop/s                   SneakySnake (P9 64 threads)               tegration and compute capability due to new
+                                                                                      SneakySnake (P9 1 thread)
+                                           10 2 1                                                                               advances and features, which provides an oppor-
+                                              10                      100                     101                         102
+                                                              Arithmetic Intensity [(fl)op/byte]                                tunity to largely alleviate the memory bottleneck
+                                                                                                                                of real-world data-intensive applications.
+                 Figure 1: Roofline for POWER9 (1-socket) showing pre-
+                 aligment filtering algorithm (SneakySnake), and verti-                                                              To this end, we demonstrate the capability of
+                 cal advection (vadvc) and horizontal diffusion (hdiff)                                                         near-HBM FPGA-based accelerators for two key
+                 kernels from the COSMO weather prediction model for
+                 single-thread and 64-thread implementations. The plot                                                          real-world data-intensive applications: (1) pre-
+                 shows also the rooflines of the FPGAs used in our work                                                         alignment filtering in genome analysis, (2) rep-
+                 with peak DRAM and on-chip BRAM bandwidth.                                                                     resentative kernels from a widely-used weather
+                                                                                                                                prediction application, COSMO. Pre-alignment
+                     In this work, our goal is to overcome                                                                      filtering is one of the fundamental steps in most
+                 the memory bottleneck of two key real-world                                                                    genome analysis tasks, where up to 98% of input
+                 data-intensive applications, genome analysis and                                                               genomic data is filtered out. Thus, accelerating
+                 weather modeling, by exploiting near-memory                                                                    this step would benefit the overall end-to-end
+                 computation capability on modern FPGA acceler-                                                                 execution time of genome analysis [1, 5, 7, 11, 23,
+                 ators with high-bandwidth memory (HBM) [54]                                                                    61, 62]. The weather kernels we evaluate are an
+                 that are attached to a host CPU. The use of FP-                                                                essential part of climate and weather modeling
+                 GAs can yield significant performance improve-                                                                 and prediction [17], which is critical for a sus-
+                 ments, especially for parallel algorithms. Modern                                                              tainable life ecosystem [63].
+                 FPGAs provide four key trends:                                                                                      Our accelerator designs make use of a hetero-
+                   1) The integration of high-bandwidth memory                                                                  geneous memory hierarchy (consisting of URAM,
+                      (HBM) on the same package with an FPGA                                                                    BRAM, and HBM). We evaluate the performance
+                      allows us to implement our accelerator logic                                                              and energy efficiency of our accelerators, perform
+                      much closer to the memory with an or-                                                                     a scalability analysis, and compare them to a tra-
+                      der of magnitude more bandwidth than tra-                                                                 ditional DDR4-based FPGA board and a state-of-
+                      ditional DDR4-based FPGA boards. Thus,                                                                    the-art multi-core IBM POWER9 system. Based
+
+
+
+2                                                                                                                                                                        IEEE MICRO
+
+
+===== Page 3 =====
+
+on our analysis, we show that our full-blown             alignment [7, 8]. This step is formulated as
+HBM-based designs of SneakySnake, vadvc,                 an approximate string matching (ASM) prob-
+and hdiff provide (1) 27.4×, 5.3×, and 12.7×             lem [11, 66] and it calculates: (1) edit distance
+higher speedup, and (2) 133×, 12×, and 35×               (the minimum number of edits needed to convert
+higher energy efficiency, respectively, compared         one sequence into the other) between two given
+to a 16-core IBM POWER9 system.                          sequences [66, 67], (2) type of each edit (i.e.,
+                                                         insertion, deletion, or substitution), (3) location
+Near-memory Computation on FPGAs                         of each edit in one of the two given sequences,
+    We provide in Figure 2 a high-level schematic        and (4) alignment score that is the sum of the
+of our integrated system with an FPGA-based              scores (calculated using a user-defined scoring
+near-memory accelerator. The FPGA is connected           function) of all edits and matches between the
+to two HBM stacks, each of which has 16 pseudo           two sequences.
+memory channels [64]. A channel is exposed to                Sequence alignment is a computationally-
+the FPGA as a 256-bit wide interface, and the            expensive step as it usually uses dynamic pro-
+FPGA has 32 such channels in total. The HBM              gramming (DP)-based algorithms [6, 11, 68–71],
+IP provides 8 memory controllers (per stack) to          which have quadratic time and space complex-
+handle the data transfer to/from the HBM mem-            ity (i.e., O(m2 ) for a sequence length of m).
+ory channels. This configuration enables high-           In genome analysis, an overwhelming major-
+bandwidth and low-latency memory accesses for            ity (>98%) of the sequence pairs examined
+near-memory computing. The FPGA is also con-             during sequence alignment are highly dissimi-
+nected to a host CPU, an IBM POWER9 proces-              lar and their alignment results are simply dis-
+sor, using OCAPI (OpenCAPI) [65].                        carded as such dissimilar sequence pairs are
+                                                         usually not useful for genomic studies [61, 72,
+     HBM2                  HBM2                          73]. To avoid examining dissimilar sequences
+     Stack 1               Stack 2              DRAM     using computationally-expensive sequence align-
+                                      256-bit
+FPGA   16x
+       ....                  16x
+                             ....      AXI3              ment algorithms, genome analysis pipelines typ-
+                 HBM IP                                  ically use filtering heuristics that are called pre-
+   Accelerator Functional Unit                    P9     alignment filters [7, 23, 73–76]. The key idea of
+       PE                 PE                     Core    pre-alignment filtering is to quickly estimate the
+    URAM LUT            URAM LUT
+            FF
+                 ....        FF                  IBM     number of edits between two given sequences
+                                     TLx
+    BRAM LUT            BRAM LUT                Power9   and use this estimation to decide whether or not
+                                     DLx
+                                                         the computationally-expensive DP-based align-
+Figure 2: Heterogeneous platform with an IBM POWER9
+system connected to an HBM-based FPGA board
+                                                         ment calculation is needed — if not, a significant
+via OCAPI. We also show components of an FPGA: flip-     amount of time is saved by avoiding DP-based
+flop (FF), lookup table (LUT), UltraRAM (URAM), and      alignment. If two genomic sequences differ by
+Block RAM (BRAM).
+                                                         more than an edit distance threshold, E, then
+                                                         the two sequences are identified as dissimilar se-
+    The FPGA device implements an accelerator            quences and hence DP calculation is not needed.
+functional unit (AFU) that interacts with the host           SneakySnake [23] is a recent highly-
+system through the TLx (Transaction Layer) and           parallel and highly-accurate pre-alignment filter
+the DLx (Data Link Layer), which are the CAPI            that works on modern high-performance com-
+endpoints on the FPGA. An AFU comprises                  puting architectures such as CPUs, GPUs, and
+multiple processing elements (PEs) that accelerate       FPGAs. The key idea of SneakySnake is to
+a portion of an application.                             reduce the ASM problem to the single net routing
+                                                         (SNR) problem [77] in VLSI. The goal of the
+Modern Data-Intensive Applications                       SNR problem is to find the shortest routing path
+Case Study 1: Pre-Alignment Filtering in                 that interconnects two terminals on the bound-
+Genome Analysis                                          aries of VLSI chip layout while passing through
+    One of the most fundamental computational            the minimum number of obstacles. Solving the
+steps in most genome analysis tasks is sequence          SNR problem is faster than solving the ASM
+
+
+
+                                                                                                                3
+
+
+===== Page 4 =====
+
+    problem, as calculating the routing path after                               where an entry of value ‘1’ represents an obstacle,
+    facing an obstacle is independent of the cal-                                an entry of value ‘0’ represents an available path,
+    culated path before this obstacle (checkpoints                               1 ≤ i ≤ (2E + 1), and 1 ≤ j ≤ m.
+    in Figure 3). This provides two key benefits:                                    2) Finding the longest available path in
+    1) It obviates the need for using computationally-                           each row of the chip maze. SneakySnake
+    costly DP algorithms to keep track of the subpath                            finds the longest available path, which represents
+    that provides the optimal solution (i.e., the one                            the longest common subsequence between two
+    with the least possible routing cost). 2) The                                given sequences. It counts the consecutive en-
+    independence of the subpaths allows for solving                              tries of value 0 in each row starting from the
+    many SNR subproblems in parallel by judiciously                              previous checkpoint until it faces an obstacle,
+    leveraging the parallelism-friendly architecture of                          and then it examines the next rows in the same
+    modern FPGAs and GPUs to greatly speed up                                    way. Once it examines all rows, SneakySnake
+    the SneakySnake algorithm. The number of                                     compares the lengths of the found segments of
+    obstacles faced throughout the found routing path                            consecutive zeros and considers the longest seg-
+    represents a lower bound on the edit distance                                ment as the chosen path (arrows highlighted in
+    between two sequences, and hence this number                                 orange in Figure 3), and places a checkpoint
+    is used to make accurate filtering decisions by                              right after the obstacle that follows the chosen
+    SneakySnake.                                                                 path. SneakySnake then starts the count from
+                                                                                 this checkpoint for each row of the chip maze.
+                                                                                 Thus, the CPU-based implementation consists of
+                  0                      0                    0
+                                                                                 irregular memory access patterns.
+                  0                      0                    1
+                                                                                     3) Finding the estimated number of edits.
+       ENTRANCE
+
+
+
+
+                  0                      4                    1
+                                                                                 SneakySnake estimates the number of edits
+                                                                    EXIT
+
+
+
+
+                  4                      0                    0
+                  1                                           1
+                                                                                 to be equal to the number of obstacles found
+                                         2
+                  0                      0                    0
+                                                                                 along the shortest routing path (3 obstacles for
+                  1                      0                    0                  our example in Figure 3, each of which is lo-
+                                                                                 cated at the end of each chosen subpath). Thus,
+    Figure 3: An example of the SneakySnake chip maze for                        SneakySnake repeats the second step until
+    a reference sequence R = ‘GGTGCAGAGCTC’, a query
+    sequence Q= ‘GGTGAGAGTTGT’, and an edit distance                             either there are no more available entries to
+    threshold (E) of 3. Our SneakySnake algorithm quickly                        be examined, or the total number of obstacles
+    finds an optimal signal net (highlighted in orange) with                     passed through exceeds the allowed edit distance
+    3 obstacles, each of which is located at the end of each
+    arrow (subpath), and hence SneakySnake decides that
+                                                                                 threshold (i.e., E).
+    sequence alignment for R and Q is needed, as the number
+    of obstacles ≤ E.                                                            Case Study 2: Weather Modeling and
+                                                                                 Prediction
+    The SneakySnake algorithm includes three                                         Accurate and fast weather prediction using
+    main steps [23]: 1) Building the chip maze.                                  detailed weather models is essential to make
+    The chip maze, Z, is a matrix where each of                                  weather-dependent decisions in a timely man-
+    its entries represents the pairwise comparison                               ner. The Consortium for Small-Scale Modeling
+    result of a character of one sequence with another                           (COSMO) [16] built one such weather model to
+    character of the other sequence, as we show                                  meet the high-resolution forecasting requirements
+    in Figure 3. Given two genomic sequences of                                  of weather services. The COSMO model is a non-
+    length m, a reference sequence R[1 . . . m] and a                            hydrostatic atmospheric prediction model that is
+    query sequence Q[1 . . . m], and an edit distance                            widely used for meteorological purposes and re-
+    threshold E, SneakySnake calculates the entry                                search applications [24, 63].
+    Z[i, j] of the chip maze as follows:                                             The central part of the COSMO model (called
+                                                                                dynamical core or dycore) solves the Euler equa-
+                      
+                       0, if i = E + 1, Q[j] = R[j],                            tions on a curvilinear grid [78] and applies 1) im-
+                        0, if 1 ≤ i ≤ E, Q[j – i] = R[j],
+                      
+                       0, if i > E + 1, Q[j + i – E – 1] = R[j],
+                                                                           (1)   plicit discretization (i.e., parameters are depen-
+                                                                                 dent on each other at the same time instance [79])
+                      
+                      1, otherwise
+
+
+
+
+4                                                                                                                         IEEE MICRO
+
+
+===== Page 5 =====
+
+in the vertical dimension and 2) explicit dis-            Laplacian             Flux
+cretization (i.e., a solution depends on the pre-          Stencil             Stencil            Output
+vious system state [79]) in the two horizontal
+dimensions. The use of different discretizations
+leads to three computational patterns [80]: 1) hor-
+izontal stencils, 2) tridiagonal solvers in the ver-
+tical dimension, and 3) point-wise computation.
+These computational kernels are compound sten-
+cil kernels that operate on a three-dimensional
+grid [24, 81]. A stencil operation updates values
+                                                       Figure 4: Horizontal diffusion kernel composition us-
+in a structured multidimensional grid (row, col-
+                                                       ing Laplacian and flux stencils in a two dimensional
+umn, depth) based on the values of a fixed local       plane [19].
+neighborhood of grid points. Vertical advection
+(vadvc) and horizontal diffusion (hdiff) are
+two such compound stencil kernels found in the         irregular memory access patterns. For example,
+dycore of the COSMO weather prediction model.          when the input grid is stored by row, accessing
+They are similar to the kernels used in other          data elements in the depth dimension typically
+weather and climate models [82–84].                    results in many cache misses [86].
+    These kernels are representative of the data
+access patterns and algorithmic complexity of the      Accelerator Implementation
+entire COSMO model, and are similar to the                 We design and implement an accelerator on
+kernels used in other weather and climate mod-         our HBM-based FPGA-board (Figure 2) for each
+els [18]. As shown in Figure 1, their performance      of the three kernels (SneakySnake, vadvc,
+is bounded by access to main memory due to             and hdiff) in our two case studies. We use a
+their irregular memory access patterns and low         High-Level Synthesis (HLS) [87] design flow to
+arithmetic intensity that altogether result in an      implement and map our accelerator design. We
+order-of-magnitude lower performance than the          describe the design and the execution flow for
+peak CPU performance.                                  our HBM-based accelerators.
+    The horizontal diffusion kernel iterates over a        Figure 5 shows the end-to-end data transfer
+3D grid performing Laplacian and flux stencils         from the host DRAM to the processing ele-
+to calculate different grid points as shown in         ment on an FPGA. We make use of streams
+Figure 4. A single Laplacian stencil accesses the      (hls::streams1 ) to connect different dataflow
+input grid at five memory offsets, the result of       tasks that allow consumer functions to operate
+which is used to calculate the flux stencil. hdiff     before the producer functions have been com-
+has purely horizontal access patterns and does         pleted. Streaming simplifies address management
+not have dependencies in the vertical dimension.       as the data samples are sent in sequential order
+Thus, it can be fully parallelized in the verti-       between two modules. Before feeding data to a
+cal dimension. Vertical advection has a higher         processing element, we use the on-chip hetero-
+degree of complexity since it uses the Thomas          geneous memory hierarchy to unpack the stream
+algorithm [85] to solve a tridiagonal matrix of        data in a way that matches the data access pattern
+weather data (called fields, such as, air pressure,    of an application. Therefore, we implement our
+wind velocity, and temperature) along the vertical     accelerator design following a dataflow approach
+axis. vadvc consists of a forward sweep that is        in five steps.
+followed by a backward sweep along the vertical            First, the input data stored in the DRAM of
+dimension. vadvc requires access to the weather        the host system ( 1 in Figure 5) is transferred
+data, which are stored as array structures while       to the FPGA over a 1024-bit wide OCAPI inter-
+performing forward and sweep computations. Un-         face ( 2 ) by a data-fetch engine. A single cache
+like the conventional stencil kernels, vertical ad-    line stream of float32 datawidth would have
+vection has dependencies in the vertical direction,      1 We use Vivado HLS C++ template class hls::stream to
+which leads to limited available parallelism and       implement FIFO-based streaming interfaces.
+
+
+
+
+                                                                                                                 5
+
+
+===== Page 6 =====
+
+                                                                                     © MeteoSwiss
+                                                                                                    1 Data in the Host DRAM
+           1 POWER9 Cache line                  2                                                   TAGACCCTGTGTCT Reference
+        1024-bit = 128-B -> 32 x float32        Virtual Address                                     AAAGTAAAAAAATT Sequences
+                                                Translation &                                       CTGGTGGCACACA
+                                                Coherency by Power
+                                                                                                    AGGGTCAAGGCAG Read
+             FPGA AXI Register                  Service Layer (PSL)
+                                                                                                    AATTGCTTAAACCAA Sequences
+              1024-bit x 1 reads                                                                    TGGGCATGGTGGCA
+
+
+
+
+             32 addresses
+                                                                                                                       LUTs
+                                                                                                                        and
+          1 x float32 -> 32-bit       Partition input 3D stencil grid/      2D vertical slicing of input grid           FFs
+                                  genomic read and reference sequences          for weather kernels/                  caching for
+                                                                                                                     spatial locatliy
+        3 Cacheline Buffering          4 FPGA HBM channels                   SneakySnake maze matrix
+                                                                              5 URAM and BRAM                     6 Register File
+    Figure 5: Data transfer flow from the host DRAM to the on-board FPGA memory via POWER9 cache lines.
+    Heterogeneous memory partitioning of on-chip memory blocks enable low read/write latencies across the FPGA
+    memory hierarchy.
+
+
+    32 data elements. The data-fetch engine reads                     introduce a stream converter logic that converts a
+    1024-bit wide POWER9 cache line data over                         256-bit HBM stream to a 1024-bit wide stream,
+    the OCAPI interface and pushes the data into                      which is equal to the maximum OCAPI bitwidth.
+    a 1024-bit buffer before converting it to 256-                        Fourth, each PE performs computation
+    bit HBM pseudo-channel bitwidth. For weather                      (SneakySnake for genome analysis, and
+    prediction, the input data is the atmospheric data                vadvc or hdiff for weather prediction) on
+    collected from weather simulations based on the                   the transferred data. In SneakySnake, we
+    atmospheric model resolution grid. For genome                     equally divide the number of read and reference
+    analysis, the input data is the reference and read                sequences among the PEs. In vadvc and
+    sequences for the pre-alignment filtering step of                 hdiff, each PE operates on a block of the input
+    the genome analysis pipeline. Second, following                   grid. For SneakySnake2 , each row in the chip
+    the initial buffering ( 3 ), the HBM-write engine                 maze is stored as a register array of length equal
+    maps the data onto the HBM memory ( 4 ). We                       to the read length. The registers are accessed
+    partition the data among HBM channels ( 5 ) to                    simultaneously throughout the execution. In
+    exploit data-level parallelism and to scale our                   every iteration, we count consecutive zeros in
+    design. Our evaluated workloads have limited                      each row until we find an obstacle (i.e., until we
+    locality, so to exploit locality, we cache certain                come across a 1). Following this, we shift all
+    parts of data into a register file made of LUTs                   the bits by the maximum number of zeros in the
+    and FFs ( 6 ). Third, we assign a dedicated HBM                   chip maze. This shifting allows us to overcome
+    memory channel to a specific processing element                   the irregular array accesses while finding the
+    (PE); therefore, we enable as many HBM chan-                      longest possible path in the chip maze. Fifth,
+    nels as the number of PEs. This allows us to                      once the calculated results are available, the
+    use the high HBM bandwidth effectively because                    HBM-write engine writes calculated results to its
+    each PE fetches from an independent 256-bit                       assigned HBM memory channel, after which the
+    channel, which provides low-latency and high-                     write-back engine transfers the data back to the
+    bandwidth data access to each PE. An HBM-                         host system for further processing.
+    read engine reads data from a dedicated HBM                           We create a specialized memory hierarchy
+    memory channel and assigns data to a specialized                  from the pool of heterogeneous FPGA memories
+    PE. The HBM channel provides 256-bit data,
+                                                                        2 We open-source our HBM+OCAPI-based SneakySnake
+    which is a quarter of the OCAPI bitwidth (1024-                   accelerator  implementations   (both  single-channel-single
+    bit). Therefore, to match the OCAPI bitwidth, we                  PE and multi-channel-single PE): https://github.com/CMU-
+                                                                      SAFARI/SneakySnake/tree/master/SneakySnake-HLS-HBM
+
+
+
+
+6                                                                                                                         IEEE MICRO
+
+
+===== Page 7 =====
+
+(i.e., on-chip BRAM and URAM, and in-package           Performance Analysis
+HBM). By using a greedy algorithm, we deter-                We provide the execution time of
+mine the best-suited hierarchy for each kernel.        SneakySnake, vadvc, and hdiff on
+Heterogeneous partitioning of on-chip memory           the POWER9 CPU with 64 threads and the
+blocks reduces read and write latencies across         FPGA accelerators (both DDR4-based and
+the FPGA memory hierarchy. To optimize a PE,           HBM-based) in Figure 6 (a), (b), and (c),
+we apply three optimization strategies. First, we      respectively. For both FPGA designs, we scale
+exploit the inherent parallelism in a given algo-      the number of PEs from 1 to the maximum
+rithm using hardware pipelining. Second, we par-       number that we can accommodate on the
+tition data arrays onto multiple physical on-chip      available FPGA resources. On the DDR4-based
+memories (BRAM/URAM) instead of a single               design, the maximum number of PEs is 4, 4,
+large memory to avoid stalling of our pipelined        and 8 for SneakySnake, vadvc, and hdiff,
+design, since the on-chip BRAM/URAM have               respectively. On the HBM-based design, we can
+only two read/write ports. On-chip memory re-          fit up to 12, 14, and 16 PEs for SneakySnake,
+shaping is an effective technique for improving        vadvc, and hdiff, respectively. Based on our
+the bandwidth of BRAMs/URAMs. Third, we                analysis, we make four key observations.
+partition the input data between PEs, therefore, all        First, the full-blown HBM+OCAPI-based im-
+PEs exploit data-level parallelism. We apply all       plementations (with the maximum number of
+three optimizations using source-code annotations      PEs) of SneakySnake, vadvc, and hdiff
+via Vivado HLS #pragma directives [88].                outperform the 64-thread IBM POWER9 CPU
+                                                       version by 27.4×, 5.3×, and 12.7×, respec-
+Evaluation                                             tively. We achieve 28%, 37%, and 44% higher
+    We evaluate our accelerator designs for            performance for SneakySnake, vadvc, and
+SneakySnake, vadvc, and hdiff in terms                 hdiff, respectively, with OCAPI-based HBM
+of performance, energy consumption, and FPGA           design than CAPI2-based HBM design due to the
+resource utilization on two different FPGAs, and       following two reasons: 1) OCAPI provides double
+two different external data communication inter-       the bitwidth (1024-bit) of the CAPI2 interface
+faces between the CPU and the FPGA board.              (512-bit), which provides a higher bandwidth to
+We implement our accelerator designs on both           the host CPU, i.e., 22.1/22.0 GB/s R/W versus
+1) an Alpha-Data ADM-PCIE-9H7 card [89] fea-           13.9/14.0 GB/s; and 2) with OCAPI, memory
+turing the Xilinx Virtex Ultrascale+ XCVU37P-          coherency logic is moved onto the IBM POWER
+FSVH2892-2-e [60] with 8GiB HBM2 [54] and              CPU, which provides more FPGA area and allows
+2) an Alpha-Data ADM-PCIE-9V3 card [90] fea-           us to run our accelerator logic at a higher clock
+turing the Xilinx Virtex Ultrascale+ XCVU3P-           frequency (250MHz for OCAPI versus 200MHz
+FFVC1517-2-i with 8GiB DDR4 [60], connected            for CAPI2).
+to an IBM POWER9 host system. For the ex-                   Second, for a single PE, the DDR4-CAPI2-
+ternal data communication interface, we use            based FPGA accelerator design is faster than the
+both CAPI2 [56] and the state-of-the-art OCAPI         HBM-CAPI2-based design for all three kernels.
+(OpenCAPI) [65] interface. We compare these            This is because the HBM-based design uses one
+implementations to execution on a POWER9               HBM channel per PE, as the bus width of the
+CPU with 16 cores (using all 64 hardware               DDR4 channel (512 bits) is larger than that of
+threads). We run SneakySnake using the first           an HBM channel (256 bits). Therefore, the HBM
+30,000 real genomic sequence pairs (text and           channel has a lower transfer rate of 0.8-2.1 GT/s
+query pairs) of 100bp_2 dataset [23], which is         (Gigatransfers per second) than for a DDR4 chan-
+widely used as in prior works [9, 62, 73, 75, 76].     nel (2.1-4.3 GT/s) with a theoretical bandwidth
+The length of each sequence is 100 bp (base-           of 12.8 GB/s and 25.6 GB/s per channel, respec-
+pair) long. For weather prediction, we run our         tively. One way to match the DDR4 bus width is
+experiments using a 256 × 256 × 64-point domain        to have a single PE fetch data from multiple HBM
+similar to the grid domain used by the COSMO           channels in parallel. As shown in Figure 6, in our
+model.                                                 multi-channel setting (HBM_multi+OCAPI), we
+
+
+
+                                                                                                            7
+
+
+===== Page 8 =====
+
+                                                   (a)           SneakySnake                                                              (b)                          vadvc                                                          (c)                     hdiff
+                                             101
+                                                              POWER9 socket (64 threads)                                     16                   16.12
+                                                                                                                                                  15.39                                                                                        6.3                    HBM+OCAPI
+                                                                                                                                                                          HBM+OCAPI                                               6
+                                                                             HBM+OCAPI
+
+
+
+
+    Runtime (msec)
+
+
+
+
+                                                                                               Runtime (msec)
+
+
+
+
+                                                                                                                                                                                                             Runtime (msec)
+                                                                                                                                                                          HBM_multi+OCAPI                                                                             HBM_multi+OCAPI
+                                                                             HBM_multi+OCAPI                                              12.09
+                                                                                                                             12                                           HBM+CAPI2                                                                                   HBM+CAPI2
+                                                                             HBM+CAPI2                                                    10.92                                                                                         4.17                          DDR4+CAPI2
+                                                                                                                                                        8.98              DDR4+CAPI2                                              4 4.07
+                                                                             DDR4+CAPI2                                                                                                                                                                   POWER9 socket (64 threads)
+                                             100                                                                                      8         8.06                                                                                                3.1
+                                                    0.52                                                                                               6.01      6.34
+                                                    0.44              0.44                                                                                                                                                                         2.21
+                                                                                                                                                               POWER9 socket (64 threads)                                              2.36
+                                                    0.41           0.33       0.29      0.27                                                    5.51                                                                              2                   1.72
+                                                              0.32                                                                    4                         3.4                                                                            2.03              1.39
+                                                    0.29                                                                                                                                                                                           1.67
+                                                           0.26    0.26                                                                                4.03                   2.02                                                          1.16      1.08        0.84
+                                                                0.23          0.23      0.21                                                                                          1.11
+                                                                                                                                                               2.78                                                                                                               0.39
+                                                                                                                                                                         1.27           0.81                                                      0.82
+                                                                                                                                                                                                                                                               0.54               0.27
+                                10 1                                                                                                  0                                                                                           0
+                                                           1 2 3 4             8         12                                                      1 2 3 4                  8           14                                                     1 2 3 4             8                 16
+                                                                Number of PEs                                                                                 Number of PEs                                                                               Number of PEs
+                                                   (d)          SneakySnake                                                               (e)                          vadvc                                                       (f)                        hdiff
+
+
+
+
+                                                                                                    Energy Efficiency (GFLOPS/Watt)
+
+
+
+
+                                                                                                                                                                                               Energy Efficiency (GFLOPS/Watt)
+                                                                                                                                      3
+           Energy Efficiency (Mseq/s/Watt)
+
+
+
+
+                                             10                                                                                                                                                                                                                                  21.01
+                                                                                                                                                                                                                                                                20.47
+                                                             8.2                                                                                                                                                                 20                18.2
+                                              8         7.8                  7.75                                                                    2.3                      2.32                                                                             17.33             17.34
+                                                             7.9                                                                                       2.28
+                                                                                        6.81                                                2.15                                                                                          15.49 15.17
+                                                    6.62 6.55 6.68                                                                    2 1.91       2.1
+                                                                               5.88                                                                  1.78                1.71                                                    15 14.58
+                                              6                                                                                            1.86 1.65                                   1.61                                                       14.8           14.58
+                                                    5.82            6.27                                                                                                                                                             13.24
+                                                                                        5.1                                                 1.44 1.61                                                                                         12.51
+                                                       5.14                                                                                                     1.31                 1.45                                           11.49
+                                                              HBM+OCAPI                                                                     1.37                           HBM+OCAPI                                             10          10.8                      HBM+OCAPI
+                                              4                                                                                                                                                                                      9.75
+                                                              HBM_multi+OCAPI                                                         1                                    HBM_multi+OCAPI                                          7.29                               HBM_multi+OCAPI
+                                                              HBM+CAPI2                                                                                                    HBM+CAPI2                                                      6.5                          HBM+CAPI2
+                                              2                                                                                                                                                                                   5
+                                                              DDR4+CAPI2                                                                                                   DDR4+CAPI2                                                                                  DDR4+CAPI2
+                                                         POWER9 socket (64 threads)                                                                    POWER9 socket (64 threads)                                                                  POWER9 socket (64 threads)
+                                              0                                                                                       0                                                                                           0
+                                                         1 2 3 4              8         12                                                      1 2 3 4                   8            14                                                   1234                 8                 16
+                                                              Number of PEs                                                                              Number of PEs                                                                               Number of PEs
+    Figure 6: Performance for (a) SneakySnake, (b) vadvc, and (c) hdiff as a function of accelerator PE count on the
+    HBM- and DDR4-based FPGA boards. Energy efficiency for (d) SneakySnake, (e) vadvc, and (f) hdiff and on
+    HBM- and DDR4-based FPGA boards. We also show the single socket (64 threads) performance and energy efficiency
+    of an IBM POWER9 host system for SneakySnake, vadvc, and hdiff. For HBM-based design, we implement our
+    accelerator with both the CAPI2 interface and the state-of-the-art OpenCAPI (OCAPI) interface (with both single
+    channel and multiple channels per PE).
+
+
+    use 4 HBM pseudo channels per PE to meet the                                                                                                                        This observation shows that there is a tradeoff
+    bitwidth of the OCAPI interface. We observe that                                                                                                                    between (1) enabling more HBM pseudo channels
+    by fetching more data from multiple channels,                                                                                                                       to provide each PE with more bandwidth, and
+    compared to our single-channel-single PE design,                                                                                                                    (2) implementing more PEs in the available area.
+    we achieve 1.4×, 1.2×, and 1.8× performance                                                                                                                         For SneakySnake, in our dataflow design, data
+    improvement for SneakySnake, vadvc, and                                                                                                                             transfer time dominates the computation time;
+    hdiff, respectively.                                                                                                                                                therefore, adding more PEs does not lead to
+                                                                                                                                                                        a linear reduction in performance. For vadvc
+        Third, as we increase the number of PEs, we                                                                                                                     and hdiff, both data transfer and computation
+    divide the workload evenly across PEs. As a re-                                                                                                                     take a comparable amount of time. Therefore, in
+    sult, we observe linear scaling in the performance                                                                                                                  such workloads, we are able to achieve a linear
+    of HBM-based designs, where each PE reads and                                                                                                                       execution time reduction with the number of PEs.
+    writes through a dedicated HBM channel. For
+    multi-channel designs, we are able to accommo-
+    date only 3 PEs for the three evaluated kernels                                                                                                                        Fourth, the performance of the DDR4-based
+    (i.e., 12 HBM channels) because adding more                                                                                                                         designs scales non-linearly for vadvc and
+    HBM channels leads to timing constraint viola-                                                                                                                      hdiff with the number of PEs, as all PEs access
+    tions. We observe that the best-performing multi-                                                                                                                   memory through the same channel. Multiple PEs
+    channel-single PE design (i.e., using 3 PEs with                                                                                                                    compete for a single memory channel, which
+    12 HBM channels for all three workloads) has                                                                                                                        causes frequent memory stalls due to contention
+    1.1×, 4.7×, and 3.1× lower performance than the                                                                                                                     in the memory channel. For SneakySnake,
+    best-performing single-channel-single PE design                                                                                                                     which is the most memory-bound of the three
+    (i.e., 12 PEs for SneakySnake, 14 PEs for                                                                                                                           kernels, we observe a constant execution time
+    vadvc, and 16 PEs for hdiff, respectively).                                                                                                                         with the increase in PEs. With a single PE,
+
+
+
+8                                                                                                                                                                                                                                                                           IEEE MICRO
+
+
+===== Page 9 =====
+
+memory access time hides all computation time.        energy efficiency for SneakySnake, vadvc,
+Increasing the number of PEs reduces the time         and hdiff, respectively. This is because using
+devoted to computation, but not the memory            more channels leads to higher power consumption
+access time because there is a single channel.        (∼1 Watt per channel) even though we get higher
+Therefore, memory bandwidth saturates with a          bandwidth per PE by using multiple channels.
+single PE, and the total execution time does not          Fourth, the energy efficiency of the HBM-
+reduce with the number of PEs.                        based design for hdiff increases with the num-
+    We conclude that FPGA-based near-memory           ber of PEs until a saturation point (8 PEs). How-
+computing provides significant speedup (between       ever, the energy efficiency of SneakySnake and
+5.3×-27.4×) to key data-intensive applications        vadvc (HBM+CAPI2) designs decreases after
+over a state-of-the-art CPU (POWER9).                 using more than 4 PEs, and that of the vadvc
+                                                      (HBM+OCAPI) design decreases after using more
+Energy Efficiency Analysis                            than 8 PEs. This is because every additional HBM
+    We provide energy efficiency results for          channel increases power consumption by ∼ 1
+SneakySnake, vadvc, and hdiff on the two              Watt (for the HBM AXI3 interface operating at
+FPGA designs and the POWER9 CPU in Fig-               250MHz with a logic toggle rate of ∼ 12.5%). In
+ure 6 (d), (e), and (f), respectively. We express     case of vadvc, there is a large amount of control
+energy efficiency in Mseq/s/Watt (i.e., millions      flow that leads to large and inefficient resource
+of read sequences per second per Watt) for            consumption when increasing the PE count. This
+SneakySnake, and in terms of GFLOPS/Watt              causes a high increase in power consumption
+for hdiff and vadvc. For power measurement            with 14 PEs.
+on the POWER9 system with an FPGA board,                  Fifth, as we increase the number of PEs, per-
+we use the AMESTER tool3 to monitor built-            formance of SneakySnake increases, whereas
+in power sensors. We measure the active power         energy efficiency may not follow the same trend.
+consumption, i.e., the difference between the total   This is because SneakySnake spends signifi-
+power of a complete socket (including processor,      cant amount of execution time in fetching data
+memory, fans, and I/O) when running an appli-         from memory, as mentioned in the discussion on
+cation and when idle. Based on our analysis, we       performance analysis. Thus, this may lead to a
+make five key observations.                           reduction in energy efficiency, depending upon
+    First,   our     full-blown    HBM+OCAPI-         the number of HBM channels used.
+based accelerator designs (with 12 PEs for                We conclude that increasing the number of
+SneakySnake, 14 PEs for vadvc, and 16                 PEs and enabled HBM channels does not always
+PEs for hdiff) improve energy efficiency              increase energy efficiency. However, data-parallel
+by 133×, 12×, and 35× compared to the                 kernels like hdiff can achieve much higher
+POWER9 system for SneakySnake, vadvc,                 performance in an energy-efficient manner with
+and hdiff, respectively.                              more PEs and HBM channels.
+    Second, the DDR4-CAPI2-based designs are
+slightly more energy efficient (1.1× to 1.5×)         FPGA Resource Utilization
+than the HBM-CAPI2-based designs when the                 We list the resource utilization of
+number of PEs is small. This observation is           SneakySnake, vadvc, and hdiff on
+in line with our discussion about performance         the FPGA board with HBM memory in Table 1.
+with small PE counts in the previous section.         We make three observations. First, BRAM
+However, as we increase the number of PEs,            utilization is significantly higher than utilization
+the HBM-based designs provide higher energy           of other resources. The reason is that we use
+efficiency since they make use of multiple HBM        hls::streams to implement input and output
+channels. Third, compared to our single-channel-      to different functions. Streams are FIFOs,
+single PE design, our multi-channel-single PE         which are implemented with BRAMs. Second,
+design provides only 1.1×, 1×, and 1.5× higher        SneakySnake performs all computations using
+                                                      flip-flops (FF) and lookup table registers (LUT).
+ 3 https://github.com/open-power/amester              It does not require digital signal processing units
+
+
+
+                                                                                                             9
+
+
+===== Page 10 =====
+
+     (DSP) since it does not execute floating-point         HBM channel. However, adding more PEs could
+     operations. Third, resource consumption of             lead to timing constraint violations for HBM-
+     vadvc is much higher than that of hdiff                based designs. HBM-based FPGAs consist of
+     because it has higher computation complexity           multiple super-logic regions (SLRs) [91], where
+     and requires a larger number of input parameters       an SLR represents a single FPGA die. All HBM
+     for the compound stencil computation. We               channels are connected only to SLR0, while other
+     observe that there are enough resources to             SLRs have indirect connections to the HBM
+     accommodate more than 16 PEs for hdiff, but            channels. Therefore, for a large design, if a PE
+     in this work, we use only a single HBM stack           is implemented in a non-SLR0 region, it might
+     due to timing constraint violations. Therefore,        make timing closure difficult.
+     in this work, the maximum number of PEs                     Fourth, the energy efficiency of our HBM-
+     is 16 to match 16 memory channels offered              based designs tends to saturate (or even reduces)
+     by a single HBM stack.                                 as we increase the number of PEs beyond some
+                                                            point. The highest energy efficiency is achieved
+     Table 1: FPGA resource utilization in the full-blown
+     HBM+OCAPI-based designs for SneakySnake (12 PEs),      with a PE count that is smaller than the highest-
+     vadvc (14 PEs), and hdiff (16 PEs).                    performing PE count. The major reason for a
+                                                            decrease in the energy efficiency is the increase in
+      Algorithm      BRAM     DSP   FF    LUT   URAM
+                                                            power consumption with every additional HBM
+      SneakySnake    58%      0%    18%   70%   1%
+      vadvc          90%      39%   37%   55%   53%         channel.
+      hdiff          96%      4%    10%   15%   8%               We hope that the near-memory acceleration
+                                                            efforts for genome analysis and weather predic-
+                                                            tion we described and the challenges we iden-
+     Discussion                                             tified and solved provide a foundation for accel-
+         This paper presents our recent efforts to          erating modern and future data-intensive applica-
+     leverage near-memory computing capable FPGA-           tions using powerful near-memory reconfigurable
+     based accelerators to accelerate three major ker-      accelerators.
+     nels taken from two data-intensive applications:
+     (1) pre-alignment filtering in genome analysis,        ACKNOWLEDGMENTS
+     and (2) horizontal diffusion and vertical advection        We thank the anonymous reviewers of IEEE
+     stencils from weather prediction. We identify key      Micro for their feedback. We thank the SA-
+     challenges for such acceleration and provide solu-     FARI Research Group members for valuable
+     tions to them. We summarize the most important         feedback and the stimulating intellectual envi-
+     insights and takeaways as follows.                     ronment they provide. This work is supported
+         First, our evaluation shows that High-             by funding from ASML, Google, Huawei, Intel,
+     Bandwidth Memory-based near-memory FPGA                Microsoft, VMware, and the Semiconductor Re-
+     accelerator designs can improve performance by         search Corporation to Onur Mutlu. Special thanks
+     5.3×-27.4× and energy efficiency by 12×-133×           to IBM Research Europe, Zurich for providing
+     over a high-end 16-core IBM POWER9 CPU.                access to IBM systems. This work was partially
+         Second, our HBM-based FPGA accelerator             funded by Eindhoven University of Technology
+     designs employ a dedicated HBM channel per PE.         and ETH Zürich.
+     This avoids memory access congestion, which is
+     typical in DDR4-based FPGA designs and en-
+     sures memory bandwidth scaling with the number            REFERENCES
+     of PEs. As a result, in most of the data-parallel      1. Anirban Nag, et al.   GenCache: Leveraging In-Cache
+     applications, performance scales linearly with the        Operators for Efficient Sequence Alignment. In ISCA,
+     number of PEs.                                            2019.
+         Third, the maximum performance of our              2. Can Firtina, et al. Apollo: A Sequencing-Technology-
+     HBM-based design is reached using the maxi-               Independent, Scalable and Accurate Assembly Polishing
+     mum PE count that we can fit in the reconfig-             Algorithm. Bioinformatics, 2020.
+     urable fabric, with each PE having a dedicated         3. Heng Li and Richard Durbin. Fast and Accurate Short
+
+
+
+
+10                                                                                                       IEEE MICRO
+
+
+===== Page 11 =====
+
+   Read Alignment with Burrows–Wheeler Transform. In             Sense: Enabling In-Memory Computation. In MICPRO,
+   Bioinformatics, 2009.                                         2019.
+4. Shanshan Ren, et al. Efficient Acceleration of the Pair-   21. Samuel Williams, et al. Roofline: An Insightful Visual
+   HMMs Forward Algorithm for GATK HaplotypeCaller on            Performance Model for Multicore architectures. In CACM,
+   Graphics Processing Units. In Bioinformatics, 2018.           2009.
+5. Yatish Turakhia, et al. Darwin: A Genomics Co-Processor    22. Satish Kumar Sadasivam, et al. IBM POWER9 Proces-
+   Provides Up to 15,000X Acceleration on Long Read              sor Architecture. In IEEE Micro, 2017.
+   Assembly. In ASPLOS, 2018.                                 23. Mohammed Alser, et al. SneakySnake: A Fast and Ac-
+6. Heng Li. minimap2: Pairwise Alignment for Nucleotide          curate Universal Genome Pre-Alignment Filter for CPUs,
+   Sequences. In Bioinformatics, 2018.                           GPUs, and FPGAs. In Bioinformatics, 2020.
+
+7. Mohammed Alser, et al. Accelerating Genome Analysis:       24. Tobias Gysi, et al. MODESTO: Data-centric Analytic
+
+   A Primer on an Ongoing Journey. In IEEE Micro, 2020.          Optimization of Complex Stencil Programs on Heteroge-
+                                                                 neous Architectures. In SC, 2015.
+8. Mohammed Alser, et al. Technology Dictates Algorithms:
+   Recent Developments in Read Alignment. In arXiv, 2020.     25. Geraldo Francisco Oliveira, et al.      DAMOV: A New
+                                                                 Methodology and Benchmark Suite for Evaluating Data
+9. Jeremie S Kim, et al. GRIM-Filter: Fast Seed Location
+                                                                 Movement Bottlenecks. In arXiv, 2021.
+   Filtering in DNA Read Mapping Using Processing-In-
+                                                              26. R. Nair, et al. Active Memory Cube: A Processing-in-
+   Memory Technologies. In BMC Genomics, 2018.
+                                                                 Memory Architecture for Exascale Systems. In IBM JRD,
+10. Damla Senol Cali, et al. Nanopore Sequencing Tech-
+                                                                 2015.
+   nology and Tools for Genome Assembly: Computational
+                                                              27. Onur Mutlu, et al.    A Modern Primer on Processing
+   Analysis of the Current State, Bottlenecks and Future
+                                                                 in Memory.    In Emerging Computing: From Devices
+   Directions. In Brief. Bioinform., 2019.
+                                                                 to Systems-Looking Beyond Moore and Von Neumann.
+11. Damla Senol Cali, et al. GenASM: A High-Performance,
+                                                                 Springer, 2021.
+   Low-Power Approximate String Matching Acceleration
+                                                              28. Lifeng Nai, et al. GraphPIM: Enabling Instruction-Level
+   Framework for Genome Sequence Analysis. In MICRO,
+                                                                 PIM Offloading in Graph Computing Frameworks.         In
+   2020.
+                                                                 HPCA, 2017.
+12. https://www.illumina.com/products/by-type/informatics-
+                                                              29. Amin Farmahini-Farahani, et al.      NDA: Near-DRAM
+   products/dragen-bio-it-platform.html.
+                                                                 Acceleration Architecture Leveraging Commodity DRAM
+13. Nathan LaPierre, et al. Metalign: Efficient Alignment-
+                                                                 Devices and Standard Memory Modules. In HPCA, 2015.
+   based Metagenomic Profiling via Containment Min Hash.
+                                                              30. Vincent T Lee, et al. Application Codesign of Near-Data
+   In BioRxiv. Cold Spring Harbor Laboratory, 2020.
+                                                                 Processing for Similarity Search. In IPDPS, 2018.
+14. Jeremie S Kim, et al.      AirLift: A Fast and Compre-
+                                                              31. Yangwook Kang, et al. Enabling Cost-Effective Data
+   hensive Technique for Remapping Alignments between
+                                                                 Processing with Smart SSD. In MSST, 2013.
+   Reference Genomes. bioRxiv, 2021.
+                                                              32. Milad Hashemi, et al. Continuous Runahead: Transpar-
+15. Nathan LaPierre, et al. MiCoP: Microbial Community           ent Hardware Acceleration for Memory Intensive Work-
+   Profiling Method for Detecting Viral and Fungal Organ-        loads. In MICRO, 2016.
+   isms in Metagenomic Samples. BMC Genomics, 2019.           33. Berkin Akin, et al.   Data Reorganization in Memory
+16. G Doms and U Schättler. The Nonhydrostatic Limited-         Using 3D-Stacked DRAM. In ISCA, 2015.
+   Area Model LM (Lokal-model) of the DWD. Part I: Sci-       34. Oreoluwatomiwa Babarinsa and Stratos Idreos. JAFAR:
+   entific Documentation.     In DWD, GB Forschung und           Near-Data Processing for Databases. In SIGMOD, 2015.
+   Entwicklung, 1999.                                         35. Joo Hwan Lee, et al. BSSync: Processing Near Memory
+17. Felix Thaler, et al. Porting the COSMO Weather Model         for Machine Learning Workloads with Bounded Stale-
+   to Manycore CPUs. In SC, 2019.                                ness Consistency Models. In PACT, 2015.
+18. Gagandeep Singh, et al.          NERO: A Near High-       36. Ping Chi, et al. PRIME: A Novel Processing-In-memory
+   Bandwidth Memory Stencil Accelerator for Weather Pre-         Architecture for Neural Network Computation in ReRAM-
+   diction Modeling. In FPL, 2020.                               based Main Memory. In ISCA, 2016.
+19. Gagandeep Singh, et al.       NARMADA: Near-Memory        37. Duckhwan Kim, et al.     Neurocube: A Programmable
+   Horizontal Diffusion Accelerator for Scalable Stencil         Digital Neuromorphic Architecture with High-Density 3D
+   Computations. In FPL, 2019.                                   Memory. In ISCA, 2016.
+20. Onur Mutlu, et al. Processing Data Where It Makes         38. Hadi Asghari-Moghaddam, et al. Chameleon: Versatile
+
+
+
+
+                                                                                                                            11
+
+
+===== Page 12 =====
+
+        and Practical Near-DRAM Acceleration Architecture for       57. Brad Benton. CCIX, Gen-Z, OpenCAPI: Overview and
+        Large Memory Systems. In MICRO, 2016.                          Comparison. In OFA, 2017.
+     39. Amirali Boroumand, et al. LazyPIM: An Efficient Cache      58. Debendra Das Sharma. Compute Express Link. In CXL
+        Coherence Mechanism for Processing-in-Memory.          In      Consortium White Paper, 2019.
+        CAL, 2016.                                                  59. Brian Gaide, et al. Xilinx Adaptive Compute Accelera-
+     40. Vivek Seshadri, et al. Gather-Scatter DRAM: In-DRAM           tion Platform: VersalTM Architecture. In FPGA, 2019.
+        Address Translation to Improve the Spatial Locality of      60. Virtex UltraScale+, https://www.xilinx.com/products/sili
+        Non-unit Strided Accesses. In MICRO, 2015.                     con-devices/fpga/virtex-ultrascale-plus.html.
+     41. Zhiyu Liu, et al. Concurrent Data Structures for Near-     61. Hongyi Xin, et al.     Accelerating Read Mapping With
+        Memory Computing. In SPAA, 2017.                               FastHASH. In BMC Genomics, 2013.
+     42. Mingyu Gao, et al. Practical Near-Data Processing for      62. Evangelos Georganas, et al. merAligner: A Fully Paral-
+        In-Memory Analytics Frameworks. In PACT, 2015.                 lel Sequence Aligner. In IPDPS, 2015.
+     43. Amir Morad, et al. GP-SIMD Processing-in-Memory. In
+                                                                    63. Christoph Schär, et al. Kilometer-Scale Climate Models:
+        ACM TACO, 2015.
+                                                                       Prospects and Challenges. In BAMS, 2020.
+     44. Amirali Boroumand, et al. Google Workloads for Con-
+                                                                    64. AXI High Bandwidth Memory Controller v1.0, https://ww
+        sumer Devices: Mitigating Data Movement Bottlenecks.
+                                                                       w.xilinx.com/support/documentation/ip documentation/h
+        In ASPLOS, 2018.
+                                                                       bm/v1 0/pg276-axi-hbm.pdf.
+     45. Junwhan Ahn, et al. A Scalable Processing-in-Memory
+                                                                    65. Jeffrey Stuecheli et al. IBM POWER9 Opens Up a New
+        Accelerator for Parallel Graph Processing.       In ISCA,
+                                                                       Era of Acceleration Enablement: OpenCAPI. In IBM JRD,
+        2015.
+                                                                       2018.
+     46. Junwhan Ahn, et al. PIM-Enabled Instructions: A Low-
+                                                                    66. Gonzalo Navarro. A Guided Tour to Approximate String
+        Overhead, Locality-Aware Processing-in-Memory Archi-
+                                                                       Matching. In CSUR, 2001.
+        tecture. In ISCA, 2015.
+                                                                    67. Vladimir I Levenshtein. Binary Codes Capable of Cor-
+     47. Kevin Hsieh, et al. Accelerating Pointer Chasing in 3D-
+                                                                       recting Deletions, Insertions, and Reversals. In Soviet
+        Stacked Memory: Challenges, Mechanisms, Evaluation.
+                                                                       Dokl. Phys., 1966.
+        In ICCD, 2016.
+                                                                    68. Temple F Smith and Michael S Waterman. Identification
+     48. Milad Hashemi, et al. Accelerating Dependent Cache
+                                                                       of Common Molecular Subsequences. In J. Mol. Biol,
+        Misses with an Enhanced Memory Controller. In ISCA,
+                                                                       1981.
+        2016.
+                                                                    69. Saul B Needleman and Christian D Wunsch. A General
+     49. Gagandeep Singh, et al.     Near-Memory Computing:
+                                                                       Method Applicable to the Search for Similarities in the
+        Past, Present, and Future. In MICPRO, 2019.
+                                                                       Amino Acid Sequence of Two Proteins. In J. Mol. Biol,
+     50. Ivan Fernandez, et al. NATSA: A Near-Data Processing
+                                                                       1970.
+        Accelerator for Time Series Analysis. In ICCD, 2020.
+     51. Nastaran Hajinazar, et al. SIMDRAM: A Framework for        70. Martin Šošić and Mile Šikić. Edlib: A C/C++ Library for
+
+        Bit-Serial SIMD Processing Using DRAM. In ASPLOS,              Fast, Exact Sequence Alignment Using Edit Distance. In
+
+        2021.                                                          Bioinformatics, 2017.
+
+     52. Gagandeep Singh, et al. NAPEL: Near-Memory Com-            71. Jeff Daily. Parasail: SIMD C Library for Global, Semi-
+        puting Application Performance Prediction via Ensemble         Global, and Local Pairwise Sequence Alignments. In
+        Learning. In DAC, 2019.                                        BMC Bioinformatics, 2016.
+
+     53. Juan Gómez-Luna, et al.        Benchmarking a New         72. Hongyi Xin, et al. Shifted Hamming Distance: A Fast
+        Paradigm:    An   Experimental   Analysis   of   a   Real      and Accurate SIMD-Friendly Filter to Accelerate Align-
+        Processing-in-Memory Architecture. In arXiv, 2021.             ment Verification in Read Mapping. In Bioinformatics,
+     54. High Bandwidth Memory (HBM) DRAM (JESD235), ht                2015.
+        tps://www.jedec.org/document search?search api vie          73. Mohammed Alser, et al. GateKeeper: A New Hardware
+        ws fulltext=jesd235.                                           Architecture for Accelerating Pre-Alignment in DNA Short
+     55. UltraScale Architecture Memory Resources, https://ww          Read Mapping. In Bioinformatics, 2017.
+        w.xilinx.com/support/documentation/user guides/ug57         74. Mohammed Alser, et al.         MAGNET: Understanding
+        3-ultrascale-memory-resources.pdf.                             and Improving the Accuracy of Genome Pre-Alignment
+     56. Jeffrey Stuecheli, et al. CAPI: A Coherent Accelerator        Filtering. In TIR, 2017.
+        Processor Interface. In IBM JRD, 2015.                      75. Mohammed Alser, et al. Shouji: A Fast and Efficient
+
+
+
+
+12                                                                                                                     IEEE MICRO
+
+
+===== Page 13 =====
+
+   Pre-Alignment Filter for Sequence Alignment. In Bioin-      Gagandeep Singh        is with ETH Zürich,
+   formatics, 2019.                                            Zürich,  Switzerland.    Contact   him  at
+76. Zülal Bingöl, et al. GateKeeper-GPU: Fast and Accurate   gagan.gagandeepsingh@safari.ethz.ch
+   Pre-Alignment Filtering in Short Read Mapping. In arXiv,
+   2021.
+                                                               Mohammed Alser is with ETH Zürich, Zürich,
+                                                               Switzerland. Contact him at alserm@ethz.ch
+77. Jerry H. Lee, et al. Use of Steiner’s Problem in Subop-
+   timal Routing in Rectilinear Metric. In TCAS, 1976.
+                                                               Damla Senol Cali is with Carnegie Mellon
+78. Louis J Wicker and William C Skamarock.           Time-    University, Pittsburgh, PA, USA. Contact her at
+   Splitting Methods for Elastic Models Using Forward Time     dsenol@andrew.cmu.edu
+   Schemes. In Monthly Weather Review 130, 2002.
+79. Luca Bonaventura. A Semi-implicit Semi-Lagrangian          Dionysios Diamantopoulos is with IBM Research
+   Scheme using the Height Coordinate for a Nonhydro-          Europe, Zürich Lab, Rüschlikon, Switzerland. Contact
+   static and Fully Elastic Model of Atmospheric Flows. In     him at did@zurich.ibm.com
+   JCP, 2000.
+                                                               Juan Gómez-Luna        is with ETH Zürich,
+80. Felix Thaler, et al. Porting the COSMO Weather Model
+                                                               Zürich,  Switzerland.     Contact him    at
+   to Manycore CPUs. In PASC, 2019.
+                                                               juan.gomez@safari.ethz.ch
+81. Gagandeep Singh, et al. Low Precision Processing for
+   High Order Stencil Computations. In Springer LNCS,          Henk Corporaal is with Eindhoven University of
+   2019.                                                       Technology, Eindhoven, The Netherlands. Contact
+82. Scott Kehler, et al. High Resolution Deterministic Pre-    him at h.corporaal@tue.nl
+   diction System (HRDPS) Simulations of Manitoba Lake
+   Breezes. In Atmosphere-Ocean, 2016.                         Onur Mutlu is with ETH Zürich, Zürich, Switzerland
+                                                               and Carnegie Mellon University, Pittsburgh, PA, USA.
+83. Richard B Neale, et al.      Description of the NCAR
+                                                               Contact him at omutlu@ethz.ch
+   Community Atmosphere Model (CAM 5.0).          In NCAR
+   Tech. Note, 2010.
+84. Jun A. Zhang, et al.     Evaluating the Impact of Im-
+   provement in the Horizontal Diffusion Parameterization
+   on Hurricane Prediction in the Operational Hurricane
+   Weather Research and Forecast (HWRF) Model.            In
+   Weather and Forecasting, 2018.
+85. Llewellyn Thomas. Elliptic Problems in Linear Differen-
+   tial Equations over a Network. In Watson Sci. Comput.
+   Lab. Rept., Columbia University, 1949.
+86. Jingheng Xu, et al. Performance Tuning and Analysis
+   for Stencil-Based Applications on POWER8 Processor.
+   In ACM TACO, 2018.
+87. Vivado High-Level Synthesis, https://www.xilinx.com/p
+   roducts/design-tools/vivado/integration/esl-design.html.
+88. HLS Pragmas, https://www.xilinx.com/html docs/xilinx
+   2020 2/vitis doc/hls pragmas.html.
+89. ADM-PCIE-9H7-High-Speed Communications Hub, ht
+   tps://www.alpha-data.com/dcp/products.php?product=a
+   dm-pcie-9h7.
+90. ADM-PCIE-9V3-High-Performance Network Accelera-
+   tor, https://www.alpha- data.com/dcp/products.php?p
+   roduct=adm-pcie-9v3.
+91. Virtex UltraScale+ HBM FPGA: A Revolutionary In-
+   crease in Memory Performance, https://www.xilinx.com
+   /support/documentation/white papers/wp485-hbm.pdf.
+
+
+
+
+                                                                                                                        13

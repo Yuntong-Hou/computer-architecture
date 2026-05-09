@@ -1,0 +1,764 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/2505.00458v2.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/2505.00458v2.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+                                                                          Memory-Centric Computing:
+                                                                     Solving Computing’s Memory Problem
+                                                                             Onur Mutlu        Ataberk Olgun İsmail Emir Yüksel
+                                                                                              SAFARI Research Group
+                                                                                                   ETH Zürich
+                                           Computing has a huge memory problem. The memory system,                  beneficial enough as they require high levels of data locality); 3)
+                                        consisting of multiple technologies at different levels, is responsi-       the massive bit-level and array-level parallelism inherent in the
+                                        ble for most of the energy consumption, performance bottlenecks,            design of memory, which can enable massively parallel compu-
+                                        robustness problems, monetary cost, and hardware real estate of a           tation, is wasted (i.e., most of memory hardware is idle doing
+                                        modern computing system. All this becomes worse as modern and               nothing useful for computation during execution of programs).
+                                        emerging applications become more data-intensive (as we readily             Recent works show that main memory alone is responsible
+arXiv:2505.00458v2 [cs.AR] 4 Sep 2025
+
+
+
+
+                                        witness in e.g., machine learning, genome analysis, graph pro-              for more than 90% of the system energy when executing com-
+                                        cessing, and data analytics), making the memory system an even              mercial edge neural network models [4], more than 62% of the
+                                        larger bottleneck. In this paper, we discuss two major challenges           total system energy is wasted on moving data across the mem-
+                                        that greatly affect computing system performance and efficiency:            ory hierarchy on commonly-used mobile workloads [3], the
+                                        1) memory technology & capacity scaling (at the lower device                execution times of many workloads are dominated by waiting
+                                        and circuit levels) and 2) system and application performance &             for memory [6, 7] (e.g., in all Google data center workloads [7])
+                                        energy scaling (at the higher levels of the computing stack). We            even in state-of-the-art processors that employ almost all of
+                                        demonstrate that both types of scaling have become extremely                their hardware real-estate (e.g., more than 90% of the hardware
+                                        difficult, wasteful, and costly due to the dominant processor-              area of a single node [8]) to tolerate memory access latencies.
+                                        centric design & execution paradigm of computers, which treats              On top of all this, the cost of main memory (DRAM) alone
+                                        memory as a dumb and inactive component that cannot perform                 surpasses the cost of processors (or any other component) in
+                                        any computation. We show that moving to a memory-centric                    large server systems [9] and DRAM is responsible for many
+                                        design & execution paradigm can solve the major challenges,                 failures in a data center [10–25]. With exploding data intensity
+                                        while enabling multiple other potential benefits. In particular,            and data access & storage demands of modern applications (as
+                                        we demonstrate that: 1) memory technology scaling problems                  we see in e.g., generative artificial intelligence, large machine
+                                        (e.g., RowHammer, RowPress, Variable Read Disturbance, data                 learning models, genome analysis, and video analytics), mem-
+                                        retention, and other issues awaiting to be discovered) can be               ory becomes an even larger performance, energy, robustness,
+                                        much more easily and efficiently handled by enabling memory                 and system scaling bottleneck in processor-centric computing
+                                        to autonomously manage itself; 2) system and application per-               systems [2, 5, 26–29].
+                                        formance & energy efficiency can, at the same time, be improved                This paper discusses two major memory system challenges
+                                        by orders of magnitude by enabling computation capability in                that span across the computing stack (devices to applications)
+                                        memory chips and structures (i.e., processing in memory). We                and greatly affect computing system performance and effi-
+                                        discuss adoption challenges against enabling memory-centric                 ciency. At the circuit/device levels, memory technology &
+                                        computing, and describe how we can get there step-by-step via               capacity scaling are becoming increasingly difficult due to the
+                                        an evolutionary path.                                                       miniscule technology node sizes, causing robustness problems
+                                        1. Computing’s Memory Problem                                               that can greatly impact cost, capacity scaling, reliability, safety,
+                                            Memory is a central part of a modern computing system.                  security, and, in turn, both system performance & energy effi-
+                                        In the processor-centric paradigm of computing, memory is                   ciency. At the system/application levels, performance & energy
+                                        treated as an inactive component that only serves the demands               scaling is extremely wasteful and costly today because com-
+                                        (i.e., mainly the data load/store requests but also memory main-            putation capability cannot be efficiently scaled with memory
+                                        tenance operations like data refresh) of a processor (e.g., CPU,            capacity and bandwidth, due to the huge separation and thin
+                                        GPU, FPGA, ASIC), without itself having the ability to manip-               connectivity between memory and computation units in the
+                                        ulate data or even manage itself. This paradigm has unfortu-                processor-centric paradigm. The fundamental problem, we
+                                        nately made memory an even bigger bottleneck because: 1)                    argue and demonstrate, is that memory cannot perform any
+                                        it leads to huge amounts of data movement across the mem-                   computation (or any autonomous operation) by itself.
+                                        ory hierarchy [1–5] to serve the needs of a processor, where                  Moving to a memory-centric computing (MCC) paradigm
+                                        computation can only be performed; 2) many levels of caches,                can fundamentally solve both major challenges, while pro-
+                                        complex prefetching mechanisms, complicated out-of-order                    viding other benefits (e.g., improve system security, reduce
+                                        execution and multithreading machinery are added to the pro-                system complexity). Memory-centric design & execution en-
+                                        cessor, which greatly complicates the system and costs area                 ables memory components that can perform computation and
+                                        and power (and in many workloads these resources are not                    maintenance operations, thereby unleashing the ability to effi-
+
+
+                                                                                                                1
+
+
+===== Page 2 =====
+
+                                                                                  (a)
+ciently scale 1) the technology node & capacity of a memory               DRAM chips are protected against RowHammer [65]. Inspired
+component by inherently architecting it to manage its own                 by our demonstration of RowPress, recent device-level works
+scaling and robustness problems; 2) computation capability                aim to understand and model the underlying causes of the
+and memory bandwidth proportionally to the memory added                   RowPress phenomenon [121, 122].
+to a system, since each memory component comes with com-                                            RowHammer Open
+putation capability. MCC is best when applied to all resources                                     Aggressor Row Close
+                                                                                                                           36ns, 47K activations to induce bitflips
+in a system (e.g., SRAM caches, DRAM main memory, NAND
+                                                                                                                 Open
+flash SSDs, and magnetic tapes). In this work, we focus on                                           RowPress
+                                                                                                   Aggressor Row Close
+applying it to main memory (a common bottleneck and the                                                                  7.8µs, only 5K activations to induce bitflips
+major "low-latency" memory that can house large amounts
+of data) that uses DRAM [30] technology (the dominant main
+memory technology, which is evolving into the future).                    Figure 1: Distribution of the number of activations required to
+2. Memory Scaling                                                         induce a bitflip (ACmin ) with RowHammer and three represen-
+                                                                          tative cases of RowPress at 80◦ C across 164 DDR4 DRAM chips.
+   DRAM technology scaling, which enables higher capacity                 Adapted from [65].
+and reasonable-energy memories that are needed more than
+ever, has become greatly more difficult today than it was 12                 Very recently, at HPCA 2025 [51], we experimentally demon-
+years ago when I gave an invited talk at IMW 2013 [31] and                strated on 164 real COTS DDR4 and HBM2 DRAM chips a new
+argued for a system-level approach to solve the then-already-             phenomenon, Variable Read Disturbance (VRD), that makes
+difficult DRAM scaling challenges. A fundamental issue is that            handling DRAM read disturbance harder: read disturbance vul-
+as DRAM technology node size becomes smaller, cells and                   nerability (number of activations required to induce a bitflip)
+sensing structures become much less reliable due to reduced               of a DRAM row changes dynamically and unpredictably, as
+charge levels and increased noise levels. For example, data               Fig. 2 shows. We find that the read disturbance vulnerability
+retention capability of a DRAM cell gets worse and noisier [32–           of a row can vary by 3.5×, and the worst-case vulnerability
+36] with smaller cell sizes, necessitating higher refresh rates           of a row can take 94,467 measurements to determine. This,
+and in-DRAM error-correcting codes [36–42]. A prominent                   in turn, makes it hard to determine a safe threshold of num-
+and widespread phenomenon that gets worse with technology                 ber of activations at which a protection mechanism should
+scaling and threatens the foundations of robust (i.e., reliable,          kick in. At a high level, VRD is similar to VRT (variable reten-
+secure, safe) computing is RowHammer [43–46]. RowHammer                   tion time) [33, 123, 124], which leads to unpredictable dynamic
+is a read disturbance mechanism, where repeatedly access-                 changes in data retention times of DRAM cells, causing dif-
+ing one DRAM row enough times (before rows get refreshed)                 ficulties in determining safe refresh rates. VRT required the
+causes bitflips in physically nearby rows in real commodity               addition of ECC into DRAM chips, and our analysis suggests
+off-the-shelf (COTS) DRAM chips. Our original work from                   that properly handling VRD will require more complexity and
+2012 (published in 2014 [43]) that scientifically demonstrated            guardbands in DRAM chips [51]. A device-level understanding
+and rigorously analyzed RowHammer showed that RowHam-                     of VRD is yet to be developed.
+mer bitflips can be induced by user-level programs (with no
+                                                                        # of Measurements
+
+
+
+
+                                                                                                              Chip0 15K                   Chip1 20K                      Chip2
+privilege) on real DRAM-based systems under normal operat-                                  25K                                                                                    20K
+ing conditions. The problem has become much worse since                                           28K             35K     33K                   40K     33K                 38K      35K
+then: DRAM chips of all types (e.g., DDRx, LPDDRx, HBMx)                                                        M1 15K                        M2                           M3
+                                                                                            10K                                                       20K                          20K
+with smaller cell sizes are much more vulnerable to RowHam-
+mer [47–51]. A RowHammer bitflip happens (at the device                                           7K               9K     10K                   13K     16K                  20K     17K
+                                                                                                                        Read Disturbance Threshold
+level) after only a few thousand row activations in cutting-edge
+                                                                          Figure 2: Read disturbance threshold of a row in each tested
+DRAM chips [47, 51–53]. Many works (e.g., [43–46, 54–119])
+                                                                          HBM2 chip (Chip0-2) and DDR4 module (M1-3) over 100,000
+demonstrate that these bitflips can be used to successfully
+                                                                          repeated measurements. Adapted from [51].
+mount security attacks that take over a computing system,
+steal secret data one does not have access to, or corrupt impor-             Clearly, DRAM technology scaling is getting much worse.
+tant data to render an application (e.g., a safety-critical ML/AI         How do we solve the scaling problems and maintain robust op-
+workload) useless or dangerous.                                           eration without losing performance or energy? The answer is
+   Unfortunately, RowHammer is not the only known promi-                  not easy, especially since new failure mechanisms are likely to
+nent read disturbance phenomenon in DRAM anymore. We re-                  get discovered and could affect chips already in the field. Indus-
+cently demonstrated, in an ISCA 2023 paper [65, 120], that mod-           try introduced various solutions to tackle RowHammer over
+ern DRAM chips are vulnerable to RowPress, a phenomenon                   the past decade, and the solutions have become increasingly
+where keeping a DRAM row active (i.e., open) induces bitflips             complex (and likely more robust). Various implementations
+in physically nearby rows. RowPress greatly amplifies read                of PARA [43] and TRR [59, 62, 125] were initially employed in
+disturbance, reducing the number of activations required to               DDR3/DDR4 memory controllers and DRAM chips, and shown
+induce a bitflip by one-two orders of magnitude (Fig. 1), and             to be insecure [59, 62]. RFM [126] was introduced for DDR4,
+enabling the inducing of bitflips in real systems even when               making the memory controller more complex. More recently,
+
+
+                                                                    2
+
+
+===== Page 3 =====
+
+in the DDR5 standard (April 2024), JEDEC adopted PRAC (per                  orchestrates    Memory DRAM command                       performs
+                                                                                                             data           DRAM
+row activation counters) [127–130], a solution framework where               all access    Controller                                maintenance
+                                                                             operations
+                                                                                                            negative         Chip   autonomously
+each DRAM row has an associated activation counter stored                                    (MC)     acknowledgment (nack)
+in the DRAM chip. The DRAM chip internally implements a
+controller that 1) increments the activation counter of each row           Figure 3: Overview of Self-Managing DRAM (SMD). Adapted
+                                                                           from [132].
+and 2) takes preventive actions to avoid bitflips, if the counter is
+above a threshold. Our recent works [127, 128] analyze the se-             3. System and Application Scaling
+curity & performance of PRAC, showing that its overheads can
+                                                                              With growing dataset sizes and computation needs of mod-
+be large because DRAM chips cannot autonomously perform
+                                                                           ern and emerging applications, systems designed to execute
+RowHammer maintenance and mitigation operations with low
+                                                                           such applications need to scale cost-effectively to accommo-
+overheads.
+                                                                           date the memory & computation demands. Unfortunately,
+   Industry’s PRAC solution, despite all its overheads & down-             scaling the systems (and hence applications) to much larger
+sides, is a move towards a more memory-centric system-                     sizes is expensive and wasteful today in terms of energy, cost,
+memory co-design approach to handling DRAM technology                      and hardware real estate. The main culprit is the dichotomy
+scaling issues, as we had argued for at IMW 2013 [31]. This is             between processing and memory: ideally we would like to
+because PRAC incorporates a slightly intelligent controller in-            add more memory capacity & bandwidth as we add more com-
+side the DRAM chip that understands characteristics of DRAM                putation capability [133, 134], but doing so is expensive and
+cells and tries to ensure robust operation. Unfortunately, we be-          wasteful due to the large separation and thin connectivity be-
+lieve currently implemented solutions are not memory-centric               tween computation and memory units today, caused by the
+enough. A DRAM chip/system has no mechanism today to                       processor-centric paradigm. As we add more memory and
+completely autonomously perform maintenance & optimization                 computation separately, we need to support higher bandwidth
+operations (e.g., RowHammer/RowPress/VRD mitigation, in-                   between them, which comes at 1) large monetary cost due to
+telligent refresh, memory scrubbing, profiling of memory cells             increased pin counts and 2) large energy and performance costs
+for errors) internally, without requiring support from the mem-            due to large amounts of data movement (Section 1). With a
+ory controller (MC). MC dictates when a DRAM chip should                   memory-centric design, computation is placed inside memory
+perform refresh or RowHammer mitigation (unless the chip                   chips (e.g., in 3D-stacked memory) and, thus, both memory
+signals an error with a heavy-handed ALERT_n pin [127, 128],               bandwidth and computation capability can be proportionally
+which blocks the entire chip from being accessed). To enable ef-           increased to more efficiently scale up a system [26, 27, 133, 134].
+ficient and flexible solutions to be implemented autonomously                 A major reason why processor-centric systems need high
+in DRAM, we need a better DRAM interface.                                  cost and high power consumption to scale up is because many
+   Our recent work at MICRO 2024 [131], Self Managing DRAM                 key applications today are very data-intensive, in a way that
+(SMD), introduces a more memory-centric interface and ar-                  renders much of the cache hierarchy ineffective (and thus
+chitecture that enables autonomous in-DRAM maintenance                     adding more processors is very wasteful since most of a pro-
+operations by transferring the responsibility of controlling               cessor chip consists of caches and more memory bandwidth
+maintenance operations from the memory controller to the                   is required to support high memory demands). For example,
+SMD chip. To enable this, we make a single, simple modifi-                 major kernels in generative AI [26, 27, 135–142], graph ana-
+cation to the DRAM interface (Fig. 3), such that an SMD chip               lytics [133, 143–148], and data analytics [149–152] workloads
+rejects MC requests to DRAM regions (e.g., a subarray or a                 have low arithmetic intensity (i.e., low number of operations
+bank) under maintenance, while allowing memory accesses                    performed for each byte fetched from memory) due to the
+to other DRAM regions. Thus, SMD enables 1) implementing                   sparse and irregular nature of memory accesses and relatively
+new in-DRAM maintenance mechanisms (or modifying exist-                    small amount of computation needed.
+ing ones) with no further changes in the DRAM interface, MC,                  Enabling computation capability in memory (i.e, processing
+or other system components, and 2) overlapping the latency                 in memory, or PIM) can overcome these challenges and enable
+of a maintenance operation in one DRAM region with the                     efficient system and application scaling by improving many
+latency of accessing data in another. Our results show that                important metrics at the same time, including energy, perfor-
+SMD provides large performance and energy benefits (when                   mance, system-level hardware area efficiency, security, and
+used to optimize refresh, RowHammer mitigation, and mem-                   even sustainability (by potentially eliminating large amounts of
+ory scrubbing) while also improving system robustness across               hardware wasted on processor-centric latency tolerance struc-
+many workloads. Importantly, SMD enables easier adoption                   tures). There are two PIM types [1, 2]: processing near memory
+of innovative ideas to manage DRAM: a manufacturer can im-                 (PNM) and processing using memory (PUM). PNM adds com-
+plement optimized mechanisms completely inside the DRAM                    putational logic close to memory structures (e.g., in a DRAM
+chip without requiring changes to the DRAM interface or the                chip, next to each bank, or at the logic layer of 3D-stacked
+MC. We believe that SMD can enable practical adoption of fu-               memory [3, 4, 133, 143, 152–162]). PUM performs computation
+ture innovative ideas in DRAM design and inspire better, more              by exploiting the analog operational properties of the memory
+memory-centric, ways of partitioning work between memory                   circuitry. We believe both approaches are important to explore
+and processor chips.                                                       and enable as they have different tradeoffs: PNM can enable
+
+
+                                                                       3
+
+
+===== Page 4 =====
+
+a wider set of functions (including complete processors) to               the logic layer [133, 134]. Tesseract improves graph analytics
+be more easily implemented and exploited near memory due                  performance by 13.8X while also reducing energy consump-
+to its use of conventional logic, whereas PUM 1) more funda-              tion by more than 8X, compared to a powerful state-of-the-art
+mentally reduces data movement by performing computation                  processor-centric system [133]. Today, due to advances in
+inside the memory arrays and 2) can fully exploit the large               packaging/integration technologies, the envisioned Tesseract
+internal bandwidth and bit-level parallelism available inside             system is much closer to being real (and can benefit many work-
+the memory arrays. We give examples of both PNM and PUM                   loads). Similarly, systems envisioned for accelerating mobile
+approaches, with a focus on DRAM, but refer the reader to our             workloads [3] and neural network execution [4] by offloading
+detailed overview paper for more information [2].                         data-intensive functions/layers to 3D-stacked memories pro-
+                                                                          vide large performance and energy benefits compared to the
+3.1. Processing Near DRAM                                                 best processor-centric systems.
+There are two major approaches to PNM inside a DRAM chip:                         Host Processor                                               Interconnected
+                                                                                   Memory-Mapped                                    Memory    set of 3D-stacked
+adding logic near memory arrays in planar DRAM or in the                         Accelerator Interface
+                                                                          (Noncacheable, Physically Addressed)
+                                                                                                                                    Logic    memory+logic chips
+                                                                                                                                              with simple cores
+logic layer of a 3D-stacked DRAM technology. Some com-
+mercially available PNM architectures, e.g. the UPMEM PIM                                                                                    In-Order Core
+
+
+
+
+                                                                                                                                                                Controller
+                                                                                                                           …
+
+
+
+
+                                                                                                                                                                 DRAM
+system [151, 163–166] take the planar DRAM approach, which                                                                 …                  LP    PF Buffer
+
+has the advantage of providing logic in very high-capacity                                                       Crossbar Network                     MTP
+                                                                                                                           …
+memory chips. However, it is difficult to fabricate low-cost,                                                              …                 Message Queue         NI
+high-performance, and energy-efficient logic in DRAM fabri-
+                                                                          Figure 4: Overview of the Tesseract system for graph processing.
+cation process and the existing DRAM process does not enable
+                                                                          Adapted from [8].
+enough metal layers to perform good communication across
+different PNM units or complex operations that require mul-                  Recently, several works demonstrated large performance,
+tiple metal layers. Yet, we believe such architectures are still          energy, and cost improvements from using PNM DRAM chips
+critical to investigate and enable, with a focus on overcoming            (that employ near-bank accelerators) to design a system for
+especially communication and architectural limitations. Sev-              executing large language model (LLM) inference tasks. We
+eral recent works demonstrate promising results with even the             discuss two major works published at ASPLOS 2025, PAPI [26]
+unoptimized first generation UPMEM PIM system [151, 162–                  and CENT [27]. The PAPI system (Fig. 5) uses two types of
+188] and some works develop methods to make such a system                 PNM DRAM chips, catering to two different kernel types in
+even better [189–191]. The availability of real PNM hardware              LLM inference workloads that perform speculative decoding:
+also has enabled researchers to develop programming frame-                FC-PIM units 1 handle memory-bound fully-connected (FC)
+works, compilers, and libraries for PNM systems [192–196]. As             kernels that have high computational demands and are de-
+such, real PNM hardware acts as a catalyst for changing the               signed to have more computational capability inside the DRAM
+computing paradigm.                                                       chip at the expense of some capacity. Attn-PIM units 2 han-
+   Increasingly maturing 3D-stacked integration/packaging                 dle memory-bound attention kernels and store the large KV
+technologies can enable more efficient PNM because 1) high-               cache: they are designed to have less computational power but
+quality memory layers can be stacked on top of a high-quality             provide very large memory capacity. The PAPI scheduler 3
+logic layer, fabricated using a high-quality logic process, similar       inside the high-performance processor 4 dynamically iden-
+to a high-performance microprocessor, and 2) vertical connec-             tifies which kernel should be executed in which PIM unit or
+tions between memory and logic layers can be smaller, more                the high-performance processing units (PUs) 5 , e.g., a GPU,
+abundant and robust. Hybrid bonding [197–200] and mono-                   based on the type of kernel and its arithmetic intensity, which
+lithic 3D technologies [201, 202] are two promising advanced              varies at runtime. PAPI is a scalable system as 1) both the
+packaging/integration technologies that can enable efficient              memory capacity/bandwidth and computational power of the
+PNM. Prior works demonstrate large performance and en-                    FC-PIM and Attn-PIM units can be increased proportionally,
+ergy benefits from using the logic layer to execute major data-           and 2) Attn-PIM units enable extra large capacity as they are
+intensive applications, like graph analytics [133, 143–145], or           disaggregated from the rest of the system. PAPI provides large
+functions/kernels/layers in many different workloads, includ-             performance and energy benefits over the best prior LLM in-
+ing genome analysis [171, 203–205], machine learning [4, 135–             ference systems [26], with its careful use of multiple different
+141, 162, 165, 168, 169], video processing [3, 4, 206], compres-          types of PNM units along with powerful processor-centric
+sion/decompression [3, 4], database analytics [152, 160, 207–             units (e.g., GPUs or TPUs).
+211]. Figure 4 demonstrates a high-level view of the Tesseract               The CENT system (Fig. 6) provides similar memory capacity,
+system we proposed in ISCA 2015 [133], an accelerator that                bandwidth, and computation scalability benefits by disaggre-
+is comprised of a distributed system of 3D-stacked memo-                  gating a large number of PNM units (some in GDDR6-PIM
+ries, which, in a coordinated manner, perform graph analytics             chips & some in CXL [212] controllers) and providing com-
+computations by minimizing data movement and enabling per-                munication primitives using a flexible interface (CXL) to en-
+formance that is proportional to memory capacity and band-                able communication between PNM units. The LLM inference
+width, as both scale linearly with more PNM compute units in              task is distributed across the many CXL devices, in a man-
+
+
+                                                                      4
+
+
+===== Page 5 =====
+
+                                                     Bank Groups (BGs)          Floating-Point Processing Units (FPU)
+ 4 High-Performance Processor                                                                                               DRAM architecture [219]) and providing compiler support that
+     High-Speed    1 FC-                               BG A                             Bank 1 Bank 2
+    Interconnect      PIM
+                                                                                                                            transparently transforms applications to exploit bulk-bitwise
+                                                       BG B
+   5             3                                                                      Bank 3 Bank 4                       execution in DRAM.
+     Processing    Scheduler                           BG C
+     Units (PUs)  Host CPU                                                                                                     Fascinatingly, operations envisioned by these PUD works
+             Interconnect                             BG A                                                                  can already be performed in real unmodified COTS DRAM
+                                                                                        Bank 1 Bank 2
+                                                      BG B
+ 2                                                                                                                          chips. Multiple recent works [220–222] experimentally demon-
+     Attn-        Attn-               Attn-           BG C                              Bank 3 Bank 4
+     PIM          PIM                 PIM             BG D                                                                  strate previously-unknown capabilities in COTS DRAM
+Figure 5: Overview of the PAPI LLM Inference System. Adapted                                                                chips. These capabilities arise from the operational princi-
+from [26].                                                                                                                  ples of DRAM circuitry that are exercised by violating the
+ner similar to Tesseract that distributes graph computations                                                                manufacturer-recommended timing parameters via a flexible
+across 3D-stacked PNM units. Computational tasks that re-                                                                   memory controller [49, 223–226]. In particular, one can si-
+quire high memory bandwidth are executed inside the accel-                                                                  multaneously activate many DRAM rows in state-of-the-art
+erators in GDDR6-PIM chips; tasks that require aggregation                                                                  DRAM chips due to the hierarchical design of the row decoder
+or expensive operations are executed inside the PNM units                                                                   circuitry [221, 222, 227–229]. Exploiting such simultaneous
+in CXL controllers. CENT eliminates the need for expensive                                                                  row activation, we [220–222] demonstrate that COTS DRAM
+GPUs by enabling a large number of high-capacity and high-                                                                  chips are capable of 1) performing functionally-complete bulk-
+computational-power PNM-enabled CXL devices to perform                                                                      bitwise Boolean operations: NOT, NAND, and NOR, 2) execut-
+LLM inference in a coordinated manner, improving throughput                                                                 ing up to 16-input AND, NAND, OR, and NOR operations, and
+by 2.3X, hardware cost by 2.4X, and tokens per dollar by 5.2X                                                               3) copying the contents of a DRAM row (concurrently) into
+over a state-of-the-art system that uses GPUs [27].                                                                         up to 31 other DRAM rows. We evaluate the robustness of
+                                                       Inter-device Communication Controller                                these operations across data patterns, temperature, and voltage
+                                                                                                           Shared
+ CENT          Host CPU
+                                              CXL      Instruction        PC                               Buffer           levels. Our results (Fig 7) show that COTS DRAM chips can
+                                                                                                PNM
+                                              Port     Buffer 2MB                 Decoder       Units       64KB
+ CXL                                                                                                                        perform these operations at high success rates (>94%) and data
+Switch
+   CXL            CXL      CXL                                                     LD/ST                  LD/ST
+                                                                                                                            copy almost perfectly (>99.98% success rate). These fascinating
+           …            … Device
+  Device         Device                          Inter-Device Data Flow
+                                                 Intra-Device Data Flow         PIM Ctrl
+                                                                                              x16
+                                                                                               …        PIM Ctrl            findings demonstrate the fundamental computation capabil-
+           A total of 32 CXL Device              Control Flow
+                                                                               GDDR6-PIM      …      GDDR6-PIM              ity of real DRAM chips, even when they are not designed for
+Figure 6: Overview of the CENT LLM Inference System. Host
+                                                                                                                            this purpose, and provide a solid foundation for building new
+CPU drives 32 CXL devices, each having a CXL controller, PNM units,                                                         and robust PUD mechanisms into future DRAM chips and
+and 16 GDDR6-PIM chips. The LLM inference task is partitioned                                                               standards.
+between PNM units and GDDR6-PIM chips. CENT provides commu-                                                                     NOT Operation     AND, NAND, OR, and NOR    Multi-RowCopy
+nication mechanisms within and across CXL devices to coordinate
+and scale computation. Adapted from [27].
+3.2. Processing Using DRAM
+                                                                                                                                    Average:               Average:              Average:
+Processing Using DRAM (PUD) systems use the operational                                                                       (a)   98.37%         (b)     95.41%          (c)   99.98%
+principles of DRAM to perform primitive operations (e.g., data
+                                                                                                                            Figure 7: Success rates of various operations in COTS DRAM
+copy, initialization, bitwise operations), on top of which dif-                                                             chips: (a) NOT with varying destination rows, (b) AND, NAND,
+ferent applications and software stacks can be built. Early                                                                 OR, NOR with varying input operands, (c) Multi-RowCopy
+works [149, 213, 214] introduced PUD using first principles and                                                             with varying destination rows, as measured in 224, 224, and
+circuit & architectural simulations. RowClone [213] demon-                                                                  120 COTS DRAM chips, respectively. Adapted from [230]. More
+strates that consecutively activating two rows in the same                                                                  info in [220, 221].
+DRAM subarray in quick succession performs copying of one                                                                      PUD can be used to generate true random numbers (TRNs)
+row’s content into the other. Ambit [149, 214–216] demon-                                                                   at low hardware cost, high throughput, and low energy [231–
+strates that 1) concurrently activating three DRAM rows leads                                                               235]. For example, QUAC-TRNG [231] demonstrates that
+to the computation of the bitwise MAJority function (and thus                                                               simultaneous activation of multiple rows in DRAM can be
+AND and OR) on the contents of the three rows and 2) bitwise                                                                used for generating true random numbers at high through-
+NOT of a row can be performed through the sense ampli-                                                                      put (e.g., 3.44 Gb/s per DRAM channel [231]), widening the
+fier, with modifications to DRAM circuitry. Ambit provides a                                                                workloads supported by PIM systems (e.g., security-critical
+DRAM chip architecture that can exploit such triple-row activa-                                                             workloads) and enabling secure execution support for PUD
+tion (TRA), NOT, and RowClone operations. SIMDRAM [217]                                                                     systems that do not necessarily have dedicated TRN generation
+shows that, via a new software/hardware cooperative frame-                                                                  (TRNG) hardware. Best prior TRNG using COTS DRAM chips
+work, any operation (e.g., multiplication, division, convolution)                                                           generates TRNs by simultaneously activating four rows [231].
+that can be expressed as a logic circuit consisting of AND, OR,                                                             Our ongoing work [230] experimentally studies the simultane-
+NOT gates can be implemented and seamlessly programmed                                                                      ous activation of 2, 8, 16, and 32 rows in a subarray in COTS
+using the Ambit substrate. MIMDRAM [218] makes the Ambit                                                                    DRAM chips, showing that 8- and 16-row activation-based
+substrate much more flexible and easier to exploit, by enabling                                                             TRNG designs provide 1.25× and 1.06× higher throughput
+finer-granularity operations than the full row (with changes to                                                             than the state-of-the-art.
+
+
+                                                                                                                        5
+
+
+===== Page 6 =====
+
+4. Enabling Adoption                                                     References
+   New hardware is never easy to adopt, if it requires changes            [1] O. Mutlu, S. Ghose, J. Gómez-Luna, and R. Ausavarungnirun, “Processing Data
+                                                                              Where It Makes Sense: Enabling In-Memory Computation,” MICPRO, 2019.
+in software. In memory-centric computing (MCC), we are not                [2] O. Mutlu, S. Ghose, J. Gómez-Luna, and R. Ausavarungnirun, “A Modern Primer
+only introducing new hardware, but a new, different paradigm                  on Processing in Memory,” arXiv, 2025.
+                                                                          [3] A. Boroumand, S. Ghose, Y. Kim, R. Ausavarungnirun, E. Shiu, R. Thakur, D. Kim,
+that performs computation in places never before considered                   A. Kuusela, A. Knies, P. Ranganathan, and O. Mutlu, “Google Workloads for Con-
+by software (or hardware). As such, the biggest adoption is-                  sumer Devices: Mitigating Data Movement Bottlenecks,” in ASPLOS, 2018.
+                                                                          [4] A. Boroumand, S. Ghose, B. Akin, R. Narayanaswami, G. F. Oliveira, X. Ma, E. Shiu,
+sues of MCC systems are related to software and the interfaces                and O. Mutlu, “Google Neural Network Models for Edge Devices: Analyzing and
+between software & hardware and system components. We,                        Mitigating Machine Learning Inference Bottlenecks,” in PACT, 2021.
+                                                                          [5] S. Ghose, A. Boroumand, J. S. Kim, J. Gómez-Luna, and O. Mutlu, “Processing-in-
+therefore, believe it is critical to focus on designing frameworks            Memory: A Workload-Driven Perspective,” IBM JRD, 2019.
+for enabling MCC, including programming frameworks, new                   [6] O. Mutlu, J. Stark, C. Wilkerson, and Y. N. Patt, “Runahead Execution: An Alter-
+                                                                              native to Very Large Instruction Windows for Out-of-Order Processors,” in HPCA,
+workloads and algorithms, compilers, system software, run-                    2003.
+time systems, and evaluation prototypes. Such frameworks can              [7] S. Kanev, J. P. Darago, K. Hazelwood, P. Ranganathan, T. Moseley, G.-Y. Wei, and
+                                                                              D. Brooks, “Profiling a Warehouse-Scale Computer,” in ISCA, 2015.
+enable easy use, programming, and exploitation of PIM. To this            [8] O. Mutlu, “Memory Centric Computing,” Keynote DAC IMACAW, 2023.
+end, we are developing new programming frameworks [135,                   [9] Intel, “Performance Index – 2nd Generation Intel Xeon Scalable Proces-
+                                                                              sors,” https://edc.intel.com/content/www/us/en/products/performance/benchma
+192, 193, 195], compilers [159, 218, 236], system-level mecha-                rks/2nd-generation-intel-xeon-scalable-processors, 2019.
+nisms [159, 160, 208, 210, 237], benchmarks [150, 151, 163–165],         [10] Q. Yu, W. Zhang, J. Cardoso, and O. Kao, “Exploring Error Bits for Memory Failure
+                                                                              Prediction: An In-Depth Correlative Study,” in ICCAD, 2023.
+and real evaluation prototypes [49, 225] for PIM systems, but            [11] Intel, “Intel MCA+MFP Helps JD Stable and Efficient Cloud Ser-
+                                                                              vices – White Paper,” https://www.intel.com/content/dam/www/central-
+there is still much more research and development that needs                  libraries/us/en/documents/2023-12/mca-mfp-helps-jd-stable-and-efficient-cloud-
+to be done, as described in our overview paper [2].                           services.pdf, 2023.
+                                                                         [12] A. Kokolis, M. Kuchnik, J. Hoffman, A. Kumar, P. Malani, F. Ma, Z. DeVito, S. Sen-
+   We believe there is an evolutionary path to more easily                    gupta, K. Saladi, and C.-J. Wu, “ Revisiting Reliability in Large-Scale Machine
+adopt MCC. Instead of changing the paradigm overnight, we                     Learning Research Clusters ,” in HPCA, 2025.
+                                                                         [13] J. Meza, Q. Wu, S. Kumar, and O. Mutlu, “Revisiting Memory Errors in Large-Scale
+can incrementally introduce new operations and interfaces. For                Production Data Centers: Analysis and Modeling of New Trends from the Field,” in
+example, Self-Managing DRAM (Section 2) [131] introduces                      DSN, 2015.
+                                                                         [14] G. Wang, L. Zhang, and W. Xu, “What Can We Learn from Four Years of Data
+a simple DRAM interface change with potentially very large                    Center Hardware Failures?” in DSN, 2017.
+long-term & short-term benefits. Adopting it requires will and           [15] M. V. Beigi, Y. Cao, S. Gurumurthi, C. Recchia, A. Walton, and V. Sridharan, “A
+                                                                              Systematic Study of DDR4 DRAM Faults in the Field,” in HPCA, 2023.
+a shift into a more forward-looking mindset. Similarly, Row-             [16] V. Sridharan, N. DeBardeleben, S. Blanchard, K. B. Ferreira, J. Stearley, J. Shalf, and
+Clone (Section 3.2) [213] requires very small changes to DRAM                 S. Gurumurthi, “Memory Errors in Modern Systems: The Good, The Bad, and The
+                                                                              Ugly,” in ASPLOS, 2015.
+chips and interface to be officially supported. Section 3.2 al-          [17] J. Chen, X. Jiang, Y. Zhang, L. Liu, H. Xu, and Q. Liu, “CARE: Coordinated Augmen-
+ready showed that COTS DRAM chips can perform RowClone                        tation for Elastic Resilience on DRAM Errors in Data Centers,” in HPCA, 2021.
+                                                                         [18] J. Meza, “Large Scale Studies of Memory, Storage, and Network Failures in a Modern
+with almost perfect success rates even though they are not                    Data Center,” Ph.D. dissertation, Carnegie Mellon University, 2019.
+designed for this purpose. We believe adoption will become               [19] R. Wu, S. Zhou, J. Lu, Z. Shen, Z. Xu, J. Shu, K. Yang, F. Lin, and Y. Zhang, “Removing
+                                                                              Obstacles Before Breaking Through the Memory Wall: A Close Look at HBM Errors
+much easier once there are SMD chips or RowClone-capable                      in the Field,” in USENIX ATC, 2024.
+chips, on top of which novel software and system mechanisms              [20] B. Schroeder and G. A. Gibson, “A Large-Scale Study of Failures in High-
+                                                                              Performance Computing Systems,” IEEE TDSC, 2010.
+can be built.                                                            [21] B. Schroeder, E. Pinheiro, and W.-D. Weber, “DRAM Errors in the Wild: A Large-
+   If "insanity is doing the same thing over and over again and               Scale Field Study,” in SIGMETRICS, 2009.
+                                                                         [22] V. Sridharan and D. Liberty, “A Study of DRAM Failures in the Field,” in SC, 2012.
+expecting different results" [238, 239], then we may have been in-       [23] V. Sridharan, J. Stearley, N. DeBardeleben, S. Blanchard, and S. Gurumurthi, “Feng
+sane since we have stuck to the processor-centric paradigm for                Shui of Supercomputer Memory Positional Effects in DRAM and SRAM Faults,” in
+                                                                              SC, 2013.
+so long at huge system performance, energy, area & complexity            [24] A. A. Hwang, I. A. Stefanovici, and B. Schroeder, “Cosmic Rays Don’t Strike Twice:
+costs. The good news is we seem to be a bit less insane to-                   Understanding the Nature of DRAM Errors and the Implications for System Design,”
+                                                                              in ASPLOS, 2012.
+day than a decade ago as we now have some compute-capable                [25] K. B. Ferreira, J. Stearley, N. Debardeleben, S. Blanchard, V. Sriharan, and S. Gu-
+memories (e.g., PRAC, UPMEM, and DRAM PIM prototypes                          rumurti, “Extra Bits on SRAM and DRAM Errors - More Data from the Field,” in
+                                                                              SELSE, 2014.
+from various major companies), and packaging/integration                 [26] Y. He, H. Mao, C. Giannoula, M. Sadrosadati, J. Gómez-Luna, H. Li, X. Li, Y. Wang,
+technologies are on our side to make future systems more                      and O. Mutlu, “PAPI: Exploiting Dynamic Parallelism in Large Language Model
+                                                                              Decoding with a Processing-In-Memory-Enabled Computing System,” ASPLOS,
+memory-centric. Do we have the will?                                          2025.
+                                                                         [27] Y. Gu, A. Khadem, S. Umesh, N. Liang, X. Servot, O. Mutlu, R. Iyer, and R. Das,
+Acknowledgments                                                               “PIM Is All You Need: A CXL-Enabled GPU-Free System for Large Language Model
+                                                                              Inference,” ASPLOS, 2025.
+   This paper is an extended version of our invited paper and            [28] A. Gholami, Z. Yao, S. Kim, C. Hooper, M. W. Mahoney, and K. Keutzer, “AI and
+presentation in the “DRAM” focus session of the IMW 2025 con-                 Memory Wall,” IEEE Micro, 2024.
+                                                                         [29] J. Sevilla, L. Heim, A. Ho, T. Besiroglu, M. Hobbhahn, and P. Villalobos, “Compute
+ference [240]. We thank the SAFARI Research Group members                     Trends Across Three Eras of Machine Learning,” in IJCNN, 2022.
+for providing a stimulating intellectual and scientific environ-         [30] R. H. Dennard, “Field-Effect Transistor Memory,” U.S. Patent 3,387,286, 1968.
+                                                                         [31] O. Mutlu, “Memory Scaling: A Systems Architecture Perspective,” in IMW, 2013.
+ment. We acknowledge the generous gifts from our industrial              [32] J. Liu, B. Jaiyen, R. Veras, and O. Mutlu, “RAIDR: Retention-Aware Intelligent DRAM
+partners, including Google, Huawei, Intel, and Microsoft. This                Refresh,” in ISCA, 2012.
+                                                                         [33] J. Liu, B. Jaiyen, Y. Kim, C. Wilkerson, O. Mutlu, J. Liu, B. Jaiyen, Y. Kim, C. Wilker-
+work, along with our broader work in Processing-in-Memory                     son, and O. Mutlu, “An Experimental Study of Data Retention Behavior in Modern
+and memory systems, is supported in part by the Semiconduc-                   DRAM Devices,” in ISCA, 2013.
+                                                                         [34] S. Khan, D. Lee, Y. Kim, A. R. Alameldeen, C. Wilkerson, and O. Mutlu, “The Efficacy
+tor Research Corporation (SRC), the ETH Future Computing                      of Error Mitigation Techniques for DRAM Retention Failures: A Comparative
+Laboratory (EFCL), ACCESS – AI Chip Center for Emerging                       Experimental Study,” in SIGMETRICS, 2014.
+                                                                         [35] M. Qureshi, D.-H. Kim, S. Khan, P. Nair, and O. Mutlu, “AVATAR: A Variable-
+Smart Systems, a Google Security and Privacy Research Award,                  Retention-Time (VRT) Aware Refresh for DRAM Systems,” in DSN, 2015.
+and the Microsoft Swiss Joint Research Center.                           [36] M. Patel, J. S. Kim, and O. Mutlu, “The Reach Profiler (REAPER): Enabling the
+
+
+
+                                                                     6
+
+
+===== Page 7 =====
+
+     Mitigation of DRAM Retention Failures via Profiling at Aggressive Conditions,”                          Under Fine-Grained Temperature Variations,” IEEE Access, 2024.
+     ISCA, 2017.                                                                                        [69] I. Kang, W. Wang, J. Kim, S. van Schaik, Y. Tobah, D. Genkin, A. Kwong, and
+[37] U. Kang, H.-S. Yu, C. Park, H. Zheng, J. Halbert, K. Bains, S. Jang, and J. S. Choi,                    Y. Yarom, “SledgeHammer: Amplifying Rowhammer via Bank-level Parallelism,” in
+     “Co-Architecting Controllers and DRAM to Enhance DRAM Process Scaling,” in                              USENIX Security, 2024.
+     Memory Forum, 2014.                                                                                [70] A. P. Fournaris, L. Pocero Fraile, and O. Koufopavlou, “Exploiting Hardware Vulnera-
+[38] M. Patel, “Enabling Effective Error Mitigation in Modern Memory Chips that Use                          bilities to Attack Embedded System Devices: A Survey of Potent Microarchitectural
+     On-Die Error-Correcting Codes,” Ph.D. dissertation, 2021.                                               Attacks,” Electronics, 2017.
+[39] M. Patel, J. S. Kim, H. Hassan, and O. Mutlu, “Understanding and Modeling On-Die                   [71] D. Poddebniak, J. Somorovsky, S. Schinzel, M. Lochter, and P. Rösler, “Attacking
+     Error Correction in Modern DRAM: An Experimental Study Using Real Devices,”                             Deterministic Signature Schemes using Fault Attacks,” in EuroS&P, 2018.
+     in DSN, 2019.                                                                                      [72] A. Tatar, R. K. Konoth, E. Athanasopoulos, C. Giuffrida, H. Bos, and K. Razavi,
+[40] M. Patel, J. Kim, T. Shahroodi, H. Hassan, and O. Mutlu, “Bit-Exact ECC Recovery                        “Throwhammer: Rowhammer Attacks Over the Network and Defenses,” in USENIX
+     (BEER): Determining DRAM On-Die ECC Functions by Exploiting DRAM Data                                   ATC, 2018.
+     Retention Characteristics,” in MICRO, 2020.                                                        [73] S. Carre, M. Desjardins, A. Facon, and S. Guilley, “OpenSSL Bellcore’s Protection
+[41] M. Patel, G. F. de Oliveira Jr., and O. Mutlu, “HARP: Practically and Effectively                       Helps Fault Attack,” in DSD, 2018.
+     Identifying Uncorrectable Errors in Main Memory Chips That Use On-Die ECC,” in                     [74] A. Barenghi, L. Breveglieri, N. Izzo, and G. Pelosi, “Software-Only Reverse Engi-
+     MICRO, 2021.                                                                                            neering of Physical DRAM Mappings for Rowhammer Attacks,” in IVSW, 2018.
+[42] M. Patel, T. Shahroodi, A. Manglik, A. G. Yağlıkçı, A. Olgun, H. Luo, and O. Mutlu,                [75] Z. Zhang, Z. Zhan, D. Balasubramanian, X. Koutsoukos, and G. Karsai, “Triggering
+     “Rethinking the Producer-Consumer Relationship in Modern DRAM-Based Systems,”                           Rowhammer Hardware Faults on ARM: A Revisit,” in ASHES, 2018.
+     IEEE Access, 2024.                                                                                 [76] S. Bhattacharya and D. Mukhopadhyay, “Advanced Fault Attacks in Software:
+[43] Y. Kim, R. Daly, J. Kim, C. Fallin, J. H. Lee, D. Lee, C. Wilkerson, K. Lai, and O. Mutlu,              Exploiting the Rowhammer Bug,” in Fault Tolerant Architectures for Cryptography
+     “Flipping Bits in Memory Without Accessing Them: An Experimental Study of                               and Hardware Security, 2018.
+     DRAM Disturbance Errors,” in ISCA, 2014.                                                           [77] M. Seaborn and T. Dullien, “Exploiting the DRAM Rowhammer Bug to Gain Kernel
+[44] O. Mutlu, “The RowHammer Problem and Other Issues We May Face as Memory                                 Privileges,” http://googleprojectzero.blogspot.com.tr/2015/03/exploiting-dram-ro
+     Becomes Denser,” in DATE, 2017.                                                                         whammer-bug-to-gain.html, 2015.
+[45] O. Mutlu and J. S. Kim, “RowHammer: A Retrospective,” TCAD, 2019.                                  [78] SAFARI Research Group, “RowHammer — GitHub Repository,” https://github.com
+[46] O. Mutlu, A. Olgun, and A. G. Yaglikci, “Fundamentally Understanding and Solving                        /CMU-SAFARI/rowhammer, 2014.
+     RowHammer,” in ASP-DAC, 2023.                                                                      [79] P. Pessl, D. Gruss, C. Maurice, M. Schwarz, and S. Mangard, “DRAMA: Exploiting
+[47] J. S. Kim, M. Patel, A. G. Yağlıkçı, H. Hassan, R. Azizi, L. Orosa, and O. Mutlu, “Revis-               DRAM Addressing for Cross-CPU Attacks,” in USENIX Security, 2016.
+     iting RowHammer: An Experimental Analysis of Modern Devices and Mitigation                         [80] Y. Xiao, X. Zhang, Y. Zhang, and R. Teodorescu, “One Bit Flips, One Cloud Flops:
+     Techniques,” in ISCA, 2020.                                                                             Cross-VM Row Hammer Attacks and Privilege Escalation,” in USENIX Security,
+[48] L. Orosa, A. G. Yağlıkçı, H. Luo, A. Olgun, J. Park, H. Hassan, M. Patel, J. S. Kim, and                2016.
+     O. Mutlu, “A Deeper Look into RowHammer’s Sensitivities: Experimental Analysis                     [81] E. Bosman, K. Razavi, H. Bos, and C. Giuffrida, “Dedup Est Machina: Memory
+     of Real DRAM Chips and Implications on Future Attacks and Defenses,” in MICRO,                          Deduplication as An Advanced Exploitation Vector,” in S&P, 2016.
+     2021.                                                                                              [82] S. Bhattacharya and D. Mukhopadhyay, “Curious Case of Rowhammer: Flipping
+[49] A. Olgun, H. Hassan, A. G. Yağlıkçı, Y. C. Tuğrul, L. Orosa, H. Luo, M. Patel,                          Secret Exponent Bits Using Timing Analysis,” in CHES, 2016.
+     O. Ergin, and O. Mutlu, “DRAM Bender: An Extensible and Versatile FPGA-based                       [83] W. Burleson, O. Mutlu, and M. Tiwari, “Invited: Who is the Major Threat to
+     Infrastructure to Easily Test State-of-the-art DRAM Chips,” TCAD, 2023.                                 Tomorrow’s Security? You, the Hardware Designer,” in DAC, 2016.
+[50] A. Olgun, M. Osseiran, A. G. Yaglikci, Y. C. Tugrul, H. Luo, S. Rhyner, B. Salami, J. G.           [84] R. Qiao and M. Seaborn, “A New Approach for RowHammer Attacks,” in HOST,
+     Luna, and O. Mutlu, “Read Disturbance in High Bandwidth Memory: A Detailed                              2016.
+     Experimental Study on HBM2 DRAM Chips,” in DSN, 2024.                                              [85] F. Brasser, L. Davi, D. Gens, C. Liebchen, and A.-R. Sadeghi, “Can’t Touch This:
+[51] A. Olgun, F. N. Bostanci, I. E. Yuksel, O. Canpolat, H. Luo, G. F. Oliveira, A. G.                      Software-Only Mitigation Against Rowhammer Attacks Targeting Kernel Memory,”
+     Yaglikci, M. Patel, and O. Mutlu, “Variable Read Disturbance: An Experimental                           in USENIX Security, 2017.
+     Analysis of Temporal Variation in DRAM Read Disturbance,” in HPCA, 2025.                           [86] Y. Jang, J. Lee, S. Lee, and T. Kim, “SGX-Bomb: Locking Down the Processor via
+[52] A. G. Yağlıkçı, G. F. Oliveira, Y. C. Tuğrul, I. E. Yuksel, A. Olgun, H. Luo, and O. Mutlu,             Rowhammer Attack,” in SOSP, 2017.
+     “Spatial Variation-Aware Read Disturbance Defenses: Experimental Analysis of                       [87] M. T. Aga, Z. B. Aweke, and T. Austin, “When Good Protections Go Bad: Exploiting
+     Real DRAM Chips and Implications on Future Solutions,” in HPCA, 2024.                                   Anti-DoS Measures to Accelerate Rowhammer Attacks,” in HOST, 2017.
+[53] Y. C. Tugrul, A. G. Yaglikci, I. E. Yuksel, A. Olgun, O. Canpolat, N. Bostanci,                    [88] A. Tatar, C. Giuffrida, H. Bos, and K. Razavi, “Defeating Software Mitigations
+     M. Sadrosadati, O. Ergin, and O. Mutlu, “Understanding RowHammer Under Re-                              Against Rowhammer: A Surgical Precision Hammer,” in RAID, 2018.
+     duced Refresh Latency: Experimental Analysis of Real DRAM Chips and Implica-                       [89] D. Gruss, M. Lipp, M. Schwarz, D. Genkin, J. Juffinger, S. O’Connell, W. Schoechl,
+     tions on Future Solutions,” in HPCA, 2025.                                                              and Y. Yarom, “Another Flip in the Wall of Rowhammer Defenses,” in S&P, 2018.
+[54] M. Seaborn and T. Dullien, “Exploiting the DRAM Rowhammer Bug to Gain Kernel                       [90] M. Lipp, M. T. Aga, M. Schwarz, D. Gruss, C. Maurice, L. Raab, and L. Lamster,
+     Privileges,” Black Hat, 2015.                                                                           “Nethammer: Inducing Rowhammer Faults Through Network Requests,” arXiv,
+[55] V. van der Veen, Y. Fratantonio, M. Lindorfer, D. Gruss, C. Maurice, G. Vigna,                          2018.
+     H. Bos, K. Razavi, and C. Giuffrida, “Drammer: Deterministic Rowhammer Attacks                     [91] V. van der Veen, M. Lindorfer, Y. Fratantonio, H. P. Pillai, G. Vigna, C. Kruegel,
+     on Mobile Platforms,” in CCS, 2016.                                                                     H. Bos, and K. Razavi, “GuardION: Practical Mitigation of DMA-Based Rowhammer
+[56] D. Gruss, C. Maurice, and S. Mangard, “Rowhammer.js: A Remote Software-Induced                          Attacks on ARM,” in DIMVA, 2018.
+     Fault Attack in Javascript,” arXiv, 2016.                                                          [92] P. Frigo, C. Giuffrida, H. Bos, and K. Razavi, “Grand Pwning Unit: Accelerating
+[57] K. Razavi, B. Gras, E. Bosman, B. Preneel, C. Giuffrida, and H. Bos, “Flip Feng Shui:                   Microarchitectural Attacks with the GPU,” in S&P, 2018.
+     Hammering a Needle in the Software Stack,” in USENIX Security, 2016.                               [93] S. Ji, Y. Ko, S. Oh, and J. Kim, “Pinpoint Rowhammer: Suppressing Unwanted Bit
+[58] L. Cojocar, K. Razavi, C. Giuffrida, and H. Bos, “Exploiting Correcting Codes: On                       Flips on Rowhammer Attacks,” in ASIACCS, 2019.
+     the Effectiveness of ECC Memory Against Rowhammer Attacks,” in S&P, 2019.                          [94] S. Hong, P. Frigo, Y. Kaya, C. Giuffrida, and T. Dumitraş, “Terminal Brain Damage:
+[59] P. Frigo, E. Vannacci, H. Hassan, V. van der Veen, O. Mutlu, C. Giuffrida, H. Bos,                      Exposing the Graceless Degradation in Deep Neural Networks Under Hardware
+     and K. Razavi, “TRRespass: Exploiting the Many Sides of Target Row Refresh,” in                         Fault Attacks,” in USENIX Security, 2019.
+     S&P, 2020.                                                                                         [95] L. Cojocar, J. Kim, M. Patel, L. Tsai, S. Saroiu, A. Wolman, and O. Mutlu, “Are We
+[60] A. Kwong, D. Genkin, D. Gruss, and Y. Yarom, “RAMBleed: Reading Bits in Memory                          Susceptible to Rowhammer? An End-to-End Methodology for Cloud Providers,” in
+     Without Accessing Them,” in S&P, 2020.                                                                  S&P, 2020.
+[61] F. de Ridder, P. Frigo, E. Vannacci, H. Bos, C. Giuffrida, and K. Razavi, “SMASH: Syn-             [96] Z. Weissman, T. Tiemann, D. Moghimi, E. Custodio, T. Eisenbarth, and B. Sunar,
+     chronized Many-Sided Rowhammer Attacks from JavaScript,” in USENIX Security,                            “JackHammer: Efficient Rowhammer on Heterogeneous FPGA–CPU Platforms,”
+     2021.                                                                                                   arXiv, 2020.
+[62] H. Hassan, Y. C. Tugrul, J. S. Kim, V. v. d. Veen, K. Razavi, and O. Mutlu, “Uncovering            [97] Z. Zhang, Y. Cheng, D. Liu, S. Nepal, Z. Wang, and Y. Yarom, “PThammer: Cross-
+     in-DRAM RowHammer Protection Mechanisms: A New Methodology, Custom                                      User-Kernel-Boundary Rowhammer through Implicit Accesses,” in MICRO, 2020.
+     RowHammer Patterns, and Implications,” in MICRO, 2021.                                             [98] F. Yao, A. S. Rakin, and D. Fan, “Deephammer: Depleting the Intelligence of Deep
+[63] P. Jattke, V. van der Veen, P. Frigo, S. Gunter, and K. Razavi, “Blacksmith: Scalable                   Neural Networks Through Targeted Chain of Bit Flips,” in USENIX Security, 2020.
+     Rowhammering in the Frequency Domain,” in S&P, 2022.                                               [99] M. C. Tol, S. Islam, B. Sunar, and Z. Zhang, “Toward Realistic Backdoor Injection
+[64] A. Kogler, J. Juffinger, S. Qazi, Y. Kim, M. Lipp, N. Boichat, E. Shiu, M. Nissler, and                 Attacks on DNNs using RowHammer,” arXiv, 2022.
+     D. Gruss, “Half-Double: Hammering From the Next Row Over,” in USENIX Security,                    [100] Z. Zhang, W. He, Y. Cheng, W. Wang, Y. Gao, D. Liu, K. Li, S. Nepal, A. Fu, and
+     2022.                                                                                                   Y. Zou, “Implicit Hammer: Cross-Privilege-Boundary Rowhammer through Implicit
+[65] H. Luo, A. Olgun, A. G. Yağlıkçı, Y. C. Tuğrul, S. Rhyner, M. B. Cavlak, J. Lindegger,                  Accesses,” IEEE TDSC, 2022.
+     M. Sadrosadati, and O. Mutlu, “RowPress: Amplifying Read Disturbance in Modern                    [101] L. Liu, Y. Guo, Y. Cheng, Y. Zhang, and J. Yang, “Generating Robust DNN with
+     DRAM Chips,” in ISCA, 2023.                                                                             Resistance to Bit-Flip based Adversarial Weight Attack,” IEEE TC, 2022.
+[66] J. Juffinger, S. R. Neela, M. Heckel, L. Schwarz, F. Adamsky, and D. Gruss, “Pressham-            [102] Y. Cohen, K. S. Tharayil, A. Haenel, D. Genkin, A. D. Keromytis, Y. Oren, and
+     mer: Rowhammer and Rowpress without Physical Address Information,” in DIMVA,                            Y. Yarom, “HammerScope: Observing DRAM Power Consumption Using Rowham-
+     2024.                                                                                                   mer,” in CCS, 2022.
+[67] M. Marazzi and K. Razavi, “RISC-H: Rowhammer Attacks on RISC-V,” in DRAMSec,                      [103] M. Zheng, Q. Lou, and L. Jiang, “TrojViT: Trojan Insertion in Vision Transformers,”
+     2024.                                                                                                   arXiv, 2022.
+[68] L. Orosa, U. Rührmair, A. G. Yaglikci, H. Luo, A. Olgun, P. Jattke, M. Patel, J. Kim,             [104] M. Fahr Jr, H. Kippen, A. Kwong, T. Dang, J. Lichtinger, D. Dachman-Soled,
+     K. Razavi, and O. Mutlu, “SpyHammer: Understanding and Exploiting RowHammer                             D. Genkin, A. Nelson, R. Perlner, A. Yerukhimovich et al., “When Frodo Flips:
+
+
+
+                                                                                                   7
+
+
+===== Page 8 =====
+
+      End-to-End Key Recovery on FrodoKEM via Rowhammer,” CCS, 2022.                                        I. Sutskever, and D. Amodei, “Language Models are Few-Shot Learners,” in NIPS,
+[105] Y. Tobah, A. Kwong, I. Kang, D. Genkin, and K. G. Shin, “SpecHammer: Combining                        2020.
+      Spectre and Rowhammer for New Speculative Attacks,” in S&P, 2022.                               [141] J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova, “BERT: Pre-training of Deep
+[106] A. S. Rakin, M. H. I. Chowdhuryy, F. Yao, and D. Fan, “DeepSteal: Advanced Model                      Bidirectional Transformers for Language Understanding,” in NAACL, 2019.
+      Extractions Leveraging Efficient Weight Stealing in Memories,” in S&P, 2022.                    [142] I. Goodfellow, J. Pouget-Abadie, M. Mirza, B. Xu, D. Warde-Farley, S. Ozair,
+[107] H. Aydin and A. Sertbaş, “Cyber Security in Industrial Control Systems (ICS): A                       A. Courville, and Y. Bengio, “Generative Adversarial Networks,” NIPS, 2014.
+      Survey of RowHammer Vulnerability,” Applied Computer Science, 2022.                             [143] J. Ahn, S. Yoo, O. Mutlu, and K. Choi, “PIM-Enabled Instructions: A Low-Overhead,
+[108] K. Mus, Y. Doröz, M. C. Tol, K. Rahman, and B. Sunar, “Jolt: Recovering TLS Signing                   Locality-Aware Processing-in-Memory Architecture,” in ISCA, 2015.
+      Keys via Rowhammer Faults,” Cryptology ePrint Archive, 2022.                                    [144] L. Nai, R. Hadidi, J. Sim, H. Kim, P. Kumar, and H. Kim, “GraphPIM: Enabling
+[109] J. Wang, H. Xu, C. Xiao, L. Zhang, and Y. Zheng, “Research and Implementation of                      Instruction-Level PIM Offloading in Graph Computing Frameworks,” in HPCA,
+      Rowhammer Attack Method based on Domestic NeoKylin Operating System,” in                              2017.
+      ICFTIC, 2022.                                                                                   [145] M. Besta, R. Kanakagiri, G. Kwasniewski, R. Ausavarungnirun, J. Beránek, K. Kanel-
+[110] S. Lefforge, “Reverse Engineering Post-Quantum Cryptography Schemes to Find                           lopoulos, K. Janda, Z. Vonarburg-Shmaria, L. Gianinazzi, I. Stefan et al., “SISA: Set-
+      Rowhammer Exploits,” Master’s thesis, 2023.                                                           Centric Instruction Set Architecture for Graph Mining on Processing-in-Memory
+[111] M. J. Fahr, “The Effects of Side-Channel Attacks on Post-Quantum Cryptography:                        Systems,” in MICRO, 2021.
+      Influencing FrodoKEM Key Generation Using the Rowhammer Exploit,” Ph.D.                         [146] S. Salihoglu and J. Widom, “GPS: A Graph Processing System,” in SSDBM, 2013.
+      dissertation, 2022.                                                                             [147] Y. Tian, A. Balmin, S. A. Corsten, S. Tatikonda, and J. McPherson, “From ‘Think
+[112] A. Kaur, P. Srivastav, and B. Ghoshal, “Work-in-Progress: DRAM-MaUT: DRAM                             Like a Vertex to ‘Think Like a Graph’,” VLDB, 2013.
+      Address Mapping Unveiling Tool for ARM Devices,” in CASES, 2022.                                [148] Y. Low, D. Bickson, J. Gonzalez, C. Guestrin, A. Kyrola, and J. M. Hellerstein,
+[113] K. Cai, Z. Zhang, and F. Yao, “On the Feasibility of Training-time Trojan Attacks                     “Distributed GraphLab: A Framework for Machine Learning and Data Mining in
+      through Hardware-based Faults in Memory,” in HOST, 2022.                                              the Cloud,” VLDB, 2012.
+[114] D. Li, D. Liu, Y. Ren, Z. Wang, Y. Sun, Z. Guan, Q. Wu, and J. Liu, “CyberRadar: A              [149] V. Seshadri, D. Lee, T. Mullins, H. Hassan, A. Boroumand, J. Kim, M. A. Kozuch,
+      PUF-based Detecting and Mapping Framework for Physical Devices,” arXiv, 2022.                         O. Mutlu, P. B. Gibbons, and T. C. Mowry, “Ambit: In-Memory Accelerator for Bulk
+[115] A. Roohi and S. Angizi, “Efficient Targeted Bit-Flip Attack Against the Local Binary                  Bitwise Operations Using Commodity DRAM Technology,” in MICRO, 2017.
+      Pattern Network,” in HOST, 2022.                                                                [150] G. F. de Oliveira, J. Gomez-Luna, L. Orosa, S. Ghose, N. Vijaykumar, I. Fernandez,
+[116] F. Staudigl, H. Al Indari, D. Schön, D. Sisejkovic, F. Merchant, J. M. Joseph, V. Rana,               M. Sadrosadati, and O. Mutlu, “DAMOV: A New Methodology and Benchmark
+      S. Menzel, and R. Leupers, “NeuroHammer: Inducing Bit-Flips in Memristive                             Suite for Evaluating Data Movement Bottlenecks ,” IEEE Access, 2021.
+      Crossbar Memories,” in DATE, 2022.                                                              [151] J. Gómez-Luna, I. El Hajj, I. Fernandez, C. Giannoula, G. F. Oliveira, and O. Mutlu,
+[117] L.-H. Yang, S.-S. Huang, T.-L. Cheng, Y.-C. Kuo, and J.-J. Kuo, “Socially-Aware                       “Benchmarking a New Paradigm: Experimental Analysis and Characterization of a
+      Collaborative Defense System against Bit-Flip Attack in Social Internet of Things                     Real Processing-in-Memory System,” IEEE Access, 2022.
+      and Its Online Assignment Optimization,” in ICCCN, 2022.                                        [152] A. Boroumand, S. Ghose, G. F. Oliveira, and O. Mutlu, “Polynesia: Enabling High-
+[118] S. Islam, K. Mus, R. Singh, P. Schaumont, and B. Sunar, “Signature Correction Attack                  Performance and Energy-Efficient Hybrid Transactional/Analytical Databases with
+      on Dilithium Signature Scheme,” in Euro S&P, 2022.                                                    Hardware/Software Co-Design,” in ICDE, 2022.
+[119] S. Baek, M. Wi, S. Park, H. Nam, M. J. Kim, N. S. Kim, and J. H. Ahn, “Marionette:              [153] HMC Consortium, “Hybrid Memory Cube Specification Rev. 2.0,” 2013.
+      A RowHammer Attack via Row Coupling,” in ASPLOS, 2025.                                          [154] JEDEC, “JESD235 High Bandwidth Memory (HBM) DRAM,” 2013.
+[120] H. Luo, A. Olgun, A. G. Yağlıkçı, Y. C. Tuğrul, S. Rhyner, M. B. Cavlak, J. Lindegger,          [155] D. Lee, S. Ghose, G. Pekhimenko, S. Khan, and O. Mutlu, “Simultaneous Multi-Layer
+      M. Sadrosadati, and O. Mutlu, “RowPress Vulnerability in Modern DRAM Chips,”                          Access: Improving 3D-Stacked Memory Bandwidth at Low Cost,” TACO, 2016.
+      IEEE Micro, 2024.                                                                               [156] JEDEC, JESD23-5D: High Bandwidth Memory (HBM) DRAM Standard, 2021.
+[121] L. Zhou, S. Ye, R. Wang, and Z. Ji, “Unveiling RowPress in Sub-20 nm DRAM                       [157] JEDEC, JESD23-8A: High Bandwidth Memory (HBM3) DRAM Standard, 2021.
+      Through Comparative Analysis With Row Hammer: From Leakage Mechanisms to                        [158] K. Kim and M.-j. Park, “Present and Future, Challenges of High Bandwith Memory
+      Key Features,” in TED, 2024.                                                                          (HBM),” in IMW, 2024.
+[122] L. Zhou, J. Li, P. Ren, S. Ye, D. Wang, Z. Qiao, and Z. Ji, “Understanding the Physical         [159] K. Hsieh, E. Ebrahimi, G. Kim, N. Chatterjee, M. O’Connor, N. Vijaykumar,
+      Mechanism of RowPress at the Device-Level in Sub-20 nm DRAM,” in IRPS, 2024.                          O. Mutlu, and S. W. Keckler, “Transparent Offloading and Mapping (TOM): Enabling
+[123] D. Yaney et al., “A Meta-stable Leakage Phenomenon in DRAM Charge Storage -                           Programmer-Transparent Near-Data Processing in GPU Systems,” in ISCA, 2016.
+      Variable Hold Time,” IEDM, 1987.                                                                [160] A. Boroumand, S. Ghose, M. Patel, H. Hassan, B. Lucia, K. Hsieh, K. T. Malladi,
+[124] P. J. Restle et al., “DRAM Variable Retention Time,” IEDM, 1992.                                      H. Zheng, and O. Mutlu, “CoNDA: Enabling Efficient Near-Data Accelerator Com-
+[125] Micron, “DDR4 SDRAM Datasheet,” in Micron, 2016.                                                      munication by Optimizing Data Movement,” ISCA, 2019.
+[126] JEDEC, JESD79-5: DDR5 SDRAM Standard, 2020.                                                     [161] G. Singh, M. Alser, D. S. Cali, D. Diamantopoulos, J. Gómez-Luna, H. Corporaal,
+[127] O. Canpolat, A. G. Yağlıkçı, G. F. Oliveira, A. Olgun, N. Bostancı, I. E. Yuksel, H. Luo,             and O. Mutlu, “FPGA-Based Near-Memory Acceleration of Modern Data-Intensive
+      O. Ergin, and O. Mutlu, “Chronus: Understanding and Securing the Cutting-Edge                         Applications,” IEEE Micro, 2021.
+      Industry Solutions to DRAM Read Disturbance,” in HPCA, 2025.                                    [162] G. F. Oliveira, J. Gómez-Luna, S. Ghose, A. Boroumand, and O. Mutlu, “Accelerating
+[128] O. Canpolat, A. G. Yağlıkçı, G. F. Oliveira, A. Olgun, O. Ergin, and O. Mutlu,                        Neural Network Inference with Processing-in-DRAM: From the Edge to the Cloud,”
+      “Understanding the Security Benefits and Overheads of Emerging Industry Solutions                     IEEE Micro, 2022.
+      to DRAM Read Disturbance,” DRAMSec, 2024.                                                       [163] J. Gómez-Luna, I. E. Hajj, I. Fernández, C. Giannoula, G. F. Oliveira, and O. Mutlu,
+[129] W. Kim, C. Jung, S. Yoo, D. Hong, J. Hwang, J. Yoon, O. Jung, J. Choi, S. Hyun,                       “Benchmarking a New Paradigm: An Experimental Analysis of a Real Processing-
+      M. Kang et al., “A 1.1 V 16Gb DDR5 DRAM with Probabilistic-Aggressor Track-                           in-Memory Architecture,” arXiv, 2021.
+      ing, Refresh-Management Functionality, Per-Row Hammer Tracking, a Multi-Step                    [164] J. Gómez-Luna, I. El Hajj, I. Fernandez, C. Giannoula, G. F. Oliveira, and O. Mutlu,
+      Precharge, and Core-Bias Modulation for Security and Reliability Enhancement,”                        “Benchmarking Memory-Centric Computing Systems: Analysis of Real Processing-
+      in ISSCC, 2023.                                                                                       in-Memory Hardware,” in CUT, 2021.
+[130] JEDEC, JESD79-5c: DDR5 SDRAM Standard, 2024.                                                    [165] J. Gómez-Luna, Y. Guo, S. Brocard, J. Legriel, R. Cimadomo, G. F. Oliveira, G. Singh,
+[131] H. Hassan, A. Olgun, A. G. Yağlıkçı, H. Luo, O. Mutlu, and E. Zurich, “Self-Managing                  and O. Mutlu, “Evaluating Machine LearningWorkloads on Memory-Centric Com-
+      DRAM: A Low-Cost Framework for Enabling Autonomous and Efficient DRAM                                 puting Systems,” in ISPASS, 2023.
+      Maintenance Operations,” in MICRO, 2024.                                                        [166] J. Gómez-Luna, Y. Guo, S. Brocard, J. Legriel, R. Cimadomo, G. F. Oliveira, G. Singh,
+[132] A. Olgun, “Self-Managing DRAM: A Low-Cost Framework for Enabling Au-                                  and O. Mutlu, “Machine Learning Training on a Real Processing-in-Memory System,”
+      tonomous and Efficient DRAM Maintenance Operations,” in Talk at MICRO, 2024.                          in ISVLSI, 2022.
+[133] J. Ahn, S. Hong, S. Yoo, O. Mutlu, and K. Choi, “A Scalable Processing-in-Memory                [167] C. Giannoula, P. Yang, I. Fernandez, J. Yang, S. Durvasula, Y. X. Li, M. Sadrosadati,
+      Accelerator for Parallel Graph Processing,” in ISCA, 2015.                                            J. G. Luna, O. Mutlu, and G. Pekhimenko, “PyGim: An Efficient Graph Neural
+[134] J. Ahn, S. Hong, S. Yoo, O. Mutlu, and K. Choi, “Retrospective: A Scalable Processing-                Network Library for Real Processing-In-Memory Architectures,” SIGMETRICS,
+      in-memory Accelerator for Parallel Graph Processing,” arXiv, 2023.                                    2024.
+[135] M. Zhou, W. Xu, J. Kang, and T. Rosing, “TransPIM: A Memory-based Acceleration                  [168] S. Rhyner, H. Luo, J. Gomez-Luna, M. Sadrosadati, J. Jiang, A. Olgun, H. Gupta,
+      via Software-Hardware Co-Design for Transformer,” in HPCA, 2022.                                      C. Zhang, and O. Mutlu, “PIM-Opt: Demystifying Distributed Optimization Algo-
+[136] J. Park, J. Choi, K. Kyung, M. J. Kim, Y. Kwon, N. S. Kim, and J. H. Ahn, “AttAcc!                    rithms on a Real-World Processing-In-Memory System,” in PACT, 2024.
+      Unleashing the Power of PIM for Batched Transformer-based Generative Model                      [169] K. Gogineni, S. S. Dayapule, J. Gómez-Luna, K. Gogineni, P. Wei, T. Lan, M. Sadrosa-
+      Inference,” in ASPLOS, 2024.                                                                          dati, O. Mutlu, and G. Venkataramani, “SwiftRL: Towards Efficient Reinforcement
+[137] M. Seo, X. T. Nguyen, S. J. Hwang, Y. Kwon, G. Kim, C. Park, I. Kim, J. Park, J. Kim,                 Learning on Real Processing-In-Memory Systems,” in ISPASS, 2024.
+      W. Shin et al., “IANUS: Integrated Accelerator based on NPU-PIM Unified Memory                  [170] H. Gupta, M. Kabra, J. Gómez-Luna, K. Kanellopoulos, and O. Mutlu, “Evaluating
+      System,” in ASPLOS, 2024.                                                                             Homomorphic Operations on a Real-World Processing-In-Memory System,” in
+[138] S. Yun, K. Kyung, J. Cho, J. Choi, J. Kim, B. Kim, S. Lee, K. Sohn, and J. H. Ahn,                    IISWC, 2023.
+      “Duplex: A Device for Large Language Models with Mixture of Experts, Grouped                    [171] S. Diab, A. Nassereldine, M. Alser, J. Gómez Luna, O. Mutlu, and I. El Hajj, “A
+      Query Attention, and Continuous Batching,” in MICRO, 2024.                                            Framework for High-Throughput Sequence Alignment Using Real Processing-In-
+[139] G. Heo, S. Lee, J. Cho, H. Choi, S. Lee, H. Ham, G. Kim, D. Mahajan, and J. Park,                     Memory Systems,” Bioinformatics, 2023.
+      “Neupims: Npu-pim Heterogeneous Acceleration for Batched LLM Inferencing,” in                   [172] M. Frouzakis, J. Gómez-Luna, G. F. Oliveira, M. Sadrosadati, and O. Mutlu, “PIMDAL:
+      ASPLOS, 2024.                                                                                         Mitigating the Memory Bottleneck in Data Analytics using a Real Processing-in-
+[140] T. B. Brown, B. Mann, N. Ryder, M. Subbiah, J. Kaplan, P. Dhariwal, A. Nee-                           Memory System,” arXiv, 2025.
+      lakantan, P. Shyam, G. Sastry, A. Askell, S. Agarwal, A. Herbert-Voss, G. Krueger,              [173] S. Lee, C. Lim, J. Choi, H. Choi, C. Lee, Y. Park, K. Park, H. Kim, and Y. Kim,
+      T. Henighan, R. Child, A. Ramesh, D. M. Ziegler, J. Wu, C. Winter, C. Hesse, M. Chen,                 “SPID-Join: A Skew-resistant Processing-in-DIMM Join Algorithm Exploiting the
+      E. Sigler, M. Litwin, S. Gray, B. Chess, J. Clark, C. Berner, S. McCandlish, A. Radford,              Bank-and Rank-level Parallelisms of DIMMs,” SIGMOD, 2024.
+
+
+
+                                                                                                  8
+
+
+===== Page 9 =====
+
+[174] D. Lee, B. Hyun, T. Kim, and M. Rhu, “Analysis of Data Transfer Bottlenecks in                  [207] A. Boroumand, “Practical Mechanisms for Reducing Processor-Memory Data Move-
+      Commercial PIM Systems: A Study with UPMEM-PIM,” CAL, 2024.                                           ment in Modern Workloads,” Ph.D. dissertation, 2020.
+[175] C. Giannoula, I. Fernandez, J. Gómez-Luna, N. Koziris, G. Goumas, and O. Mutlu,                 [208] A. Boroumand, S. Ghose, M. Patel, H. Hassan, B. Lucia, K. Hsieh, K. T. Malladi,
+      “SparseP: Towards Efficient Sparse Matrix Vector Multiplication on Real Processing-                   H. Zheng, and O. Mutlu, “LazyPIM: An Efficient Cache Coherence Mechanism for
+      in-Memory Systems,” in SIGMETRICS, 2022.                                                              Processing-in-Memory,” in CAL, 2016.
+[176] C. Lim, S. Lee, J. Choi, J. Lee, S. Park, H. Kim, J. Lee, and Y. Kim, “Design and               [209] M. Drumond, A. Daglis, N. Mirzadeh, D. Ustiugov, J. Picorel, B. Falsafi, B. Grot, and
+      Analysis of a Processing-in-DIMM Join Algorithm: A Case Study with UPMEM                              D. Pnevmatikatos, “The Mondrian Data Engine,” in ISCA, 2017.
+      Dimms,” SIGMOD, 2023.                                                                           [210] K. Hsieh, S. Khan, N. Vijaykumar, K. K. Chang, A. Boroumand, S. Ghose, and
+[177] C. Giannoula, I. Fernandez, J. Gómez-Luna, N. Koziris, G. Goumas, and O. Mutlu, “To-                  O. Mutlu, “Accelerating Pointer Chasing in 3D-Stacked Memory: Challenges, Mech-
+      wards Efficient Sparse Matrix Vector Multiplication on Real Processing-In-Memory                      anisms, Evaluation,” in ICCD, 2016.
+      Systems,” arXiv:2204.00900 [cs.AR], 2022.                                                       [211] P. C. Santos, G. F. Oliveira, D. G. Tomé, M. A. Z. Alves, E. C. Almeida, and L. Carro,
+[178] S. Diab, A. Nassereldine, M. Alser, J. Gómez-Luna, O. Mutlu, and I. E. Hajj, “High-                   “Operand Size Reconfiguration for Big Data Processing in Memory,” in DATE, 2017.
+      Throughput Pairwise Alignment with the Wavefront Algorithm Using Processing-                    [212] S. Van Doren, “Hoti 2019: Compute Express Link,” in HOTI, 2019.
+      in-Memory,” arXiv:2204.02085 [cs.AR], 2022.                                                     [213] V. Seshadri, Y. Kim, C. Fallin, D. Lee, R. Ausavarungnirun, G. Pekhimenko, Y. Luo,
+[179] L.-C. Chen, C.-C. Ho, and Y.-H. Chang, “UpPipe: A Novel Pipeline Management on                        O. Mutlu, P. B. Gibbons, M. A. Kozuch, and T. Mowry, “RowClone: Fast and Energy-
+      In-Memory Processors for RNA-seq Quantification,” in DAC, 2023.                                       Efficient In-DRAM Bulk Data Copy and Initialization,” in MICRO, 2013.
+[180] D. Lavenier, R. Cimadomo, and R. Jodin, “Variant Calling Parallelization on                     [214] V. Seshadri, K. Hsieh, A. Boroumand, D. Lee, M. A. Kozuch, O. Mutlu, P. B. Gibbons,
+      Processor-in-Memory Architecture,” in BIBM, 2020.                                                     and T. C. Mowry, “Fast Bulk Bitwise AND and OR in DRAM,” 2015.
+[181] D. Lavenier, C. Deltel, D. Furodet, and J.-F. Roy, “BLAST on UPMEM,” INRIA Rennes-              [215] V. Seshadri and O. Mutlu, “In-DRAM Bulk Bitwise Execution Engine,” arXiv, 2019.
+      Bretagne Atlantique, Tech. Rep. 8878, 2016.                                                     [216] V. Seshadri, D. Lee, T. Mullins, H. Hassan, A. Boroumand, J. Kim, M. A. Kozuch,
+[182] H. Kang, Y. Zhao, G. E. Blelloch, L. Dhulipala, Y. Gu, C. McGuffey, and P. B. Gibbons,                O. Mutlu, P. B. Gibbons, and T. C. Mowry, “Buddy-RAM: Improving the Performance
+      “PIM-trie: A Skew-Resistant Trie for Processing-in-Memory,” in SPAA, 2023.                            and Efficiency of Bulk Bitwise Operations Using DRAM,” arXiv, 2016.
+[183] A. Baumstark, M. A. Jibril, and K.-U. Sattler, “Accelerating Large Table Scan Using             [217] N. Hajinazar, G. F. Oliveira, S. Gregorio, J. D. Ferreira, N. M. Ghiasi, M. Patel,
+      Processing-in-Memory Technology,” BTW, 2023.                                                          M. Alser, S. Ghose, J. Gómez-Luna, and O. Mutlu, “SIMDRAM: A Framework for
+[184] A. Baumstark, M. A. Jibril, and K.-U. Sattler, “Adaptive Query Compilation with                       Bit-Serial SIMD Processing Using DRAM,” in ASPLOS, 2021.
+      Processing-in-Memory,” in ICDEW, 2023.                                                          [218] G. F. Oliveira, A. Olgun, A. G. G. Yaglikçi, N. Bostanci, J. Gómez-Luna, S. Ghose, and
+[185] A. Bernhardt, A. Koch, and I. Petrov, “pimDB: From Main-Memory DBMS to                                O. Mutlu, “MIMDRAM: An End-to-End Processing-Using-DRAM System for High-
+      Processing-In-Memory DBMS-Engines on Intelligent Memories,” in DaMoN, 2023.                           Throughput, Energy-Efficient and Programmer-Transparent Multiple-Instruction
+[186] J. Nider, J. Dagger, N. Gharavi, D. Ng, and A. Fedorova, “Bulk JPEG Decoding on                       Multiple-Data Processing,” HPCA, 2024.
+      In-Memory Processors,” in SYSTOR, 2022.                                                         [219] A. Olgun, F. Bostanci, G. F. Oliveira, Y. C. Tugrul, R. Bera, A. G. Yaglikci, H. Hassan,
+[187] P. Das, P. R. Sutradhar, M. Indovina, S. M. P. Dinakarrao, and A. Ganguly, “Imple-                    O. Ergin, and O. Mutlu, “Sectored DRAM: An Energy-Efficient High-Throughput
+      mentation and Evaluation of Deep Neural Networks in Commercially Available                            and Practical Fine-Grained DRAM Architecture,” TACO, 2024.
+      Processing in Memory Hardware,” in SOCC, 2022.                                                  [220] I. E. Yuksel, Y. C. Tugrul, A. Olgun, F. N. Bostanci, A. G. Yaglikci, G. F. de Oliveira,
+[188] N. Zarif, “Offloading Embedding Lookups to Processing-in-Memory for Deep Learn-                       H. Luo, J. G. Luna, M. Sadrosadati, and O. Mutlu, “Functionally-Complete Boolean
+      ing Recommender Models,” Master’s thesis, University of British Columbia, 2023.                       Logic in Real DRAM Chips: Experimental Characterization and Analysis,” in HPCA,
+[189] D. Lee, B. Hyun, T. Kim, and M. Rhu, “PIM-MMU: A Memory Management Unit                               2024.
+      for Accelerating Data Transfers in Commercial PIM Systems,” in MICRO, 2024.                     [221] I. E. Yuksel, Y. C. Tugrul, F. N. Bostanci, G. F. de Oliveira, A. G. Yaglikci, A. Olgun,
+[190] H. Son, G. Jonatan, X. Wu, H. Cho, K. Shivdikar, J. L. Abellán, A. Joshi, D. Kaeli,                   M. Soysal, H. Luo, J. G. Luna, M. Sadrosadati, and O. Mutlu, “Simultaneous Many-
+      and J. Kim, “PIMnet: A Domain-Specific Network for Efficient Collective Commu-                        Row Activation in Off-the-Shelf DRAM Chips: Experimental Characterization and
+      nication in Scalable PIM,” in HPCA, 2025.                                                             Analysis,” in DSN, 2024.
+[191] B. Hyun, T. Kim, D. Lee, and M. Rhu, “Pathfinding Future PIM Architectures by                   [222] I. E. Yuksel, Y. C. Tugrul, F. N. Bostanci, A. G. Yaglikci, A. Olgun, G. F. Oliveira,
+      Demystifying a Commercial PIM Technology,” in HPCA, 2024.                                             M. Soysal, H. Luo, J. G. Luna, M. Sadrosadati, and O. Mutlu, “PULSAR: Simultaneous
+[192] J. Chen, J. Gómez-Luna, I. E. Hajj, Y. Guo, and O. Mutlu, “SimplePIM: A Software                      Many-Row Activation for Reliable and High-Performance Computing in Off-the-
+      Framework for Productive and Efficient Processing-In-Memory,” in PACT, 2023.                          Shelf DRAM Chips,” arXiv, 2023.
+[193] M. Item, J. Gómez-Luna, Y. Guo, G. F. Oliveira, M. Sadrosadati, and O. Mutlu, “Tran-            [223] H. Hassan, N. Vijaykumar, S. Khan, S. Ghose, K. Chang, G. Pekhimenko, D. Lee,
+      sPimLib: Efficient Transcendental Functions for Processing-in-Memory Systems,”                        O. Ergin, and O. Mutlu, “SoftMC: A Flexible and Practical Open-Source Infrastruc-
+      in ISPASS, 2023.                                                                                      ture for Enabling Experimental DRAM Studies,” in HPCA, 2017.
+[194] A. A. Khan, H. Farzaneh, K. F. Friebel, C. Fournier, L. Chelini, and J. Castrillon,             [224] F. Gao, G. Tziantzioulis, and D. Wentzlaff, “ComputeDRAM: In-Memory Compute
+      “CINM (Cinnamon): A Compilation Infrastructure for Heterogeneous Compute                              Using Off-the-Shelf DRAMs,” in MICRO, 2019.
+      In-Memory and Compute Near-Memory Paradigms,” ASPLOS, 2024.                                     [225] A. Olgun, J. G. Luna, K. Kanellopoulos, B. Salami, H. Hassan, O. Ergin, and O. Mutlu,
+[195] G. F. Oliveira, A. Kohli, D. Novo, J. Gómez-Luna, and O. Mutlu, “DaPPA: A Data-                       “PiDRAM: A Holistic End-to-end FPGA-based Framework for Processing-in-DRAM,”
+      Parallel Framework for Processing-in-Memory Architectures,” arXiv, 2023.                              TACO, 2022.
+[196] S. U. Noh, J. Hong, C. Lim, S. Park, J. Kim, H. Kim, Y. Kim, and J. Lee, “PID-                  [226] F. Gao, G. Tziantzioulis, and D. Wentzlaff, “FracDRAM: Fractional Values in Off-
+      Comm: A Fast and Flexible Collective Communication Framework for Commodity                            the-Shelf DRAM,” in MICRO, 2022.
+      Processing-in-DIMM Devices,” in ISCA, 2024.                                                     [227] F. Bai, S. Wang, X. Jia, Y. Guo, B. Yu, H. Wang, C. Lai, Q. Ren, and H. Sun, “A
+[197] B. Fujun, J. Xiping, W. Song, Y. Bing, T. Jie, Z. Fengguo, W. Chunjuan, W. Fan,                       Low-Cost Reduced-Latency DRAM Architecture With Dynamic Reconfiguration
+      L. Xiaodong, Y. Guoqing et al., “A Stacked Embedded DRAM Array for LPDDR4/4X                          of Row Decoder,” TVLSI, 2022.
+      using Hybrid Bonding 3D Integration with 34GB/s/1Gb 0.88 pJ/b Logic-to-Memory                   [228] N. H. Weste and D. Harris, “CMOS VLSI Design: A Circuits and Systems Perspective,”
+      Interface,” in IEDM, 2020.                                                                            2015.
+[198] D. Niu, S. Li, Y. Wang, W. Han, Z. Zhang, Y. Guan, T. Guan, F. Sun, F. Xue, L. Duan             [229] M. A. Turi and J. G. Delgado-Frias, “High-Performance Low-Power Selective
+      et al., “184QPS/W 64Mb/mm2 3D Logic-to-DRAM Hybrid Bonding with Process-                              Precharge Schemes for Address Decoders,” TCS, 2008.
+      Near-Memory Engine for Recommendation System,” in ISSCC, 2022.                                  [230] O. Mutlu, A. Olgun, G. F. Oliveira, and I. E. Yuksel, “Memory-Centric Computing:
+[199] M. A. Schmidt, “Wafer-to-Wafer Bonding for Microstructure Formation,” Proc. IEEE,                     Recent Advances in Processing-in-DRAM,” in IEDM, 2024.
+      1998.                                                                                           [231] A. Olgun, M. Patel, A. G. Yağlıkçı, H. Luo, J. S. Kim, N. Bostancı, N. Vijaykumar,
+[200] Y. Kagawa, N. Fujii, K. Aoyagi, Y. Kobayashi, S. Nishi, N. Todaka, S. Takeshita,                      O. Ergin, and O. Mutlu, “QUAC-TRNG: High-Throughput True Random Number
+      J. Taura, H. Takahashi, Y. Nishimura et al., “Novel Stacked CMOS Image Sensor                         Generation Using Quadruple Row Activation in Commodity DRAM Chips,” in ISCA,
+      with Advanced Cu2Cu Hybrid Bonding,” in IEDM, 2016.                                                   2021.
+[201] N. M. Ghiasi, M. Sadrosadati, G. F. Oliveira, K. Kanellopoulos, R. Ausavarungnirun,             [232] F. N. Bostancı, A. Olgun, L. Orosa, A. G. Yağlıkçı, J. S. Kim, H. Hassan, O. Ergin,
+      J. G. Luna, A. Manglik, J. Ferreira, J. S. Kim, C. Giannoula et al., “RevaMp3D: Archi-                and O. Mutlu, “DR-STRaNGe: End-to-End System Design for DRAM-Based True
+      tecting the Processor Core and Cache Hierarchy for Systems with Monolithically-                       Random Number Generators,” in HPCA, 2022.
+      Integrated Logic and Memory,” arXiv, 2022.                                                      [233] J. S. Kim, M. Patel, H. Hassan, L. Orosa, and O. Mutlu, “D-RaNGe: Using Commodity
+[202] M. M. S. Aly, M. Gao, G. Hills, C.-S. Lee, G. Pitner, M. M. Shulaker, T. F. Wu,                       DRAM Devices to Generate True Random Numbers with Low Latency and High
+      M. Asheghi, J. Bokor, F. Franchetti et al., “Energy-Efficient Abundant-Data Com-                      Throughput,” in HPCA, 2019.
+      puting: The N3XT 1,000x,” Computer, 2015.                                                       [234] B. B. Talukder, J. Kerns, B. Ray, T. Morris, and M. T. Rahman, “Exploiting DRAM
+[203] J. S. Kim, D. S. Cali, H. Xin, D. Lee, S. Ghose, M. Alser, H. Hassan, O. Ergin, C. Alkan,             Latency Variations for Generating True Random Numbers,” in ICCE, 2019.
+      and O. Mutlu, “GRIM-Filter: Fast Seed Location Filtering in DNA Read Mapping                    [235] F. Tehranipoor, W. Yan, and J. A. Chandy, “Robust Hardware True Random Number
+      using Processing-in-Memory Technologies,” in APBC, 2018.                                              Generators using DRAM Remanence Effects,” in HOST, 2016.
+[204] D. S. Cali, G. S. Kalsi, Z. Bingöl, C. Firtina, L. Subramanian, J. S. Kim, R. Ausavarung-       [236] G. F. Oliveira, M. Kabra, Y. Guo, K. Chen, A. G. Yağlıkçı, M. Soysal, M. Sadrosadati,
+      nirun, M. Alser, J. Gomez-Luna, A. Boroumand et al., “GenASM: A High-                                 J. O. Bueno, S. Ghose, J. Gómez-Luna et al., “Proteus: Achieving High-Performance
+      Performance, Low-Power Approximate String Matching Acceleration Framework                             Processing-Using-DRAM via Dynamic Precision Bit-Serial Arithmetic,” ICS, 2025.
+      for Genome Sequence Analysis,” in MICRO, 2020.                                                  [237] N. M. Ghiasi, N. Vijaykumar, G. F. Oliveira, L. Orosa, I. Fernandez, M. Sadrosadati,
+[205] D. S. Cali, K. Kanellopoulos, J. Lindegger, Z. Bingöl, G. S. Kalsi, Z. Zuo, C. Firtina,               K. Kanellopoulos, N. Hajinazar, J. G. Luna, and O. Mutlu, “ALP: Alleviating CPU-
+      M. B. Cavlak, J. Kim, N. M. Ghiasi et al., “SeGraM: A Universal Hardware Accelerator                  Memory Data Movement Overheads in Memory-Centric Systems,” TETC, 2022.
+      for Genomic Sequence-to-Graph and Sequence-to-Sequence Mapping,” in ISCA,                       [238] R. M. Brown, Sudden Death, 1983.
+      2022.                                                                                           [239] Narcotics Anonymous, Basic Text, 1981.
+[206] N. Challapalle, M. Chandran, S. Rampalli, and V. Narayanan, “X-VS: Crossbar-based               [240] O. Mutlu, A. Olgun, and I. E. Yuksel, “Memory-Centric Computing: Solving Com-
+      Processing-in-Memory Architecture for Video Summarization,” in ISVLSI, 2020.                          puting’s Memory Problem,” in IMW, 2025.
+
+
+
+                                                                                                  9

@@ -1,0 +1,1340 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/error-mitigation-for-intermittent-dram-failures_sigmetrics14.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/error-mitigation-for-intermittent-dram-failures_sigmetrics14.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+      The Efficacy of Error Mitigation Techniques for DRAM
+      Retention Failures: A Comparative Experimental Study
+
+                       Samira Khan†?                                               Donghyuk Lee†                                Yoongu Kim†
+                    samirakhan@cmu.edu                                          donghyuk1@cmu.edu                           yoongukim@cmu.edu
+                 Alaa R. Alameldeen?          Chris Wilkerson?                                                                    Onur Mutlu†
+             alaa.r.alameldeen@intel.com chris.wilkerson@intel.com                                                               onur@cmu.edu
+                                                         †                                                    ?
+                                                             Carnegie Mellon University                           Intel Labs
+
+ABSTRACT                                                                                          Categories and Subject Descriptors
+As DRAM cells continue to shrink, they become more susceptible                                    B.3.1 [Memory Structure]: Semiconductor Memories—Dynamic
+to retention failures. DRAM cells that permanently exhibit short                                  memory (DRAM); B.3.4 [Memory Structure]: Reliability, Testing,
+retention times are fairly easy to identify and repair through the                                and Fault-Tolerance
+use of memory tests and row and column redundancy. However,
+the retention time of many cells may vary over time due to a prop-                                Keywords
+erty called Variable Retention Time (VRT). Since these cells inter-
+mittently transition between failing and non-failing states, they are                             DRAM, retention failures, system-level detection and mitigation,
+particularly difficult to identify through memory tests alone. In ad-                             error correction, ECC, fault tolerance, memory scaling
+dition, the high temperature packaging process may aggravate this
+problem as the susceptibility of cells to VRT increases after the as-                             1.    INTRODUCTION
+sembly of DRAM chips. A promising alternative to manufacture-                                        The increasing number of cores and extensive use of data-
+time testing is to detect and mitigate retention failures after the sys-                          intensive applications demand high capacity main memories. Scal-
+tem has become operational. Such a system would require mecha-                                    ing of DRAM to smaller technology nodes enabled higher capacity
+nisms to detect and mitigate retention failures in the field, but would                           in the same die area for the past few decades. However, as DRAM
+be responsive to retention failures introduced after system assembly                              cells scale down in size, they become significantly less reliable.
+and could dramatically reduce the cost of testing, enabling much                                  Ensuring reliability with technology scaling is a key challenge for
+longer tests than are practical with manufacturer testing equipment.                              DRAM [36, 31, 18, 34].
+   In this paper, we analyze the efficacy of three common error mit-                                 A DRAM cell cannot retain its data permanently as the capacitor
+igation techniques (memory tests, guardbands, and error correcting                                used to store the data leaks its charge gradually over time. The
+codes (ECC)) in real DRAM chips exhibiting both intermittent and                                  time a cell can retain its data is called the retention time of the cell.
+permanent retention failures. Our analysis allows us to quantify the                              In order to maintain correct data in DRAM, cells are periodically
+efficacy of recent system-level error mitigation mechanisms that                                  refreshed every 64 ms. A cell that cannot retain its data for 64
+build upon these techniques. We revisit prior works in the context                                ms results in a failure, referred to as retention failure.1 In order
+of the experimental data we present, showing that our measured re-                                to avoid retention failures, the worst-case retention time of cells
+sults significantly impact these works’ conclusions. We find that                                 must be no less than 64 ms. However, several technology trends
+mitigation techniques that rely on run-time testing alone [38, 27,                                make this requirement increasingly difficult to efficiently satisfy.
+50, 26] are unable to ensure reliable operation even after many                                   On the one hand, as cell dimensions shrink, cells become more
+months of testing. Techniques that incorporate ECC [4, 52], how-                                  susceptible to retention failures (or, reducing retention times) [10,
+ever, can ensure reliable DRAM operation after only a few hours of                                13, 11, 54], motivating higher refresh rates. On the other hand,
+testing. For example, VS-ECC [4], which couples testing with vari-                                increasing DRAM chip capacity makes even the current nominal
+able strength codes to allocate the strongest codes to the most error-                            refresh rate untenable in future technology DRAMs. For example,
+prone memory regions, can ensure reliable operation for 10 years                                  one study showed that a 32 Gb DRAM chip will spend 35% of the
+after only 19 minutes of testing. We conclude that the viability of                               memory power and 25% of the available DRAM chip bandwidth on
+these mitigation techniques depend on efficient online profiling of                               refreshes [27]. Another study showed that the performance penalty
+DRAM performed without disrupting system operation.                                               of refresh in a system with 32 Gb DRAM chips can be 20% [6]. A
+                                                                                                  higher refresh rate will result in a significant throughput loss, power
+                                                                                                  overhead, and performance loss [27, 6, 37].
+Permission to make digital or hard copies of all or part of this work for personal or                Currently, DRAM vendors guarantee worst-case retention time
+classroom use is granted without fee provided that copies are not made or distributed             of 64 ms by detecting and mitigating cells having retention time
+for profit or commercial advantage and that copies bear this notice and the full cita-
+tion on the first page. Copyrights for components of this work owned by others than
+                                                                                                  less than 64 ms during manufacturing time. However, detection
+ACM must be honored. Abstracting with credit is permitted. To copy otherwise, or re-              of retention failures is extremely challenging as the same cell can
+publish, to post on servers or to redistribute to lists, requires prior specific permission       fail or operate correctly at different times. These retention fail-
+and/or a fee. Request permissions from permissions@acm.org.                                       ures are defined as intermittent retention failures in DRAM cells.
+SIGMETRICS’14, June 16–20, 2014, Austin, Texas, USA.                                              1
+Copyright 2014 ACM 978-1-4503-2789-3/14/06 ...$15.00.                                               We assume each failure can potentially cause an error and use
+http://dx.doi.org/10.1145/2591971.2592000.                                                        failure and error interchangeably in the rest of the paper.
+
+
+                                                                                              1
+
+
+===== Page 2 =====
+
+There are two sources of intermittent retention failures in DRAM:             ence of intermittent failures. Our major contributions are:
+1) Data pattern sensitivity: A DRAM cell can fail depending on                 • We analyze the effectiveness of testing in discovering retention
+the data stored in the neighboring cells [23, 28], and 2) Variable               failures. We show that only a small amount of testing can dis-
+retention time (VRT): A cell can transition among different reten-               cover the majority of failing cells. We quantify testing using
+tion times at different points in time and can fail when it moves                the metric rounds, where a round consists of writing the en-
+to a retention time less than the current refresh interval [41, 55,              tire module, waiting for some specific time to make sure all the
+33, 28]. Due to these intermittent retention failures, manufacturers             cells have been idle for the refresh interval and reading back the
+perform exhaustive testing to detect and mitigate these failures. A              data again to locate the failing cells. From our experiments, we
+recent work showed that it can take days to test a chip to identify              show that only 5 rounds of tests can discover most of the inter-
+all intermittent retention failures [28]. In fact, one of the major              mittent failures and reduce the probability of discovering a new
+DRAM vendors confirmed that detection of such failures leads to                  failure by 100 times. However, even after thousands of rounds
+some of the most expensive tests during manufacturing time. As                   of testing, we find that a very small number of cells exhibit new
+retention failures become more prominent with technology scal-                   failures not discovered before, which indicates that testing is
+ing [10, 13, 11, 54, 28], the manufacturing-time retention failure               not enough by itself to mitigate all retention failures.
+tests will become longer, making it more difficult and more costly
+for the DRAM manufacturers to scale the density of DRAM chips                  • We present the efficacy of using a guardband to avoid intermit-
+as aggressively as was done in the past. More importantly, some                  tent retention failures. Adding a guardband X on the refresh
+of the DRAM cells start exhibiting VRT characteristics as they are               interval of 64 ms means that all DRAM chips that are detected
+exposed to high temperature during the packaging of the DRAM                     to have cell failures at X times 64 ms (i.e., 64X ms) refresh
+chips [44, 21, 28], so pre-packaging tests cannot always screen all              interval are discarded by the manufacturer [51, 2]. If VRT cells
+VRT failures.                                                                    exhibit retention times less than the applied guardband, these
+    Instead of DRAM manufacturers providing retention-error-free                 cells will fail and get detected at 64X ms, making the guard-
+DRAM chips after exhaustive and expensive manufacturing-time                     band 100% effective. We show that a small amount of guard-
+tests, an alternative approach is detecting and mitigating retention             band (e.g., 2X) can avoid 85-95% of the intermittently failing
+failures of DRAM cells in the field, during the operation of DRAM                cells and reduce the probability of a new retention failure by
+in the system. We refer to system-level error detection as online                10 times. However, even a large guardband (e.g., 5X) is not
+profiling. In this case, the memory controller would be responsible              effective for the remaining VRT cells, indicating that using a
+for detecting and mitigating the retention failures while the system             guardband alone is not effective to mitigate all failures.
+is running. An online profiling mechanism has three significant ad-             • We show the efficacy of error correction codes (ECC) in the
+vantages over traditional manufacturing time testing. First, such                 presence of other error mitigation techniques. We find that a
+a system can reduce manufacturing cost and increase yield by en-                  combination of error mitigation techniques is much more ef-
+abling the manufacturers to ship DRAM chips without fully ensur-                  fective in tolerating a high number of retention errors than us-
+ing that all cells operate correctly at a minimum specified retention             ing only ECC. An uncorrectable retention error in the presence
+time. Second, online testing is capable of tolerating the new in-                 of ECC results in a failure. Using only single error correction
+termittent failures induced by the high temperature packaging pro-                codes can reduce the probability of retention failure by only
+cess. Third, an online profiling system is more suitable compared                 100 times, but using single error correction codes together with
+to manufacturing tests to detect the intermittent retention failures              testing and guardbanding can reduce the probability of failure
+that takes hours/days of testing, as it can amortize the cost of pro-             by as much as 1012 times.
+filing by performing online tests in the background spread across a             • We revisit prior works [38, 27, 50, 4, 52, 26] in the context of
+very large time interval (days/months).                                           the experimental data and analysis, showing that our measured
+    System-level detection and mitigation of intermittent retention               results significantly impact these works’ conclusions. We show
+failures seems to be a promising direction into the future. How-                  that bit repair mechanisms that rely on testing cannot provide
+ever, there is no prior work that assesses the efficacy of differ-                strong reliability guarantees even after performing system-level
+ent mitigation techniques in the presence of intermittent failures.               testing for months. However, ECC-based mitigation techniques
+Some recent works proposed error mitigation techniques that rely                  can be effective at ensuring reliable DRAM operation with on-
+on system-level testing, but assume there are no intermittent fail-               line testing in the presence of intermittent failures after just a
+ures. These mechanisms perform a simple test at system boot-up to                 few hours of testing. We conclude that the viability of these
+detect the failing cells and cannot tolerate any new failures after the           techniques depend on efficient continuous online profiling per-
+initial testing [38, 27, 50, 26]. If error mitigation techniques do not           formed periodically at a longer interval without disrupting sys-
+consider intermittent failures, data loss can occur due to potentially            tem operation.
+inaccurate identification of failing cells.                                      Based on our experimental evaluation, we discuss a possible on-
+    Our goal is to analyze the efficacy of existing error mitigation          line profiling system to detect and mitigate intermittent retention
+techniques in the system in the presence of intermittent retention
+                                                                              failures. We hope that our findings will be useful in developing
+failures to enable the development of more efficient and effec-
+                                                                              new low-cost architectural techniques to mitigate DRAM retention
+tive detection and mitigation techniques. We use an FPGA-based                failures, thereby enabling better scaling of DRAM into future tech-
+DRAM testing infrastructure to test 96 DRAM chips from three                  nology generations.
+different manufacturers to analyze the effectiveness of system-level
+testing, guardbanding, and ECC for intermittent retention failures.
+We use our analysis to quantify the effectiveness of recently pro-
+posed architectural error mitigation techniques [38, 27, 50, 4, 52,           2.    BACKGROUND AND RELATED WORK
+26] in the presence of intermittent failures.
+                                                                                In this section, we briefly provide background information nec-
+    To our knowledge, this paper presents the first work that quan-
+                                                                              essary to understand our technical contributions. Interested readers
+tifies system-level detection and mitigation techniques in the pres-
+                                                                              can find more details on DRAM in [22, 20].
+
+
+                                                                          2
+
+
+===== Page 3 =====
+
+                                                  Module                              referred to as data pattern sensitivity [23, 28]. A data pattern sen-
+                                                  Rank                                sitive retention failure is hard to detect as each cell in the DRAM
+                    Mem                                                               chip has to be exhaustively tested with different kinds of patterns
+
+
+
+
+                                        Chip
+
+                                                 Chip
+
+                                                          Chip
+
+                                                                           Chip
+         Core     Controller
+                                                                                      stored in the cell itself as well as the neighboring cells.
+                                                                                      2.2.2     Variable Retention Time
+                                    Channel                                              The retention time of a cell also depends on the current state of
+                                                                                      the cell. Some DRAM cells can randomly transition between dif-
+                   Figure 1: DRAM Organization                                        ferent retention states. These cells are said to demonstrate variable
+                                                                                      retention time (VRT) [41, 55, 33, 28] and are called VRT cells. De-
+                                                                                      pending on the current retention time, a cell may or may not fail
+                                               Wordline
+                                                                                      at that particular time. In order to guarantee that all cells have re-
+                                                                                      tention time greater than 64 ms, every VRT cell with a potential
+
+
+
+
+                                                                 Bitline
+                                                                                      retention time less than 64 ms must get discovered during testing.
+                                                                                      Manufacturing tests can detect VRT cells if they are actually in the
+                                                                                      failing retention state during the tests. Unfortunately, the existence
+                                                  Cell                                of VRT cells cause two major challenges in deploying retention-
+                2D Cell Array
+                                                                                      failure-free DRAM chips in the field. First, discovering whether
+                 Figure 2: DRAM Cells in a Bank                                       or not VRT cells have a failing retention state may require pro-
+                                                                                      hibitively long tests, as some of the cells can spend a long time in
+                                                                                      the high retention state before moving to a low retention state [28,
+2.1     DRAM Basics                                                                   17, 55]. Second, thermal stress during packaging of DRAM chips
+                                                                                      induces new VRT cells [44, 21]. As such, tests done by DRAM
+   Figure 1 shows the high level DRAM organization. DRAM is
+                                                                                      manufacturers before packaging cannot discover these failures.
+hierarchically organized as channels, modules, ranks, and chips.
+Each channel consists of multiple modules. On every module there                      2.3     Mitigating Retention Failures
+can be more than one rank that consists of multiple DRAM chips.
+For example, a typical 2 GB module with 64-wide data bus can                          2.3.1     Testing
+have one rank with 8 chips. Each chip can have 2 Gb capacity                             Conventional DRAM retention tests verify that all cells retain
+with an 8-bit bus. All chips in a rank respond to the same DRAM                       their charge for the specified refresh interval (64 ms). The phenom-
+command. With this configuration, 8 chips can transfer 64 bits of                     ena of data pattern sensitivity and variable retention states make re-
+data in parallel. DRAM cells are organized as 2D arrays called                        tention testing a challenging problem. Several test algorithms with
+banks. Figure 2 shows the structure of a bank and a cell within the                   different patterns need to be applied to achieve a reasonable fault
+bank. A cell consists of a capacitor and a transistor. The cells in                   coverage for pattern sensitivity. On the other hand, VRT cells are
+a row are connected through a wire (wordline) and the cells in a                      hard to detect even with very long tests. Previous works have de-
+column are connected to another wire (bitline). In order to access                    scribed the effectiveness of different test patterns and algorithms
+the data stored in a cell, a high voltage is applied to the wordline of               for manufacturing-time testing [49, 28, 3]. However, no previous
+the row containing the cell, which turns on the access transistor and                 work shows the efficacy of testing for retention failures at the sys-
+connects the capacitor to the bitline. When the access transistor is                  tem level in the presence of both pattern sensitivity and VRT cells.
+on, charge can flow to/from the capacitor through the bitline and
+data can be accessed.                                                                 2.3.2     Guardbanding
+   Charge stored in the capacitor leaks over time. The time a cell                       A guardband on the refresh interval is defined as adding an extra
+can retain its data is called the retention time of the cell. To retain               margin (X) on the refresh interval of 64 ms such that all cells have
+the data in the cell, DRAM cells have to be periodically refreshed.                   a retention time greater than X times 64 ms (i.e., 64Xms) [51,
+The DDR3 specification guarantees the lowest retention time of 64                     2]. The process of guardbanding (adding a guardband X) consists
+ms [15], which means that each row in DRAM is refreshed every                         of three steps. First, a screening test is run at a higher refresh in-
+64 ms to maintain the data in the cells.                                              terval (64X ms) to detect all the cells with retention time less than
+                                                                                      64X ms. This includes VRT cells with retention times less than the
+2.2     Retention Failures                                                            added guardband. Second, either all the failing bits that are found
+   DRAM cells that cannot hold data for 64 ms cause retention fail-                   during the screening test get repaired through some repair mecha-
+ures. Retention time is a key constraint to enabling high density                     nism, such as row and column sparing, or the chip exhibiting the bit
+DRAM. As the cell size shrinks with technology scaling, the man-                      failures gets discarded, making sure that the chips passing the tests
+ufacturers are facing increasing challenges to fabricate a low leak-                  will operate correctly at 64 ms. Finally, the original refresh interval
+age cell with adequate capacitance to retain the data for 64 ms [31,                  of 64 ms is reintroduced. Ideally, with a large enough guardband,
+18, 34]. DRAM yield is limited by a small fraction of leaky cells                     one would hope that all causes of potential intermittent retention
+whose retention time is significantly lower than other cells [19, 11].                failures can be avoided at manufacturing time. However, there are
+Detecting retention failures (i.e., cells that cannot maintain data as                two disadvantages of using a large guardband. First, a large number
+long as the minimum specified retention time) requires exhaustive                     of chips would get discarded since the number of retention failures
+testing as these failures can occur intermittently. Next, we provide                  increases exponentially as refresh interval increases [28, 11, 14],
+two prevalent characteristics of the retention failures.                              resulting in a significant yield loss. Second, a guardband applied
+                                                                                      during manufacturing time may not be enough to avoid the new
+2.2.1     Data Pattern Sensitivity                                                    VRT failures induced during the packaging process. To our knowl-
+   The retention time of a cell is strongly dependent on the charge                   edge, no prior work shows the effectiveness of guardbanding for
+stored in that cell, as well as in the neighboring cells, a phenomenon                retention failures in the presence of VRT cells.
+
+
+                                                                                  3
+
+
+===== Page 4 =====
+
+                            (a)                                               (b)                                         (c)
+
+   Figure 3: Testing Infrastructure: (a) ML605 Board (b) Temperature Controller and Heat Chamber, and (c) Inside of the Heat Chamber
+
+
+2.3.3     Error Correction Codes                                              2.4    Our Goal and Scope
+   Error correction codes and parity are used to repair faulty bits us-          Our goal in this work is to analyze the system-level efficacy of
+ing redundant information. Prior works proposed to use ECC to tol-            existing mitigation techniques for retention failures using experi-
+erate retention errors [8, 52]. There are some studies on the bit error       mental data from commodity DRAM chips. We evaluate recently
+rate (number of bit errors divided by the total number of bits during         proposed mitigation techniques in the context of intermittent reten-
+a specific time interval) of industrial DIMMs in the field [43, 24,           tion failures. We do not take into consideration the effect of other
+46, 45]. However, no prior work provided an experimental study                functional failure mechanisms (e.g., stuck-at faults, decoder faults,
+and analysis of the retention error rate reduction with ECC in pres-          etc. [48, 1, 39]) as these mechanisms lead to consistent and repeat-
+ence of other error mitigation techniques for intermittent retention          able failures which can be detected relatively easily during manu-
+failures.                                                                     facturing tests. We also do not consider alpha particle or cosmic
+                                                                              ray induced soft failures [40, 32] as previous works have already
+                                                                              provided strong analyses for these [5, 12, 47, 35], which can be
+2.3.4     Recent Error Mitigation Techniques                                  used in conjunction with the findings of our paper.
+   Recent system-level error detection and mitigation techniques
+can be divided into two categories:                                           3.    TESTING INFRASTRUCTURE
+   1. Bit Repair Mechanisms: These mechanisms rely on tests
+                                                                                 To study the efficacy of system-level detection and mitigation
+at system boot time to locate failing bits and then use differ-
+                                                                              techniques for intermittent retention failures, we would like to ex-
+ent repair mechanisms to repair those faulty bits. For example,
+                                                                              perimentally analyze how retention time of cells change at different
+ArchShield [38] remaps the faulty bits in a specified region of
+                                                                              times with different data patterns. To do these studies, we have de-
+memory. RAIDR [27] uses higher refresh rates for rows containing
+                                                                              vised an FPGA-based experimental infrastructure that consists of
+weak cells to avoid retention failures. RAPID [50] uses software
+                                                                              Xilinx ML605 boards (Figure 3a) [53]. An ML605 board has a slot
+remapping to disable pages with potential retention failures. SE-
+                                                                              for a small outline dual in-line memory module (SO-DIMM) and
+CRET [26] applies error correcting pointers [42] only to the faulty
+                                                                              integrates a DDR3 interface. The host PC communicates with the
+bits found during the initial testing. However, all these works as-
+                                                                              boards through a PCI Express bus. We have customized the mem-
+sume that a simple initial test can detect all the failures and do not
+                                                                              ory interface such that the refresh interval can be changed from
+consider the intermittent failures caused by data pattern sensitivity
+                                                                              the specific software in the host PC. DRAM manufacturers ensure
+and VRT.
+                                                                              that there are no failures at the nominal refresh interval of 64 ms
+   2. ECC-Based Mitigation Techniques: These mechanisms rely
+                                                                              by discarding or repairing chips with failures during manufacturing
+on strong ECC and apply such codes in ways to minimize the over-
+                                                                              tests. As a result, DRAM chips in the field do not exhibit any re-
+all cost of ECC. We discuss two examples. VS-ECC [4] is an ECC-
+                                                                              tention failures at the refresh interval of 64 ms. In order to expose
+based mitigation mechanism that uses online testing to determine
+                                                                              the retention failures in commodity DRAM chips, we increase the
+the needed ECC strength for different cache lines. Any cache line
+                                                                              refresh interval in our experiments. A higher refresh interval re-
+with one or more potential errors is protected by a strong ECC, a
+                                                                              sults in a higher number of retention failures in the system. This
+4-bit correcting, 5-bit detecting code (4EC5ED). All other lines are
+                                                                              allows us to emulate future generation DIMMs with chips not fully
+protected using simple single error correcting, double error detect-
+                                                                              tested for retention failures where many cells can actually fail at
+ing (SECDED) codes, which reduces the overall cost of ECC by
+                                                                              the nominal refresh interval. We analyze the efficacy of detection
+applying strong codes to only those lines that need strong codes.
+                                                                              and mitigation techniques for retention failures at different refresh
+However, VS-ECC does not consider intermittent failures and as
+                                                                              intervals, and show that our experimental observations on the inter-
+a result can fail in the presence of a 2-bit failure in lines protected
+                                                                              mittent failures hold, irrespective of the refresh interval.
+only by SECDED code. Hi-ECC [52] proposes to amortize the cost
+                                                                                 Prior works have demonstrated that the retention time of DRAM
+of strong ECC by protecting data at a coarse granularity (1KB in-
+                                                                              cells decreases exponentially as temperature increases [11, 28].
+stead of 64B). This mechanism can potentially tolerate intermittent
+                                                                              In order to isolate the effect of temperature on retention failures,
+failures with the strong ECC code applied uniformly. However,
+                                                                              we perform temperature controlled experiments in a heat chamber
+it has a significant bandwidth and performance overhead, as the
+                                                                              (Figure 3b and 3c). Manufacturing-time retention tests are usually
+memory controller reads the entire 1KB data chunk (as opposed to
+                                                                              performed at a temperature of 85 ◦ C. However, any system-level
+the much smaller 64B cache line) upon each access to verify ECC.
+                                                                              detection and mitigation technique will be deployed at run-time,
+
+
+                                                                          4
+
+
+===== Page 5 =====
+
+                                                                                               A1                                                          ZERO   ONE    TEN   FIVE   RAND     All
+
+
+
+
+                                                                                                              Number of Failing Cells Found
+                                                                                                                                              200000
+Number of Failing Cells
+                          20                                                                   A2
+                                                                                               A3
+                                                                                               A4
+    (in millions)
+                          15                                                                                                                  150000
+                                                                                               B1
+                                                                                               B2
+                          10
+                                                                                               B3                                             100000
+                                                                                               B4
+                           5                                                                   C1
+                                                                                               C2                                              50000
+                                                                                               C3
+                               0   2     4        6   8    10   12    14   16    18       20   C4
+                                                                                                                                                  0
+                                        Refresh Interval (in seconds)                                                                                  0    100 200 300 400 500 600 700 800 900 1000
+                                                                                                                                                                    Number of Rounds
+               Figure 4: Number of Failures at Different Refresh Intervals
+                                                                                                              Figure 5: Number of Failures with Testing in Module A1
+
+where the operating conditions would not reach such high tempera-
+tures most of the time (e.g., the system might stop being operational                                   zeros to get the total number of failing cells at that refresh interval.
+at around 60 ◦ C as hard-disks, for example, can have a thermal rat-                                    Figure 4 presents the number of failing cells for all the modules.
+ing less than 60 ◦ C). Our experiments are done at 45 ◦ C to analyze                                    The number of retention failures increases exponentially with the
+the retention behavior in a typical system operating in the field.                                      refresh interval, as reported in the prior works [28, 11, 14]. We also
+   Our results can be compared to prior work on retention time dis-                                     performed other tests validating the failure rate with different data
+tribution at 85 ◦ C, by scaling the refresh intervals used in our ex-                                   patterns in modules manufactured by different vendors and found
+periments to account for the change in temperature. Prior works                                         that the results are consistent with previous works [28, 14, 45]. As
+showed that a 10 ◦ C increase in temperature approximately halves                                       our results are consistent with prior works, we conclude that our
+the refresh interval [11, 28]. Based on experiments in our infras-                                      apparatus and methodology are sound.
+tructure, increasing the temperature by 10 ◦ C reduces the refresh
+interval by 46.5% (Refer to the Appendix for details) [28]. We
+analyze retention failures with refresh intervals 1 second to 20 sec-                                   4.           EFFICACY OF TESTING
+onds at 45 ◦ C, which correspond to 82 ms to 1640 ms at 85 ◦ C.                                            In this section, we analyze the adequacy of testing in detecting
+   We have tested twelve modules containing 96 chips from three                                         retention failures. We perform experiments to answer these ques-
+major DRAM manufacturers. The capacity of each module is 2                                              tions: 1) How many rounds of testing are required for detecting the
+GB. All the modules have a single rank and eight 2 Gb chips in the                                      VRT failures? 2) How does the probability of finding a new failure
+rank. The assembly dates of the modules are listed in Table 1.                                          reduce with rounds of testing? 3) How long does a VRT cell stay
+                                                                                                        in different retention states?
+                                         Module           Assembly Date         Number of
+                Manufacturer
+                                         Name              (Year-Week)            Chips
+                                                                                                        4.1                                   Detecting Retention Failures with Testing
+                               A             A1             2013-18                   8                 4.1.1                                  Description of the Experiment
+                               A             A2             2012-26                   8                    In this experiment, we test the modules at a refresh interval of 5
+                               A             A3             2013-18                   8                 s for 1000 rounds at 45 ◦ C (410 ms at 85 ◦ C). The intent of the
+                               A             A4             2014-08                   8                 experiment is to study the effectiveness of testing in the context of
+                               B             B1             2012-37                   8                 a high number of retention failures to emulate future modules with
+                               B             B2             2012-37                   8                 chips not fully tested for retention failures, where many cells can
+                               B             B3             2012-41                   8                 actually fail at the nominal refresh rate. We found that a refresh
+                               B             B4             2012-20                   8                 interval of 5 seconds yields a retention failure rate of 10−6 , which
+                               C             C1             2012-29                   8                 provides insights into the behavior of intermittent failures with a
+                               C             C2             2012-29                   8                 relatively higher failure rate. We also provide results at other re-
+                               C             C3             2013-22                   8                 fresh intervals to show that the observations hold irrespective of
+                               C             C4             2012-29                   8                 the refresh interval deployed in the system.
+                                                                                                           We run experiments with different data patterns (zeroes
+                                       Table 1: Tested DRAM Modules                                     (0b0000), ones (0b1111), tens (0b1010), fives (0b0101), and ran-
+                                                                                                        dom) written to the entire DRAM for 1000 rounds. In the experi-
+   We perform a simple test to validate our infrastructure. Figure 4                                    ment with the random patterns, we write a randomly generated data
+shows the number of failing cells in each module at various refresh                                     pattern at each round. Thus, in tests with random data patterns, the
+intervals of 1 to 20 seconds with an increment of 1 second at 45 ◦ C                                    pattern changes in each round. For all other tests, the data pattern
+(which corresponds to various refresh intervals between 82 ms to                                        (ones, zeroes, tens, and fives) remains the same across rounds. We
+1640 ms with 82 ms increment at 85 ◦ C). At each interval, we write                                     also perform an experiment where all patterns are tested in each
+all ones to the entire module and then change the refresh interval.                                     round (denoted as "All" in graphs). We count the number of failing
+We wait for some specific amount of time to make sure that all                                          cells discovered so far in each round. Our methodology of testing
+the rows in the DIMM have been refreshed according to the new                                           with rounds is similar to that described in [28].
+interval. Then we read out the entire DIMM and determine the                                               Figure 5 shows the number of failing cells found versus number
+number of cells that do not contain the original value written to                                       of rounds used for testing for the module A1 . We plot the num-
+them (i.e., failing cells). Then we repeat the experiment with all                                      ber of failing cells for each of the patterns tested (ZERO, ONE,
+
+
+                                                                                                    5
+
+
+===== Page 6 =====
+
+                                                                         ZERO        ONE     TEN   FIVE   RAND   All                                                ZERO   ONE    TEN     FIVE                        RAND                    All                                                 ZERO   ONE      TEN    FIVE   RAND   All
+                                 1E-03                                                                                                                  1E-03                                                                                                                         1E-03
+Probability of New Bit Failure
+
+
+
+
+                                                                                                                       Probability of New Bit Failure
+
+
+
+
+                                                                                                                                                                                                                                                     Probability of New Bit Failure
+                                 1E-06                                                                                                                  1E-06                                                                                                                         1E-06
+
+
+
+
+                                 1E-09                                                                                                                  1E-09                                                                                                                         1E-09
+
+
+
+
+                                 1E-12                                                                                                                  1E-12                                                                                                                         1E-12
+                                           0                              100 200 300 400 500 600 700 800 900 1000                                              0    100 200 300 400 500 600 700 800 900 1000                                                                                 0    100 200 300 400 500 600 700 800 900 1000
+                                                                                         Number of Rounds                                                                    Number of Rounds                                                                                                                 Number of Rounds
+                                                                                         (a) Module A1                                                                      (b) Module B1                                                                                                                 (c) Module C1
+
+                                                                                                              Figure 6: Probability of Discovering New Errors with Testing
+
+                                                                                                                                                                                                                                                    2s                                        4s         5s       10 s
+                                         Reduction in New Failure Rate
+
+
+
+
+                                                                         100000                                                                                                                                                   1E-03
+
+
+
+
+                                                                                                                                                                                                 Probability of New Bit Failure
+                                                                          10000
+                                                                                                                                                                                                                                  1E-06
+                                                                           1000
+
+
+                                                                            100
+                                                                                                                                                                                                                                  1E-09
+
+                                                                                10
+
+
+                                                                                 1                                                                                                                                                1E-12
+                                                                                     0     100 200 300 400 500 600 700 800 900 1000                                                                                                       0   100 200 300 400 500 600 700 800 900 1000
+                                                                                                   Number of Rounds                                                                                                                                                                    Number of Rounds
+
+                                   Figure 7: Reduction in Failure Rate in All Tested Modules                                                                                            Figure 8: Probability of Retention Failure at Different Refresh In-
+                                                                                                                                                                                        tervals in Module A1
+
+TEN, FIVE, RAND, All). We observe that there is a common trend
+among all the patterns: There is a sharp increase in the number of                                                                                                                      rounds of testing for one module from each vendor. This reduction
+new failing cells within the first few rounds, but then the curves                                                                                                                      in failure rate with testing can enable the estimation of number of
+become relatively flat. This implies that the first few rounds of                                                                                                                       required rounds of online testing to achieve a target reliability guar-
+tests discover most of the intermittent failures and not too many                                                                                                                       antee. A system-level profiling mechanism can observe the num-
+new cells are found to fail after the first few rounds. However, a                                                                                                                      ber of failures incurred at run-time and can determine the number
+small number of new cells fail even after a considerable number of                                                                                                                      of testing rounds required to reduce the probability of discovering
+rounds. We observe that other modules demonstrate very similar                                                                                                                          a new failure to an acceptable limit. For example, Figure 5 shows
+behavior. Due to space constraints, we do not present all the results                                                                                                                   there are more than 170000 retention failures in module A1 with
+for each of the modules, but present results for one module from                                                                                                                        all tested patterns (retention failure rate of 10−6 ). The system-level
+each vendor and a summary of the results over all the tested mod-                                                                                                                       profiling mechanism can be configured to perform 300 rounds of
+ules. However, detailed figures for all modules and data sets can be                                                                                                                    testing (at which point there are around 18 new bit failures occur-
+found online at the SAFARI Research Group website [16].                                                                                                                                 ring every round, as can be calculated from Figure 5), reducing the
+   Observation: Only a few rounds of tests can discover most of                                                                                                                         retention failure rate to 10−9 . The number of required rounds is
+the retention failures. However, even after thousands of rounds                                                                                                                         obtained by observing the point at which the curve for the proba-
+of testing, a very small number of new cells are discovered to be                                                                                                                       bility of a new failure with all the tested patterns crosses 10−9 in
+failing.                                                                                                                                                                                Figure 6a.
+   Implication: Significant retention failure rate reduction is pos-                                                                                                                       Figure 7 shows the average reduction in the probability of a new
+sible with only a few rounds of tests, but testing alone cannot detect                                                                                                                  failure versus the number of testing rounds for all the tested mod-
+all possible retention failures.                                                                                                                                                        ules. Standard deviation of the reduction in failure rate is also plot-
+                                                                                                                                                                                        ted (as error bars on data points). This figure shows that only 5
+  4.1.2                                                                    Reducing Retention Failure Rate with Testing                                                                 rounds of tests can reduce the new failure rate by more than 100
+   We have empirically observed that only a few rounds of tests                                                                                                                         times, but the reduction in failure rate becomes greatly diminished
+can detect most of the retention failures. This observation implies                                                                                                                     as the number of testing rounds increases beyond 100: each addi-
+that the probability of detecting a new failure reduces significantly                                                                                                                   tional round finds a small number of retention failures. We also
+after only a few rounds of testing. We use the number of new fail-                                                                                                                      present the probability of a new failure with testing at different re-
+ures detected at each round from Figure 5 and calculate the prob-                                                                                                                       fresh intervals in Figure 8. This figure shows that the probability
+ability of discovering a new failure per round (using Equation (1)                                                                                                                      of discovering a new failure with testing reduces at a similar rate
+in Appendix). Figure 6 presents the reduction in failure rate with                                                                                                                      irrespective of the refresh interval.
+
+
+                                                                                                                                                                                  6
+
+
+===== Page 7 =====
+
+                  10000                                                      1000000                                                                                               100000
+  Failing Cells
+
+
+
+
+                                                             Failing Cells
+
+
+
+
+                                                                                                                                                                   Failing Cells
+                                                                              100000
+  Number of
+
+
+
+
+                                                             Number of
+
+
+
+
+                                                                                                                                                                   Number of
+                  1000                                                                                                                                                             10000
+                                                                               10000
+                                                                                                                                                                                    1000
+                    100                                                         1000
+                                                                                                                                                                                      100
+                                                                                 100
+                     10                                                                                                                                                               10
+                                                                                  10
+                      1                                                            1                                                                                                   1
+                          0   200   400   600   800   1000                             0   200       400                      600               800         1000                            0                 200                    400    600        800    1000
+                          Failed in Number of Rounds                                   Failed in Number of Rounds                                                                           Failed in Number of Rounds
+                            (a) Module A1                                               (b) Module B1                                                                                         (c) Module C1
+
+                                                Figure 9: Number of Cells Failing in Different Number of Rounds
+
+                                                                                                                                                            1000000
+   Based on our experiments, we conclude that 1) although the ab-
+
+
+
+
+                                                                                                                                            Failing Cells
+                                                                                                                                                             100000                                     Max
+
+
+
+
+                                                                                                                                            Number of
+solute number of retention failures varies across modules and re-                                                                                             10000                                     Avg
+fresh intervals, only a few rounds of tests can reduce the probability                                                                                         1000                                     Min
+of a new failure significantly, 2) however, even after 1000 rounds                                                                                              100
+of testing there is a small number of new failures discovered every                                                                                              10
+round, and 3) the probability of discovering a new failure decreases                                                                                              1
+slowly after the initial rounds of testing. These results imply that                                                                                                       0          200       400                             600        800     1000
+testing by itself, is not enough to detect and mitigate all the reten-                                                                                                     Failed in Number of Rounds
+tion failures.
+                                                                                                       Figure 10: Average, Minimum and Maximum Number of Cells
+4.1.3              Retention Failure Coverage with Testing                                             Failing in Different Number of Rounds
+                   Rounds
+   The efficacy of testing depends on the consistency of a particular                                                                                  Bounded Cells                                                                        Non-bounded Cells
+                                                                                                                                                                            10001-higher                                                                     10001-higher
+cell failing in different rounds of tests. We discuss three cases to                                                                                                        9001-10000                                                                       9001-10000
+                                                                                                       Avg Hold Time of Maximum
+
+
+
+
+                                                                                                                                                                                                Avg Hold Time of Maximum
+                                                                                                                                                                            8001-9000                                                                        8001-9000
+                                                                                                        Retention State (in rounds)
+
+
+
+
+                                                                                                                                                                                                 Retention State (in rounds)
+demonstrate how consistency of failure can affect the efficacy of                                                                     100                                   7001-8000                                          100                           7001-8000
+testing for a cell: 1) if a cell consistently fails in all rounds of tests,                                                                                                 6001-7000                                                                        6001-7000
+                                                                                                                                                                            5001-6000                                                                        5001-6000
+                                                                                                                                       80                                   4001-5000                                           80                           4001-5000
+it is likely a very weak cell, perhaps with a permanent retention                                                                                                           3001-4000                                                                        3001-4000
+failure; these can be effectively discovered with testing, 2) if a cell                                                                60                                   2001-3000                                           60                           2001-3000
+                                                                                                                                                                            1001-2000                                                                        1001-2000
+fails in a majority of rounds of tests, it is again likely that testing                                                                                                     1-1000                                                                           1-1000
+will effectively discover it, 3) if a cell fails in only a few rounds                                                                  40                                                                                       40
+of tests, then it is less likely to be discovered with testing (at least                                                               20                                                                                       20
+within a reasonable amount of time). We present the total number
+of rounds a particular cell fails in our experiments to determine                                                                      0                                                                                         0
+                                                                                                                                            0         20      40       60          80 100                                            0     20     40    60     80 100
+how effective testing could be across all cells. Instead of showing                                                                    Avg Hold Time of Minimum                                                                 Avg Hold Time of Minimum
+each unique cell, we group all cells that fail in the same number of                                                                    Retention State (in rounds)                                                              Retention State (in rounds)
+rounds. Figure 9 plots the number of cells that fail in a total of N
+rounds, where N varies from 1 to 1000. The peak at 1000 rounds                                                                         Figure 11: Average Hold Time of Cells in Module A1
+suggests that the majority of the failing cells are very weak cells
+that fail in every round. All the other cells are VRT cells that fail
+only intermittently. The second highest peak around round 1 shows                                           4.2.1                               Description of the Experiment
+that a significant number of cells fail only in one round, indicating                                     In this experiment, we measure the average amount of time a cell
+that it will likely be difficult to discover a significant portion of                                  spends in its different retention states. We have tested the modules
+intermittent failures through system-level testing. Figure 10 shows                                    at a refresh interval of 1 to 20 seconds with a 1-second increment
+the average, minimum and maximum number of cells failing in one                                        for 100 rounds at 45 ◦ C (corresponding to 82 ms to 1640 ms with
+to 1000 rounds across all tested modules. Based on the similarity of                                   an 82 ms increment at 85 ◦ C). We monitor the number of rounds
+the curves, and the consistent existence of a large fraction of cells                                  a cell spends at a specific retention state before it moves to some
+that fail in only a small number of testing rounds, we conclude that                                   other retention state, referred to as hold time. After 100 rounds, we
+testing alone is likely ineffective at efficiently discovering a large                                 calculate the average hold time a cell spends in its minimum and
+fraction of the intermittently failing cells.                                                          maximum retention state.
+                                                                                                          We divide the cells into two different categories: cells with
+4.2           Undetected Retention Failures                                                            bound-ed and unbounded maximum retention times. The first cate-
+   The previous experiment showed that a large fraction of inter-                                      gory, called the bounded cells, consists of the cells that always have
+mittently failing cells can remain undetected by testing as there are                                  retention states lower than 20 s. These cells always fail at poten-
+some VRT cells that operate correctly (pass) for a long time and                                       tially different refresh intervals within our tested refresh interval of
+then fail for a short period of time. Next, we analyze the time a                                      20 s. The other category, called the non-bounded cells, consists of
+VRT cell spends in its different retention (time) states. The intent                                   cells that fail within the 20 s of refresh interval in some rounds, but
+of the experiment is to determine the percentage of VRT cells that                                     do not fail at all in at least one round. Since they do not fail in a
+fail after spending a long time in the non-failing retention state, and                                round, we cannot accurately determine (hence, bound) the maxi-
+that are therefore are hard to detect through testing.                                                 mum retention time of these cells. Figure 11 plots the average hold
+                                                                                                       times of the maximum and minimum retention states of bounded
+
+
+                                                                                                 7
+
+
+===== Page 8 =====
+
+                                            High Retention State Dominant                                                       High Retention State Dominant                                                                                                 High Retention State Dominant
+                                            Low Retention State Dominant                                                        Low Retention State Dominant                                                                                                  Low Retention State Dominant
+                                            Other                                                                               Other                                                                                                                         Other
+                          100                                                                                 100                                                                                                                 100
+Percentage of VRT Cells
+
+
+
+
+                                                                                    Percentage of VRT Cells
+
+
+
+
+                                                                                                                                                                                                        Percentage of VRT Cells
+                           80                                                                                 80                                                                                                                   80
+
+
+                           60                                                                                 60                                                                                                                   60
+
+
+                           40                                                                                 40                                                                                                                   40
+
+
+                           20                                                                                 20                                                                                                                   20
+
+
+                            0                                                                                  0                                                                                                                    0
+                                0   2   4     6   8   10   12   14   16   18   20                                   0   2   4     6   8   10                         12        14       16   18    20                                   0   2   4                          6           8       10   12     14   16   18   20
+                                        Refresh Interval (in seconds)                                                       Refresh Interval (in seconds)                                                                                       Refresh Interval (in seconds)
+                                            (a) Module A1                                                                       (b) Module B1                                                                                                                              (c) Module C1
+
+                                                           Figure 12: Percentage of VRT Cells with High or Low Retention States Dominant
+
+
+and non-bounded cells in module A1 . Instead of representing each                                                                                                               High Retention State Dominant                                                                          Low Retention State Dominant
+
+
+
+
+                                                                                                                                           Percentage of VRT Cells
+
+
+
+
+                                                                                                                                                                                                                                                 Percentage of VRT Cells
+cell, we group the failing cells that have the same hold times. Each                                                                                                 100                                                                                                   100
+point (x, y) in the figure represents a group of cells that spends on                                                                                                 80                                                                                                    80
+average x rounds in the minimum retention state and y rounds in                                                                                                       60                                                                                                    60
+the maximum retention state. We use color intensity to represent
+                                                                                                                                                                      40                                                                                                    40
+the number of cells at each point. The more cells belonging to a
+specific bin, the brighter the color of that bin.                                                                                                                     20                                                                                                    20
+
+   We observe from the figure that most of the cells appear in the                                                                                                     0
+                                                                                                                                                                           0        2   4    6    8 10 12 14 16 18 20
+                                                                                                                                                                                                                                                                               0
+                                                                                                                                                                                                                                                                                   0       2   4    6    8 10 12 14 16 18 20
+bins that are very close to either the x axis or the y axis. The cells                                                                                                         Refresh Interval (in seconds)                                                                           Refresh Interval (in seconds)
+near the y axis spend a very short time (1-2 rounds) in the low reten-                                                                                                     (a) High State Dominant                                                                                 (b) Low State Dominant
+tion state. Similarly, the cells near the x axis spend a very short time
+in the high retention state. This characteristic is similar for bounded                                                                    Figure 13: Percentage High and Low Retention State Dominant
+and non-bounded cells in all the tested modules. This trend implies                                                                        Cells in All Tested Modules
+that most cells have dominant states. We call those cells that spend
+more than 98 (out of 100) rounds in either the low or high retention
+states as dominant-state cells. Cells with a dominant low retention                                                                        undetected by testing at any refresh interval deployed in the sys-
+state frequently fail in tests and can be discovered easily. However,                                                                      tem. This reinforces our previous observation (in Section 4.1) that
+cells with a dominant high retention state mostly spend their time                                                                         testing alone is likely not enough to discover all retention failures.
+in the high retention state. Therefore, these cells tend to not fail
+in most of the testing rounds. As a result, these cells are hard to
+discover through testing.                                                                                                                  5.                              EFFICACY OF GUARDBANDING
+   Observation: Most VRT cells have dominant retention time                                                                                   The effectiveness of the guardband depends on the differences in
+states: they spend most of the time either at a low or high reten-                                                                         retention states of a VRT cell. A small guardband would be effec-
+tion state.                                                                                                                                tive if the retention time difference between the retention states of a
+   Implication: VRT cells with a dominant high retention state are                                                                         cell is small. We want to answer these questions: 1) How much dif-
+hard to discover through testing.                                                                                                          ference is present in the retention time states of VRT cells? 2) How
+                                                                                                                                           effective is adding a guardband at the system-level, in the presence
+  4.2.2                             Number of Undiscovered Retention Failures                                                              of a large number of intermittent VRT failures?
+   Based on our data, we present the percentage of cells that spend
+a long time in the high retention state among all the VRT cells. Fig-                                                                      5.1                                  Description of the Experiment
+ure 12 shows the percentage of dominant-state cells at each refresh                                                                           In this experiment, similar to Section 4.2, we have tested the
+interval for one module from three manufacturers. Figure 13 shows                                                                          modules at a refresh interval of 1 to 20 seconds with a 1-second in-
+the percentage of dominant-state cells averaged over all the tested                                                                        crement for 100 rounds at 45 ◦ C (corresponding to 82 ms to 1640
+modules, along with the standard deviation. Based on the figures,                                                                          ms with an 82 ms increment at 85 ◦ C). However, this time, we
+we make three conclusions on the behavior of VRT cells. First,                                                                             monitor the retention state of the cells in each round. VRT cells
+on average around 90% of the cells are either low-state-dominant                                                                           exhibit more than one retention time state in different rounds. We
+or high-state-dominant cells. Second, a significant portion of the                                                                         categorize the cells into two-state and multi-state cells. The two-
+VRT cells (around 40-20%) are high-state-dominant cells irrespec-                                                                          state cells are the cells that move back and forth between only two
+tive of the refresh interval. These cells would be hard to discover.                                                                       retention states. The multi-state cells exhibit more than two states.
+Third, the percentage of high-state-dominant cells decreases with                                                                          Similar to the prior experiment, we further categorize these cells
+refresh interval. The reason is high refresh interval increases the                                                                        as bounded and non-bounded cells (Section 4.2 provides the def-
+chance that a cell is more likely to have a lower retention state.                                                                         inition of these). Recall that a bounded cell always has retention
+   Based on these experimental observations, we conclude that                                                                              states lower than 20 s, the maximum tested retention time, whereas
+there will likely be a significant portion of VRT cells that remain                                                                        a non-bounded cell does not fail the retention test in at least one
+
+
+                                                                                                                                      8
+
+
+===== Page 9 =====
+
+                                                      1000000           Two State Bounded                                                                      1000000                         Two State Non-bounded 1000000                                           Multi State Bounded                                1000000       Multi State Non-bounded
+
+
+                                                       100000                                                                                                  100000                                                                                     100000                                                           100000
+                            Number of Failing Cells
+
+
+
+
+                                                                                                                                     Number of Failing Cells
+
+
+
+
+                                                                                                                                                                                                                                Number of Failing Cells
+
+
+
+
+                                                                                                                                                                                                                                                                                                Number of Failing Cells
+                                                        10000                                                                                                   10000                                                                                      10000                                                            10000
+
+
+
+                                                             1000                                                                                                1000                                                                                       1000                                                             1000
+
+
+
+                                                              100                                                                                                 100                                                                                        100                                                              100
+
+
+                                                               10                                                                                                     10                                                                                      10                                                               10
+
+
+                                                               1                                                                                                       1                                                                                       1                                                                1
+                                                                    0     4   8                             12       16         20                                         0                          4    8     12   16   20                                      0     4   8   12   16   20                                       0     4   8   12   16   20
+                                                              Retention Time (in seconds)                                                                             Retention Time (in seconds)                                                            Retention Time (in seconds)                                      Retention Time (in seconds)
+
+                                                                                                                                                                                                      Figure 14: Retention States in Module A1
+
+
+                                                                                                                                                                                                                                                            these groups, we use different marker sizes for different groups. a
+Percentage of VRT Cells
+
+
+
+
+                                                                                  Percentage of VRT Cells
+
+
+
+
+                                                                                                                                                                           Percentage of VRT Cells
+
+
+
+
+                          100                                                                               100                                                                                      100                                                    larger marker size represents a higher retention state. We plot the
+                          75                                                                                 75                                                                                      75                                                     non-bounded retention time state as 21 s in the plots.
+                                                                         3s                                                                                      3s                                                        3s                                  The first plot shows the retention states of the two-state bounded
+                          50                                                                                 50                                                                                      50
+                                                                         5s                                                                                      5s                                                        5s                               cells. We observe that most of the cells have very close retention
+                          25                                             7s                                  25                                                  7s                                  25                    7s
+                                                                                                                                                                                                                                                            states (notice the log scale in the y axis). There are only a few cells
+                                                                         9s                                                                                      9s                                                        9s
+                           0                                                                                     0                                                                                    0                                                     that have non-consecutive retention states. The next plot shows the
+                                                       X+1
+                                                              X+2
+                                                              2X
+                                                              3X
+                                                              4X
+                                                              5X
+
+
+
+
+                                                                                                                          X+1
+                                                                                                                                 X+2
+                                                                                                                                 2X
+                                                                                                                                 3X
+                                                                                                                                 4X
+                                                                                                                                 5X
+
+
+
+
+                                                                                                                                                                                                           X+1
+                                                                                                                                                                                                           X+2
+                                                                                                                                                                                                           2X
+                                                                                                                                                                                                           3X
+                                                                                                                                                                                                           4X
+                                                                                                                                                                                                           5X
+
+
+
+
+                                                                                                                                                                                                                                                            retention states of the two-state non-bounded cells. We observe that
+                                                        Guard Band                                                         Guard Band                                                                          Guard Band                                   the number of cells that exhibit non-bounded behavior is almost
+                           (a) Module A1                                                                     (b) Module B1                                                                            (c) Module C1                                         10X lower than the bounded cells. For example, for module A1 ,
+                                                                                                                                                                                                                                                            110 cells have retention states of 3 s and 4 s, but only 10 cells move
+Figure 15: Coverage of Guardbanding in Module A1 , B1 , and C1                                                                                                                                                                                              between the retention state of 3 s and the non-bounded state. This
+                                                                                                                                                                                                                                                            implies that a small guardband can be effective for a large fraction
+                                                                                                                                                                                                                                                            of the cells for tolerating intermittent retention time changes. We
+                                                                                                                                                                                                                                                            see a similar trend with the multi-state cells: most of the cells have
+Percentage of VRT Cells
+
+
+
+
+                                                                                  Percentage of VRT Cells
+
+
+
+
+                                                                                                                                                                           Percentage of VRT Cells
+
+
+
+
+                          100                                                                               100                                                                                      100
+                                                                                                                                                                                                                                                            close-by retention states and only a small number of cells shows a
+                          75                                                                                 75                                                                                      75
+                                                                                                                                                                                                                                                            large difference among the multiple states. For cells where there is
+                          50                                                                                 50                                                                                      50                                                     a large difference in the different retention time states, even a large
+                          25                                             3s                                  25                                                  5s                                  25                    7s                               amount of guardband may not be effective at tolerating intermittent
+                                                                                                                                                                                                                                                            retention time changes.
+                           0                                                                                     0                                                                                    0
+                                                                                                                                                                                                                                                               Observation: Most of the intermittently failing cells have very
+                                                       X+1
+                                                              X+2
+                                                              2X
+                                                              3X
+                                                              4X
+                                                              5X
+
+
+
+
+                                                                                                                          X+1
+                                                                                                                                 X+2
+                                                                                                                                 2X
+                                                                                                                                 3X
+                                                                                                                                 4X
+                                                                                                                                 5X
+
+
+
+
+                                                                                                                                                                                                           X+1
+                                                                                                                                                                                                           X+2
+                                                                                                                                                                                                           2X
+                                                                                                                                                                                                           3X
+                                                                                                                                                                                                           4X
+                                                                                                                                                                                                           5X
+
+
+
+
+                                                        Guard Band                                                         Guard Band                                                                          Guard Band                                   close retention states in terms of retention time. However, there
+                                                                                                                                                                                                                                                            also exists VRT cells with large differences in retention states.
+                                               Figure 16: Coverage of Guardbanding in All Modules                                                                                                                                                              Implication: Even a small guardband is likely effective for most
+                                                                                                                                                                                                                                                            of the VRT cells. However, even a large guardband is likely ineffec-
+                                                                                                                                                                                                                                                            tive for the remaining VRT cells with large differences in retention
+round, which means that its maximum retention time cannot be de-                                                                                                                                                                                            time states.
+termined with our experiments. Figure 14 presents the retention
+states of all the VRT cells found in this experiment for module A1 .                                                                                                                                                                                        5.2          Coverage of Guardbanding
+Due to space constraints, we place the results from other modules                                                                                                                                                                                              We determine the fraction of failing cells that different amounts
+online [16]. The behavior remains similar across the tested modules                                                                                                                                                                                         of guardbanding can effectively mitigate (i.e., avoid failures for).
+and we summarize the results for one module from each vendor in                                                                                                                                                                                             To determine the coverage of each guardband, we perform three
+Figure 15.                                                                                                                                                                                                                                                  steps as described in Section 2.3.2. For example, at a refresh inter-
+   Figure 14 shows the retention states of two-state (bounded and                                                                                                                                                                                           val of 3 s the steps to determine the coverage of a 2X guardband
+non-bounded) cells and multi-state (bounded and non-bounded)                                                                                                                                                                                                are: 1) We identify the failing bits at a refresh interval of 6 seconds
+cells in different plots. Instead of plotting every cell, we group the                                                                                                                                                                                      (2X). 2) These faulty bits are assumed to be repaired using differ-
+cells having the same retention states. Each line in the plots repre-                                                                                                                                                                                       ent mitigation techniques and do not cause any further failures in
+sents a group of cells with the same retention states. The markers                                                                                                                                                                                          the original refresh interval of 3 s. 3) Then, we determine the cov-
+in the line represent the retention states of that group of cells. For                                                                                                                                                                                      erage of the guardband at 3 s by determining the fraction of VRT
+example, a line at (x1 , y) to (x2 , y) represents that there are y cells                                                                                                                                                                                   cells observed in our experiment that now operate correctly with
+that have retention states x1 and x2 . The overlapping lines indicate                                                                                                                                                                                       the guardband but otherwise would have failed.
+that there are some groups of cells with different retention states                                                                                                                                                                                            The guardbands considered are X + 1s, X + 2s, 2X, 3X, 4X,
+but the same number of cells in the group. To distinguish among                                                                                                                                                                                             and 5X at refresh intervals of 3, 5, 7, and 9 seconds. We show the
+
+
+                                                                                                                                                                                                                                                      9
+
+
+===== Page 10 =====
+
+                                         No ECC                                                         1 Bit Failure
+                                         No ECC, 2X Guardband                                           1 Bit Failure, 2X Guardband
+                                         SECDED (8B)                                                    2 Bit Failure
+                                                                                                                                                                                           1 Bit Failure
+                                         SECDED (8B), 2X Guardband                                      2 Bit Failure, 2X Guardband
+                                                                                                                                                                                           2 Bit Failure
+                                         DECTED (8B)                                                    3 Bit Failure
+                                                                                                                                                                                           3 Bit Failure
+
+
+
+
+                                                                                                                                             Expected Number of Words (8B)
+                                         DECTED (8B), 2X Guardband                                      3 Bit Failure, 2X Guardband
+                             1E+00                                                          1E+06                                                                            1E+12
+Probability of New Failure
+
+
+
+
+                                                                            Expected Number of
+                             1E-06                                                          1E+00                                                                            1E+06
+
+
+
+
+                                                                                Words (8B)
+                             1E-12                                                          1E-06                                                                            1E+00
+
+
+                             1E-18                                                          1E-12                                                                            1E-06
+
+
+                             1E-24                                                          1E-18                                                                            1E-12
+
+
+                             1E-30                                                          1E-24                                                                            1E-18
+                                     1       10           100        1000                           1           10         100        1000                                           1      10             100   1000
+                                            Number of Rounds                                                 Number of Rounds                                                             Number of Rounds
+                                          (a) Module A1                                                  (b) Module A1                                                                   (c) All Modules
+
+                                                                Figure 17: Effectiveness of ECC with Testing and Guardbanding
+
+
+coverage of failing VRT cells with each guardband in Figure 15 for                                                   banding along with ECC. Only a few rounds of testing can reduce
+one module from each vendor. We also present the coverage av-                                                        the retention failure rate by 107 /1012 times, when used in conjunc-
+eraged over all tested modules at each refresh interval, along with                                                  tion with SECDED/DECTED and a 2X guardband. Contrast this
+the standard deviation of coverage across all tested modules in Fig-                                                 with the much smaller 100/105 times reduction in retention fail-
+ure 16. Based on the figures, we make three observations. First,                                                     ure rate when only SECDED/DECTED is used. Second, a higher
+even a small guardband can achieve 85−95% coverage. The reason                                                       number of rounds of tests along with ECC can further reduce the
+is that most of the cells exhibit very close retention states and get                                                retention failure rate. The probability of a new failure can be re-
+repaired by the guardband. Second, the coverage does not change                                                      duced by as much as 1012 /1018 times after 1000 rounds of testing
+significantly even if we increase the amount of guardband to 5X.                                                     when testing is used in conjunction with SECDED/DECTED.
+This characteristic can be explained by our experimental observa-                                                       These observations imply that ECC, when used with other miti-
+tion that only a very small fraction of cells have large differences                                                 gation techniques, can effectively tolerate a high error rate.
+in retention time states. Third, coverage does not depend on the                                                        Observation: Testing and guardbanding along with ECC pro-
+refresh interval and remains mostly the same.                                                                        tection can significantly reduce the retention failure rate.
+   We conclude that a small guardband (e.g., 2X) can avoid most                                                         Implication: A combination of error mitigation techniques is
+of the failing cells. However, even a large guardband (e.g., 5X) is                                                  more effective at tolerating a high error rate than each technique
+not effective for the remaining VRT cells, indicating that using a                                                   alone.
+guardband alone is not effective to mitigate all intermittent reten-                                                    The strength of the required ECC depends on the probability of
+tion failures.                                                                                                       the multi-bit failures in a module. We present the expected num-
+                                                                                                                     ber of words with 1, 2 and 3 bit failures when the system employs
+6.                              EFFICACY OF ECC                                                                      other mitigation techniques in Figures 17b and 17c (refer to Equa-
+                                                                                                                     tion (5) in Appendix). These figures clearly show that the number
+   In this section, we present the effectiveness of ECC when used
+                                                                                                                     of multi-bit failures reduces with rounds of testing. We make two
+with other mitigation techniques. We focus on two aspects of ECC,
+                                                                                                                     observations. First, the expected number of single-bit failures re-
+1) reduction in the probability of a new failure and 2) expected
+                                                                                                                     duces with testing, but does not reach to zero. Second, with 1000
+number of multi-bit failures when the system can perform online
+                                                                                                                     rounds of testing, the expected number of 2-bit and 3-bit failures
+testing and guardbanding.
+                                                                                                                     become negligible (10−6 ). We conclude that a system-level online
+   When a system is capable of online testing, it can detect retention
+                                                                                                                     profiling mechanism can tolerate a higher failure rate when used in
+failures and repair those bits. Repairing the bits reduces the proba-
+                                                                                                                     conjunction with other mitigation techniques.
+bility of a new bit failure and thus the system can adjust the amount
+of ECC required to correct the random VRT failures that occur after
+the system-level testing. The dotted lines in Figure 17a show the                                                    7.     EFFICACY OF SOPHISTICATED
+number of rounds required to reduce the probability of a new reten-
+tion failure in the presence of single error correcting, double error
+                                                                                                                            MITIGATION TECHNIQUES
+detecting (SECDED) code and double error correcting, triple error                                                       In light of the efficacy of testing, guardbanding, and ECC ob-
+detecting (DECTED) code versus the number of rounds rounds of                                                        served and quantified in our experiments, we evaluate the adequacy
+tests employed. The solid lines also represent the probability of                                                    of some recently proposed error mitigation techniques.
+retention failure with SECDED and DECTED, but with an added
+guardband (2X). The retention failure rate with all the patterns                                                     7.1         Bit Repair Techniques
+(All) from Figure 6 is used to calculate the probability of failure in                                                  System-level bit repair techniques perform online testing and re-
+the presence of ECC at 8B granularity (derived from the Equations                                                    pair the detected faulty bits using different mechanisms (remap-
+(2), (3), and (4) in Appendix). We make two observations from this                                                   ping, higher refresh rate for the faulty rows, disabling faulty pages,
+figure. First, we can achieve a much higher reduction in the proba-                                                  error correcting pointers, etc) [38, 27, 50, 26]. These mechanisms
+bility of a new failure, when the system employs testing and guard-                                                  assume that all bit failures can be detected by testing after the initial
+
+
+                                                                                                               10
+
+
+===== Page 11 =====
+
+                                                                                                                                                                                                           4EC5ED (1KB)
+                                                                                                                                                                                                           4EC5ED (1KB), 2X Guardband
+                                                                                                                                                                                                           3EC4ED (1KB)
+                                                                                                                                                                                                           3EC4ED (1KB), 2X Guardband
+                                                                                                                                                                                                           DECTED (1KB)
+                                                                                                                                                                                                           DECTED (1KB), 2X Guardband
+                                              No Guardband                                                                       No Guardband                                                              SECDED (1KB)
+                                              2X Guardband                                                                       2X Guardband                                                              SECDED (1KB), 2X Guardband
+                            25                                                                             1E+02                                                                               1E+25
+
+
+
+
+                                                                                                                                                                  Time to Failure (in years)
+                                                                              Time to Failure (in years)
+Time to Failure (in days)
+
+
+
+
+                                                                                                                                                                                               1E+20
+                            20                                                                             1E+00
+                                                                                                                                                                                               1E+15
+                            15                                                                             1E-02
+                                                                                                                                                                                               1E+10
+
+                            10                                                                             1E-04
+                                                                                                                                                                                               1E+05
+
+
+                             5                                                                             1E-06                                                                               1E+00
+
+                                                                                                                                                                                               1E-05
+                                                                                                           1E-08
+                             0
+                            1E+00 1E+01 1E+02 1E+03 1E+04 1E+05 1E+06 1E+07                                        0   100 200 300 400 500 600 700 800 900 1000                                        1   10       100      1000       10000
+                                          Number of Rounds                                                                     Number of Rounds                                                              Number of Rounds
+                                   (a) Bit Repair [38, 27, 50]                                                               (b) VS-ECC [4]                                                                (c) Hi-ECC [52]
+
+                                               Figure 18: Effectiveness of Recent Error Mitigation Techniques with Testing and Guardbanding
+
+
+system boot-up and no new errors occur in DRAM after repairing                                                                        new failing words found are protected by stronger ECC. Figure 18b
+the failing bits detected by the initial test. In our experiments, we                                                                 shows the expected time to failure with number of rounds of test-
+observe that even after thousands rounds of testing, new bits keep                                                                    ing. Within 550 rounds of testing (which takes around 19 minutes)
+failing at a very low rate. This implies that all these mechanisms                                                                    the system achieves a time-to-failure of 10 years. This figure also
+will fail even after very long (initial) tests. Figure 18a presents the                                                               shows that adding a guardband can reduce the number of rounds of
+expected time to failure of these mechanisms when the system can                                                                      testing required to achieve the same guarantee. With a 2X guard-
+run a million rounds of tests. The time to failure of the system is                                                                   band, the system needs only 200 rounds of testing (which takes
+calculated using the probability of a new failure from Figure 6 (re-                                                                  around 7 minutes). Our analysis illustrates that a system has to run
+fer to Equation (6) in Appendix). With each round of testing, the                                                                     the initial test for several minutes to achieve a reasonable reliability
+detected faulty bits get repaired and the probability of a new failure                                                                guarantee even with a 2 Gb chip. The length of the initial test could
+keeps decreasing. However, in these mechanisms, the system will                                                                       be longer in future high density chips. Blocking entire memory
+fail even if a single bit failure occurs during runtime after the ini-                                                                for a significant amount of time may result in throughput loss and
+tial testing. Figure 18a shows that the system will fail within hours                                                                 thus such a mechanism would be difficult to deploy in a practical
+after 10 thousand rounds of tests. Even after 10 million rounds of                                                                    system. This implies that a practical and efficient online profiling
+initial testing, the system will fail in 13 days. We also present the                                                                 system should be designed to make VS-ECC effective. In such a
+expected time to failure with an added guardband. Even though                                                                         mechanism, testing would be spread across a large interval and be
+adding a guardband improves time to failure, the system still fails                                                                   performed in isolated parts of the memory such that other programs
+within 23 days after more than 10 million rounds of initial testing.                                                                  can still use the remaining parts of the memory.
+In a real system, each round of test consists of writing one specific
+data pattern in the entire module, waiting for 64 ms to keep the                                                                      7.3     Higher Strength ECC (Hi-ECC)
+cells idle so that the retention failures can manifest and then read-                                                                    Hi-ECC is an ECC based mechanism that uses very strong ECC
+ing the entire module to detect the failing cells. It will take 413.96                                                                (5EC6ED) to tolerate a high error rate [52]. It amortizes the cost of
+ms to test a 2 GB module for a round with just one data pattern                                                                       ECC by protecting a larger chunk of data (1KB). We show that
+(refer to Equation (8) in Appendix for details). 10 million rounds                                                                    testing and guardbanding can be very effective at providing the
+of initial testing with all our tested patterns would take more than                                                                  same reliability guarantee but using weaker ECC. In Figure 18c,
+7.9 months. Even so, the system would fail within a month after                                                                       we present the expected time to failure of a system that can use on-
+the initial test. Our analysis, thus shows that bit-repair mechanisms                                                                 line testing and guardbanding. This figure shows that with only one
+that perform only initial tests (as they were proposed) are not fea-                                                                  round of test (which takes 2.06 s), the system can effectively reduce
+sible to deploy in a practical system in the presence of intermittent                                                                 ECC strength to 3-bit correcting, 4-bit detecting (3EC4ED) code
+retention failures.                                                                                                                   and can still provide a 10-year time-to-failure guarantee. After 100
+                                                                                                                                      rounds of tests (which takes around 3.5 minutes), ECC strength can
+7.2                              Variable Strength ECC (VS-ECC)                                                                       be reduced to DECTED. To decrease the strength to SECDED, the
+   VS-ECC uses variable strength ECC to protect different lines in                                                                    system will need to perform around 7000 rounds of tests (taking
+memory [4]. The system performs an initial test to detect lines with                                                                  almost 4 hours), reducing the overhead of ECC by 80%. This fig-
+one or more errors and protect them using 4EC5ED code, but uses                                                                       ure also shows that with an added guardband, this system can start
+SECDED for rest of the memory. VS-ECC will fail if there are two                                                                      with 4EC5ED and can reduce ECC strength to DECTED within 10
+or more errors in the lines protected by SECDED. We calculate                                                                         rounds of testing (20.6 s). However, the system will still need to
+the probability of failure for VS-ECC and determine the expected                                                                      go through 7000 rounds of tests (taking almost 4 hours) to apply
+time to failure using the probability of failure from Figure 6 (re-                                                                   SECDED. Though blocking memory for 4 hours is not acceptable,
+fer to Equation (7) in Appendix). After each round of testing, the                                                                    if these 7000 rounds of tests are spread over time for only some
+
+
+                                                                                                                                 11
+
+
+===== Page 12 =====
+
+rows in memory (such that testing can be efficient), we can still            8.2    Challenges and Opportunities
+provide 10-years of time to failure guarantee using only SECDED.                    of an Online Profiling Mechanism
+   This observation implies an interesting characteristic of online             We briefly describe some of the challenges and potential oppor-
+mitigation techniques. We show that we can enable many differ-               tunities of designing an online profiler.
+ent optimizations if an effective online profiling mechanism can be             Reducing Performance Overhead: In a real system, the over-
+designed to run continuous tests in the background without disrupt-          head of running even one round of test in a specific region of mem-
+ing other programs. A system can start with a strong ECC code at             ory can have noticeable performance overhead. A round of test
+the beginning (same as Hi-ECC), but instead of paying the latency,           consists of writing some data pattern in the region under test, wait-
+area, and power penalty for strong ECC at every access, an effec-            ing for a certain amount of time to make sure cells are idle for the
+tive online profiling mechanism can use SECDED after profiling               entire refresh interval and then reading out that region to locate the
+for errors for some time. Based on our observations and analysis,            failures. This test would make the region under test unavailable to
+we sketch a high-level architectural design for an efficient system-         programs for hundreds of milliseconds. We argue that future on-
+level online profiling mechanism in the next section.                        line profiling works must address the challenges of reducing this
+8.    ENABLING A SYSTEM-LEVEL                                                performance overhead by designing intelligent mechanisms. We
+                                                                             sketch some potential directions that can be used to mitigate the
+      ONLINE PROFILING MECHANISM                                             performance overhead: 1) One mechanism can be pinning the spe-
+   An online profiling technique for DRAM would test the module              cific memory region into the cache while that region is being tested.
+while the system is running and the memory is in use. The mem-               Memory requests to the region under test would be satisfied by the
+ory controller would be responsible for locating and repairing the           cache and would not block the programs. However, there is a trade-
+faulty cells to mitigate the errors and ensure reliable DRAM opera-          off between the size of the region that can be temporally stored in
+tion. Such a system would not only improve DRAM reliability, but             the cache without evicting a large portion of the working set vs.
+would also increase DRAM yield even in the presence of high error            the number of individual tests that would be required to profile the
+rates, by identifying and repairing bit errors rather than discarding        whole module. 2) Keeping a pool of unallocated pages and testing
+chips with errors. An effective online profiling mechanism can ad-           them extensively before they are allocated to a program can im-
+dress DRAM scaling challenges and play a critical role in enabling           prove performance at the cost of some effective memory capacity
+high-density, low-cost DRAM in the future.                                   loss. This hardware-software collaborative mechanism would need
+                                                                             an interface to the system software to prevent allocating pages un-
+8.1    Designing an Online Profiling Mechanism                               der test. 3) Many applications have periodic compute and memory
+   An online profiler needs to be non-intrusive, operating in the            phases. A memory controller can be designed to predict phases
+background to allow continual testing without disrupting the use of          where a portion of memory remains idle and run online tests dur-
+the system. Long tests are undesirable as they would prevent user            ing those periods to reduce the performance overhead.
+programs from accessing memory, resulting in a significant per-                 Reducing Mitigation Overhead: The ultimate goal of detect-
+formance overhead. In light of our observations, we suggest that             ing failures through online profiling is to mitigate those failures
+an online profiling mechanism can be designed by using a combi-              and provide reliable operation. Recent mechanisms proposed effi-
+nation of testing, guardbanding, and ECC. The goal of an effective           cient techniques to reduce the overhead of mitigation mechanisms.
+online profiling mechanism is to detect most of the errors with short        For example, ArchShield, which mitigates failures by remapping
+tests performed at regular intervals. Here, we sketch the steps in-          faulty words in a region of memory, uses a fault map to efficiently
+volved in a preliminary online profiling mechanism. The evaluation           determine the location of remapping [38]. Using a higher refresh
+of such a mechanism is outside the scope of this work.                       rate for rows with failures is another mitigation technique. RAIDR
+   Initial Reliability Guarantee using ECC: Initially, before any            uses Bloom filters to efficiently store the location of the rows that
+profiling, the chips are protected by ECC to guarantee reliable              are required to be refreshed more frequently [27]. However, as we
+DRAM operation. The memory controller is responsible for                     have shown in Section 7, these mechanisms as proposed, do not
+correcting erroneous data through a mechanism like virtualized               consider intermittent failures and lead to potential data loss. We
+ECC [56] whose error correction strength can be varied dynam-                envision these techniques would be extended with online profiling
+ically. Without any testing and guardbanding, the cost of ECC                mechanisms to dynamically determine the current set of failures
+would likely be high.                                                        and optimize the overheads depending on the current failure rate.
+   Discovering Errors with Short Tests: Next, the memory con-                   Enabling Failure-aware Optimizations: An online profiling
+troller runs tests to discover and repair the faulty bits. Adding a          mechanism enables optimization techniques to take advantage of
+guardband can reduce the error rate by ten times(Section 5). The             the inherent resiliency of some applications at run-time. Many of
+test for adding a guardband involves testing the chips at a high re-         the previously proposed resiliency techniques that allocate error-
+fresh interval and can be done just after the system starts. The             prone regions to data that can tolerate errors [29, 7, 30, 25, 9] would
+guardband test can be done within a short period as it does not re-          directly benefit from an efficient online profiling mechanism, by
+quire rounds of tests. Later, during the regular use of the memory,          being able to determine the error-prone locations at run-time.
+the memory controller can run short rounds of tests to discover the
+intermittently failing cells. In order to prevent major performance          9.    CONCLUSION
+overheads, a round of test is run after some regular interval. Thus,            We have studied and analyzed the effectiveness of different
+in order to reduce the overhead of testing, we propose that future           system-level error mitigation techniques for retention failures in
+online profilers test small regions of memory at regular intervals.          commodity DRAM, with the goal of enabling efficient and effective
+   Adjusting the ECC strength: After some number of testing                  reliability techniques for future DRAM. We make several observa-
+rounds, most of the failing bits get discovered and effectively get          tions on the error mitigation techniques based on the experimental
+repaired. When the rate of retention failures reduces by an accept-          data collected from 96 DRAM chips manufactured by three differ-
+able amount, the strength of the employed ECC can be correspond-             ent vendors, using an FPGA-based DRAM testing infrastructure.
+ingly adjusted to reduce the ECC overhead.                                   First, we show that only a small amount of testing can discover
+
+
+                                                                        12
+
+
+===== Page 13 =====
+
+the majority of cells with intermittent retention failures. From our           [8] P. G. Emma et al. Rethinking refresh: Increasing availability
+experiments, only 5 rounds of tests can discover most of the in-                   and reducing power in DRAM for cache applications. IEEE
+termittent failures and reduce the probability of retention failure                Micro, 28(6), Nov. 2008.
+by 100 times. However, even after thousands of rounds of testing,              [9] H. Esmaeilzadeh et al. Neural acceleration for
+a very small number of cells exhibit new failures not discovered                   general-purpose approximate programs. MICRO, 2012.
+before. Second, we show that even a small guardband (e.g., 2X)                [10] D. Frank et al. Device scaling limits of Si MOSFETs and
+can avoid 85-95% of the intermittently failing cells and reduce the                their application dependencies. Proceedings of the IEEE,
+probability of retention failure by ten times. At the same time, even              89(3), 2001.
+a large guardband (e.g., 5X) is not effective for the remaining inter-        [11] T. Hamamoto et al. On the retention time distribution of
+mittently failing cells. Third, we show that using only single error               Dynamic Random Access Memory (DRAM). 1998.
+correction codes can reduce the retention error rate by only 100              [12] P. Hazucha and C. Svensson. Impact of CMOS technology
+times, but using single error correction codes together with testing               scaling on the atmospheric neutron soft error rate. TNS,
+and guardbanding can reduce the error rate by as much as 1012                      47(6), 2000.
+times. Fourth, based on our data, we quantify recently proposed
+                                                                              [13] A. Hiraiwa et al. Local-field-enhancement model of DRAM
+system-level error mitigation techniques that do not consider in-
+                                                                                   retention failure. IEDM, 1998.
+termittent failures, showing that our measured results significantly
+impact these works’ conclusions. We show that bit repair mech-                [14] C.-S. Hou et al. An FPGA-based test platform for analyzing
+anisms that rely on testing [38, 27, 50, 26] cannot provide strong                 data retention time distribution of DRAMs. VLSI-DAT,
+reliability guarantees even after months of testing. On the other                  2013.
+hand, ECC-based mitigation techniques [4, 52] can ensure reliable             [15] JEDEC. Standard No. 79-3F. DDR3 SDRAM Specification,
+DRAM operation when employed in conjunction with online test-                      July 2012.
+ing in a relatively short amount of time. We conclude that the via-           [16] S. Khan et al. The efficacy of error mitigation techniques for
+bility of these techniques depend on the development of an efficient               DRAM retention failures: A comparative experimental study
+online profiling mechanism that does not significantly disrupt the                 – Full data sets.
+operation of the programs running on the system.                                   http://www.ece.cmu.edu/~safari/tools/
+   We hope that the empirical study and analysis of retention error                dram-sigmetrics2014-fulldata.html.
+mitigation techniques, driven by experimental measurements from               [17] H. Kim et al. Characterization of the variable retention time
+real DRAM chips, presented in this paper can enable new, effective,                in dynamic random access memory. IEEE Trans. Electron
+and efficient mechanisms in the future that will lead to more reli-                Dev., 58(9), 2011.
+able design and operation of future DRAM systems. In particular,              [18] K. Kim. Technology for sub-50nm DRAM and NAND flash
+we believe the development of efficient online retention time profil-              manufacturing. IEDM, 2005.
+ing techniques for DRAM is a promising area of immediate future               [19] K. Kim and J. Lee. A new investigation of data retention
+work that can benefit from our characterizations and analyses.                     time in truly nanoscaled DRAMs. IEEE Electron Device
+                                                                                   Letters, 30(8), 2009.
+ACKNOWLEDGEMENTS                                                              [20] Y. Kim et al. A case for exploiting subarray-level parallelism
+                                                                                   (SALP) in DRAM. ISCA, 2012.
+We are grateful to Uksong Kang from Samsung for his helpful com-
+ments. We thank the anonymous reviewers for their helpful feed-               [21] Y. I. Kim et al. Thermal degradation of DRAM retention
+back, and gratefully acknowledge the SAFARI Research Group                         time: Characterization and improving techniques. IRPS,
+members for providing useful feedback. We acknowledge the sup-                     2004.
+port of the Intel Science and Technology Center on Cloud Comput-              [22] D. Lee et al. Tiered-latency DRAM: A low latency and low
+ing. We thank our industrial partners for their support: IBM, Intel,               cost DRAM architecture. HPCA, 2013.
+Qualcomm, and Samsung. This research was also partially sup-                  [23] M. J. Lee and K. W. Park. A mechanism for dependence of
+ported by grants from NSF (CAREER Award CCF 0953246, CCF                           refresh time on data pattern in DRAM. Electron Device
+1212962, and CNS 1065112).                                                         Letters, 31(2), 2010.
+                                                                              [24] X. Li et al. A realistic evaluation of memory hardware errors
+REFERENCES                                                                         and software system susceptibility. ATC, 2010.
+ [1] R. D. Adams. High performance memory testing: Design                     [25] X. Li and D. Yeung. Application-level correctness and its
+     principles, fault modeling and self-test. Springer, 2003.                     impact on fault tolerance. HPCA, 2007.
+ [2] J.-H. Ahn et al. Adaptive self refresh scheme for battery                [26] C.-H. Lin et al. SECRET: Selective error correction for
+     operated high-density mobile DRAM applications. ASSCC,                        refresh energy reduction in DRAMs. ICCD, 2012.
+     2006.                                                                    [27] J. Liu et al. RAIDR: Retention-aware intelligent DRAM
+ [3] Z. Al-Ars et al. DRAM-specific space of memory tests. ITC,                    refresh. ISCA, 2012.
+     2006.                                                                    [28] J. Liu et al. An experimental study of data retention behavior
+ [4] A. R. Alameldeen et al. Energy-efficient cache design using                   in modern DRAM devices: Implications for retention time
+     variable-strength error-correcting codes. ISCA, 2011.                         profiling mechanisms. ISCA, 2013.
+ [5] R. Baumann. The impact of technology scaling on soft error               [29] S. Liu et al. Flikker: Saving DRAM refresh-power through
+     rate performance and limits to the efficacy of error                          critical data partitioning. ASPLOS, 2011.
+     correction. IEDM, 2002.                                                  [30] Y. Luo. Characterizing application memory error
+ [6] K. Chang et al. Improving DRAM performance by                                 vulnerability to optimize data center cost. DSN, 2014.
+     parallelizing refreshes with accesses. HPCA, 2014.                       [31] J. A. Mandelman et al. Challenges and future directions for
+ [7] M. de Kruijf et al. Relax: An architectural framework for                     the scaling of dynamic random-access memory (DRAM).
+     software recovery of hardware faults. ISCA, 2010.                             IBM J. of Res. and Dev., 2002.
+
+
+                                                                         13
+
+
+===== Page 14 =====
+
+[32] T. C. May et al. Alpha-particle-induced soft errors in               APPENDIX
+     dynamic memories. IEEE Trans. Electron Dev., 1979.                    • Effect of Temperature: In our experiments, the curve for normalized
+[33] Y. Mori et al. The origin of variable retention time in                 retention time at different temperature corresponds to e−0.0625T ,
+     DRAM. IEDM, 2005.                                                       where T is the temperature. A 10 ◦ C increase in temperature results
+[34] W. Mueller et al. Challenges for the DRAM cell scaling to               in a reduction of 1 − e−0.0625∗10 = 46.5%.
+     40nm. IEDM, 2005.                                                     • Probability of a New Failure with Rounds: The probability of find-
+                                                                             ing a new error with r rounds of tests is calculated as,
+[35] S. S. Mukherjee et al. The soft error problem: An
+                                                                             probability of a new bit failure at round r
+     architectural perspective. HPCA, 2005.                                      number of new cells failing at round r
+                                                                             =             total number of cells           . . . (1)
+[36] O. Mutlu. Memory scaling: A systems architecture
+     perspective. IMW, 2013.                                               • Probability of Failure with ECC: Error correction codes are asso-
+[37] P. Nair et al. A case for refresh pausing in DRAM memory                ciated with blocks of data. All our results assume that ECC protects
+                                                                             8B of data. We calculate the probability of failure in n bits from the
+     systems. HPCA, 2012.                                                    bit error rate, where n = 64 bits. If p is the probability of bit failure,
+[38] P. J. Nair et al. ArchShield: Architectural framework for               probability of failure in n bits, pn
+     assisting DRAM scaling by tolerating high error rates. ISCA,            = probability of any of the n bits failing
+     2013.                                                                   = 1 − probability of all of the n bits not failing
+                                                                             = 1 − (1 − p)n . . . (2)
+[39] H.-D. Oberle et al. Enhanced fault modeling for DRAM test
+                                                                             The probability of failure with single error correction, double error
+     and analysis. VTS, 1991.
+                                                                             detection (SECDED) in n bits is calculated as, pnSECDED
+[40] T. J. O’Gorman. The effect of cosmic rays on the soft error             = probability of more than one bit in n bits failing
+     rate of a DRAM at ground level. IEEE Trans. Electron Dev.,              = 1 − (probability of all of the n bits not failing +
+     41(4), 1994.                                                             probability of n − 1 ofthe n bits not failing)
+[41] P. J. Restle, J. W. Park, and B. F. Lloyd. DRAM variable                = 1 − ((1 − p)n + n     1
+                                                                                                        p(1 − p)(n−1) ) . . . (3)
+     retention time. IEDM, 1992.                                             Similarly, the probability of failure with double error correc-
+                                                                             tion, triple error detection (DECTED) in n bits is calculated as,
+[42] S. E. Schechter, G. H. Loh, et al. Use ECP, not ECC, for hard
+                                                                             pnDECT ED
+     failures in resistive memories. ISCA, 2010.                             = probability of more than two bits in n bits failing
+[43] B. Schroeder et al. DRAM errors in the wild: A large-scale              = 1 − (probability of all of the n bits not failing +
+     field study. SIGMETRICS, 2009.                                           probability of n − 1 of the n bits not failing +
+[44] H. W. Seo et al. Charge trapping induced DRAM data                       probability of n − 2 of the n bits not failing)
+                                                                             = 1−((1−p)n + n          p(1−p)(n−1) + n
+                                                                                                                             2
+     retention time degradation under wafer-level burn-in stress.                                  1                      2
+                                                                                                                              p (1−p)(n−2) ) . . . (4)
+     IRPS, 2002.                                                           • Expected Number of Multi-Bit Failures: The expected number of
+                                                                             faulty bits per word is p ∗ n. If p ∗ n  1, then the probability
+[45] V. Sridharan et al. Feng Shui of supercomputer memory:
+                                                                             (Pk ) that the word has k errors (k ≥ 1) can be approximated by
+     Positional effects in DRAM and SRAM faults. SC, 2013.                   Pk = (pn)k /k ! . . . (5)
+[46] V. Sridharan and D. Liberty. A study of DRAM failures in
+                                                                           • Time to Failure with Bit-Repair: Let the probability of a bit failing
+     the field. SC, 2012.                                                    be p and the probability of the system failing be psystem . If there
+[47] G. R. Srinivasan et al. Accurate, predictive modeling of soft           are n bits in the module, then, psystem
+     error rate due to cosmic rays and chip alpha radiation. IRPS,           = 1 − probability of no error in the entire module
+     1994.                                                                   = 1 − (1 − p)n
+                                                                             The expected number of trials to fail the system, t = 1/psystem . In
+[48] A. J. van de Goor et al. An overview of deterministic                   our infrastructure, there are np bit failures at every minute. There-
+     functional RAM chip testing. ACM Computing Surveys,                     fore, Time to Failure in hours= t/60 . . . (6)
+     1990.
+                                                                           • Time to Failure with ECC: Let the system can correct k−1 bits per
+[49] A. J. van de Goor and A. Paalvast. Industrial evaluation of             word, the probability of k or more bit failure is pk and the probability
+     DRAM SIMM tests. ITC, 2000.                                             of the system failing is psystem . if there are n words in the module,
+[50] R. K. Venkatesan et al. Retention-aware placement in                    then, psystem
+     DRAM (RAPID): Software methods for quasi-non-volatile                   = 1 − probability of no k or more bit error in n words
+                                                                             = 1 − (1 − pk )n
+     DRAM. HPCA, 2006.                                                       The expected number of trials to fail the system, t = 1/psystem . In
+[51] M.-J. Wang et al. Guardband determination for the detection             our infrastructure, we test for error every minute. Therefore, Mean
+     of off-state and junction leakages in DRAM testing. ATS,                Time to Failure in hours= t/60 . . . (7)
+     2001.                                                                 • Time to Test a Module: To test a module, we need to write a data
+[52] C. Wilkerson et al. Reducing cache power with low-cost,                 pattern in the entire module, wait for 64 ms and read the module to
+     multi-bit error-correcting codes. ISCA, 2010.                           detect the failures. In order to read/write a row, we need to read the
+                                                                             data from the cells in the row buffer (tRCD ), transfer the row to the
+[53] Xilinx. ML605 Hardware User Guide, Oct. 2012.
+                                                                             memory controller, and close the row (tRP ). According to DDR3-
+[54] K. Yamaguchi. Theoretical study of deep-trap-assisted                   1600 timing, time to read/write an 8KB row, tr = tRCD + tCCD ∗
+     anomalous currents in worst-bit cells of dynamic                        (8KB/64B) + tRP = 13.75 + 5 ∗ 128 + 13.75 = 667.5 ns. In
+     random-access memories (DRAM’s). IEEE Trans. Electron                   a 2GB module, there are 262144 rows, so reading/writing the entire
+     Dev., 47(4), 2000.                                                      module would take tr ∗ 262144 ns = 174.98 ms. So, to test a module
+                                                                             for a pattern it would take 174.98 + 64 + 174.98 ms = 413.96 ms.
+[55] D. Yaney et al. A meta-stable leakage phenomenon in                     We test the modules with five data patterns, so each round with all
+     DRAM charge storage - Variable hold time. IEDM, 1987.                   data patterns takes 2.06 s. . . . (8)
+[56] D. H. Yoon and M. Erez. Virtualized and flexible ECC for
+     main memory. ASPLOS, 2010.
+
+
+
+
+                                                                     14

@@ -1,0 +1,1421 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/EDEN-efficient-DNN-inference-with-approximate-memory_micro19.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/EDEN-efficient-DNN-inference-with-approximate-memory_micro19.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+         EDEN: Enabling Energy-Efficient, High-Performance
+       Deep Neural Network Inference Using Approximate DRAM
+                                   Skanda Koppula Lois Orosa A. Giray Yağlıkçı
+                     Roknoddin Azizi Taha Shahroodi Konstantinos Kanellopoulos                                                        Onur Mutlu
+                                                                                    ETH Zürich
+ABSTRACT                                                                                        ACM Reference Format:
+The effectiveness of deep neural networks (DNN) in vision, speech,                              Skanda Koppula, Lois Orosa, A. Giray Yağlıkçı, Roknoddin Azizi, Taha Shah-
+                                                                                                roodi, Konstantinos Kanellopoulos, and Onur Mutlu. 2019. EDEN: Enabling
+and language processing has prompted a tremendous demand for
+                                                                                                Energy-Efficient, High-Performance Deep Neural Network Inference Using
+energy-efficient high-performance DNN inference systems. Due to                                 Approximate DRAM. In Proceedings of The 52nd Annual IEEE/ACM Interna-
+the increasing memory intensity of most DNN workloads, main                                     tional Symposium on Microarchitecture (MICRO-52). Columbus, OH, USA,
+memory can dominate the system’s energy consumption and stall                                   October 12-16, 2019, 16 pages. https://doi.org/10.1145/3352460.3358280
+time. One effective way to reduce the energy consumption and
+increase the performance of DNN inference systems is by using                                   1    INTRODUCTION
+approximate memory, which operates with reduced supply volt-
+                                                                                                Deep neural networks (DNNs) [87, 90] are an effective solution to
+age and reduced access latency parameters that violate standard
+                                                                                                challenges in computer vision, speech recognition, language trans-
+specifications. Using approximate memory reduces reliability, lead-
+                                                                                                lation, drug discovery, robotics, particle physics, and a number of
+ing to higher bit error rates. Fortunately, neural networks have an
+                                                                                                other domains [9, 22, 41, 49, 50, 68, 84, 87, 102, 137, 149]. DNNs
+intrinsic capacity to tolerate increased bit errors. This can enable
+                                                                                                and their various flavors (convolutional neural networks [84], fully-
+energy-efficient and high-performance neural network inference
+                                                                                                connected neural networks [88], and recurrent neural networks
+using approximate DRAM devices.
+                                                                                                [49]) are commonly evaluated in settings with edge devices that
+   Based on this observation, we propose EDEN, the first general
+                                                                                                demand low energy and real-time responses [13, 146]. Unfortu-
+framework that reduces DNN energy consumption and DNN eval-
+                                                                                                nately, DNNs have high computational and memory demands that
+uation latency by using approximate DRAM devices, while strictly
+                                                                                                make these energy and performance requirements difficult to fulfill.
+meeting a user-specified target DNN accuracy. EDEN relies on two
+                                                                                                As such, neural networks have been the subject of many recent
+key ideas: 1) retraining the DNN for a target approximate DRAM
+                                                                                                accelerators and DNN-focused architectures. Recent works (e.g.,
+device to increase the DNN’s error tolerance, and 2) efficient map-
+                                                                                                [6–8, 14, 25, 26, 29, 52, 54, 70, 100, 126, 152, 154, 158, 181]) focus on
+ping of the error tolerance of each individual DNN data type to a
+                                                                                                building specialized architectures for efficient computation sched-
+corresponding approximate DRAM partition in a way that meets
+                                                                                                uling and dataflow to execute DNNs [86, 109].
+the user-specified DNN accuracy requirements.
+                                                                                                   Improvements to accelerator efficiency [27, 85], DNN-optimized
+   We evaluate EDEN on multi-core CPUs, GPUs, and DNN accel-
+                                                                                                GPU kernels [23, 28], and libraries designed to efficiently lever-
+erators with error models obtained from real approximate DRAM
+                                                                                                age instruction set extensions [23, 83] have improved the compu-
+devices. We show that EDEN’s DNN retraining technique reliably
+                                                                                                tational efficiency of DNN evaluation. However, improving the
+improves the error resiliency of the DNN by an order of magnitude.
+                                                                                                memory efficiency of DNN evaluation is an on-going challenge
+For a target accuracy within 1% of the original DNN, our results
+                                                                                                [13, 29, 37, 54, 107, 148]. The memory intensity of DNN inference is
+show that EDEN enables 1) an average DRAM energy reduction
+                                                                                                increasing, and the sizes of state-of-art DNNs have grown dramati-
+of 21%, 37%, 31%, and 32% in CPU, GPU, and two different DNN
+                                                                                                cally in recent years. The winning model of the 2017 ILSVRC image
+accelerator architectures, respectively, across a variety of state-of-
+                                                                                                recognition challenge [140], ResNeXt, contains 837M FP32 parame-
+the-art networks, and 2) an average (maximum) speedup of 8% (17%)
+                                                                                                ters (3.3 GB) [171]. This is 13.5x the parameter count of AlexNet,
+and 2.7% (5.5%) in CPU and GPU architectures, respectively, when
+                                                                                                the winning model in 2012 [84]. More recent models have broken
+evaluating latency-bound neural networks.
+                                                                                                the one billion FP32 parameter mark (3.7 GB) [153]. As the machine
+                                                                                                learning community trends towards larger, more expressive neural
+CCS CONCEPTS                                                                                    networks, we expect off-chip memory problems to bottleneck DNN
+• Computing methodologies → Neural networks; • Computer                                         evaluation.
+systems organization → Neural networks; Special purpose sys-                                       The focus of this work is to alleviate two main issues (energy
+tems; • Hardware → Dynamic memory.                                                              and latency) of off-chip DRAM for neural network workloads. First,
+                                                                                                DRAM has high energy consumption. Prior works on DNN accelera-
+KEYWORDS                                                                                        tors report that between 30 to 80% of system energy is consumed by
+deep neural networks, error tolerance, energy efficiency, machine                               DRAM [26, 99, 113, 130]. Second, DRAM has high latency. A load or
+learning, DRAM, memory systems                                                                  store that misses the last level cache (LLC) can take 100x longer time
+                                                                                                to service compared to an L1 cache hit [32, 43, 44, 96, 114–116, 159].
+                                                                                                Prior work in accelerator design has targeted DRAM latency as a
+Permission to make digital or hard copies of part or all of this work for personal or           challenge for sparse and irregular DNN inference [165].
+classroom use is granted without fee provided that copies are not made or distributed              To overcome both DRAM energy and latency issues, recent
+for profit or commercial advantage and that copies bear this notice and the full citation
+on the first page. Copyrights for third-party components of this work must be honored.          works use three main approaches. First, some works reduce nu-
+For all other uses, contact the owner/author(s).                                                meric bitwidth, reuse model weights, and use other algorithmic
+MICRO-52, October 12–16, 2019, Columbus, OH, USA                                                strategies to reduce the memory requirements of the DNN work-
+© 2019 Copyright held by the owner/author(s).
+ACM ISBN 978-1-4503-6938-1/19/10.                                                               load [24, 48, 55, 60, 64, 66, 82, 103, 117, 146, 172, 175, 176, 184]. Sec-
+https://doi.org/10.1145/3352460.3358280                                                         ond, other works propose new DRAM designs that offer lower en-
+
+
+
+                                                                                            1
+
+
+===== Page 2 =====
+
+ergy and latency than commodity DRAM [19–21, 57, 91, 93, 94, 168].            effective memory bandwidth by increasing the data bus frequency
+Third, some works propose processing-in-memory approaches that                at the expense of reliability.
+can reduce data movement and access data with lower latency and                  This paper makes the following five key contributions:
+energy [13, 29, 40, 45, 65, 101, 107, 148, 150, 152]. In this work, we             • We introduce EDEN, the first general framework that in-
+propose an approach that is orthogonal to these existing works: we                    creases the energy efficiency and performance of DNN in-
+customize the major operational parameters (e.g., voltage, latency)                   ference by using approximate DRAM that operates with
+of existing DRAM chips to better suit the intrinsic characteristics                   reduced voltage and latency parameters at the expense of
+of a DNN. Our approach is based on two key insights:                                  reliability. EDEN provides a systematic way to scale main
+   (1) DNNs demonstrate remarkable robustness to errors intro-                        memory parameters (e.g., supply voltage and latencies) while
+       duced in input, weight, and output data types. This error                      achieving a user-specified DNN accuracy target.
+       tolerance allows accurate DNN evaluation on unreliable hard-                • We introduce a methodology to retain DNN accuracy in the
+       ware if the DNN error tolerance is accurately characterized                    presence of approximate DRAM. Our evaluation shows that
+       and bit error rates are appropriately controlled.                              EDEN increases the bit error tolerance of a DNN by 5-10x
+   (2) DRAM manufacturers trade performance for reliability. Prior                   (depending on the network) through a customized retraining
+       works show that reducing DRAM supply voltage and timing                        procedure called curricular retraining.
+       parameters improves the DRAM energy consumption and                         • We provide a systematic, empirical characterization of the
+       latency, respectively, at the cost of reduced reliability, i.e.,               resiliency of state-of-art DNN workloads [63, 64, 146] to
+       increased bit error rate [15, 19, 21, 47, 94].                                 the errors introduced by approximate DRAM. We examine
+                                                                                      error resiliency across different numeric precisions, pruning
+   To exploit these two insights, we propose EDEN1 : the first frame-
+                                                                                      levels, and data types (e.g. DNN layer weights). We find that
+work that improves energy efficiency and performance for DNN
+                                                                                     1) lower precision levels and DNN data closer to the first and
+inference by using approximate DRAM, which operates with re-
+                                                                                      last layers exhibit lower error resiliency, and 2) magnitude-
+duced DRAM parameters (e.g., voltage and latency). EDEN strictly
+                                                                                      based pruning does not have a significant impact on error
+meets a user-specified target DNN accuracy by providing a general
+                                                                                      resiliency.
+framework that 1) uses a new retraining mechanism to improve
+                                                                                   • We propose four error models to represent the common error
+the accuracy of a DNN when executed on approximate DRAM, and
+                                                                                      patterns that an approximate DRAM device exhibits. To do
+2) maps the DNN to the approximate DRAM using information ob-
+                                                                                      so, we characterize the bit flip distributions that are caused
+tained from rigorous characterizations of the DNN error tolerance
+                                                                                      by reduced voltage and latency parameters on eight real
+and DRAM error properties.
+                                                                                      DDR4 DRAM modules.
+   EDEN is based on three key steps. First, EDEN improves the error
+                                                                                   • We evaluate EDEN on multi-core CPUs, GPUs, and DNN
+tolerance of the target DNN by retraining the DNN using the error
+                                                                                      accelerators. For a target accuracy within 1% of the original
+characteristics of the approximate DRAM module. Second, EDEN
+                                                                                      DNN, our results show that EDEN enables 1) an average
+profiles the improved DNN to identify the error tolerance levels
+                                                                                      DRAM energy reduction of 21%, 37%, 31%, and 32% in CPU,
+of all DNN data (e.g., different layer weights of the DNN). Third,
+                                                                                      GPU, and two different DNN accelerator architectures, re-
+EDEN maps different DNN data to different DRAM partitions that
+                                                                                      spectively, across a variety of state-of-the-art networks, and
+best fit each datum’s characteristics, and accordingly selects the
+                                                                                      2) an average (maximum) speedup of 8% (17%) and 2.7% (5.5%)
+voltage and latency parameters to operate each DRAM partition.
+                                                                                      in CPU and GPU architectures, respectively, when evaluat-
+By applying these three steps, EDEN can map an arbitrary DNN
+                                                                                      ing latency-bound neural networks. For a target accuracy
+workload to an arbitrary approximate DRAM module to evaluate a
+                                                                                      the same as the original, EDEN enables 16% average energy
+DNN with low energy, high performance, and high accuracy.
+                                                                                      savings and 4% average speedup in CPU architectures.
+   To show example benefits of our approach, we use EDEN to
+run inference on DNNs using approximate DRAM with 1) reduced
+DRAM supply voltage (VDD ) to decrease DRAM energy consump-
+tion, and 2) reduced DRAM latency to reduce the execution time of
+                                                                              2 BACKGROUND
+latency-bound DNNs. EDEN adjusts the DRAM supply voltage and                  2.1 Deep Neural Networks
+DRAM latency through interaction with the memory controller                   A deep neural network (DNN) is a neural network with more than
+firmware. For a target accuracy within 1% of the original DNN, our            two layers [87]. DNNs are composed of a variety of different layers,
+results show that EDEN enables 1) an average DRAM energy re-                  including convolutional layers, fully-connected layers, and pooling
+duction of 32% across CPU, GPU and DNN accelerator (e.g., Tensor              layers. Figure 1 shows the three main data types of a DNN layer,
+Processing Unit [69]) architectures, and 2) cycle reductions of up            and how three DNN layers are connected with each other. Each
+to 17% when evaluating latency-bound neural networks.                         of these layers is defined by a weight matrix learned via a one-
+   Our evaluation indicates that the larger benefits of EDEN would            time training process that is executed before the DNN is ready for
+stem from its capacity to run on most hardware platforms in use               inference. The three DNN data types that require loads and stores
+today for neural network inference, including CPUs, GPUs, FPGAs,              from main memory include each layer’s input feature maps (IFMs),
+and DNN accelerators. Because EDEN is a general approach, its                 output feature maps (OFMs), and the weights. Each layer processes
+principles can be applied 1) on any platform that uses DRAM, and 2)           its IFMs using the layer’s weights, and produces OFMs. The OFMs
+across memory technologies that can trade-off different parameters            of a layer are fed to the next layer as the next layer’s IFMs. In this
+(e.g., voltage, latency) at the expense of reliability. Although our          work, we explore the introduction of bit errors into the three data
+evaluation examines supply voltage and access latency reductions,             types of each layer.
+the EDEN framework can be used also to improve performance                        Modern DNNs contain hundreds of layers, providing the DNN
+and energy in other ways: for example, EDEN could increase the                with a large number of trainable weights. The existence of such
+                                                                              a large number of weights is commonly referred to as overpara-
+1 Energy-Efficient Deep Neural Network Inference Using Approximate DRAM       meterization, and is, in part, the source of a DNN’s accuracy [42].
+
+
+
+                                                                          2
+
+
+===== Page 3 =====
+
+                    Weights
+                   Weights                  Weights
+                                           Weights                  Weights
+                                                                   Weights
+                   Weights                 Weights                 Weights
+                                                                                                              Wordline
+
+
+
+
+                                                                                                                                                                   Row Decoder
+
+
+
+
+                                                                                                                                                                                                                    Memory Controller
+                                                                                                                                                                                        bank
+                                                                                                                                                                                               bank
+                                                                                                                                                                                                      bank
+                                                                                                                  Access
+…      OFMs/IFMs   Layer       OFMs/IFMs   Layer       OFMs/IFMs   Layer       OFMs/IFMs   …                    Transistor
+
+
+
+
+                                                                                                                                                                                 …
+      OFMs/IFMs
+      OFMs/IFMs               OFMs/IFMs
+                              OFMs/IFMs               OFMs/IFMs
+                                                      OFMs/IFMs                OFMs/IFMs
+                                                                              OFMs/IFMs
+                    N-1                      N                      N+1                                                                                                                                       bus
+                                                                                                                                                                                        I/O logic
+
+
+
+
+                                                                                                                      Capacitor
+                                                                                                    Bitline
+
+
+
+
+                                                                                                                                                                                 bank
+                                                                                                                                                                                        bank
+                                                                                                                                                                                               bank
+                                                                                                                                                                                                      bank
+Figure 1: Example of three DNN layers. Each layer is com-
+posed of its weights, input feature maps (IFMs), and output                                                   Row Buﬀer
+
+
+
+
+                                                                                                                                     SA
+                                                                                                                                          SA
+                                                                                                                                               SA
+                                                                                                                                                    SA
+                                                                                                                                                         SA
+                                                                                                                                                              SA
+                                                                                                                                                                                     DRAM chips
+feature maps (OFMs).
+Overparameterization allows the model to have sufficient learn-                                     (a) DRAM Cell                   (b) DRAM Subarray                            (c) DRAM device
+ing capacity so that the network can approximate complex input-                                                                   Figure 2: DRAM organization.
+output functions, and adequately capture high-level semantics (e.g.,
+the characteristics of a cat in an input image) [120]. Importantly,                                typically consists of 512-1024 rows each of which is typically as
+overparameterization allows the network to obtain some level of                                    large as 2-8KB.
+error resilience, generalize across different inputs, and be robust                                   Figure 2c shows the organization of subarrays, banks, and chips
+to insignificant changes to the input (e.g., background pixels in an                               that form a DRAM device. Each bank partially decodes a given row
+image) [123]. Common training-time techniques such as adding                                       address and selects the corresponding subarray’s row buffer. On
+white noise and input feature map dropout try to force the network                                 a read operation, the I/O logic sends the requested portion of the
+to not rely on any single OFM element and enable robustness in                                     target row from the corresponding subarray’s row buffer to the
+the presence of statistical variance in the IFMs [160]. In this work,                              memory controller. A DRAM chip contains multiple banks that
+we show that we can also adapt DNNs and their training proce-                                      can operate in parallel. A DRAM device is composed of multiple
+dure to achieve partial error robustness against bit errors caused                                 DRAM chips that share the same command/address bus and are
+by approximate DRAM, by fundamentally taking advantage of the                                      simultaneously accessed to provide high bandwidth and capacity.
+overparameterization in the DNN.                                                                   In a typical system, each memory controller interfaces with a single
+                                                                                                   DRAM bus. We refer the readers to [17, 19–21, 56, 57, 73, 79, 91, 93,
+Quantization. Quantizing floating-point weights and OFMs into                                      94, 105, 106, 151, 162, 168, 182] for more detail on DRAM structure
+low-precision fixed-point numbers can greatly improve perfor-                                      and design.
+mance and energy consumption of DNNs [62]. Many prior works
+demonstrate that it is possible to quantize DNNs to limited numeric                                DRAM Operation. Accessing data stored in each row follows
+precision (e.g., eight-bit integers) without significantly affecting                               the sequence of memory controller commands illustrated in Fig-
+DNN accuracy [33, 55, 62, 66, 103, 165, 170, 184]. In our evaluations,                             ure 3. First, the activation command (ACT) activates the row by
+we quantize all DNN models to four different numeric precisions :                                  pulling up the wordline and enabling sense amplification. After
+int4 (4-bit), int8 (8-bit), int16 (16-bit), and FP32 (32-bit).                                     a manufacturer-specified t RC D nanoseconds, the data is reliably
+                                                                                                   sensed and amplified in the row buffer. Second, the read command
+Pruning. Pruning [34] reduces the memory footprint of a DNN by                                     (READ) reads the data from the row buffer to the IO circuitry. After
+sparsifying the weights and feature maps. This is done by zeroing                                  a manufacturer-specified CL nanoseconds, the data is available on
+the lowest magnitude weights and retraining [55, 98, 177]. We study                                the memory bus. Third, the precharge command (PRE) prepares the
+the effects of pruning in our evaluations.                                                         DRAM bank for activation of another row. A precharge command
+Training. Training is the process of estimating the best set of                                    can be issued a manufacturer-specified t RAS nanoseconds after an
+weights that maximize the accuracy of DNN inference. Training is                                   activation command, and an activation command can be issued t RP
+usually performed with an iterative gradient descent algorithm [139]                               nanoseconds after a precharge command. t RC D , t RAS , t RP , and CL
+using a particular training dataset. The training dataset is divided                               are examples of DRAM timing parameters and their nominal values
+into batches. One iteration is the number of batches needed to com-                                provided in DRAM DDR4 datasheets are 12.5ns, 32ns, 12.5ns, and
+plete one epoch. One epoch completes when the entire dataset is                                    12.5ns respectively [67].
+passed once through the training algorithm.                                                        Commands            ACT                     READ                               PRE                        ACT
+                                                                                                       Data Bus                                                    Data
+2.2      DRAM Organization and Operation                                                             Timing
+                                                                                                                                   tRCD               CL
+                                                                                                   Parameters
+DRAM Organization. A DRAM device is organized hierarchically.                                                                                        tRAS                                       tRP
+Figure 2a shows a DRAM cell that consists of a capacitor and an                                    Figure 3: DRAM read timing. We explore reductions of t RC D ,
+access transistor. A capacitor encodes a bit value with its charge                                 t RAS , and t RP as part of EDEN’s evaluation. CL is a charac-
+level. The DRAM cell capacitor is connected to a bitline via an access                             teristic of the device, and not adjustable in the memory con-
+transistor that is controlled by a wordline. Figure 2b shows how the                               troller [67].
+DRAM cells are organized in the form of a 2D array (i.e., a subarray).
+Cells in a column of a subarray share a single bitline. Turning on an                              2.3        Reducing DRAM Parameters
+access transistor causes charge sharing between the capacitor and                                  We build on a large body of work on characterizing DRAM behavior
+the bitline, which shifts the bitline voltage up or down based on                                  in sub-reliable operation regimes of supply voltage and latency
+the charge level of the cell’s capacitor. Each bitline is connected to                             parameters [15, 18, 19, 21, 58, 76–78, 93, 94, 105, 128].
+a sense amplifier (SA) circuit that detects this shift and amplifies it
+to a full 0 or 1. The cells that share the same wordline in a subarray                             DRAM Voltage Reduction. Voltage reduction is critical to re-
+are referred to as a DRAM row. A row decoder drives a wordline                                     ducing DRAM power consumption since power is proportional
+to enable all cells in a DRAM row. Therefore, charge sharing and                                   to the square of supply voltage (i.e., VDD 2 × f ) [112, 167]. Prior
+sense amplification operate at row granularity. The array of sense                                 research [21, 36] shows that reducing voltage increases the propaga-
+amplifiers in a subarray is referred to as row buffer. Each subarray                               tion delay of signals, which can cause errors when using unmodified
+
+
+
+                                                                                               3
+
+
+===== Page 4 =====
+
+timing parameters. One work avoids these errors by increasing the
+t RC D and t RP latencies [21] to ensure reliable operation. In contrast,          Baseline
+                                                                                                          1               Boosted
+our goal in this work is to aggressively reduce power consumption                                     Boos=ng
+                                                                                     DNN          DNN Error Tolerance       DNN
+and latency by decreasing both supply voltage and timing parame-                                                                                  3
+                                                                                                                                                                   Final
+ters, which inevitably causes errors in the form of bit flips in the                                                                        DNN to DRAM
+                                                                                     DNN                                                                           DNN
+                                                                                                                                              Mapping
+weakest cells of DRAM, making DRAM approximate. Resulting                          Accuracy
+                                                                                    Target                 2                DNN
+error patterns often exhibit locality. Chang et al. [21] observe that                             DNN Error Tolerance       Error
+these bit flips accumulate in certain regions (e.g., banks and rows)                               Characteriza=on         Proﬁle               DRAM
+of DRAM.                                                                                                                                         Error
+                                                                                                                                                Proﬁle
+DRAM Access Latency Reduction. Latency reduction is critical
+to increase system performance, as heavily emphasized by a recent                             Figure 4: Overview of the EDEN framework.
+study on workload-DRAM interactions [46]. Previous works char-
+                                                                                  the intrinsic bit error tolerance of the baseline DNN by 5-10x. We
+acterize real DRAM devices to find the minimum reliable row acti-
+                                                                                  describe our boosting mechanism in Section 3.2.
+vation (t RC D ) and precharge (t RP ) latency values [18, 19, 76, 93, 94].
+According to these studies, the minimum DRAM latency values are                   2. DNN Error Tolerance Characterization. EDEN characterizes
+significantly smaller than the values that datasheets report, due                 the error resilience of each boosted DNN data type (i.e., IFMs, OFMs,
+to conservative guardbands introduced by DRAM manufacturers.                      and DNN weights) to identify the limits of bit error tolerance. EDEN
+Further reducing these latency values cause bit flips in weak or                  measures the effect of bit errors on overall accuracy using the DNN
+unstable DRAM cells.                                                              validation dataset. We describe error tolerance characterization in
+                                                                                  Section 3.3.
+DRAM Refresh Rate Reduction. Other than voltage and latency,
+previous research also shows that reducing the refresh rate of                    3. DNN to DRAM Mapping. EDEN maps the error tolerance of
+DRAM chips both can increase performance and reduce energy                        each DNN data type to a corresponding approximate DRAM parti-
+consumption at the cost of introducing errors [35, 58, 72, 74, 75,                tion (e.g., chip, bank, or subarray) in a way that meets the specified
+105, 106, 128, 129] that are tolerable by many workloads that can                 accuracy requirements, while maximizing performance. We de-
+tolerate bit errors [5, 71, 122, 183].                                            scribe DNN to DRAM mapping in Section 3.4.
+                                                                                     Together, the three steps of EDEN enable a baseline DNN to
+3     EDEN FRAMEWORK                                                              become a specialized DNN that is error-tolerant and device-tuned
+To efficiently solve the energy and latency issues of off-chip DRAM               to a target approximate DRAM. EDEN enables energy efficient, high-
+for neural network workloads, we propose EDEN. EDEN is the                        performance DNN inference on the target approximate DRAM with
+first general framework that improves energy efficiency and perfor-               a user-defined accuracy.
+mance for neural network inference by using approximate DRAM.
+EDEN is based on two main insights: 1) neural networks are toler-                 3.2      Boosting DNN Error Tolerance
+ant to errors, and 2) DRAM timing parameters and voltage can be                   According to our evaluations, the error tolerance of common DNNs
+reduced at the cost of introducing more bit errors.                               is not sufficient to enable significant DRAM voltage and timing
+    We first provide an overview of EDEN in Section 3.1, and explain              parameter reductions. To overcome this issue, we propose curricular
+EDEN’s three steps in Sections 3.2, 3.3, and 3.4. Finally, Section 3.5            retraining, a new retraining mechanism that improves the error
+explains the changes required by the target DNN inference system                  tolerance of a DNN when running with approximate DRAM that
+to support a DNN generated by EDEN.                                               injects errors into memory locations accessed by the DNN.
+                                                                                     The key idea of curricular retraining is based on the observation
+3.1    EDEN: A High Level Overview                                                that introducing high error rates immediately at the beginning of
+EDEN enables the effective execution of DNN workloads using                       retraining process occasionally causes training divergence and a
+approximate DRAM through three key steps: 1) boosting DNN error                   phenomenon called accuracy collapse. To mitigate this problem,
+tolerance, 2) DNN error tolerance characterization, and 3) DNN-                   curricular retraining slowly increases the error rate of the approxi-
+DRAM mapping. These steps are repeated iteratively until EDEN                     mate DRAM from 0 to a target value in a step-wise fashion. In our
+finds the most aggressive DNN and DRAM configuration that meets                   experiments, we observe a good training convergence rate when
+the target accuracy requirements. EDEN transforms a DNN that                      we increase the error rate every two epochs (i.e., two passes of
+is trained on reliable hardware into a device-tuned DNN that is                   the entire training dataset). EDEN uses approximate DRAM in the
+able to run on a system that uses approximate DRAM at a target                    forward pass, and it uses reliable DRAM for the backward pass.
+accuracy level. EDEN allows tight control of the trade-off between                   We demonstrate in Section 6.4 that our curricular retraining
+accuracy and performance by enabling the user/system to specify                   mechanism is effective at improving the accuracy of DNN inference
+the maximal tolerable accuracy degradation. Figure 4 provides an                  executed on systems with approximate DRAM.
+overview of the three steps of EDEN, which we describe next.                         Our experiments show that curricular retraining does not help
+                                                                                  to improve DNN accuracy on reliable DRAM. This implies that
+1. Boosting DNN Error Tolerance. EDEN introduces curricular
+                                                                                  introducing bit error is not a regularization technique,2 but rather, a
+retraining, a new retraining mechanism that boosts a DNN’s error
+                                                                                  way of obtaining congruence between the DNN training algorithms
+tolerance for a target approximate DRAM module. Our curricular
+                                                                                  and the errors injected by approximate DRAM.
+retraining mechanism uses the error characteristics of the target
+approximate DRAM to inject errors into the DNN training proce-                    Correcting Implausible Values. While executing curricular re-
+dure and boost the DNN accuracy. The key novelty of curricular                    training, a single bit error in the exponent bits of a floating point
+retraining is to inject errors at a progressive rate during the train-
+ing process with the goal of increasing DNN error tolerance while                 2 Regularization is a technique that makes slight modifications to the training algorithm
+avoiding accuracy collapse with error correction. EDEN boosts                     such that the DNN model generalizes better.
+
+
+
+
+                                                                              4
+
+
+===== Page 5 =====
+
+value can cause accuracy collapse in the trained DNN. For exam-              a DNN by repeating cycles of DNN error tolerance boosting (Sec-
+ple, a bit error in the exponent of a weight creates an enormously           tion 3.2), coarse-grained DNN characterization, and DNN to DRAM
+large value (e.g., >108 ) that propagates through the DNN layers,            mapping (Section 3.4) until the highest tolerable BER stops improv-
+dominating weights that are significantly smaller (e.g., <10).               ing. We evaluate our coarse-grained characterization mechanism
+   To avoid this issue, we propose a mechanism to avoid accuracy             in Section 6.5.
+collapse caused by bit errors introduced by approximate DRAM.                Fine-Grained Characterization. EDEN can exploit variation in
+The key idea of our mechanism is to correct the values that are              the error tolerances of different DNN data types by clustering the
+implausible. When a value is loaded from memory, our mechanism               data according to its error tolerance level, and assigning each cluster
+probabilistically detects that a data type likely contains an error by       to a different DRAM partition whose error rate matches the error
+comparing its value against predefined thresholds. The thresholds            tolerance level of the cluster (see Section 3.4). For example, we find
+of the curricular retraining data types are computed during training         that the first and the last convolutional layers have tolerable BERs
+of the baseline DNN on DRAM with nominal parameters. Those                   2-3x smaller than the average middle layer in a DNN (in agreement
+thresholds usually have rather small values (e.g., most weights in           with prior work [166, 180]).
+SqueezeNet1.1 are within the range [-5,5]).                                      To conduct a fine-grained DNN characterization, EDEN searches
+   Upon detection of an error (i.e, the fact that a value is out of          for the highest tolerable BER of each weight and IFM that still
+the threshold range) during curricular retraining, EDEN 1) corrects          yields an acceptable DNN accuracy. This search space is exponen-
+the erroneous value by zeroing the value, and 2) uses the corrected          tial with respect to the DNN’s layer count. To tackle the search
+value for curricular retraining.                                             space challenge, EDEN employs a DNN data sweep procedure that
+   Our mechanism for correcting implausible values can be imple-             performs iterations over a list of DNN data types. The mechanism
+mented in two ways. First, a software implementation that modifies           tries to increase the tolerable error rate of a data type by a small
+the DNN framework to include extra instructions that correct im-             amount, and tests if the DNN still meets the accuracy requirements.
+plausible values resulting from each DNN memory access. Second,              When a DNN data type cannot tolerate more increase in error rate,
+a hardware implementation that adds a simple hardware logic to               it is removed from the sweep list. We evaluate our fine-grained
+the memory controller that corrects implausible values resulting             characterization mechanism in Section 6.6.
+from each approximate DRAM memory request. Section 5 describes
+our low cost hardware implementation.                                        Effect of Pruning. EDEN does not include pruning (Section 2.1)
+   In our experiments, we find that our mechanism for correcting             as part of its boosting routine due to two observations. First, we
+implausible values increases the tolerable bit error rate from 10−7          find that DNN sparsification does not improve the error tolerance.
+to 10−3 to achieve <1% accuracy degradation in the eight FP32                Our experiments show that when we create 10%, 50%, 75%, and
+DNNs we analyze. We evaluate an alternative mechanism for error              90% sparsity through energy-aware pruning [175], error tolerance
+correction that saturates an out-of-threshold value (by resetting to         of FP32 and int8 DNNs, DNN error tolerance does not improve
+the closest threshold value) instead of zeroing it. We observe that          significantly. Second, the zero values in the network, which increase
+saturating obtains lower DNN accuracy than zeroing at the same               with pruning, are sensitive to memory error perturbations.
+approximate DRAM bit error rate across all DNN models (e.g., 8% on
+CIFAR-10 and 7% on ImageNet). We also correct implausible values             3.4    DNN to DRAM Mapping
+during the execution of DNN inference to improve the inference
+accuracy (Section 3.5).                                                      After characterizing the error tolerance of each DNN data type,
+                                                                             EDEN maps each data type to the appropriate DRAM partition (with
+                                                                             the appropriate voltage and latency parameters) that satisfies the
+3.3    DNN Error Tolerance Characterization                                  data type’s error tolerance. Our mechanism aims to map a data type
+                                                                             that is very tolerant (intolerant) to errors into a DRAM partition
+EDEN aims to guarantee that the accuracy of a DNN meets the
+                                                                             with the highest (lowest) BER, matching the error tolerance of the
+minimum value required by the user. To this end, EDEN character-
+                                                                             DNN and the BER of the DRAM partition as much as possible.
+izes the boosted DNN (obtained from our boosting mechanism in
+Section 3.2) to find the maximum tolerable bit error rate (BER) by           DRAM Bit Error Rate Characterization. To obtain the BER char-
+progressively decreasing the approximate DRAM parameters, i.e.,              acteristics of a DRAM device (both in aggregate and for each par-
+voltage and latency. EDEN performs either a coarse-grained or a              tition), we perform reduced voltage and reduced latency tests for
+fine-grained DNN error tolerance characterization.                           a number of data patterns. For each voltage level, we iteratively
+                                                                             test two consecutive rows at a time. We populate these rows with
+Coarse-Grained Characterization. EDEN’s coarse-grained char-
+                                                                             inverted data patterns for the worst-case evaluation. Then, we
+acterization determines the highest BER that can be applied uni-
+                                                                             read each bit with reduced timing parameters (e.g., tRCD). This
+formly to the entire DNN, while meeting the accuracy requirements
+                                                                             characterization requires fine-grained control of the DRAM tim-
+of the user. This characterization is useful for mapping the DNN
+                                                                             ing parameters and supply voltage level. EDEN’s characterization
+to commodity systems (see Section 3.4) that apply reduced DRAM
+                                                                             mechanism is very similar to experimental DRAM characterization
+parameters to an entire DRAM module (without fine-grained con-
+                                                                             mechanisms proposed and evaluated in prior works for DRAM
+trol).
+                                                                             voltage [21, 47] and DRAM latency [18, 19, 58, 76, 93, 94].
+   To find the highest BER that satisfies the accuracy goal, our
+coarse-grained characterization method performs a logarithmic-               Coarse-grained DNN to DRAM module mapping. All DNN
+scale binary search on the error rates. We can use binary search be-         data types stored within the same DRAM module are exposed to the
+cause we found that DNN error-tolerance curves are monotonically             same DRAM voltage level and timing parameters. These parameters
+decreasing. To adjust the BER while doing this characterization,             are tuned to produce a bit error rate that is tolerable by all DNN
+EDEN can either 1) tune the parameters of approximate DRAM,                  data types that are mapped to the module.
+or 2) use DRAM error models for injecting bit errors into memory                Under coarse-grained mapping, the application does not need
+locations (see Section 4). EDEN optimizes the error resiliency of            to be modified. Algorithms used in DNN inference are oblivious to
+
+
+
+                                                                         5
+
+
+===== Page 6 =====
+
+the DRAM mapping used by the memory controller. The memory                   collapse during DNN inference. We use the same mechanism for cor-
+controller maps all inference-related requests to the appropriate            recting implausible values in our curricular retraining mechanism
+approximate DRAM module. Data that cannot tolerate bit errors                (i.e., we zero the values that are outside of a predefined threshold
+at any reduced voltage and latency levels is stored in a separate            range) to avoid accuracy collapse caused by bit errors introduced
+DRAM module whose voltage and latency parameters follow the                  by approximate DRAM during DNN inference.
+manufacturer specifications.
+   Coarse-grained mapping can be easily supported by existing sys-           4   ENABLING EDEN WITH ERROR MODELS
+tems that allow the modification of Vdd and/or t RC D/RP parameters
+in the BIOS across the entire DRAM module. Section 5 describes               EDEN requires extensive characterization of the target approximate
+the simple hardware changes required to support coarse-grained               DRAM device for boosting DNN error tolerance (Section 3.2), char-
+mapping. We evaluate our coarse-grained mapping mechanism in                 acterization of DNN error tolerance (Section 3.3), and mapping of
+Section 6.5.                                                                 the DNN to the approximate DRAM device (Section 3.4). However,
+                                                                             applying EDEN in a target system where DNN inference can be
+Fine-grained DNN to DRAM module mapping. DNN data types                      performed is not always feasible or practical. For example, a low-
+stored in different DRAM partitions can be exposed to different              cost DNN inference accelerator [26] might perform very slowly
+DRAM voltage levels and/or timing parameters. DRAM can be                    when executing our curricular retraining mechanism, because it
+partitioned at chip, rank, bank, or subarray level granularities. Al-        is not optimized for training. Similarly, the target hardware might
+gorithm 1 describes our algorithm for fine-grained mapping of DNN            not be available, or might have very limited availability (e.g., in the
+data to DRAM partitions. Our algorithm uses rigorous DRAM char-              pre-production phase of a new approximate hardware design).
+acterization and DNN characterization to iteratively assign DNN                 To solve this problem and enable EDEN even when target DRAM
+data to DRAM partitions in three basic steps. First, our mechanism           devices are not available for characterization, we propose to execute
+looks for DRAM partitions that have BERs lower than the tolera-              the EDEN framework in a system that is different from the target
+ble BER of a given DNN data type. Second, we select the DRAM                 approximate system. We call this idea EDEN offloading. The main
+partition with the largest parameter reduction that meets the BER            challenge of offloading EDEN to a different system is how to faith-
+requirements. Third, if the partition has enough space available,            fully emulate the errors injected by the target approximate DRAM
+our mechanism assigns the DNN data type to the DRAM partition.               into the DNN. To address this challenge, we use four different error
+We evaluate our fine-grained mapping mechanism in Section 6.6.               models that are representative of most of the error patterns that
+                                                                             are observed in real approximate DRAM modules.
+Algorithm 1 Fine-grained DNN to DRAM mapping                                 EDEN’s DRAM Error Models. EDEN uses four probabilistic error
+1     function DNN_to_DRAM_Mapping(DNN_characterization,                     models that closely fit the error patterns observed in a real approx-
+           DRAM_characterization):                                           imate DRAM module. Our models contain information about the
+2         sorted_data = sort_DNN_data(DNN_characterization)                  location of weak cells in the DRAM module, which is used to decide
+3         for (target_BER, DNN_data) in sorted_data:                         the spatial distribution of bit errors during DNN error tolerance
+                                                                             boosting. We create four different types of error models from the
+4             # Find the DRAM partition that has the least
+                                                                             data we obtain based on our characterization of existing DRAM
+                   voltage/latency at target_BER, and can fit
+                                                                             devices using SoftMC [58] and a variety of DDR3 and DDR4 DRAM
+                   the DNN_data                                              modules. Our error models are consistent with the error patterns
+5             for DRAM_partition in DRAM_characterization                    observed by prior works [19, 21, 76–78, 94]. In addition, our error
+6                 partition_params =                                         models are parameterizable and can be tuned to model individual
+                        get_voltage_latency(DRAM_partition,                  DRAM chips, ranks, banks, and subarrays from different vendors.
+                        target_BER)
+                                                                                 • Error Model 0: the bit errors follow a uniform random
+ 7                if DNN_data.size < DRAM_partition.size :
+                                                                                   distribution across a DRAM bank. Several prior works ob-
+ 8                    if partition_params < best_parameters:                       serve that reducing activation latency (t RC D ) and precharge
+ 9                        best_parameters = partition_params                       latency (t RP ) can cause randomly distributed bit flips due
+10                        chosen_partition = DRAM_partition                        to manufacturing process variation at the level of DRAM
+11                        DRAM_partition.size -= DNN_data.size                     cells [15, 19, 93, 94]. We model these errors with two key
+12            final_mapping[chosen_partition].append(DNN_data)                     parameters: 1) P is the percentage of weak cells (i.e., cells
+13        return final_mapping                                                     that fail with reduced DRAM parameters), and 2) F A is the
+                                                                                   probability of an error in any weak cell. Such uniform ran-
+                                                                                   dom distributions are already observed in prior works [10,
+   A system that supports fine-grained mapping requires changes                    53, 133, 164].
+in the memory controller (for voltage and latency adjustment) and                • Error Model 1: the bit errors follow a vertical distribution
+in DRAM (for only voltage adjustment). We describe the hardware                    across the bitlines of a DRAM bank. Prior works [19, 21,
+changes required to support fine-grained mapping in Section 5.                     76, 93] observe that some bitlines experience more bit flips
+                                                                                   than others under reduced DRAM parameters due to: 1)
+3.5     DNN Inference with Approximate DRAM                                        manufacturing process variation across sense amplifiers [19,
+EDEN generates a boosted DNN for running inference in a tar-                       21, 76], and 2) design-induced latency variation that arises
+get system that uses approximate DRAM. EDEN does not require                       from the varying distance between different bitlines and
+any modifications in DNN inference hardware, framework, or al-                     the row decoder [93]. We model this error distribution with
+gorithm, except for correcting implausible values. Similar to what                 two key parameters: 1) P B is the percentage of weak cells in
+happens in our curricular retraining (Section 3.2), a single bit error             bitline B, and 2) F B is the probability of an error in the weak
+in the exponent bits of a floating point value can cause accuracy                  cells of bitline B.
+
+
+
+                                                                         6
+
+
+===== Page 7 =====
+
+                  100      Vendor A            Vendor B             Vendor C               P B ≈ P, and 2) a reasonable approximation of Error Model 2, if
+                                 0xff                                                      max(FW ) − min(FW ) < 0.05 and PW ≈ P.
+Bit Error Rate
+
+
+
+                 10 3            0xcc                                                      Handling Error Variations. Error rates and error patterns depend
+                                 0xaa                                                      on two types of factors. First, factors intrinsic to the DRAM device.
+                 10 6            0x00                                                      The most common intrinsic factors are caused by manufacturer
+                                                                                           [21, 105], chip, and bank variability [77, 94]. Intrinsic factors are
+                 10 9
+                         1.1          1.2         1.1     1.2 1.1 1.2 1.3                  established at DRAM fabrication time. Second, factors extrinsic to
+                                            Supply Voltage (V)                             the DRAM device that depend on environmental or operating condi-
+                                                                                           tions. The most common extrinsic factors are aging [111, 147], data
+                 100       Vendor A            Vendor B          Vendor C                  values [74], and temperature [51]. Extrinsic factors can introduce
+                                                                                           significant variability in the error patterns.
+Bit Error Rate
+
+
+
+
+                 10 3                                                                         EDEN can capture intrinsic factors in the error model with a
+                                                                                           unique DRAM characterization pass. However, capturing extrinsic
+                 10 6                                                                      factors in the error model is more challenging. Our DNN models
+                                                                                           capture three factors extrinsic to the DRAM device.
+                 10 9                                                                         First, EDEN can capture data dependent errors by generating
+                        2.5 5.0 7.5 10.0 2.5 5.0 7.5 10.0 2.5 5.0 7.5 10.0                 different error models for different DNN models (i.e., different IFM
+                                            tRCD (ns)                                      and weight values in memory). For each DNN model, EDEN stores
+ Figure 5: Bit error rates depend on the data pattern stored                               the actual weight and IFM values in the target approximate DRAM
+ in DRAM, with reduced supply voltage [21] and reduced                                     before characterization to capture data dependencies.
+ t RC D [19, 21, 76, 93, 94], motivating Error Model 3. Data is                               Second, EDEN can capture temperature variations by generating
+ based on DDR3 DRAM modules from three major vendors.                                      different error models for the same approximate DRAM operating
+                                                                                           at different temperatures. Errors increase with higher tempera-
+                 • Error Model 2: the bit errors follow a horizontal distribu-             tures [94, 105], so the model must match the temperature of DNN
+                   tion across the wordlines of a DRAM bank. Prior works [19,              inference execution.
+                   21, 76, 93] observe that some DRAM rows experience more                    Third, EDEN can capture DRAM aging by periodically regen-
+                   bit flips than others under reduced DRAM parameters due to              erating new error models. In our experiments with real DRAM
+                   1) manufacturing process variation across DRAM rows [19,                modules, we find that the errors are temporally consistent and sta-
+                   21, 76], and 2) design-induced latency variation that arises            ble for days of continuous execution (with ±5°C deviations from
+                   from the varying distance between different DRAM rows                   the profiling temperature), without requiring re-characterization.
+                   and the row buffer [93]. We model this error distribution               Prior works [76, 94] report similar results.
+                   with two key parameters: 1) PW is the percentage of weak                   We find in our evaluation that our error models are sufficiently
+                   cells in wordline W , and 2) FW is the probability of an error          expressive to generate a boosted DNN that executes on real ap-
+                   in the weak cells of wordline W .                                       proximate DRAM with minimal accuracy loss (Section 6.4). Our
+                 • Error Model 3: the bit errors follow a uniform random                   four error models are also sufficiently expressive to encompass the
+                   distribution that depends on the content of the cells (i.e., this       bit-error models proposed in prior works [12, 128].
+                   is a data-dependent error model). Figure 5 illustrates how the
+                   bit error rates depend on the data pattern stored in DRAM,
+                   for reduced voltage (top) and reduced t RC D (bottom). We
+                   observe that 0-to-1 flips are more probable with t RC D scaling,
+                                                                                           5   MEMORY CONTROLLER SUPPORT
+                   and 1-to-0 flips are more probable with voltage scaling. Prior          To obtain the most out of EDEN, we modify the memory controller
+                   works provide rigorous analyses of data patterns in DRAM                to 1) correct implausible values during both curricular retraining
+                   with reduced voltage [21] and timing parameters [19] that               and DNN inference, 2) support coarse-grained memory mapping,
+                   show results similar to ours. This error model has three key            and 3) support fine-grained memory mapping.
+                   parameters: 1) P is the percentage of weak cells, 2) FV 1 is            Hardware Support for Correcting Implausible Values. We cor-
+                   the probability of an error in the weak cells that contain a 1          rect implausible values that cause accuracy collapse during both
+                   value, and 3) FV 0 is the probability of an error in the weak           curricular retraining (Section 3.2) and DNN inference (Section 3.5).
+                   cells that contain a 0 value.                                           Our mechanism 1) compares a loaded value to an upper-bound and
+                                                                                           a lower-bound threshold, and 2) sets the value to zero (i.e., supplies
+ Model Selection. EDEN applies a maximum likelihood estimation
+                                                                                           the load with a zero result) in case the value is out of bounds. Be-
+ (MLE) [128] procedure to determine 1) the parameters (P, F A , P B ,
+                                                                                           cause these operations are done for every memory access that loads
+ F B , PW , FW , FV 1 and FV 0 ) of each error model, and 2) the error
+                                                                                           a DNN value, it can cause significant performance degradation if
+ model that is most likely to produce the errors observed in the real
+                                                                                           performed in software. To mitigate this issue, we incorporate simple
+ approximate DRAM chip. In case two models have very similar
+                                                                                           hardware logic in the memory controller that we call bounding logic.
+ probability of producing the observed errors, our selection mecha-
+                                                                                           Our bounding logic 1) compares the exponent part of the loaded
+ nism chooses Error Model 0 if possible, or one of the error models
+                                                                                           floating point value to DNN-specific upper-bound and lower-bound
+ randomly otherwise. Our selection mechanism favors Error Model
+                                                                                           thresholds, and 2) zeros the input value if the value is out of bounds.
+ 0 because we find that it the is error model that performs better.
+                                                                                           In our implementation, the latency of this logic is only 1 cycle and
+ We observe that generating and injecting errors by software with
+                                                                                           its hardware cost is negligible.
+ Error Model 0 in both DNN retraining and inference is 1.3x faster
+ than injecting errors with other error models in our experimental                         Enabling Coarse-Grained Mapping. Coarse-grained mapping
+ setup. We observe that Error Model 0 provides 1) a reasonable ap-                         applies the same voltage and timing parameters to the entire DRAM
+ proximation of Error Model 1, if max(F B ) − min(F B ) < 0.05 and                         for executing a particular DNN workload. However, different DNN
+
+
+
+                                                                                       7
+
+
+===== Page 8 =====
+
+workloads might require applying different sets of DRAM parame-                our DRAM error models, and 2) applies our mechanism to correct
+ters to maximize energy savings and performance. In many existing              implausible values caused by bit errors in IFMs and weights (Sec-
+commodity systems, the memory controller sets the DRAM volt-                   tion 3.2). Our DRAM error models are implemented as custom GPU
+age and the timing parameters at start-up, and it is not possible to           kernels for efficient and simple integration into PyTorch. This sim-
+change them at runtime. To overcome this limitation, the memory                ulation allows us to obtain DNN accuracy estimates 80-90x faster
+controller requires minimal hardware support for changing the                  than with the SoftMC infrastructure.
+DRAM parameters of each DRAM module at runtime.
+                                                                                                     Error Injec*on    Correc*ng
+Enabling Fine-Grained Mapping. Fine-grained mapping applies                                                                                Final
+                                                                                  Weight/IFM          Using DRAM      Implausible
+different voltage and/or timing parameters to different DRAM par-                                                                       Weight/IFM
+                                                                                                      Error Models       Values
+titions.
+    To apply different voltages to different memory partitions, EDEN           Figure 6: Methodology to incorporate DRAM error models
+1) adopts the approach used by Voltron [21] to implement a robust              in the DNN evaluation framework.
+design for voltage scaling at the bank granularity based on mod-
+est changes to the power delivery network, and 2) tracks which                 DNN Baselines. We describe the DNN baselines that we use
+memory partition is operating at what voltage. To implement this               in the evaluation of the three EDEN steps (Sections 3.2, 3.3,
+mechanism in commodity DDR4/LPDDR4 chips with 16/32 banks,                     and 3.4). Table 1 lists the eight modern and commonly-used
+EDEN requires at most 32B of meta-data to represent all 8-bit volt-            DNN models we evaluate. We target both small (e.g., CIFAR-
+age step values.                                                               10 [4]) and large-scale (e.g., ILSVRC2012 [140]) image classifica-
+    To apply different timing parameters to different memory parti-            tion datasets. ResNet101 [59], VGG-16 [156], and DenseNet201 [63]
+tions, EDEN requires memory controller support for 1) configuring              models are top-five winners of past ImageNet ILSVRC competitions
+the target memory partition to operate at specific timing parameters,          [84, 140]. We use Google MobileNetV2 [146] to test smaller, mobile-
+and 2) tracking which memory partition is operating at what la-                optimized networks that are widely used on mobile platforms, and
+tency. For the timing parameter we tested in our evaluation (t RC D ),         SqueezeNet [64] to test embedded, real-time applications. Table 1
+4-bits are enough to encode all possible values of the parameter               also shows the summed sizes of all IFMs and weights of each net-
+with enough resolution.                                                        work for processing one input, which is a good indicator of the
+                                                                               memory intensity of each DNN model.
+    It is sufficient for EDEN to split DRAM into at most 210 partitions,
+because most commonly used DNN architectures have at most 1024                                                                          IFM+Weight
+different types of error-resilient IFMs and weights. EDEN requires              Model                  Dataset            Model Size       Size
+1KB of metadata to support 210 partitions. To support mappings at               ResNet101 [59]         CIFAR10 [4]            163.0MB      100.0MB
+subarray level granularity (i.e., the finest supported granularity),            MobileNetV2 [146]      CIFAR10 [4]             22.7MB       68.5MB
+EDEN needs a larger amount of metadata. For example, for an 8GB                 VGG-16 [156]           ILSVRC2012 [140]       528.0MB      218.0MB
+DDR4 DRAM module with 2048 subarrays, EDEN needs to store                       DenseNet201 [63]       ILSVRC2012 [140]        76.0MB      439.0MB
+2KB of metadata.                                                                SqueezeNet1.1 [64]     ILSVRC2012 [140]         4.8MB       53.8MB
+                                                                                Alexnet [84]           CIFAR10 [4]            233.0MB      208.0MB
+6     DNN ACCURACY EVALUATION                                                   YOLO [137]             MSCOCO [104]           237.0MB      360.0MB
+In this section, we evaluate EDEN’s ability to improve DNN ac-                  YOLO-Tiny [137]        MSCOCO [104]            33.8MB       51.3MB
+curacy in approximate DRAM. We explain our methodology (Sec-                    LeNet⋆ [89]            CIFAR10 [4]             1.65MB       2.30MB
+                                                                                ⋆ we use this small model in some evaluations where the experimental
+tion 6.1), evaluate the accuracy of our error models (Section 6.2),
+evaluate the error tolerance of the DNN baselines (Section 6.3),                                setup does not support large models.
+and analyze the accuracy of our curricular retraining mechanism                Table 1: DNN models used in our evaluations. The listed total
+(Section 6.4).
+                                                                               model size and summed IFM+weight sizes are for the FP32
+                                                                               variant of each model.
+6.1    Methodology
+We use an FPGA-based infrastructure running SoftMC [3, 58] to                      Table 2 shows the accuracy we obtain in our experiments for our
+reduce DRAM voltage and timing parameters. SoftMC allows ex-                   baseline networks across four different numeric precisions (int4,
+ecuting memory controller commands on individual banks, and                    int8, int16 and FP32), using reliable commodity DRAM. We quantize
+modifying t RC D and other DRAM timing parameters. We perform                  using the popular symmetric linear DNN quantization scheme [103].
+all our experiments at room temperature. Using this infrastructure,            This quantization scheme applies weight-dependent affine scaling
+we can obtain characteristics of real approximate DRAM devices.                to linearly map weights into the range [−2b−1 , 2b−1 − 1], where b
+However, our infrastructure also has some performance limitations              is the target model weight bit precision. YOLO and YOLO-Tiny’s
+caused by delays introduced with SoftMC’s FPGA buffering, host-                framework only support int8 and FP32 numeric precisions.
+FPGA data transmission, and instruction batching on the FPGA.                      Our baseline accuracies match stated numbers in relevant liter-
+    To overcome these performance limitations, we emulate real                 ature [59, 63, 64, 146, 156]. Two of the models, DenseNet201 and
+approximate DRAM modules by using the error models described in                SqueezeNet1.1, suffer from accuracy collapse at 4-bit precision. We
+Section 4. To ensure that our evaluation is accurate, we validate our          did not use hyper-parameter tuning in our baselines or subsequent
+error models against real approximate DRAM devices (Section 6.2).              experiments. All results use the default DNN architectures and
+    We incorporate EDEN’s error models into DNN inference li-                  learning rates.
+braries by following the methodology described in Figure 6. We
+create a framework on top of PyTorch [127] that allows us to mod-              6.2    Accuracy Validation of the Error Models
+ify the loading of weights and IFMs. Our PyTorch implementation                EDEN uses errors obtained from real DRAM devices to build and se-
+1) injects errors into the original IFM and weight values using                lect accurate error models. We profile the DRAM 1) before running
+
+
+
+                                                                           8
+
+
+===== Page 9 =====
+
+              Model                       int4     int8    int16    FP32          quantization, best-fit error model, and BER can potentially affect
+              ResNet101 [59]            89.11%   93.14%   93.11%   94.20%         the final DNN accuracy.
+              MobileNetV2 [146]         51.00%   70.44%   70.46%   78.35%             Figure 8 shows the accuracy of ResNet101 at different precision
+              VGG-16 [156]              59.05%   70.48%   70.53%   71.59%         levels and BERs using all four error models. We see that all DNNs
+              DenseNet201 [63]           0.31%   74.60%   74.82%   76.90%         exhibit an accuracy drop at high BER (> 10−2 ), but different error
+              SqueezeNet1.1 [64]         8.07%   57.07%   57.39%   58.18%         models cause the drop-off for all DNNs to be higher or lower. This
+              Alexnet [84]              83.13%   86.04%   87.21%   89.13%         is rooted in how each error model disperses bit errors into the DNN
+              YOLO⋆ [137]                    –   44.60%        –   55.30%         IFMs and weights. A good example of this is Error Model 1, which
+              YOLO-Tiny⋆ [137]               –   14.10%        –   23.70%         exhibits the most early and extreme drop-offs, especially for FP32
+              LeNet [89]                     –   61.30%        –   67.40%         DNNs. We find that the cause of this is that, in our experimental
+          ⋆ these models use mean average precision (mAP) instead of              setup, IFMs and weights are aligned in DRAM, so the MSBs of
+                                   the accuracy metric.                           different DNN data types are mapped to the same bitline B. If the
+Table 2: Baseline accuracies of the networks used in our eval-                    percentage of weak cells in bitline B (P B ) is high, the DNN suffers
+uation with reliable DRAM memory (no bit errors) using dif-                       many MSB failures. However, Error Model 0 distributes these weak
+ferent numeric precisions.                                                        cell failures uniformly and randomly across the bank, causing far
+                                                                                  fewer MSB failures. In general, the way in which each error model
+DNN inference, and 2) when the environmental factors that can af-                 captures the distribution of weak cells across data layout in memory
+fect the error patterns change (e.g., when temperature changes). We               greatly affects its impact on the error curve.
+find that an error model can be accurate for many days if the envi-
+ronmental conditions do not change significantly, as also observed                                         Error Model 0        Error Model 1
+in prior work [76, 93, 94].                                                                       1.00
+    We derive our probabilistic error models (Section 4) from data                                0.75
+
+
+                                                                                       Accuracy
+obtained from eight real DRAM modules. We use the same FPGA
+infrastructure as the one described in Section 6.1. We find that                                  0.50
+complete profiling of a 16-bank, 4GB DDR4 DRAM module takes
+under 4 minutes in our evaluation setup. We can speed up the                                      0.25
+profiling time by 2-5x using more sophisticated DRAM profiling                                    0.00
+methodologies [129].
+    We validate our error models by comparing the DNN accuracy                                             Error Model 2        Error Model 3
+obtained after injecting bit errors using our DRAM error models to                                1.00
+the accuracy obtained with each real approximate DRAM module.                                     0.75
+                                                                                       Accuracy
+
+
+
+Figure 7 shows an example of the DNN accuracy obtained using
+DRAM modules from three major vendors with reduced voltage and                                    0.50                             4-bit
+t RC D , and the DNN accuracy obtained using our Error Model 0. We
+                                                                                                                                   8-bit
+use Error Model 0 because it is the model that fits better the errors                             0.25                             16-bit
+observed in the three tested DRAM modules. Our main observation
+                                                                                                                                   32-bit
+                                                                                                  0.00
+is that the DNN accuracy obtained with our model is very similar to                                      10 4 10 3 10 2 10 1 10 4 10 3 10 2 10 1
+that obtained with real approximate DRAM devices. We conclude
+that our error models mimic very well the errors observed in real
+                                                                                                                BER                 BER
+                                                                                  Figure 8: ResNet101 accuracy across different BERs (x-axis)
+approximate DRAM devices.
+                                                                                  and quantization levels when we use four error models to
+                       Vendor A, SoftMC             Vendor A, Error Model 0       inject bit errors. We fit the parameters of the error models to
+                       Vendor B, SoftMC             Vendor B, Error Model 0       the errors observed by reducing tRCD in a real DRAM device
+                       Vendor C, SoftMC             Vendor C, Error Model 0       from Vendor A.
+              0.7
+              0.6                                                                 Quantization. Precision also affects the error model and the error
+   Accuracy
+
+
+
+
+              0.5                                                                 tolerance curve. For example, in Error Model 2, we observe that the
+                                                                                  int-4 DNN has the weakest error tolerance curve. We find that this
+              0.4                                                                 is because Error Model 2 clusters weak cells along a row: a large
+              0.3                                                                 number of neighboring 4-bit values end up corrupted when Error
+                                                                                  Model 2 indicates a weak wordline. This is in contrast to larger
+              0.2   1.0         1.1        1.2            5          10           precisions, which might have numbers distributed more evenly
+                          Voltage (V)                      tRCD (ns)              across rows, or error models that do not capture error locality (e.g.,
+Figure 7: LeNet/CIFAR-10 accuracies obtained using real ap-                       Error Model 0). In general, we find that clusters of erroneous values
+proximate DRAM devices (via SoftMC) and using our Error                           cause significant problems with accuracy (the errors compound
+Model 0. Error bars show the 95% confidence interval of Er-                       faster as they interact with each other in the DNN). Such locality of
+ror Model 0.                                                                      errors is more common in low-bitwidth precisions and with spatial
+                                                                                  correlation-based error models (Error Models 1 and 2).
+6.3           Error Tolerance of Baseline DNNs                                    DNN Size. We observe that larger DNNs (e.g., VGG16) are more
+To better understand the baseline error tolerance of each DNN                     error resilient. Larger models exhibit an accuracy drop-off at higher
+(before boosting the error tolerance), we examine the error toler-                BER (> 10−2 ) as compared to smaller models (e.g. SqueezeNet1.1,
+ance of the baseline DNNs. This also shows us how differences in                  < 10−3 ). These results are not plotted.
+
+
+
+                                                                              9
+
+
+===== Page 10 =====
+
+Accuracy Collapse. We can observe the accuracy collapse phe-                                          Poor-Fit Error Model                    Non-Curricular Retraining
+nomenon caused by implausible values (see Section 3.2) when we                                        Good-Fit Error Model                    Curricular Retraining
+                                                                                                      Baseline                                Baseline
+increase the bit error rate over 10−6 in large networks. These im-
+                                                                                             1.0
+plausible values propagate, and in the end, they cause accuracy
+collapse in the DNN.                                                                         0.8
+
+
+
+
+                                                                                  Accuracy
+                                                                                             0.6
+6.4              Curricular Retraining Evaluation
+We run DNN inference on real DRAM devices using the boosted                                  0.4
+DNN model generated by our curricular retraining mechanism.                                  0.2
+To our knowledge, this is the first demonstration of DNN infer-
+                                                                                             0.0 4
+ence on real approximate memory. We also evaluate our curricular                               10        10 3      10 2        10 1 10 4         10 3      10 2      10 1
+retraining mechanism using our error models (see Section 4).                                                                 Bit Error Rate
+Experimental Setup. We evaluate curricular retraining using real                  Figure 10: Accuracy of boosted ResNet101 DNNs in presence
+DRAM devices by running LeNet [89] on the CIFAR-10 [4] vali-                      of memory errors. Left: accuracy of poor-fit and good-fit er-
+dation dataset. We use SoftMC [58] to scale VDD and t RC D on an                  ror models. Right: accuracy of non-curricular and curricular
+FPGA-based infrastructure connected to a DDR3 DRAM module.                        retraining using a good-fit error model.
+We also evaluate curricular retraining using our error models by
+running ResNet [59] on the CIFAR-10 validation dataset.                           as the baseline DNN executed in DRAM with nominal parameters.
+Results with Real DRAM. Figure 9 shows the accuracy of 1) base-                   For our ResNet101 on CIFAR-10 with an NVIDIA Tesla P100, this
+line LeNet without applying any retraining mechanism (Baseline),                  one-time boosting completes within 10 minutes.
+and 2) LeNeT boosted with our curricular retraining mechanism
+(Boosted), as a function of DRAM supply voltage and t RC D . We                   6.5              Coarse-Grained DNN Characterization
+make two observations. First, EDEN’s boosted LeNet allows a volt-                                  and Mapping
+age reduction of ∼0.25V and a t RC D reduction of 4.5ns, while main-              In this section, we show the results of EDEN’s coarse-grained DNN
+taining accuracy values equivalent to those provided by nominal                   characterization (see Section 3.3) and how the target DNN model
+voltage (1.35V) and nominal t RC D (12.5ns). Second, the accuracy of              maps to an approximate DRAM with optimized parameters for a
+baseline LeNet decreases very quickly when reducing voltage and                   target accuracy degradation of < 1%.
+t RC D below the nominal values. We conclude that our curricular
+retraining mechanism can effectively boost the accuracy of LeNeT                  Characterization. Table 3 shows the DNN’s maximum tolerable
+on approximate DRAM with reduced voltage and t RC D .                             BER for eight DNN models with FP32 and int8 numeric precisions.
+                                      Baseline         Boosted                                                           FP32                           int8
+           0.8                                                                               Model              BER    ∆VD D ∆t RC D          BER    ∆VD D ∆t RC D
+                                                                                             ResNet101          4.0%   -0.30V -5.5ns          4.0%   -0.30V -5.5ns
+                                                                                             MobileNetV2        1.0%   -0.25V -1.0ns          0.5%   -0.10V -1.0ns
+           0.6
+Accuracy
+
+
+
+
+                                                                                             VGG-16             5.0%   -0.35V -6.0ns          5.0%   -0.35V -6.0ns
+                                                                                             DenseNet201        1.5%   -0.25V -2.0ns          1.5%   -0.25V -2.0ns
+           0.4                                                                               SqueezeNet1.1      0.5%   -0.10V -1.0ns          0.5%   -0.10V -1.0ns
+                                                                                             AlexNet            3.0%   -0.30V -4.5ns          3.0%   -0.30V -4.5ns
+           0.2                                                                               YOLO               5.0%   -0.35V -6.0ns          4.0%   -0.30V -5.5ns
+                     1.05     1.20       1.35    2.5     5.0 7.5 10.0 12.5                   YOLO-Tiny          3.5%   -0.30V -5.0ns          3.0%   -0.30V -4.5ns
+                        Voltage (V)                         tRCD (ns)
+Figure 9: LeNet accuracy using baseline and boosted DNNs.                         Table 3: Maximum tolerable BER for each DNN using
+                                                                                  EDEN’s coarse-grained characterization, and DRAM param-
+Results with Error Models. Figure 10 (left) shows an experiment
+                                                                                  eter reduction to achieve the maximum tolerable BER. Nom-
+that retrains ResNet101 with two different models: 1) a good-fit error
+model (that closely matches the tested device) and 2) a poor-fit error            inal parameters are VDD = 1.35V and t RC D = 12.5ns.
+model. We make two observations. First, retraining using a poor-fit
+                                                                                     We observe that the maximum tolerable BER demonstrates signif-
+error model (red), yields little improvement over the baseline (no
+                                                                                  icant variation depending on the DNN model. For example, YOLO
+retraining, green). Second, retraining with a good-fit error model
+                                                                                  tolerates 5% BER and SqueezeNet tolerates only 0.5%. We conclude
+(blue) improves BER at the 89% accuracy point by >10x (shifting the
+                                                                                  that 1) the maximum tolerable BER highly depends on the DNN
+BER curve right). We conclude that using a good-fit error model in
+                                                                                  model, and 2) DNN characterization is required to optimize approx-
+the retraining mechanism is critical to avoid accuracy collapse.
+                                                                                  imate DRAM parameters for each DNN model.
+   Figure 10 (right) shows the effectiveness of our curricular re-
+training mechanism using a good-fit error model. We make two                      Mapping. EDEN maps each DNN model to an approximate DRAM
+observations. First, the accuracy of the DNN with regular retraining              module that operates with the maximum reduction in voltage
+(purple) collapses, compared to the baseline DNN (no retraining,                  (∆VDD ) and t RC D (∆t RC D ) that leads to a BER below the maxi-
+green). Second, the DNN trained with our curricular retraining                    mum DNN tolerable BER for that DNN model. Table 3 shows the
+(orange) exhibits a boosted error tolerance. We conclude that our                 maximum reduction in DRAM voltage (∆VDD ) and t RC D (∆t RC D )
+curricular retraining mechanism is effective at boosting the DNN                  that causes a DRAM BER below the maximum tolerable BER, for a
+accuracy in systems that use approximate DRAM.                                    target DRAM module from vendor A. The nominal DRAM parame-
+   Running this retraining process for 10-15 epochs is sufficient to              ters for this DRAM module are VDD = 1.35V and t RC D = 12.5ns .
+boost tolerable BERs by 5-10x to achieve the same DNN accuracy                    We make two observations. First, the tolerable BER of a network
+
+
+
+                                                                             10
+
+
+===== Page 11 =====
+
+ is directly related to the maximum tolerable VDD and t RC D reduc-                  12%                                   IFMs           Weights
+ tions. Second, the reductions in VDD and t RC D are very significant                10%
+                                                                                      8%
+
+
+
+
+                                                                              BER
+ compared to the nominal values. For example, EDEN can reduce                         6%
+ voltage by 26% and t RC D by 48% in YOLO while maintaining the                       4%
+ DNN accuracy to be within 1% of the original accuracy.                               2%
+ 6.6    Fine-Grained DNN Characterization                                                                               Weights and IFMs
+        and Mapping                                                            Figure 12: Mapping of ResNet101 IFMs and weights into
+                                                                               four partitions with different VDD values (colored horizon-
+Characterization. We characterize the ResNet101 DNN model                      tal lines)
+with our fine-grained DNN characterization procedure (see Sec-
+tion 3.3). For each IFM and weight, we iteratively increase the bit            7.1           CPU Inference
+error rate until we reach the maximum tolerable BER of the data                Experimental Setup. We evaluate EDEN on top of a multi-core
+type for a particular target accuracy degradation. We perform a                OoO CPU using the simulated core configuration listed in Table
+full network retraining in each iteration. To reduce the runtime of            4. We use ZSim [145] and Ramulator [81] to simulate the core and
+our procedure , we sample 10% of the validation set during each                the DRAM subsystem, respectively. We use DRAMPower [16] to
+inference run to obtain the accuracy estimate. We also bootstrap               estimate energy consumption for DDR4 devices. We use a 2-channel,
+the BERs to the BER found in coarse-grained DNN characteriza-                  32-bank 8GB DDR4-2133 DRAM device.
+tion and use a linear scale in 0.5 increments around that value. For
+ResNet101, this one-time characterization completes in one hour                                   Cores      2 Cores @ 4.0 GHz, 32nm, 4-wide OoO,
+using an Intel Xeon CPU E3-1225 [1].                                                                         Buffers: 18-entry fetch, 128-entry decode,
+   Figure 11 shows the maximum tolerable BER for each IFM and                                                128-entry reorder buffer,
+weight in ResNet101 obtained with our fine-grained DNN charac-                              L1 Caches        32KB, 8-way, 2-cycle, Split Data/Instr.
+terization method (Section 3.3), assuming a maximum accuracy loss                           L2 Caches        512KB per core, 8-way, 4-cycle, Shared Data/Instr.,
+of <1%. Each bar in the figure represents the BER tolerance of an                                            Stream Prefetcher
+IFM or weight, and they are ordered by their depth in the DNN,                              L3 Caches        8MB per core, 16-way, 6-cycle, Shared Data/Instr.,
+going deeper from left to right. We make three observations. First,                                          Stream Prefetcher
+fine-grained characterization enables individual IFMs and weights                Main Memory                 8GB DDR4-2133 DRAM, 2 channels, 16 banks/channel
+to tolerate up to 3x BER (13% for the last weight) of the maximum                         Table 4: Simulated system configuration.
+tolerable BER of the coarse-grained approach (4% for ResNet101 in
+                                                                                  We use twelve different inference benchmarks: eight from the In-
+Table 3). Second, weights usually tolerate more errors than IFMs.
+                                                                               tel OpenVINO toolkit [83] and four from the AlexeyAB-fork of the
+Third, the maximum tolerable BER is smaller in the first layers than
+                                                                               DarkNet framework [136]. For each DNN, we study the FP32 and
+in the middle layers of the DNN. We conclude that fine-grained
+                                                                               the int8-quantized variant. We use 8-bit quantization in our base-
+DNN characterization enables a significant increase in the maxi-
+                                                                               lines, because it is commonly used for production CPU workloads
+mum tolerable BER compared to coarse-grained characterization.
+                                                                               [66]. We evaluate EDEN’s coarse-grained DNN characterization
+      12%                       IFMs        Weights                            procedure and target a < 1% accuracy degradation. Table 3 lists the
+      10%                                                                      reduced VDD and t RC D values.
+       8%
+BER
+
+
+
+
+       6%                                                                     DRAM Energy. Figure 13 shows the DRAM energy savings of
+       4%
+       2%                                                                     EDEN, compared to a system with DRAM operating at nominal
+                                                                              voltage and nominal latency. We make two observations. First,
+                             Weights and IFMs                                 EDEN achieves significant DRAM energy savings across different
+                                                                              DNN models. The average DRAM energy savings is 21% across all
+Figure 11: Fine-grained characterization of the tolerable
+                                                                              workloads, and 29% each for YOLO and VGG. Second, the DRAM
+BERs of ResNet101 IFMs and weights. Deeper layers are on
+                                                                              energy savings for FP32 and int8 are roughly the same, because the
+the right.                                                                    voltage reduction is very similar for both precisions (see Table 3).
+Mapping. We map each individual IFM or weight into different
+DRAM partitions based on 1) the BER tolerance of each IFM and                               30%
+                                                                              DRAM Energy
+                                                                               Reduction
+
+
+
+
+weight, and 2) the BER of each DRAM partition, using our algo-
+rithm in Section 3.4. Figure 12 shows an example that maps the                              20%
+ResNet101 IFMs and weights from Figure 11 into 4 different DRAM                             10%
+partitions with different voltage parameters that introduce differ-
+ent BERs (four horizontal colored bars), following the algorithm in                         0%
+                                                                                                   FP32 int8 FP32 int8 FP32 int8 FP32 int8 FP32 int8 FP32 int8 FP32 int8
+Section 3.4.                                                                                        YOLO-T     YOLO     ResNet     VGG SqueezeNetDenseNet Gmean
+   We conclude that the wide range of tolerable BERs across all
+                                                                               Figure 13: DRAM energy savings of EDEN. We use FP32 and
+ResNet101 data types enables the use of both 1) DRAM partitions
+with significant voltage reduction (e.g., horizontal red line), and 2)         quantized int8 networks.
+DRAM partitions with moderate voltage reduction (e.g., horizontal                We also perform evaluations for a target accuracy that is the same
+blue line).                                                                   as the original. Our results show that EDEN enables an average
+                                                                              DRAM energy reduction of 16% (up to 18%).
+ 7     SYSTEM LEVEL EVALUATION                                                   We conclude that EDEN is effective at saving DNN inference
+We evaluate EDEN in three different DNN inference architectures:              energy by reducing voltage while maintaining the DNN accuracy
+CPUs, GPUs, and inference accelerators.                                       within 1% of the original.
+
+
+
+                                                                         11
+
+
+===== Page 12 =====
+
+Performance. Figure 14 shows the speedup of EDEN when we                                      YOLO. These results indicate that 1) the YOLO DNN family is not
+reduce t RC D , and the speedup of a system with a DRAM module                                DRAM latency bound in our evaluation configuration, and 2) EDEN
+that has ideal t RC D = 0, compared to a system that uses DRAM                                can achieve close to the ideal speedup of zero activation latency
+with nominal timing parameters. We make three observations. First,                            when the DNN is latency bound.
+YOLO DNNs exhibit high speedup with EDEN, reaching up to 17%
+                                                                                              Neural Network Inference Accelerators. We evaluate EDEN on
+speedup. The results of YOLO are better than the average because
+                                                                                              Eyeriss [26] and Google’s Tensor Processing Unit (TPU) [69] using
+YOLO is more sensitive to DRAM latency. This is because some
+                                                                                              the cycle-accurate SCALE-Sim simulator [144]. We use DRAM-
+steps in YOLO (e.g., Non-Maximum Suppression [61, 119], confi-
+                                                                                              Power [16] to obtain DRAM energy consumption from memory
+dence and IoU thresholding [137, 138]) perform arbitrary indexing
+                                                                                              traces produced by SCALE-Sim. We use the built-in int8 AlexNet
+into matrices that lead to random memory accesses, which cannot
+                                                                                              and YOLO-Tiny models and their accelerator-specific dataflows. We
+easily be predicted by the prefetchers . Second, the average speedup
+                                                                                              use DRAM parameters that yield a maximum accuracy loss of 1%
+of EDEN (8%) is very close to the average speedup of the ideal
+                                                                                              (Table 3). Table 6 details the configuration of the Eyeriss and TPU
+system with t RC D = 0 (10%). Third, we find that SqueezeNet1.1
+                                                                                              inference accelerators. Eyeriss has an array of 12x14 processing
+and ResNet101 exhibit very little maximum theoretical speedup
+                                                                                              elements (PEs) with a 324KB SRAM buffer for all data types (i.e.,
+because they are not bottlenecked by memory latency.
+                                                                                              IFMs, weights and OFMs), and the TPU has an array of 256x256
+          1.20                                                                                PEs with a 24MB SRAM buffer for all data types. We evaluate both
+          1.15                                 EDEN           tRCD = 0                        accelerators with DDR4 and LPDDR3 DRAM configurations, using
+Speedup
+
+
+
+
+          1.10                                                                                Alexnet and YOLO-Tiny workloads.
+          1.05                                                                                                        Eyeriss             TPU
+          1.00                                                                                      Array             12 × 14 PEs         256 × 256 PEs
+          0.95                                                                                      SRAM Buffers      324 KB              24 MB
+                 FP32 int8 FP32 int8 FP32 int8 FP32 int8 FP32 int8 FP32 int8 FP32 int8              Main Memory       4GB DDR4-2400       4GB DDR4-2400
+                  YOLO-T     YOLO     ResNet     VGG SqueezeNet DenseNet Gmean
+                                                                                                                      4GB LPDDR3-1600     4GB LPDDR3-1600
+Figure 14: Speedup of EDEN over baseline and versus a sys-
+tem with ideal activation latency. We use FP32 and an quan-                                       Table 6: Simulated Eyeriss and TPU configurations.
+tized int8 networks.                                                                             Our results show that reducing the voltage level in DDR4 DRAM
+                                                                                              leads to significant DRAM energy reductions on both Eyeriss and
+   We also perform evaluations for a target accuracy that is the same
+                                                                                              TPU accelerators. EDEN provides 1) 31% average DRAM energy
+as the original. Our results show that EDEN enables an average
+                                                                                              savings on Eyeriss (31% for YOLO-Tiny, and 32% for Alexnet), and
+performance gain of 4% (up to 7%).
+                                                                                              2) 32% average DRAM energy savings on TPU (31% for YOLO-Tiny,
+   We conclude that EDEN is effective at improving DNN inference
+                                                                                              and 34% for Alexnet).
+performance by reducing DRAM latency while maintaining the
+                                                                                                 Our results with a reduced voltage level in LPDDR3 are similar
+DNN accuracy within 1% of the original, especially on DNNs that
+                                                                                              to those with DDR4. EDEN provides an average DRAM energy
+are sensitive to memory latency.
+                                                                                              reduction of 21% for both Eyeriss and TPU accelerators running
+7.2          Accelerators                                                                     YOLO-Tiny and Alexnet. By using the accelerator/network/cache/-
+                                                                                              DRAM energy breakdown provided by the Eyeriss evaluations on
+We evaluate EDEN on three different accelerators: GPU [124], Eye-                             AlexNet [161], we estimate that EDEN can provide 26.8% system-
+riss [26], and TPU [69].                                                                      level energy reduction on fully-connected layers and 7% system-
+GPU Inference. We evaluate EDEN on a GPU using the cycle-                                     level energy reduction on convolutional layers.
+accurate GPGPU-Sim simulator [11]. We use GPUWattch [95] to                                      Our results with reduced t RC D in LPDDR3 and DDR4 show
+evaluate the overall GPU energy consumption. Table 5 details the                              that Eyeriss and TPU exhibit no speedup from reducing t RC D . We
+NVIDIA Titan X GPU model [2] we use in our evaluation. We use                                 observe that prefetchers are very effective in these architectures
+the reduced t RC D and VDD values that provide < 1% accuracy                                  because the memory access patterns in the evaluated DNNs are
+degradation (as listed in Table 3). We adapt four DarkNet-based                               very predictable.
+binaries to run inference on the FP32/int8 YOLO and YOLO-Tiny
+DNNs.                                                                                         8   RELATED WORK
+                                                                                              To our knowledge, this paper is the first to propose a general frame-
+            Shader Core        28 SMs, 1417 MHz, 32 SIMT Width,                               work that reduces energy consumption and increases performance
+                               64 Warps per SM, 4 GTO Schedulers per Core                     of DNN inference by using approximate DRAM with reduced volt-
+   Private L1 Cache            24 KB per SMM, Cache Block Size 128B                           age and latency. EDEN introduces a new methodology to improve
+    Shared Memory              96 KB, 32 Banks. Shared L2 Cache: 3MB                          DNN’s tolerance to approximate DRAM errors which is based on
+     Main Memory               GDDR5, 2500MHz, 6 channels, 24 chips                           DNN error tolerance characterization and a new curricular retrain-
+                                                                                              ing mechanism. We demonstrate the effectiveness of EDEN by using
+     Table 5: Simulated NVIDIA Titan X GPU configuration
+                                                                                              error patterns that occur in real approximate DRAM devices.
+                                                                                                 In this section, we discuss closely related work on 1) approximate
+    Our results show that EDEN provides 37% average energy re-
+                                                                                              computing hardware for DNN workloads, and 2) modifying DRAM
+duction (41.7% for YOLO-Tiny, and 32.6% for YOLO) compared to a
+                                                                                              parameters.
+GPU that uses DRAM with nominal parameters.
+    Our results also show that EDEN provides 2.7% average speedup                             Approximate Computing Hardware for DNN Workloads.
+(5.5% for the YOLO-Tiny, and 0% for YOLO) compared to a GPU                                   Many prior works propose to use approximate computing hardware
+that uses DRAM with nominal parameters. DRAM with ideal tRCD                                  for executing machine learning workloads [30, 38, 97, 110, 118, 131,
+(t RC D = 0) provides 6% speedup for YOLO-Tiny and 2% speedup for                             132, 134, 141, 143, 155, 163, 166, 169, 173, 174, 179, 180]. All these
+
+
+
+                                                                                         12
+
+
+===== Page 13 =====
+
+works propose techniques for improving DNN tolerance for differ-              that reduce DRAM voltage, access latency, and refresh rate in Sec-
+ent types of approximate hardware mechanisms and error injection              tion 2.3. EDEN leverages the characterization techniques introduced
+rates. Compared to these works, EDEN is unique in 1) being the                in Voltron [21] and Flexible-Latency DRAM [19] to perform the
+first work to use approximate DRAM with reduced voltage and                   DRAM characterization required to map a DNN to approximate
+latency, 2) being the first demonstration of DNN inference using              DRAM with reduced voltage and reduced latency (Section 3.4). We
+error characterization of real approximate DRAM devices, 3) using             classify other related works that modify DRAM parameters into
+a novel curricular retraining mechanism that is able to customize             three categories.
+the DNN for tolerating high error rates injected by the target ap-                First, works that aim to characterize and reduce energy con-
+proximate DRAM, and 4) mapping each DNN data type to a DRAM                   sumption at reduced supply voltage levels [21, 36, 39, 47]. David et
+partition based on the error tolerance of the DNN data type and               al. [36] propose memory dynamic voltage and frequency scaling
+the bit error rate of the DRAM partition. We classify related works           (DVFS) to reduce DRAM power. MemScale [39] provides dynamic
+on approximate hardware for DNN workloads into six categories.                voltage and/or frequency scaling in main memory to reduce energy
+   First, works that reduce DRAM refresh to save DNN energy [121,             consumption, while meeting a maximum tolerable performance
+122, 164]. RANA [164] and St-DRC [121] propose to reduce DRAM                 degradation. Voltron [21] studies voltage reduction in real DRAM
+refresh rate in the embedded DRAM (eDRAM) memory of DNN                       devices in detail and proposes solutions to reduce voltage reliably
+accelerators. Nguyen et al. [122] propose to apply similar refresh op-        based on observed error characteristics and system performance
+timization techniques to off-chip DRAM in DNN accelerators. These             requirements. VAMPIRE [47] proposes a new DRAM power model
+mechanisms use customized retraining mechanisms to improve the                that is based on the characteristics of real DRAM devices.
+accuracy of the DNN in the presence of a moderate amount of                       Second, works that investigate DRAM characteristics under re-
+errors.                                                                       duced access latency [15, 19, 21, 76–78, 93, 94]. Adaptive-Latency
+   Second, works that study the error tolerance of neural networks            DRAM [94] characterizes the guardbands present in timing parame-
+to uniform random faults in SRAM memory [97, 118, 134, 142, 143].             ters defined by DRAM manufacturers, and exploits the extra timing
+For example, Li et al. [97] analyze the effect of various numeric             margins to reliably reduce DRAM latency across different chips
+representations on error tolerance. Minerva [135] proposes an                 and temperatures. Flexible-Latency DRAM [19] analyzes the spatial
+algorithm-aware fault mitigation technique to mitigate the effects            distribution of reduced-latency-induced cell failures, and uses this
+of low-voltage SRAM in DNN accelerators.                                      information to reliably access different regions of DRAM with dif-
+   Third, works that study approximate arithmetic logic in DNN                ferent timing parameters. DIVA-DRAM [93] proposes an automatic
+workloads [141, 141, 178, 179]. ThUnderVolt [178] proposes to un-             method for finding the lowest reliable operation latency of DRAM,
+derscale the voltage of arithmetic elements. Salami et al. [141] and          via a combination of runtime profiling and ECC.
+Zhang et al. [179] present fault-mitigation techniques for neural                 Third, works that aim to reduce DRAM latency by modifying the
+networks that minimize errors in faulty registers and logic blocks            microarchitecture of DRAM or the memory controller [31, 56, 57, 91,
+with pruning and retraining.                                                  92, 108, 157, 168]. These works reduce latency without introducing
+   Fourth, works that study approximate emerging memory tech-                 bit errors.
+nologies for neural network acceleration. Panda et al. [125] and
+Kim [80] propose neuromorphic accelerators that use spintronics               9   CONCLUSION
+and memristors to run a proof-of-concept fuzzy neural network.                This paper introduces EDEN, the first general framework that en-
+   Fifth, works that study the effects of approximate storage devices         ables energy-efficient and high-performance DNN inference via
+on DNN workloads [132, 155]. Qin et al. [132] study the error toler-          approximate DRAM, while strictly meeting a target DNN accuracy.
+ance of neural networks that are stored in approximate non-volatile           EDEN uses an iterative mechanism that profiles the DNN and the
+memory (NVM) media. The authors study the effects of turning the              target approximate DRAM with reduced voltage and timing pa-
+ECC off in parts of the NVM media that store the neural network               rameters. EDEN improves DNN accuracy with a novel curricular
+data. Wen et al. [155] propose to mitigate the effects of unreliable          retraining mechanism that tolerates high bit error rates. We evalu-
+disk reads with a specialized ECC variant that aims to mitigate               ate EDEN in both simulation and on real hardware. Our evaluation
+error patterns present in weights of shallow neural networks.                 shows that EDEN enables 1) an average DRAM energy reduction
+   Sixth, works that study the intrinsic error resilience of DNNs by          of 21%, 37%, 31%, and 32% in CPU, GPU, Eyeriss, and TPU architec-
+injecting randomly-distributed errors in DNN data [110, 110, 141,             tures, respectively, across a variety of state-of-the-art DNNs, and 2)
+163, 166, 179, 180]. These works assume that the errors can come              average (maximum) performance gains of 8% (17%) in CPUs and
+from any component of the system (i.e., they do not target a specific         2.7% (5.5%) in GPUs, for latency-bound DNNs. We expect that the
+approximate hardware component). Marques et al. [110] study the               core principles of EDEN generalize well across different memory
+accuracy of DNNs under different error injection rates and propose            devices, memory parameters, and memory technologies. We hope
+various error mitigation techniques. This work uses a simple prob-            that EDEN enables further research and development on the use of
+abilistic method to artificially inject errors into the DNN model.            approximate memory for machine learning workloads.
+ApproxANN [180] uses an algorithm that optimizes the DNN accu-
+racy by taking into account the error tolerance and the criticality of
+each component of the network. The quality-configurable Neuro-                ACKNOWLEDGMENTS
+morphic Processing Engine (qcNPE) [166] uses processing elements              We thank the anonymous reviewers for feedback. We thank the
+with dynamically configurable accuracy for executing approximate              SAFARI Research Group members for feedback and the stimulat-
+neural networks.                                                              ing intellectual environment they provide. We acknowledge the
+                                                                              generous funding provided by our industrial partners: Alibaba, Face-
+Modifying DRAM Parameters. Many prior works study the ef-                     book, Google, Huawei, Intel, Microsoft, and VMware. This research
+fects of modifying DRAM parameters on reliability, performance                was supported in part by the Semiconductor Research Corporation.
+and energy consumption. We already discuss some prior works                   Skanda Koppula was supported by the Fulbright/Swiss Government
+                                                                              Excellent Scholarship 2018.0529.
+
+
+
+                                                                         13
+
+
+===== Page 14 =====
+
+REFERENCES                                                                                      [34] Y. L. Cun, J. S. Denker, and S. A. Solla, “Optimal Brain Damage,” in NIPS, 1990.
+ [1] “Intel Xeon CPU E3-1225,” https://ark.intel.com/content/www/us/en/ark/                     [35] A. Das, H. Hassan, and O. Mutlu, “VRL-DRAM: Improving DRAM Performance
+     products/52270/intel-xeon-processor-e3-1225-6m-cache-3-10-ghz.html.                             via Variable Refresh Latency,” in DAC, 2018.
+ [2] “NVIDIA Titan X GPU,” https://www.nvidia.com/en-us/geforce/products/                       [36] H. David, C. Fallin, E. Gorbatov, U. R. Hanebutte, and O. Mutlu, “Memory Power
+     10series/titan-x-pascal/.                                                                       Management via Dynamic Voltage/Frequency Scaling,” in ICAC, 2011.
+ [3] “SoftMC Source Code.” https://github.com/CMU-SAFARI/SoftMC                                 [37] C. De Sa, M. Leszczynski, J. Zhang, A. Marzoev, C. R. Aberger, K. Olukotun, and
+ [4] “The CIFAR-10 Dataset.” https://www.cs.toronto.edu/~kriz/cifar.html                             C. Ré, “High-Accuracy Low-Precision Training,” arXiv, 2018.
+ [5] S. Advani, N. Chandramoorthy, K. Swaminathan, K. Irick, Y. C. P. Cho, J. Samp-             [38] J. Deng, Y. Rang, Z. Du, Y. Wang, H. Li, O. Temam, P. Ienne, D. Novo, X. Li,
+     son, and V. Narayanan, “Refresh Enabled Video Analytics (REVA): Implications                    Y. Chen, and C. Wu, “Retraining-Based Timing Error Mitigation for Hardware
+     on Power and Performance of DRAM Supported Embedded Visual Systems,” in                         Neural Networks,” in DATE, 2015.
+     ICCD, 2014.                                                                                [39] Q. Deng, D. Meisner, L. Ramos, T. F. Wenisch, and R. Bianchini, “MemScale:
+ [6] J. Albericio, P. Judd, T. Hetherington, T. Aamodt, N. E. Jerger, and A. Moshovos,               Active Low-Power Modes for Main Memory,” in ASPLOS, 2011.
+     “Cnvlutin: Ineffectual-Neuron-Free Deep Neural Network Computing,” in ISCA,                [40] Q. Deng, L. Jiang, Y. Zhang, M. Zhang, and J. Yang, “DrAcc: A DRAM Based
+     2016.                                                                                           Accelerator for Accurate CNN Inference,” in DAC, 2018.
+ [7] M. Alwani, H. Chen, M. Ferdman, and P. Milder, “Fused-Layer CNN Accelerators,”             [41] C. Dong, C. C. Loy, K. He, and X. Tang, “Learning a Deep Convolutional Network
+     in MICRO, 2016.                                                                                 for Image Super-Resolution,” in ECCV, 2014.
+ [8] R. Andri, L. Cavigelli, D. Rossi, and L. Benini, “YodaNN: An Architecture for              [42] S. S. Du and J. D. Lee, “On the Power of Over-parametrization in Neural Networks
+     Ultralow Power Binary-Weight CNN Acceleration,” TCAD, 2017.                                     with Quadratic Activation,” arXiv, 2018.
+ [9] A. Aurisano, A. Radovic, D. Rocco, A. Himmel, M. Messier, E. Niner, G. Pawloski,           [43] J. Dundas and T. Mudge, “Improving Data Cache Performance by Pre-executing
+     F. Psihas, A. Sousa, and P. Vahle, “A Convolutional Neural Network Neutrino                     Instructions Under a Cache Miss,” in ICS, 1997.
+     Event Classifier,” JINST, 2016.                                                            [44] J. D. Dundas, “Improving Processor Performance by Dynamically Pre-Processing
+[10] S. Baek, S. Cho, and R. Melhem, “Refresh Now and Then,” TC, 2013.                               the Instruction Stream,” University of Michigan, Tech. Rep., 1999.
+[11] A. Bakhoda, G. L. Yuan, W. W. Fung, H. Wong, and T. M. Aamodt, “Analyzing                  [45] M. Gao, J. Pu, X. Yang, M. Horowitz, and C. Kozyrakis, “TETRIS: Scalable and
+     CUDA Workloads using a Detailed GPU Simulator,” in ISPASS, 2009.                                Efficient Neural Network Acceleration with 3D Memory,” ASPLOS, 2017.
+[12] E. Baseman, N. Debardeleben, S. Blanchard, J. Moore, O. Tkachenko, K. Ferreira,            [46] S. Ghose, T. Li, N. Hajinazar, D. Senol Cali, and O. Mutlu, “Demystifying Complex
+     T. Siddiqua, and V. Sridharan, “Physics-Informed Machine Learning for DRAM                      Workload-DRAM Interactions: An Experimental Study,” in SIGMETRICS, 2019.
+     Error Modeling,” in DFT, 2018.                                                             [47] S. Ghose, A. G. Yağlıkçı, R. Gupta, D. Lee, K. Kudrolli, W. X. Liu, H. Hassan, K. K.
+[13] A. Boroumand, S. Ghose, Y. Kim, R. Ausavarungnirun, E. Shiu, R. Thakur, D. Kim,                 Chang, N. Chatterjee, A. Agrawal, M. O’Connor, and O. Mutlu, “What Your
+     A. Kuusela, A. Knies, P. Ranganathan, and O. Mutlu, “Google Workloads for                       DRAM Power Models Are Not Telling You: Lessons from a Detailed Experimental
+     Consumer Devices: Mitigating Data Movement Bottlenecks,” in ASPLOS, 2018.                       Study,” SIGMETRICS, 2018.
+[14] L. Cavigelli and L. Benini, “Origami: A 803-GOp/s/W Convolutional Network                  [48] A. N. Gomez, M. Ren, R. Urtasun, and R. B. Grosse, “The Reversible Residual
+     Accelerator,” TCSVT, 2017.                                                                      Network: Backpropagation without Storing Activations,” in NIPS, 2017.
+[15] K. Chandrasekar, S. Goossens, C. Weis, M. Koedam, B. Akesson, N. Wehn, and                 [49] A. Graves and N. Jaitly, “Towards End-to-End Speech Recognition with Recur-
+     K. Goossens, “Exploiting Expendable Process-Margins in DRAMs for Run-Time                       rent Neural Networks,” in ICML, 2014.
+     Performance Optimization,” in DATE, 2014.                                                  [50] S. Gu, E. Holly, T. Lillicrap, and S. Levine, “Deep Reinforcement Learning for
+[16] K. Chandrasekar, C. Weis, Y. Li, B. Akesson, N. Wehn, and K. Goossens, “DRAM-                   Robotic Manipulation with Asynchronous Off-Policy Updates,” in ICRA, 2017.
+     Power: Open-source DRAM Power & Energy Estimation Tool,” 2012.                             [51] M. Guan and L. Wang, “Temperature Aware Refresh for DRAM Performance
+[17] K. K. Chang, D. Lee, Z. Chishti, A. R. Alameldeen, C. Wilkerson, Y. Kim, and                    Improvement in 3D ICs,” in ISQED, 2015.
+     O. Mutlu, “Improving DRAM Performance by Parallelizing Refreshes with Ac-                  [52] K. Guo, L. Sui, J. Qiu, J. Yu, J. Wang, S. Yao, S. Han, Y. Wang, and H. Yang,
+     cesses,” in HPCA, 2014.                                                                         “Angel-Eye: A Complete Design Flow for Mapping CNN onto Embedded FPGA,”
+[18] K. K. Chang, “Understanding and Improving the Latency of DRAM-Based Mem-                        TCAD, 2017.
+     ory Systems,” Ph.D. dissertation, Carnegie Mellon Univ., 2017.                             [53] T. Hamamoto, S. Sugiura, and S. Sawada, “On the Retention Time Distribution
+[19] K. K. Chang, A. Kashyap, H. Hassan, S. Ghose, K. Hsieh, D. Lee, T. Li, G. Pekhi-                of Dynamic Random Access Memory (DRAM),” TED, 1998.
+     menko, S. Khan, and O. Mutlu, “Understanding Latency Variation in Modern                   [54] S. Han, X. Liu, H. Mao, J. Pu, A. Pedram, M. A. Horowitz, and W. J. Dally, “EIE:
+     DRAM Chips: Experimental Characterization, Analysis, and Optimization,” in                      Efficient Inference Engine on Compressed Deep Neural Network,” in ISCA, 2016.
+     SIGMETRICS, 2016.                                                                          [55] S. Han, H. Mao, and W. J. Dally, “Deep Compression: Compressing Deep Neural
+[20] K. K. Chang, P. J. Nair, D. Lee, S. Ghose, M. K. Qureshi, and O. Mutlu, “Low-Cost               Networks with Pruning, Trained Quantization and Huffman Coding,” arXiv,
+     Inter-Linked Subarrays (LISA): Enabling Fast Inter-Subarray Data Movement in                    2015.
+     DRAM,” in HPCA, 2016.                                                                      [56] H. Hassan, G. Pekhimenko, N. Vijaykumar, V. Seshadri, D. Lee, O. Ergin, and
+[21] K. K. Chang, A. G. Yağlıkçı, S. Ghose, A. Agrawal, N. Chatterjee, A. Kashyap,                   O. Mutlu, “ChargeCache: Reducing DRAM Latency by Exploiting Row Access
+     D. Lee, M. O’Connor, H. Hassan, and O. Mutlu, “Understanding Reduced-Voltage                    Locality,” in HPCA, 2016.
+     Operation in Modern DRAM Devices: Experimental Characterization, Analysis,                 [57] H. Hassan, M. Patel, J. S. Kim, A. G. Yaglikci, N. Vijaykumar, N. Mansouri Ghiasi,
+     and Mechanisms,” SIGMETRICS, 2017.                                                              S. Ghose, and O. Mutlu, “CROW : A Low-Cost Substrate for Improving DRAM
+[22] G. Chen, C. Parada, and G. Heigold, “Small-Footprint Keyword Spotting using                     Performance, Energy Efficiency, and Reliability,” in ISCA, 2019.
+     Deep Neural Networks.” in ICASSP, 2014.                                                    [58] H. Hassan, N. Vijaykumar, S. Khan, S. Ghose, K. Chang, G. Pekhimenko, D. Lee,
+[23] T. Chen, T. Moreau, Z. Jiang, L. Zheng, S. Jiao, E. Yan, H. Shen, M. Cowan,                     O. Ergin, and O. Mutlu, “SoftMC: A Flexible and Practical Open-Source Infras-
+     L. Wang, Y. Hu, L. Ceze, C. Guestrin, and A. Krishnamurthy, “TVM: An Auto-                      tructure for Enabling Experimental DRAM Studies,” in HPCA, 2017.
+     mated End-to-End Optimizing Compiler for Deep Learning,” in OSDI, 2018.                    [59] K. He, X. Zhang, S. Ren, and J. Sun, “Deep Residual Learning for Image Recogni-
+[24] T. Chen, B. Xu, C. Zhang, and C. Guestrin, “Training Deep Nets with Sublinear                   tion,” in CVPR, 2016.
+     Memory Cost,” arXiv, 2016.                                                                 [60] Y. He, J. Lin, Z. Liu, H. Wang, L.-J. Li, and S. Han, “AMC: AutoML for Model
+[25] T. Chen, Z. Du, N. Sun, J. Wang, C. Wu, Y. Chen, and O. Temam, “Dian-                           Compression and Acceleration on Mobile Devices,” in ECCV, 2018.
+     Nao: A Small-Footprint High-Throughput Accelerator for Ubiquitous Machine-                 [61] J. Hosang, R. Benenson, and B. Schiele, “Learning Non-maximum Suppression,”
+     Learning,” ASPLOS, 2014.                                                                        in CVPR, 2017.
+[26] Y.-H. Chen, T. Krishna, J. S. Emer, and V. Sze, “Eyeriss: An Energy-Efficient              [62] I. Hubara, M. Courbariaux, D. Soudry, R. El-Yaniv, and Y. Bengio, “Quantized
+     Reconfigurable Accelerator for Deep Convolutional Neural Networks,” JSSC,                       Neural Networks: Training Neural Networks with Low Precision Weights and
+     2017.                                                                                           Activations,” IMLR, 2017.
+[27] Y.-H. Chen, T.-J. Yang, J. Emer, and V. Sze, “Eyeriss v2: A Flexible Accelerator           [63] F. Iandola, M. Moskewicz, S. Karayev, R. Girshick, T. Darrell, and K. Keutzer,
+     for Emerging Deep Neural Networks on Mobile Devices,” JETCAS, 2019.                             “DenseNet: Implementing Efficient ConvNet Descriptor Pyramids,” arXiv, 2014.
+[28] S. Chetlur, C. Woolley, P. Vandermersch, J. Cohen, J. Tran, B. Catanzaro, and              [64] F. N. Iandola, S. Han, M. W. Moskewicz, K. Ashraf, W. J. Dally, and K. Keutzer,
+     E. Shelhamer, “cuDNN: Efficient Primitives for Deep Learning,” arXiv, 2014.                     “SqueezeNet: AlexNet-Level Accuracy with 50x Fewer Parameters and< 0.5 mb
+[29] P. Chi, S. Li, C. Xu, T. Zhang, J. Zhao, Y. Liu, Y. Wang, and Y. Xie, “PRIME: A                 Model Size,” arXiv, 2016.
+     Novel Processing-In-Memory Architecture for Neural Network Computation In                  [65] M. Imani, M. Samragh, Y. Kim, S. Gupta, F. Koushanfar, and T. Rosing, “RAPIDNN:
+     ReRAM-Based Main Memory,” in ISCA, 2016.                                                        In-Memory Deep Neural Network Acceleration Framework,” arXiv, 2018.
+[30] V. K. Chippa, S. T. Chakradhar, K. Roy, and A. Raghunathan, “Analysis and Char-            [66] B. Jacob, S. Kligys, B. Chen, M. Zhu, M. Tang, A. Howard, H. Adam, and
+     acterization of Inherent Application Resilience for Approximate Computing,” in                  D. Kalenichenko, “Quantization and Training of Neural Networks for Efficient
+     DAC, 2013.                                                                                      Integer-Arithmetic-Only Inference,” in CVPR, 2018.
+[31] J. Choi, W. Shin, J. Jang, J. Suh, Y. Kwon, Y. Moon, and L.-S. Kim, “Multiple Clone        [67] JEDEC Standard, “DDR4 SDRAM Specification (JESD79-4),” 2012.
+     Row DRAM: A Low Latency and Area Optimized DRAM,” in ISCA, 2015.                           [68] W. Jin, C. Coley, R. Barzilay, and T. Jaakkola, “Predicting Organic Reaction
+[32] Y. Chou, B. Fahs, and S. Abraham, “Microarchitecture Optimizations for Exploit-                 Outcomes with Weisfeiler-Lehman Network,” in NIPS, 2017.
+     ing Memory-Level Parallelism,” in ISCA, 2004.                                              [69] N. P. Jouppi, C. Young, N. Patil, D. Patterson, G. Agrawal, R. Bajwa, S. Bates,
+[33] M. Courbariaux, I. Hubara, D. Soudry, R. El-Yaniv, and Y. Bengio, “Binarized                    S. Bhatia, N. Boden, A. Borchers et al., “In-Datacenter Performance Analysis of
+     Neural Networks: Training Deep Neural Networks with Weights and Activations                     a Tensor Processing Unit,” in ISCA, 2017.
+     Constrained to+ 1 or-1,” arXiv, 2016.
+
+
+
+
+                                                                                           14
+
+
+===== Page 15 =====
+
+ [70] P. Judd, J. Albericio, T. Hetherington, T. M. Aamodt, and A. Moshovos, “Stripes:                  2015.
+      Bit-Serial Deep Neural Network Computing,” in MICRO, 2016.                                  [103] D. Lin, S. Talathi, and S. Annapureddy, “Fixed Point Quantization of Deep
+ [71] M. Jung, D. M. Mathew, C. Weis, and N. Wehn, “Approximate Computing with                          Convolutional Networks,” in ICML, 2016.
+      Partially Unreliable Dynamic Random Access Memory-Approximate DRAM,”                        [104] T.-Y. Lin, M. Maire, S. Belongie, J. Hays, P. Perona, D. Ramanan, P. Dollár, and
+      in DAC, 2016.                                                                                     C. L. Zitnick, “Microsoft COCO: Common Objects in Context,” in ECCV, 2014.
+ [72] M. Jung, É. Zulian, D. M. Mathew, M. Herrmann, C. Brugger, C. Weis, and                     [105] J. Liu, B. Jaiyen, Y. Kim, C. Wilkerson, and O. Mutlu, “An Experimental Study of
+      N. Wehn, “Omitting Refresh: A Case Study for Commodity and Wide I/O                               Data Retention Behavior in Modern DRAM Devices: Implications for Retention
+      DRAMs,” in MEMSYS, 2015.                                                                          Time Profiling Mechanisms,” in ISCA, 2013.
+ [73] B. Keeth and R. J. Baker, DRAM Circuit Design: A Tutorial. Wiley-IEEE Press,                [106] J. Liu, B. Jaiyen, R. Veras, and O. Mutlu, “RAIDR: Retention-Aware Intelligent
+      2000.                                                                                             DRAM Refresh,” in ISCA, 2012.
+ [74] S. Khan, D. Lee, and O. Mutlu, “PARBOR: An Efficient System-Level Technique                 [107] Y. Long, T. Na, and S. Mukhopadhyay, “ReRAM-Based Processing-in-Memory
+      to Detect Data-Dependent Failures in DRAM,” in DSN, 2016.                                         Architecture for Recurrent Neural Network Acceleration,” TVLSI, 2018.
+ [75] S. Khan, D. Lee, Y. Kim, A. R. Alameldeen, C. Wilkerson, and O. Mutlu, “The                 [108] S.-L. Lu, Y.-C. Lin, and C.-L. Yang, “Improving DRAM Latency with Dynamic
+      Efficacy of Error Mitigation Techniques for DRAM Retention Failures: A Com-                       Asymmetric Subarray,” in MICRO, 2015.
+      parative Experimental Study,” in SIGMETRICS, 2014.                                          [109] W. Lu, G. Yan, J. Li, S. Gong, Y. Han, and X. Li, “Flexflow: A Flexible Dataflow
+ [76] J. S. Kim, M. Patel, H. Hassan, and O. Mutlu, “Solar-DRAM: Reducing DRAM                          Accelerator Architecture for Convolutional Neural Networks,” in HPCA, 2017.
+      Access Latency by Exploiting the Variation in Local Bitlines,” in ICCD, 2018.               [110] J. Marques, J. Andrade, and G. Falcao, “Unreliable Memory Operation on a
+ [77] J. S. Kim, M. Patel, H. Hassan, and O. Mutlu, “The DRAM Latency PUF: Quickly                      Convolutional Neural Network Processor,” in SiPS, 2017.
+      Evaluating Physical Unclonable Functions by Exploiting the Latency-Reliability              [111] J. Meza, Q. Wu, S. Kumar, and O. Mutlu, “Revisiting Memory Errors in Large-
+      Tradeoff in Modern Commodity DRAM Devices,” in HPCA, 2018.                                        Scale Production Data Centers: Analysis and Modeling of New Trends from the
+ [78] J. S. Kim, M. Patel, H. Hassan, L. Orosa, and O. Mutlu, “D-RaNGe: Using Com-                      Field,” in DSN, 2015.
+      modity DRAM Devices to Generate True Random Numbers with Low Latency                        [112] Micron,       “TN-40-07:      Calculating      Memory      Power       for   DDR4
+      and High Throughput,” in HPCA, 2019.                                                              SDRAM.” https://www.micron.com/-/media/documents/products/technical-
+ [79] Y. Kim, V. Seshadri, D. Lee, J. Liu, and O. Mutlu, “A Case for Exploiting Subarray-               note/dram/tn4007_ddr4_power_calculation.pdf
+      Level Parallelism (SALP) in DRAM,” in ISCA, 2012.                                           [113] O. Mutlu, “Main Memory Scaling: Challenges and Solution Directions,” in More
+ [80] Y. Kim, “Energy Efficient and Error Resilient Neuromorphic Computing in VLSI,”                    than Moore Technologies for Next Generation Computer Design, 2015.
+      Ph.D. dissertation, MIT, 2013.                                                              [114] O. Mutlu, H. Kim, and Y. N. Patt, “Techniques for Efficient Processing in Runa-
+ [81] Y. Kim, W. Yang, and O. Mutlu, “Ramulator: A Fast and Extensible DRAM                             head Execution Engines,” in ISCA, 2005.
+      Simulator.” CAL, 2016.                                                                      [115] O. Mutlu, H. Kim, J. Stark, and Y. N. Patt, “On Reusing the Results of Pre-Executed
+ [82] I. Kokkinos, “UberNet: Training a Universal Convolutional Neural Network                          Instructions in a Runahead Execution Processor,” in CAL, 2005.
+      for Low-, Mid-, and High-Level Vision Using Diverse Datasets and Limited                    [116] O. Mutlu, J. Stark, C. Wilkerson, and Y. N. Patt, “Runahead Execution: An
+      Memory.” in CVPR, 2017.                                                                           Alternative to Very Large Instruction Windows for Out-of-Order Processors,”
+ [83] A. Kozlov and D. Osokin, “Development of Real-time ADAS Object Detector for                       in HPCA, 2003.
+      Deployment on CPU,” in IntelliSys, 2019.                                                    [117] M. Nazemi, G. Pasandi, and M. Pedram, “NullaNet: Training Deep Neural Net-
+ [84] A. Krizhevsky, I. Sutskever, and G. E. Hinton, “ImageNet Classification with                      works for Reduced-Memory-Access Inference,” arXiv, 2018.
+      Deep Convolutional Neural Networks,” in NIPS, 2012.                                         [118] M. A. Neggaz, I. Alouani, P. R. Lorenzo, and S. Niar, “A Reliability Study on
+ [85] H. Kwon, M. Pellauer, and T. Krishna, “MAESTRO: An Open-Source Infras-                            CNNs for Critical Embedded Systems,” in ICCD, 2018.
+      tructure for Modeling Dataflows within Deep Learning Accelerators,” arXiv,                  [119] A. Neubeck and L. Van Gool, “Efficient Non-maximum Suppression,” in ICPR,
+      2018.                                                                                             2006.
+ [86] H. Kwon, A. Samajdar, and T. Krishna, “MAERI: Enabling Flexible Dataflow                    [120] B. Neyshabur, Z. Li, S. Bhojanapalli, Y. LeCun, and N. Srebro, “Towards Un-
+      Mapping over DNN Accelerators via Reconfigurable Interconnects,” in ASPLOS,                       derstanding the Role of Over-Parametrization in Generalization of Neural Net-
+      2018.                                                                                             works,” arXiv, 2018.
+ [87] Y. LeCun, Y. Bengio, and G. Hinton, “Deep Learning,” Nature, 2015.                          [121] D.-T. Nguyen, N.-M. Ho, and I.-J. Chang, “St-DRC: Stretchable DRAM Re-
+ [88] Y. LeCun, B. E. Boser, J. S. Denker, D. Henderson, R. E. Howard, W. E. Hubbard,                   fresh Controller with No Parity-overhead Error Correction Scheme for Energy-
+      and L. D. Jackel, “Handwritten Digit Recognition with a Back-Propagation                          efficient DNNs,” in DAC, 2019.
+      Network,” in NIPS, 1990.                                                                    [122] D. T. Nguyen, H. Kim, H.-J. Lee, and I.-J. Chang, “An Approximate Memory
+ [89] Y. LeCun, L. Bottou, Y. Bengio, and P. Haffner, “Gradient-Based Learning Applied                  Architecture for a Reduction of Refresh Power Consumption in Deep Learning
+      to Document Recognition,” Proceedings of the IEEE, 1998.                                          Applications,” in ISCAS, 2018.
+ [90] Y. LeCun, L. Jackel, L. Bottou, C. Cortes, J. S. Denker, H. Drucker, I. Guyon,              [123] R. Novak, Y. Bahri, D. A. Abolafia, J. Pennington, and J. Sohl-Dickstein, “Sen-
+      U. A. Muller, E. Sackinger, P. Simard, and V. Vapnik, “Learning Algorithms for                    sitivity and Generalization in Neural Networks: An Empirical Study,” arXiv,
+      Classification: A Comparison on Handwritten Digit Recognition,” CTP-PBSRI,                        2018.
+      1995.                                                                                       [124] K.-S. Oh and K. Jung, “GPU Implementation of Neural Networks,” JPRR, 2004.
+ [91] D. Lee, Y. Kim, V. Seshadri, J. Liu, L. Subramanian, and O. Mutlu, “Tiered-Latency          [125] P. Panda, A. Sengupta, S. S. Sarwar, G. Srinivasan, S. Venkataramani, A. Raghu-
+      DRAM: A Low Latency and Low Cost DRAM Architecture,” in HPCA, 2013.                               nathan, and K. Roy, “Cross-Layer Approximations for Neuromorphic Computing:
+ [92] D. Lee, L. Subramanian, R. Ausavarungnirun, J. Choi, and O. Mutlu, “Decoupled                     From Devices to Circuits and Systems,” in DAC, 2016.
+      Direct Memory Access: Isolating CPU and IO Traffic by Leveraging a Dual-Data-               [126] A. Parashar, M. Rhu, A. Mukkara, A. Puglielli, R. Venkatesan, B. Khailany, J. Emer,
+      Port DRAM,” in PACT, 2015.                                                                        S. W. Keckler, and W. J. Dally, “SCNN: An Accelerator for Compressed-Sparse
+ [93] D. Lee, S. Khan, L. Subramanian, S. Ghose, R. Ausavarungnirun, G. Pekhimenko,                     Convolutional Neural Networks,” in ISCA, 2017.
+      V. Seshadri, and O. Mutlu, “Design-Induced Latency Variation in Modern DRAM                 [127] A. Paszke, S. Gross, S. Chintala, G. Chanan, E. Yang, Z. DeVito, Z. Lin, A. Des-
+      Chips: Characterization, Analysis, and Latency Reduction Mechanisms,” SIG-                        maison, L. Antiga, and A. Lerer, “Automatic Differentiation in PyTorch,” NIPS-W,
+      METRICS, 2017.                                                                                    2017.
+ [94] D. Lee, Y. Kim, G. Pekhimenko, S. Khan, V. Seshadri, K. Chang, and O. Mutlu,                [128] M. Patel, J. S. Kim, H. Hassan, and O. Mutlu, “Understanding and Modeling
+      “Adaptive-Latency DRAM: Optimizing DRAM Timing for the Common-Case,”                              On-Die Error Correction in Modern DRAM: An Experimental Study Using Real
+      in HPCA, 2015.                                                                                    Devices,” in DSN, 2019.
+ [95] J. Leng, T. Hetherington, A. ElTantawy, S. Gilani, N. S. Kim, T. M. Aamodt, and             [129] M. Patel, J. S. Kim, and O. Mutlu, “The Reach Profiler (REAPER): Enabling the
+      V. J. Reddi, “GPUWattch: Enabling Energy Optimizations in GPGPUs,” in ISCA,                       Mitigation of DRAM Retention Failures via Profiling at Aggressive Conditions,”
+      2013.                                                                                             ISCA, 2017.
+ [96] D. Levinthal, “Performance Analysis Guide for Intel Core i7 Processor and Intel             [130] M. Peemen, A. A. Setio, B. Mesman, and H. Corporaal, “Memory-Centric Accel-
+      Xeon 5500 processors ,” https://software.intel.com/sites/products/collateral/hpc/                 erator Design for Convolutional Neural Networks.” in ICCD, 2013.
+      vtune/performance_analysis_guide.pdf, 2009.                                                 [131] D. S. Phatak and I. Koren, “Complete and Partial Fault Tolerance of Feedforward
+ [97] G. Li, S. K. S. Hari, M. Sullivan, T. Tsai, K. Pattabiraman, J. Emer, and S. W.                   Neural Nets,” TNN, 1995.
+      Keckler, “Understanding Error Propagation in Deep Learning Neural Network                   [132] M. Qin, C. Sun, and D. Vucinic, “Robustness of Neural Networks against Storage
+      (DNN) Accelerators and Applications,” in SC, 2017.                                                Media Errors,” arXiv, 2017.
+ [98] H. Li, A. Kadav, I. Durdanovic, H. Samet, and H. P. Graf, “Pruning Filters for              [133] M. K. Qureshi, D.-H. Kim, S. Khan, P. J. Nair, and O. Mutlu, “AVATAR: A Variable-
+      Efficient Convnets,” arXiv, 2016.                                                                 Retention-Time (VRT) Aware Refresh for DRAM Systems,” in DSN, 2015.
+ [99] J. Li, G. Yan, W. Lu, S. Jiang, S. Gong, J. Wu, and X. Li, “SmartShuttle: Optimizing        [134] B. Reagen, U. Gupta, L. Pentecost, P. Whatmough, S. K. Lee, N. Mulholland,
+      Off-Chip Memory Accesses for Deep Learning Accelerators,” in DATE, 2018.                          D. Brooks, and G.-Y. Wei, “Ares: A Framework for Quantifying the Resilience of
+[100] S. Li, A. O. Glova, X. Hu, P. Gu, D. Niu, K. T. Malladi, H. Zheng, B. Brennan,                    Deep Neural Networks,” in DAC, 2018.
+      and Y. Xie, “SCOPE: A Stochastic Computing Engine for DRAM-Based In-Situ                    [135] B. Reagen, P. Whatmough, R. Adolf, S. Rama, H. Lee, S. K. Lee, J. M. Hernández-
+      Accelerator.” in MICRO, 2018.                                                                     Lobato, G.-Y. Wei, and D. Brooks, “Minerva: Enabling Low-Power, Highly-
+[101] S. Li, D. Niu, K. T. Malladi, H. Zheng, B. Brennan, and Y. Xie, “Drisa: A Dram-                   Accurate Deep Neural Network Accelerators,” in ISCA, 2016.
+      Based Reconfigurable In-Situ Accelerator,” in MICRO.                                        [136] J. Redmon, “Darknet: Open Source Neural Networks in C,” https://pjreddie.com/
+[102] T. P. Lillicrap, J. J. Hunt, A. Pritzel, N. Heess, T. Erez, Y. Tassa, D. Silver, and              darknet/, 2013.
+      D. Wierstra, “Continuous Control with Deep Reinforcement Learning,” arXiv,
+
+
+
+                                                                                             15
+
+
+===== Page 16 =====
+
+[137] J. Redmon and A. Farhadi, “YOLO9000: Better, Faster, Stronger,” arXiv, 2017.                [161] V. Sze, Y.-H. Chen, T.-J. Yang, and J. S. Emer, “Efficient Processing of Deep Neural
+[138] H. Rezatofighi, N. Tsoi, J. Gwak, A. Sadeghian, I. Reid, and S. Savarese, “General-               Networks: A tutorial and Survey,” Proceedings of the IEEE, 2017.
+      ized Intersection Over Union: A Metric and a Loss for Bounding Box Regression,”             [162] X. Tang, M. Kandemir, P. Yedlapalli, and J. Kotra, “Improving Bank-Level Paral-
+      in CVPR, 2019.                                                                                    lelism for Irregular Applications,” in MICRO, 2016.
+[139] H. Robbins and S. Monro, “A Stochastic Approximation Method,” The Annals of                 [163] O. Temam, “A Defect-Tolerant Accelerator for Emerging High-Performance
+      Mathematical Statistics, 1951.                                                                    Applications,” in ISCA, 2012.
+[140] O. Russakovsky, J. Deng, H. Su, J. Krause, S. Satheesh, S. Ma, Z. Huang, A. Karpa-          [164] F. Tu, W. Wu, S. Yin, L. Liu, and S. Wei, “RANA: Towards Efficient Neural
+      thy, A. Khosla, M. Bernstein, A. C. Berg, and L. Fei-Fei, “ImageNet Large Scale                   Acceleration with Refresh-Optimized Embedded DRAM,” in ISCA, 2018.
+      Visual Recognition Challenge,” IJCV, 2015.                                                  [165] K. Ueyoshi, K. Ando, K. Hirose, S. Takamaeda-Yamazaki, J. Kadomoto, T. Miy-
+[141] B. Salami, O. Unsal, and A. Cristal, “On the Resilience of RTL NN Accelerators:                   ata, M. Hamada, T. Kuroda, and M. Motomura, “QUEST: A 7.49 TOPS Multi-
+      Fault Characterization and Mitigation,” arXiv, 2018.                                              Purpose Log-Quantized DNN Inference Engine Stacked on 96MB 3D SRAM
+[142] B. Salami, O. S. Unsal, and A. C. Kestelman, “Comprehensive Evaluation of                         Using Inductive-Coupling Technology in 40nm CMOS,” in ISSCC, 2018.
+      Supply Voltage Underscaling in FPGA On-chip Memories,” in MICRO, 2018.                      [166] S. Venkataramani, A. Ranjan, K. Roy, and A. Raghunathan, “AxNN: Energy-
+[143] A. H. Salavati and A. Karbasi, “Multi-Level Error-Resilient Neural Networks,” in                  Efficient Neuromorphic Systems using Approximate Computing,” in ISLPED,
+      ISIT, 2012.                                                                                       2014.
+[144] A. Samajdar, Y. Zhu, P. N. Whatmough, M. Mattina, and T. Krishna, “SCALE-Sim:               [167] T. Vogelsang, “Understanding the Energy Consumption of Dynamic Random
+      Systolic CNN Accelerator,” in arXiv, 2018.                                                        Access Memories,” in MICRO, 2010.
+[145] D. Sanchez and C. Kozyrakis, “ZSim: Fast and Accurate Microarchitectural                    [168] Y. Wang, A. Tavakkol, L. Orosa, S. Ghose, N. M. Ghiasi, M. Patel, J. S. Kim,
+      Simulation of Thousand-Core Systems,” in ISCA, 2013.                                              H. Hassan, M. Sadrosadati, and O. Mutlu, “Reducing DRAM Latency via Charge-
+[146] M. Sandler, A. Howard, M. Zhu, A. Zhmoginov, and L.-C. Chen, “MobileNetV2:                        Level-Aware Look-Ahead Partial Restoration,” in MICRO, 2018.
+      The Next Generation of On-Device Computer Vision Networks,” in CVPR, 2018.                  [169] P. N. Whatmough, S. K. Lee, H. Lee, S. Rama, D. Brooks, and G. Wei, “14.3 A
+[147] B. Schroeder, E. Pinheiro, and W.-D. Weber, “DRAM Errors in the Wild: A                           28nm SoC with a 1.2GHz 568nJ/Prediction Sparse Deep-Neural-Network Engine
+      Large-Scale Field Study,” in SIGMETRICS, 2009.                                                    with >0.1 Timing Error Rate Tolerance for IoT Applications,” in ISSCC, 2017.
+[148] F. Schuiki, M. Schaffner, F. K. Gürkaynak, and L. Benini, “A Scalable Near-                 [170] J. Wu, C. Leng, Y. Wang, Q. Hu, and J. Cheng, “Quantized Convolutional Neural
+      Memory Architecture for Training Deep Neural Networks on Large In-Memory                          Networks for Mobile Devices,” in CVPR, 2016.
+      Datasets,” arXiv, 2018.                                                                     [171] S. Xie, R. Girshick, P. Dollár, Z. Tu, and K. He, “Aggregated Residual Transfor-
+[149] M. H. Segler, T. Kogej, C. Tyrchan, and M. P. Waller, “Generating Focused                         mations for Deep Neural Networks,” in CVPR, 2017.
+      Molecule Libraries for Drug Discovery with Recurrent Neural Networks,” ACS                  [172] H. Yang, Y. Zhu, and J. Liu, “ECC: Platform-Independent Energy-Constrained
+      central science, 2017.                                                                            Deep Neural Network Compression via a Bilinear Regression Model,” in CVPR,
+[150] V. Seshadri, D. Lee, T. Mullins, H. Hassan, A. Boroumand, J. Kim, M. A. Kozuch,                   2019.
+      O. Mutlu, P. B. Gibbons, and T. C. Mowry, “Ambit: In-Memory Accelerator for                 [173] L. Yang and B. Murmann, “Approximate SRAM for Energy-Efficient, Privacy-
+      Bulk Bitwise Operations Using Commodity DRAM Technology,” in MICRO,                               Preserving Convolutional Neural Networks,” in ISVLSI, 2017.
+      2017.                                                                                       [174] L. Yang and B. Murmann, “SRAM Voltage Scaling for Energy-Efficient Convolu-
+[151] V. Seshadri and O. Mutlu, “In-DRAM Bulk Bitwise Execution Engine,” arXiv,                         tional Neural Networks,” in ISQED, 2017.
+      2019.                                                                                       [175] T.-J. Yang, Y.-H. Chen, and V. Sze, “Designing Energy-Efficient Convolutional
+[152] A. Shafiee, A. Nag, N. Muralimanohar, R. Balasubramonian, J. P. Strachan, M. Hu,                  Neural Networks using Energy-Aware Pruning,” in CVPR, 2017.
+      R. S. Williams, and V. Srikumar, “ISAAC: A Convolutional Neural Network                     [176] T.-J. Yang, A. Howard, B. Chen, X. Zhang, A. Go, M. Sandler, V. Sze, and H. Adam,
+      Accelerator with In-Situ Analog Arithmetic In Crossbars,” ISCA, 2016.                             “NetAdapt: Platform-Aware Neural Network Adaptation for Mobile Applications,”
+[153] N. Shazeer, A. Mirhoseini, K. Maziarz, A. Davis, Q. Le, G. Hinton, and J. Dean,                   in ECCV, 2018.
+      “Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts                  [177] J. Yu, A. Lukefahr, D. Palframan, G. Dasika, R. Das, and S. Mahlke, “Scalpel:
+      Layer,” arXiv, 2017.                                                                              Customizing DNN Pruning to the Underlying Hardware Parallelism,” in ISCA,
+[154] Y. Shen, M. Ferdman, and P. Milder, “Escher: A CNN Accelerator with Flexible                      2017.
+      Buffering to Minimize Off-Chip Transfer,” in FCCM, 2017.                                    [178] J. Zhang, K. Rangineni, Z. Ghodsi, and S. Garg, “Thundervolt: Enabling Ag-
+[155] W. Shi, Y. Wen, Z. Liu, X. Zhao, D. Boumber, R. Vilalta, and L. Xu, “Fault Resilient              gressive Voltage Underscaling and Timing Error Resilience for Energy Efficient
+      Physical Neural Networks on a Single Chip,” in CASES, 2014.                                       Deep Learning Accelerators,” in DAC, 2018.
+[156] K. Simonyan and A. Zisserman, “Very Deep Convolutional Networks for Large-                  [179] J. J. Zhang, T. Gu, K. Basu, and S. Garg, “Analyzing and Mitigating the Impact
+      Scale Image Recognition,” arXiv, 2014.                                                            of Permanent Faults on a Systolic Array Based Neural Network Accelerator,” in
+[157] Y. H. Son, O. Seongil, Y. Ro, J. W. Lee, and J. H. Ahn, “Reducing Memory Access                   VTS, 2018.
+      Latency with Asymmetric DRAM Bank Organizations,” in ISCA, 2013.                            [180] Q. Zhang, T. Wang, Y. Tian, F. Yuan, and Q. Xu, “ApproxANN: An Approximate
+[158] L. Song, Y. Wang, Y. Han, X. Zhao, B. Liu, and X. Li, “C-Brain: A Deep Learning                   Computing Framework for Artificial Neural Network,” in DATE, 2015.
+      Accelerator that Tames the Diversity of CNNs through Adaptive Data-Level                    [181] S. Zhang, Z. Du, L. Zhang, H. Lan, S. Liu, L. Li, Q. Guo, T. Chen, and Y. Chen,
+      Parallelization,” in DAC, 2016.                                                                   “Cambricon-X: An Accelerator for Sparse Neural Networks,” in MICRO, 2016.
+[159] E. Sprangle and D. Carmean, “Increasing Processor Performance by Implement-                 [182] T. Zhang, K. Chen, C. Xu, G. Sun, T. Wang, and Y. Xie, “Half-DRAM: A High-
+      ing Deeper Pipelines,” in ISCA, 2002.                                                             Bandwidth and Low-power DRAM Architecture from the Rethinking of Fine-
+[160] N. Srivastava, G. Hinton, A. Krizhevsky, I. Sutskever, and R. Salakhutdinov,                      grained Activation,” in ISCA, 2014.
+      “Dropout: A Simple Way to Prevent Neural Networks from Overfitting,” JMLR,                  [183] X. Zhang, Y. Zhang, B. Childers, and J. Yang, “AWARD: Approximation-aWAre
+      2014.                                                                                             Restore in Further Scaling DRAM,” in MEMSYS, 2016.
+                                                                                                  [184] C. Zhu, S. Han, H. Mao, and W. J. Dally, “Trained Ternary Quantization,” arXiv,
+                                                                                                        2016.
+
+
+
+
+                                                                                             16

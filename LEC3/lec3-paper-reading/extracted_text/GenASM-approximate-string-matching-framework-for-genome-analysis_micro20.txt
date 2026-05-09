@@ -1,0 +1,1446 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/GenASM-approximate-string-matching-framework-for-genome-analysis_micro20.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/GenASM-approximate-string-matching-framework-for-genome-analysis_micro20.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+              GenASM: A High-Performance, Low-Power
+         Approximate String Matching Acceleration Framework
+                   for Genome Sequence Analysis
+ Damla Senol Cali†o n Gurpreet S. Kalsio n Zülal BingölO Can Firtina Lavanya Subramanian‡ Jeremie S. Kim†
+     Rachata Ausavarungnirun        Mohammed Alser Juan Gomez-Luna Amirali Boroumand† Anant Norio                    n
+                            †
+             Allison Scibisz Sreenivas Subramoney      o
+                                                       n   Can Alkan O     Saugata Ghose   ?†    Onur Mutlu   †O
+    † Carnegie Mellon University  n
+                                  oProcessor Architecture Research Lab, Intel Labs   O Bilkent University      ETH Zürich
+  ‡ Facebook      King Mongkut’s University of Technology North Bangkok     ? University of Illinois at Urbana–Champaign
+   Genome sequence analysis has enabled significant advance-             amounts of genomics data at low cost [8, 118, 153], but are
+ments in medical and scientific areas such as personalized               unable to extract an organism’s complete DNA in one piece.
+medicine, outbreak tracing, and the understanding of evolution.          Instead, these machines extract smaller random fragments
+To perform genome sequencing, devices extract small random               of the original DNA sequence, known as reads. These reads
+fragments of an organism’s DNA sequence (known as reads).                then pass through a computational process known as read
+The first step of genome sequence analysis is a computational            mapping, which takes each read, aligns it to one or more
+process known as read mapping. In read mapping, each frag-               possible locations within the reference genome, and finds the
+ment is matched to its potential location in the reference genome        matches and differences (i.e., distance) between the read and
+with the goal of identifying the original location of each read          the reference genome segment at that location [6, 177]. Read
+in the genome. Unfortunately, rapid genome sequencing is cur-            mapping is the first key step in genome sequence analysis.
+rently bottlenecked by the computational power and memory                   State-of-the-art sequencing machines produce broadly one
+bandwidth limitations of existing systems, as many of the steps          of two kinds of reads. Short reads (consisting of no more
+in genome sequence analysis must process a large amount of               than a few hundred DNA base pairs [30, 158]) are generated
+data. A major contributor to this bottleneck is approximate              using short-read sequencing (SRS) technologies [144, 164],
+string matching (ASM), which is used at multiple points during           which have been on the market for more than a decade. Be-
+the mapping process. ASM enables read mapping to account                 cause each read fragment is so short compared to the entire
+for sequencing errors and genetic variations in the reads.               DNA (e.g., a human’s DNA consists of over 3 billion base
+   We propose GenASM, the first ASM acceleration framework               pairs [166]), short reads incur a number of reproducibility
+for genome sequence analysis. GenASM performs bitvector-                 (e.g., non-deterministic mapping) and computational chal-
+based ASM, which can efficiently accelerate multiple steps of            lenges [7, 10, 12, 52, 118, 159, 176–178]. Long reads (consist-
+genome sequence analysis. We modify the underlying ASM                   ing of thousands to millions of DNA base pairs) are gener-
+algorithm (Bitap) to significantly increase its parallelism and          ated using long-read sequencing (LRS) technologies, of which
+reduce its memory footprint. Using this modified algorithm, we           Oxford Nanopore Technologies’ (ONT) nanopore sequenc-
+design the first hardware accelerator for Bitap. Our hardware            ing [26, 35, 40, 82, 83, 89, 97, 112, 113, 116, 143, 152] and Pa-
+accelerator consists of specialized systolic-array-based compute         cific Biosciences’ (PacBio) single-molecule real-time (SMRT)
+units and on-chip SRAMs that are designed to match the rate of           sequencing [18, 47, 114, 123, 145, 146, 165, 171] are the most
+computation with memory capacity and bandwidth, resulting                widely used ones. LRS technologies are relatively new, and
+in an efficient design whose performance scales linearly as we           they avoid many of the challenges faced by short reads.
+increase the number of compute units working in parallel.                   LRS technologies have three key advantages compared
+   We demonstrate that GenASM provides significant perfor-               to SRS technologies. First, LRS devices can generate very
+mance and power benefits for three different use cases in genome         long reads, which (1) reduces the non-deterministic mapping
+sequence analysis. First, GenASM accelerates read alignment              problem faced by short reads, as long reads are significantly
+for both long reads and short reads. For long reads, GenASM out-         more likely to be unique and therefore have fewer potential
+performs state-of-the-art software and hardware accelerators             mapping locations in the reference genome; and (2) span
+by 116× and 3.9×, respectively, while reducing power consump-            larger parts of the repeated or complex regions of a genome,
+tion by 37× and 2.7×. For short reads, GenASM outperforms                enabling detection of genetic variations that might exist in
+state-of-the-art software and hardware accelerators by 111×              these regions [165]. Second, LRS devices perform real-time
+and 1.9×. Second, GenASM accelerates pre-alignment filtering             sequencing, and can enable concurrent sequencing and anal-
+for short reads, with 3.7× the performance of a state-of-the-            ysis [111, 142, 146]. Third, ONT’s pocket-sized device (Min-
+art pre-alignment filter, while reducing power consumption by            ION [133]) provides portability, making sequencing possible
+1.7× and significantly improving the filtering accuracy. Third,          at remote places using laptops or mobile devices. This en-
+GenASM accelerates edit distance calculation, with 22–12501×             ables a number of new applications, such as rapid infection
+and 9.3–400× speedups over the state-of-the-art software li-             diagnosis and outbreak tracing (e.g., COVID-19, Ebola, Zika,
+brary and FPGA-based accelerator, respectively, while reducing           swine flu [37, 48, 64, 68, 85, 142, 167, 173]). Unfortunately, LRS
+power consumption by 548–582× and 67×. We conclude that                  devices are much more error-prone in sequencing (with a
+GenASM is a flexible, high-performance, and low-power frame-             typical error rate of 10–15% [19, 83, 165, 170]) compared to
+work, and we briefly discuss four other use cases that can benefit       SRS devices (typically 0.1% [60, 61, 141]), which leads to new
+from GenASM.                                                             computational challenges [152].
+                                                                            For both short and long reads, multiple steps of read map-
+1. Introduction                                                          ping must account for the sequencing errors, and for the dif-
+   Genome sequencing, which determines the DNA sequence                  ferences caused by genetic mutations and variations. These
+of an organism, plays a pivotal role in enabling many medi-              errors and differences take the form of base insertions, dele-
+cal and scientific advancements in personalized medicine                 tions, and/or substitutions [121,125,154,163,169,174]. As a re-
+[6, 20, 34, 53, 59], evolutionary theory [46, 139, 140], and             sult, read mapping must perform approximate (or fuzzy) string
+forensics [17, 25, 179]. Modern genome sequencing ma-                    matching (ASM). Several algorithms exist for ASM, but state-
+chines [77–79, 132–135, 152] can rapidly generate massive                of-the-art read mapping tools typically make use of an expen-
+
+
+                                                                     1
+
+
+===== Page 2 =====
+
+sive dynamic programming based algorithm [100, 126, 154]                 effectively accelerate the read alignment step of read map-
+that scales quadratically in both execution time and required            ping (Section 10.2). Second, we illustrate that GenASM can
+storage. This ASM algorithm has been shown to be the ma-                 be employed as the most efficient (to date) pre-alignment
+jor bottleneck in read mapping [8, 10, 55, 66, 75, 122, 162].            filter [9, 10] for short reads (Section 10.3). Third, we demon-
+Unfortunately, as sequencing technologies advance, the                   strate how GenASM can efficiently find the edit distance (i.e.,
+growth in the rate that sequencing devices generate reads                Levenshtein distance [100]) between two sequences of ar-
+is far outpacing the corresponding growth in computational               bitrary lengths (Section 10.4). In addition, GenASM can be
+power [8, 32], placing greater pressure on the ASM bottle-               utilized in several other parts of genome sequence analysis as
+neck. Beyond read mapping, ASM is a key technique for other              well as in text analysis, which we briefly discuss in Section 11.
+bioinformatics problems such as whole genome alignment                       Results Summary. We evaluate GenASM for three dif-
+(WGA) [27,28,41,42,70,95,102,106,115,151,160] and multiple               ferent use cases of ASM in genome sequence analysis using
+sequence alignment (MSA) [29,45,69,98,107,127,128,136,150],              a combination of the synthesized SystemVerilog model of
+where two or more whole genomes, or regions of multiple                  our hardware accelerators and detailed simulation-based per-
+genomes (from the same or different species), are compared               formance modeling. (1) For read alignment, we compare
+to determine their similarity for predicting evolutionary re-            GenASM to state-of-the-art software (Minimap2 [102] and
+lationships or finding common regions (e.g., genes). Thus,               BWA-MEM [101]) and hardware approaches (GACT in Dar-
+there is a pressing need to develop techniques for genome                win [162] and SillaX in GenAx [55]), and find that GenASM is
+sequence analysis that provide fast and efficient ASM.                   significantly more efficient in terms of both speed and power
+   In this work, we propose GenASM, an ASM acceleration                  consumption. For this use case, we compare GenASM only
+framework for genome sequence analysis. Our goal is to de-               with the read alignment steps of the baseline tools and accel-
+sign a fast, efficient, and flexible framework for both short            erators. For long reads, GenASM achieves 116× and 648×
+and long reads, which can be used to accelerate multiple steps           speedup over 12-thread runs of the alignment steps of Min-
+of the genome sequence analysis pipeline. To avoid imple-                imap2 and BWA-MEM, respectively, while reducing power
+menting more complex hardware for the dynamic program-                   consumption by 37× and 34×. Compared to GACT, GenASM
+ming based algorithm [22, 33, 49, 65, 87, 88, 147, 162], we base         provides 6.6× the throughput per unit area and 10.5× the
+GenASM upon the Bitap algorithm [21, 174]. Bitap uses only               throughput per unit power for long reads. For short reads,
+fast and simple bitwise operations to perform approximate                GenASM achieves 158× and 111× speedup over 12-thread
+string matching, making it amenable to efficient hardware                runs of the alignment steps of Minimap2 and BWA-MEM,
+acceleration. To our knowledge, GenASM is the first work                 respectively, while reducing power consumption by 31× and
+that enhances and accelerates Bitap.                                     33×. Compared to SillaX, GenASM is 1.9× faster at a com-
+   To use Bitap for GenASM, we make two key algorithmic                  parable area and power consumption. (2) For pre-alignment
+modifications that allow us to overcome key limitations that             filtering of short reads, we compare GenASM with a state-of-
+prevent the original Bitap algorithm from being efficient for            the-art FPGA-based filter, Shouji [9]. GenASM provides 3.7×
+genome sequence analysis (we discuss these limitations in                speedup over Shouji, while reducing power consumption by
+Section 2.3). First, to improve Bitap’s applicability to different       1.7×, and also significantly improving the filtering accuracy.
+sequencing technologies and its performance, we (1) modify               (3) For edit distance calculation, we compare GenASM with
+the algorithm to support long reads (in addition to already              a state-of-the-art software library, Edlib [155], and FPGA-
+supported short reads), and (2) eliminate loop-carried data              based accelerator, ASAP [22]. Compared to Edlib, GenASM
+dependencies so that we can parallelize a single string match-           provides 22–12501× speedup, for varying sequence lengths
+ing operation. Second, we develop a novel Bitap-compatible               and similarity values, while reducing power consumption by
+algorithm for traceback, a method that utilizes information              548–582×. Compared to ASAP, GenASM provides 9.3–400×
+collected during ASM about the different types of errors to              speedup, while reducing power consumption by 67×.
+identify the optimal alignment of reads. The original Bitap                  This paper makes the following contributions:
+algorithm is not capable of performing traceback.                        • To our knowledge, GenASM is the first work that enhances
+   In GenASM, we co-design our modified Bitap algorithm and                 and accelerates the Bitap algorithm for approximate string
+our new Bitap-compatible traceback algorithm with an area-                  matching. We modify Bitap to add efficient support for
+and power-efficient hardware accelerator, which consists of                 long reads and enable parallelism within each ASM opera-
+two components: (1) GenASM-DC, which provides hardware                      tion. We also propose the first Bitap-compatible traceback
+support to efficiently execute our modified Bitap algorithm to              algorithm. We open source our software implementations
+generate bitvectors (each of which represents one of the four               of the GenASM algorithms [148].
+possible cases: match, insertion, deletion, or substitution) and         • We present GenASM, a novel approximate string match-
+perform distance calculation (DC) (which calculates the min-                ing acceleration framework for genome sequence analysis.
+imum number of errors between the read and the reference                    GenASM is a power- and area-efficient hardware imple-
+segment); and (2) GenASM-TB, which provides hardware sup-                   mentation of our new Bitap-based algorithms.
+port to efficiently execute our novel traceback (TB) algorithm           • We show that GenASM can accelerate three use cases of
+to find the optimal alignment of a read, using the bitvectors               approximate string matching (ASM) in genome sequence
+generated by GenASM-DC. Our hardware accelerator (1) bal-                   analysis (i.e., read alignment, pre-alignment filtering, edit
+ances the compute resources with available memory capacity                  distance calculation). We find that GenASM is greatly faster
+and bandwidth per compute unit to avoid wasting resources,                  and more power-efficient for all three use cases than state-
+(2) achieves high performance and power efficiency by using                 of-the-art software and hardware baselines.
+specialized compute units that we design to exploit data lo-
+cality, and (3) scales linearly in performance with the number           2. Background
+of parallel compute units that we add to the system.                     2.1. Genome Sequence Analysis Pipeline
+   Use Cases. GenASM is an efficient framework for accel-                   A common approach to the first step in genome sequence
+erating genome sequence analysis that has multiple possible              analysis is to perform read mapping, where each read of an
+use cases. In this paper, we describe and rigorously evaluate            organism’s sequenced genome is matched against the ref-
+three use cases of GenASM. First, we show that GenASM can                erence genome for the organism’s species to find the read’s
+
+
+                                                                     2
+
+
+===== Page 3 =====
+
+original location. As Figure 1 shows, typical read map-                                         Reference: A A A AT G T T TA G T G C TA C T T G
+ping [6, 96, 101, 102, 105, 177] is a four-step process. First,                                     Read: A A A AT G T T TA GC T G C TA C T T G
+read mapping starts with indexing 0 , which is an offline pre-                                                  deletion    substitution    insertion
+processing step performed on a known reference genome.                                          Figure 2. Three types of errors (i.e., edits).
+Second, once a sequencing machine generates reads from
+a DNA sequence, the seeding process 1 queries the index                             score is the sum of all edit penalties and match scores along
+structure to determine the candidate (i.e., potential) map-                         the alignment, as defined by a user-specified scoring function.
+ping locations of each read in the reference genome using                           This step finds the optimal alignment as the combination of
+substrings (i.e., seeds) from each read. Third, for each read,                      edit operations to build up the highest alignment score.
+pre-alignment filtering 2 uses filtering heuristics to examine                         Approximate string matching is typically implemented as a
+the similarity between a read and the portion of the reference                      dynamic programming based algorithm. Existing implemen-
+genome at each of the read’s candidate mapping locations.                           tations, such as Levenshtein distance [100], Smith-Waterman
+These filtering heuristics aim to eliminate most of the dissimi-                    [154], and Needleman-Wunsch [126], have quadratic time
+lar pairs of reads and candidate mapping locations to decrease                      and space complexity (i.e., O(m × n) between two sequences
+the number of required alignments in the next step. Fourth,                         with lengths m and n). Therefore, it is desirable to find lower-
+for all of the remaining candidate mapping locations, read                          complexity algorithms for ASM.
+alignment 3 runs a dynamic programming based algorithm                              2.3. Bitap Algorithm
+to determine which of the candidate mapping locations in                              One candidate to replace dynamic programming based
+the reference matches best with the input read. As part of                         algorithms for ASM is the Bitap algorithm [21, 174]. Bitap
+this step, traceback is performed between the reference and                        tackles the problem of computing the minimum edit distance
+the input read to find the optimal alignment, which is the                         between a reference text (e.g., reference genome) and a query
+alignment with the highest likelihood of being correct (based                      pattern (e.g., read) with a maximum of k many errors. When
+on a scoring function [62, 117, 168]). The optimal alignment                       k is 0, the algorithm finds the exact matches.
+is defined using a CIGAR string [103], which shows the se-                            Algorithm 1 shows the Bitap algorithm and Figure 3 shows
+quence and position of each match, substitution, insertion,                        an example for the execution of the algorithm. The algorithm
+and deletion for the read with respect to the selected mapping                     starts with a pre-processing procedure (Line 4 in Algorithm 1;
+location of the reference.                                                          0 in Figure 3) that converts the query pattern into m-sized
+       Reference     0                                                             pattern bitmasks, PM. We generate one pattern bitmask for
+                               Indexing
+        genome
+                                     Hash table based index (pre-processed)        each character in the alphabet. Since 0 means match in the
+                     1                                                             Bitap algorithm, we set PM[a][i] = 0 when pattern[i] = a,
+     Reads from                Seeding
+      sequenced                      Candidate mapping locations                   where    a is a character from the alphabet (e.g., A, C, G, T).
+        genome       2                                                             These pattern bitmasks help us to represent the query pattern
+                       Pre-Alignment Filtering
+                                     Remaining candidate mapping locations
+                                                                                   in a binary format. After the bitmasks are prepared for each
+                     3                                                             character, every bit of all status bitvectors (R[d], where d is
+                           Read Alignment
+                                                                                   in range [0, k]) is initialized to 1 (Lines 5–6 in Algorithm 1; 0
+                          Optimal alignment                                        in Figure 3). Each R[d] bitvector at text iteration i holds the
+                 Figure 1. Four steps of read mapping.                             partial match information between text[i : (n–1)] (Line 8) and
+                                                                                   the query with maximum of d errors. Since at the beginning
+2.2. Approximate String Matching (ASM)                                             of the executionHash     table
+                                                                                                        there     based
+                                                                                                                are          Candidatewe
+                                                                                                                     no matches,        mapping    Remaining
+                                                                                                                                           initialize        candidate
+                                                                                                                                                      all status
+   The goal of approximate string matching [125] is to de-                         bitvectors withindex
+                                                                                                      1s. (pre-processed)
+                                                                                                           The status bitvectors  locations         mappingitera-
+                                                                                                                                        of the previous     locations
+tect the differences and similarities between two sequences.                       tion with edit distance d is kept in oldR[d] (Lines 10–11) to
+Given a query read sequence Q=[q1 q2 . . . qm ], a reference text                  take partial matches into consideration in the next iterations.
+sequence T =[t1 t2 . . . tn ] (where m = |Q|, n = |T |, n ≥ m), and                   The algorithm examines each text character one by one,
+an edit distance threshold E, the approximate string matching                      one per iteration.       At each text iteration ( 1 – 5 ), the pat-
+                                                                                                   Reads from
+problem is to identify a set of approximate matches of Q in T Reference            tern bitmask of     the current text character (PM) is retrieved
+                                                                                                   sequenced
+(allowing for at most E differences). The differences between genome               (Line 12). Aftergenome
+                                                                                                       the status bitvector for exact match is com-
+two sequences of the same species can result from sequenc-                     0   puted (R[0];1 Line 13), the status bitvectors for each distance
+ing errors [18, 54] and/or genetic variations [5, 50]. Reads are Indexing          (R[d]; d = 1...k)Seeding
+                                                                                                      are computed using the rules in Lines 15–19.
+                                                                                                                                                                Optimal alignment
+prone to sequencing errors, which account for about 0.1%                           For a distance d, three intermediate bitvectors for the error
+of the length of short reads [60, 61, 141] and 10–15% of the                       cases (one each for deletion, insertion, substitution; D/I/S in
+length of long reads [19, 83, 165, 170].                                           Figure 3) are calculated by using oldR[d – 1] or R[d – 1], since
+   The differences, known as edits, can be classified as substi-                   a new error 2 is being added3(i.e., the distance is increasing by
+tutions, deletions, or insertions in one or both sequences [100].                  1), while thePre-Alignment
+                                                                                                   intermediate
+                                                                                                    Filtering
+                                                                                                                        Read Alignment
+                                                                                                                      bitvector     for the match case (M)
+Figure 2 shows each possible kind of edit. In ASM, to detect a                     is calculated using oldR[d]. For a deletion (Line 15), we are
+deleted character or an inserted character, we need to exam-                       looking for a string match if the current pattern character
+ine all possible prefixes (i.e., substrings that include the first                 is missing, so we copy the partial match information of the
+character of the string) or suffixes (i.e., substrings that include                previous character (oldR[d – 1]; consuming a text character)
+the last character of the string) of the two input sequences,                      without any shifting (not consuming a pattern character) to
+and keep     track of the pairs of prefixes or suffixes that provide
+       Reference                                                                   serve as the deletion bitvector (labeled as D of R1 bitvectors
+        genome
+the minimum         number Indexing
+                               of edits.                                           in 1 – 5 ). For a substitution (Line 16), we are looking for a
+                                                     Hash-table                    string match if the current pattern character and the current
+   Approximate string matching is needed                   not
+                                                     based index
+                                                                  only   to deter-
+mine the minimum number of edits between two genomic se-                           text character do not match, so we take the partial match
+                               Seeding
+quences,Readsbut also to provide      the location and type of each edit.          information of the previous character (oldR[d – 1]; consum-
+                                                     Potential mapping
+As twoReference
+          sequences could have a large number        locations
+                                                               of different pos-   ing a text character) and shift it left by one (consuming a
+        segment
+sible arrangements         of the edit     operations and matches (and             pattern character) before saving it as the substitution bitvec-
+                       Pre-Alignment  Filtering
+henceQuery
+         different
+             read
+                     alignments), the approximate             string matching
+                                                     Non-filtered candidate
+                                                                                   tor (labeled as S of R1 bitvectors in 1 – 5 ). For an insertion
+algorithm usually involves a tracebackmapping          step. locations
+                                                               The alignment       (Line 17), we are looking for a string match if the current
+                         Read Alignment
+                                                   Optimal alignment
+
+                                                                                3
+
+
+===== Page 4 =====
+
+Algorithm 1 Bitap Algorithm                                                                                                 In order to overcome these limitations and design an effec-
+Inputs: text (reference), pattern (query), k (edit distance threshold)                                                      tive and efficient accelerator, we find that we need to both
+Outputs: startLoc (matching location), editDist (minimum edit distance)                                                     (1) modify and extend the Bitap algorithm and (2) develop
+ 1: n ← length of reference text                                                                                            specialized hardware that can exploit the new opportunities
+ 2: m ← length of query pattern
+ 3: procedure Pre-Processing                                                                                                that our algorithmic modifications provide.
+ 4:     PM ←generatePatternBitmaskACGT(pattern) . pre-process the pattern
+ 5:     for d in 0:k do                                                                                                     3.1. Limitations of Bitap on Existing Systems
+ 6:         R[d] ← 111..111                               . initialize R bitvectors to 1s                                       No Support for Long Reads. In state-of-the-art imple-
+ 7: procedure Edit Distance Calculation
+ 8:     for i in (n-1):-1:0 do                       . iterate over each text character                                     mentations of Bitap, the query length is limited by the word
+ 9:         curChar ← text[i]                                                                                               size of the machine running the algorithm. This is due to
+10:         for d in 0:k do                                                                                                 (1) the fact that the bitvector length must be equal to the query
+11:             oldR[d] ← R[d]         . copy previous iterations’ bitvectors as oldR
+12:         curPM ← PM[curChar]                          . retrieve the pattern bitmask                                     length, and (2) the need to perform bitwise operations on the
+13:         R[0] ← (oldR[0]<<1) | curPM             . status bitvector for exact match                                      bitvectors. By limiting the bitvector length to a word, each
+14:         for d in 1:k do                           . iterate over each edit distance                                     bitwise operation can be done using a single CPU instruction.
+15:             deletion (D) ← oldR[d-1]
+16:             substitution (S) ← (oldR[d-1]<<1)                                                                           Unfortunately, the lack of multi-word queries prevents these
+17:             insertion (I) ← (R[d-1]<<1)                                                                                 implementations from working for long reads, whose lengths
+18:             match (M) ← (oldR[d]<<1) | curPM
+19:             R[d] ← D & S & I & M                     . status bitvector for d errors                                    are on the order of thousands to millions of base pairs (which
+20:         if MSB of R[d] == 0, where 0 ≤ d ≤ k                     . check if MSB is 0                                    require thousands of bits to store).
+21:             startLoc ← i                                        . matching location                                         Data Dependency Between Iterations. As we show in
+22:             editDist ← d                           . found minimum edit distance
+                                                                                                                            Section 2.3, the computed bitvectors at each text iteration
+                    PREPROCESSING     0             Text[4]: CGTGA          1              Text[3]: CGTGA          2        (i.e., R[d]) of the Bitap algorithm depend on the bitvectors
+  Text Region:    Pattern Bitmasks:       oldR0 = 1111                           oldR0 = 1110
+      CGTGA
+                          CTGA            oldR1 = 1111                           oldR1 = 1100
+                                                                                                                            computed in the previous text iteration (i.e., oldR[d-1] and
+                  PM(A) = 1110
+ Query Pattern:   PM(C) = 0111            R0 = (oldR0 << 1) | PM(A)              R0 = (oldR0 << 1) | PM(G)                  oldR[d]; Lines 11, 13, 15, 16, and 18 of Algorithm 1). Fur-
+      CTGA        PM(G) = 1101               = 1110                                 = 1101
+                  PM(T) = 1011
+                                               D : oldR0                = 1111        D : oldR0                = 1110
+                                                                                                                            thermore, for each text character, there is an inner loop that
+ Edit Distance                                 S : oldR0 << 1           = 1110        S : oldR0 << 1           = 1100
+ Threshold (k):
+                  State Vectors:
+                     R0 = 1111
+                                          R1 = I : R0 << 1              = 1100   R1 = I : R0 << 1              = 1010
+                                                                                                                            iterates for the maximum edit distance number of iterations
+       1                                       M : (oldR1 << 1) | PM(A) = 1110        M : (oldR1 << 1) | PM(G) = 1101
+                     R1 = 1111
+                                             = D & S & I & M            = 1100      = D & S & I & M            = 1000       (Line 14). The bitvectors computed in each of these inner
+            Text[2]: CGTGA            3             Text[1]: CGTGA          4              Text[0]: CGTGA          5
+                                                                                                                            iterations (i.e., R[d]) are also dependent on the previous inner
+  oldR0 = 1101
+  oldR1 = 1000
+                                          oldR0 = 1011
+                                          oldR1 = 0000
+                                                                                 oldR0 = 1111
+                                                                                 oldR1 = 0000
+                                                                                                                            iteration’s computed bitvectors (i.e., R[d-1]; Line 17). This
+  R0 = (oldR0 << 1) | PM(T)               R0 = (oldR0 << 1) | PM(G)              R0 = (oldR0 << 1) | PM(C)
+                                                                                                                            two-level data dependency forces the consecutive iterations
+     = 1011                                  = 1111                                 = 1111
+       D : oldR0                = 1101         D : oldR0                = 1011        D : oldR0                = 1111
+                                                                                                                            to take place sequentially.
+       S : oldR0 << 1
+  R1 = I : R0 << 1
+                                = 1010
+                                = 0110
+                                               S : oldR0 << 1
+                                          R1 = I : R0 << 1
+                                                                        = 0110
+                                                                        = 1110
+                                                                                      S : oldR0 << 1
+                                                                                 R1 = I : R0 << 1
+                                                                                                               = 1110
+                                                                                                               = 1110
+                                                                                                                                No Support for Traceback. Although the baseline Bitap
+       M : (oldR1 << 1) | PM(T) = 1011         M : (oldR1 << 1) | PM(G) = 1101        M : (oldR1 << 1) | PM(C) = 0111
+     = D & S & I & M            = 0000       = D & S & I & M            = 0000      = D & S & I & M            = 0110
+                                                                                                                            algorithm can find possible matching locations of each query
+     Alignment Found @ Location=2            Alignment Found @ Location=1           Alignment Found @ Location=0            read within the reference text, this covers only the first step of
+                  Figure 3. Example for the Bitap algorithm.                                                                approximate string matching required for genome sequence
+text character is missing, so we copy the partial match infor-                                                              analysis. Since there could be multiple different alignments
+mation of the current character (R[d – 1]; not consuming a                                                                  between the read and the reference, the traceback opera-
+text character) and shift it left by one (consuming a pattern                                                               tion [14, 51, 62, 63, 117, 120, 154, 163, 168, 169] is needed to
+character) before saving it as the insertion bitvector (labeled                                                             find the optimal alignment, which is the alignment with the
+as I of R1 bitvectors in 1 – 5 ). For a match (Line 18), we                                                                 minimum edit distance (or with the highest score based on
+are looking for a string match only if the current pattern                                                                  a user-defined scoring function). However, Bitap does not
+character matches the current text character, so we take the                                                                include any such support for optimal alignment identification.
+partial match information of the previous character (oldR[d];                                                                   Limited Compute Parallelism. Even after we solve the
+consuming a text character but not increasing the edit dis-                                                                 algorithmic limitations of Bitap, we find that we cannot ex-
+tance), shift it left by one (consuming a pattern character),                                                               tract significant performance benefits with just algorithmic
+and perform an OR operation with the pattern bitmask of                                                                     enhancements alone. For example, while Bitap iterates over
+the current text character (curPM; comparing the text char-                                                                 each character of the input text sequentially (Line 8), we
+acter and the pattern character) before saving the result as                                                                can enable text-level parallelism to improve its performance
+the match bitvector (labeled as R0 bitvectors and M of R1                                                                   (Section 5). However, the achievable level of parallelism is
+bitvectors in 1 – 5 ).                                                                                                      limited by the number of compute units in existing systems.
+   After computing all four intermediate bitvectors, in order                                                               For example, our studies show that Bitap is bottlenecked by
+to take all possible partial matches into consideration, we per-                                                            computation on CPUs, since the working set fits within the
+form an AND operation (Line 19) with these four bitvectors                                                                  private caches but the limited number of cores prevents the
+to preserve all 0s that exist in any of them (i.e., all potential                                                           further speedup of the algorithm.
+locations for a string match with an edit distance of d up                                                                      Limited Memory Bandwidth. We would expect that a
+to this point). We save the ANDed result as the R[d] status                                                                 GPU, which has thousands of compute units, can overcome
+bitvector for the current iteration. This process is repeated                                                               the limited compute parallelism issues that CPUs experience.
+for each potential edit distance value from 0 to k. If the most                                                             However, we find that a GPU implementation of the Bitap
+significant bit of the R[d] bitvector becomes 0 (Lines 20–22),                                                              algorithm suffers from the limited amount of memory band-
+then there is a match starting at position i of the text with an                                                            width available for each GPU thread. Even when we run a
+edit distance d (as shown in 3 – 5 ). The traversal of the text                                                             CUDA implementation of the baseline Bitap algorithm [104],
+then continues until all possible text positions are examined.                                                              whose bandwidth requirements are significantly lower than
+                                                                                                                            our modified algorithm, the limited memory bandwidth bot-
+3. Motivation and Goals                                                                                                     tlenecks the algorithm’s performance. We find that the bot-
+  Although the Bitap algorithm is highly suitable for hard-                                                                 tleneck is exacerbated after the number of threads per block
+ware acceleration due to the simple nature of its bitwise op-                                                               reaches 32, as Bitap becomes shared cache-bound (i.e., on-
+erations, we find that it has five limitations that hinder its                                                              GPU L2 cache-bound). The small number of registers becomes
+applicability and efficient hardware acceleration for genome                                                                insufficient to hold the intermediate data required for Bitap
+analysis. In this section, we discuss each of these limitations.                                                            execution. Furthermore, when the working set of a thread
+
+
+                                                                                                                        4
+
+
+===== Page 5 =====
+
+does not fit within the private memory of the thread, destruc-                                       to perform the TB-SRAM accesses and the required control
+tive interference between threads while accessing the shared                                         flow to complete the traceback operation. Both of our hard-
+memory creates bottlenecks in the algorithm on GPUs. We                                              ware accelerators are highly efficient in terms of area and
+expect these issues to worsen when we implement traceback,                                           power. We discuss them in detail in Section 7.
+which requires significantly higher bandwidth than Bitap.
+                                                                                                     5. GenASM-DC Algorithm
+3.2. Our Goal                                                                                           We modify the baseline Bitap algorithm (Section 2.3) to
+   Our goal in this work is to overcome these limitations and                                        (1) enable efficient alignment of long reads, (2) remove the
+use Bitap in a fast, efficient, and flexible ASM framework                                           data dependency between the iterations, and (3) provide par-
+for both short and long reads. We find that this goal cannot                                         allelism for the large number of iterations.
+be achieved by modifying only the algorithm or only the                                                 Long Read Support. The GenASM-DC algorithm over-
+hardware. We design GenASM, the first ASM acceleration                                               comes the word-length limit of Bitap (Section 3.1) by storing
+framework for genome sequence analysis. Through careful                                              the bitvectors in multiple words when the query is longer
+modification and co-design of the enhanced Bitap algorithm                                           than the word size. Although this modification leads to addi-
+and hardware, GenASM aims to successfully replace the ex-                                            tional computation when performing shifts, it helps GenASM
+pensive dynamic programming based algorithm used for ASM                                             to support both short and long reads. When shifting word i of
+in genomics with the efficient bitwise-operation-based Bitap                                         a multi-word bitvector, the bit shifted out (MSB) of word i – 1
+algorithm, which can accelerate multiple steps of genome                                             needs to be stored separately before performing the shift on
+sequence analysis.                                                                                   word i – 1. Then, that saved bit needs to be loaded as the least
+4. GenASM: A High-Level Overview                                                                     significant bit (LSB) of word i when the shift occurs. This
+                                                                                                     causes the complexity of the algorithm to be d m  w e × n × k,
+   In GenASM, we co-design our modified Bitap algorithm                                              where m is the query length, w is the word size, n is the text
+for distance calculation (DC) and our new Bitap-compatible                                           length, and k is the edit distance.
+traceback (TB) algorithm with an area- and power-efficient
+hardware accelerator. GenASM consists of two components,                                                Loop Dependency Removal. In order to solve the two-
+as shown in Figure 4: (1) GenASM-DC (Section 5), which for                                           level data dependency limitation of the baseline Bitap algo-
+each read generates the bitvectors and performs the minimum                                          rithm (Section 3.1), GenASM-DC performs loop unrolling and
+edit distance calculation (DC); and (2) GenASM-TB (Section 6),                                       enables computing non-neighbor (i.e., independent) bitvec-
+which uses the bitvectors to perform traceback (TB) and find                                         tors in parallel. Figure 5 shows an example for unrolling with
+the optimal alignment. GenASM is a flexible framework that                                           four threads for text characters T0–T3 and status bitvectors
+can be used for different use cases (Section 8).                                                     R0–R7. For the iteration where R[d] represents T2–R2 (i.e.,
+   GenASM execution starts when the host CPU issues a task                                           the target cell shaded in dark red), R[d – 1] refers to T2–R1,
+to GenASM with the reference and the query sequences’ loca-                                          oldR[d – 1] refers to T1–R1, and oldR[d] refers to T1–R2 (i.e.,
+tions ( 1 in Figure 4). GenASM-DC reads the corresponding                                            cells T2–R2 is dependent on, shaded in light red). Based on
+reference text region and the query pattern from the memory.                                         this example, T2–R2 depends on T1–R2, T2–R1, and T1–R1,
+GenASM-DC then writes these to its dedicated SRAM, which                                             but it does not depend on T3–R1, T1–R3, or T0–R4. Thus,
+we call DC-SRAM ( 2 ). After that, GenASM-DC divides the                                             these independent bitvectors can be computed in parallel
+reference text (e.g., reference genome) and query pattern (e.g.,                                     without waiting for one another.
+read) into multiple overlapping windows ( 3 ), and for each                                                         Thread1                      Thread1   Thread2     Thread3     Thread4
+                                                                                                           Cycle#                       Cycle#
+                                                                                                                    R0/1/2/..                     R0/4      R1/5        R2/6         R3/7
+sub-text (i.e., the portion of the reference text in one win-
+                                                                                                            #1       T0-R0               #1      T0-R0         −           −           −
+dow) and sub-pattern (i.e., the portion of the query pattern                                                 …         …                 #2      T1-R0       T0-R1         −           −
+in one window), GenASM-DC searches for the sub-pattern                                                      #8       T0-R7               #3      T2-R0       T1-R1       T0-R2         −
+within the sub-text and generates the bitvectors ( 4 ). Each                                                #9       T1-R0               #4      T3-R0       T2-R1       T1-R2       T0-R3
+                                                                                                             …         …                 #5      T0-R4       T3-R1       T2-R2       T1-R3
+processing element (PE) of GenASM-DC writes the gener-                                                      #16      T1-R7               #6      T1-R4       T0-R5       T3-R2       T2-R3
+ated bitvectors to its own dedicated SRAM, which we call                                                    #17      T2-R0               #7      T2-R4       T1-R5       T0-R6       T3-R3
+TB-SRAM ( 5 ). Once GenASM-DC completes its search for                                                       …         …                 #8      T3-R4       T2-R5       T1-R6       T0-R7
+                                                                                                            #24      T2-R7               #9        −         T3-R5       T2-R6       T1-R7
+the current window, GenASM-TB starts reading the stored                                                     #25      T3-R0               #10       −           −         T3-R6       T2-R7
+bitvectors from TB-SRAMs ( 6 ) and generates the window’s                                                    …         …                 #11       −           −           −         T3-R7
+traceback output ( 7 ). Once GenASM-TB generates this out-                                                  #32      T3-R7
+put, GenASM computes the next window and repeats Steps                                                         data written to memory      target cell (Rd)
+ 3 – 7 until all windows are completed.                                                                        data read from memory       cells target cell depends on (oldRd, Rd-1, oldRd-1)
+
+   Our hardware accelerators are designed to maximize par-                                                        Figure 5. Loop unrolling in GenASM-DC.
+allelism and minimize memory footprint. Our modified                                                    Text-Level Parallelism. In addition to the parallelism
+GenASM-DC algorithm is highly parallelizable, and performs                                           enabled by removing the loop dependencies, we enable
+only simple and regular bitwise operations, so we implement                                          GenASM-DC algorithm to exploit text-level parallelism. This
+the GenASM-DC accelerator as a systolic array based accelera-                                        parallelism is enabled by dividing the text into overlapping
+tor. GenASM-TB accelerator requires simple logic operations                                          sub-texts and searching the query in each of these sub-texts
+                                                                                                     in parallel. The overlap ensures that we do not miss any pos-
+                           DC-SRAM        GenASM-DC GenASM-TB
+                                                                                                     sible match that may fall around the edges of a sub-text. To
+  Main          2
+ Memory   reference
+                         DC-Controller
+                                                                                     7               guarantee this, the overlap needs to be of length m + k, where
+             text
+                           sub-text &
+                                                                                  Find the           m is the query length and k is the edit distance threshold.
+           & query      3 sub-pattern                 TB-SRAM1
+                                                                              traceback output
+           pattern
+                                             5        TB-SRAM2
+                                                                     6        GenASM-TB
+                                                                                                     6. GenASM-TB Algorithm
+                        GenASM-DC          Write                    Read
+                        Accelerator
+                                                         .
+                                                         .                    Accelerator               After finding the matching location of the text and the edit
+  Host    1                              bitvectors      .       bitvectors
+                                                                                                     distance with GenASM-DC, our new traceback [14, 51, 62,
+  CPU     reference                                   TB-SRAMn
+                         Generate
+           & query       bitvectors 4                                                                63, 117, 120, 154, 163, 168, 169] algorithm, GenASM-TB, finds
+          locations
+                                                                                                     the sequence of matches, substitutions, insertions and dele-
+                      Figure 4. Overview of GenASM.                                                  tions, along with their positions (i.e., CIGAR string) for the
+
+
+                                                                                                 5
+
+
+===== Page 6 =====
+
+matched region (i.e., the text region that starts from the loca-        Algorithm 2 GenASM-TB Algorithm
+tion reported by GenASM-DC and has a length of m + k), and              Inputs: text (reference), n, pattern (query), m, W (window size), O (overlap size)
+reports the optimal alignment. Traceback execution (1) starts           Output: CIGAR (complete traceback output)
+from the first character of the matched region between the               1: <curPattern,curText> ← <0,0> . start positions of sub-pattern and sub-text
+                                                                         2: while (curPattern < m) & (curText < n) do
+reference text and query pattern, (2) examines each char-                3:     sub-pattern ← pattern[curPattern:(curPattern+W)]
+acter and decides which of the four operations should be                 4:     sub-text ← text[curText:(curText+W)]
+                                                                         5:     intermediate bitvectors ← GenASM-DC(sub-pattern,sub-text,W)
+picked in each iteration, and (3) ends when we reach the                 6:     patternI ← W-1                 . pattern index (position of 0 being processed)
+last character of the matched region. GenASM-TB uses the                 7:     textI ← 0                                                          . text index
+intermediate bitvectors generated and saved in each itera-               8:     curError ← editDist from GenASM-DC              . number of remaining errors
+                                                                         9:     <patternConsumed,textConsumed> ← <0,0>
+tion of the GenASM-DC algorithm (i.e., match, substitution,             10:     prev ← ""                                    . output of previous TB iteration
+deletion and insertion bitvectors generated in Lines 15–18              11:     while textConsumed<(W-O) & patternConsumed<(W-O) do
+in Algorithm 1). After a value 0 is found at the MSB of one             12:        status ← 0
+                                                                        13:        if ins[textI][curError][patternI]=0 & prev=’I’
+of the R[d] bitvectors (i.e., a string match is found with d            14:             status ← 3; add "I" to CIGAR;                       . insertion-extend
+errors), GenASM-TB walks through the bitvectors back to                 15:        else if del[textI][curError][patternI]=0 & prev=’D’
+                                                                        16:             status ← 4; add "D" to CIGAR;                        . deletion-extend
+the LSB, following a chain of 0s (which indicate matches                17:        else if match[textI][curError][patternI]=0
+at each location) and reverting the bitwise operations. At              18:             status ← 1; add "M" to CIGAR; prev ← "M"                       . match
+each position, based on which of the four bitvectors holds              19:        else if subs[textI][curError][patternI]=0
+                                                                        20:             status ← 2; add "S" to CIGAR; prev ← "S"                 . substitution
+a value 0 in each iteration (starting with an MSB with a 0              21:        else if ins[textI][curError][patternI]=0
+and ending with an LSB with a 0), the sequence of matches,              22:             status ← 3; add "I" to CIGAR; prev ← "I" . insertion-open
+substitutions, insertions and deletions (i.e., traceback output)        23:        else if del[textI][curError][patternI]=0
+                                                                        24:             status ← 4; add "D" to CIGAR; prev ← "D" . deletion-open
+is found for each position of the corresponding alignment               25:        if (status > 1)
+found by GenASM-DC. Unlike GenASM-DC, GenASM-TB                         26:             curError--                                                  . S, D, or I
+has an irregular control flow within the stored intermediate            27:        if (status > 0) && (status != 3)
+                                                                        28:             textI++; textConsumed++                                    . M, S, or D
+bitvectors, which depends on the text and the pattern.                  29:        if (status > 0) && (status != 4)
+    Algorithm 2 shows the GenASM-TB algorithm and Figure 6              30:             patternI--; patternConsumed++                               . M, S, or I
+                                                                        31:     curPattern ← curPattern+patternConsumed
+shows an example for the execution of the algorithm for                 32:     curText ← curText+textConsumed
+each of the alignments found in 3 – 5 of Figure 3. In Fig-
+ure 6, <x, y, z> stands for patternI, textI and curError,                                      Deletion Example (Text Location=0)
+respectively (Lines 6–8 in Algorithm 2). patternI repre-                   Text[0]: C        Text[1]: G       Text[2]: T       Text[3]: G       Text[4]: A
+sents the position of a 0 currently being processed within                R0- : ....       R0- : ....        R0-M : 1011      R0-M : 1101      R0-M : 1110
+a given bitvector (i.e., pattern index), textI represents the             R1-M : 0111      R1-D : 1011       R1- : ....       R1- : ....       R1- : ....
+outer loop iteration index (i.e., text index; i in Algorithm 1),             Match(C)         Del(–)           Match(T)         Match(G)          Match(A)
+                                                                             <3,0,1>          <2,1,1>          <2,2,0>          <1,3,0>           <0,4,0>
+and curError represents the inner loop iteration index (i.e.,
+number of remaining errors; d in Algorithm 1).                                               Substitution Example (Text Location=1)
+
+    When we find a 0 at match[textI][curError][patternI]                   Text[1]: G        Text[2]: T       Text[3]: G       Text[4]: A
+(i.e., a match (M) is found for the current position; Line 17),           R0- : ....       R0-M : 1011       R0-M : 1101      R0-M : 1110
+                                                                          R1-S : 0110      R1- : ....        R1- : ....       R1- : ....
+one character each from both text and query is consumed,                     Subs(C)         Match(T)         Match(G)          Match(A)
+but the number of remaining errors stays the same. Thus, the                 <3,1,1>          <2,2,0>         <1,3,0>           <0,4,0>
+pointer moves to the next text character (as the text character                                Insertion Example (Text Location=2)
+is consumed), and the 0 currently being processed (high-                     Text[–]         Text[2]: T       Text[3]: G      Text[4]: A
+lighted with orange color in Figure 6) is right-shifted by one            R0- : ....       R0-M : 1011       R0-M : 1101      R0-M : 1110
+(as the query character is also consumed). In other words,                R1-I : 0110      R1- : ....        R1- : ....       R1- : ....
+textI is incremented (Line 28), patternI is decremented                       Ins(C)         Match(T)         Match(G)          Match(A)
+(Line 30), but curError remains the same. Thus, <x, y, z>                    <3,2,1>          <2,2,0>         <1,3,0>           <0,4,0>
+becomes <x – 1, y + 1, z> after we find a match. For example,            Figure 6. Traceback example with GenASM-TB algorithm.
+in Figure 6a, for Text[0], we have <3, 0, 1> for the indices, and
+after the match is found, at the next position (Text[1]), we            the next text character, and the number of remaining errors
+have <2, 1, 1>.                                                         is also decremented. Thus, <x, y, z> becomes <x, y + 1, z – 1>
+    When we find a 0 at subs[textI][curError][patternI]                 after we find an insertion (e.g., Text[1] in Figure 6a).
+(i.e., a substitution (S) is found for the current position;               Divide-and-Conquer Approach. Since GenASM-DC
+Line 19), one character each from both text and query is con-           stores all of the intermediate bitvectors, in the worst case,
+sumed, and the number of remaining errors is decremented                the length of the text region that the query pattern maps to
+(Line 26). Thus, <x, y, z> becomes <x – 1, y + 1, z – 1> after          can be m + k, assuming all of the errors are deletions from
+we find a substitution (e.g., Text[1] in Figure 6b).                    the pattern. Since we need to store all of the bitvectors for
+    When we find a 0 at ins[textI][curError][patternI] (i.e.,           m + k characters, and compute 4 × k many bitvectors within
+an insertion (I) is found for the current position; Lines 13            each text iteration (each m bits long), for long reads with high
+and 21), the inserted character does not appear in the text,            error rates, the memory requirement becomes ~80GB, when
+and only a character from the pattern is consumed. The 0                m is 10,000 and k is 1,500.
+currently being processed is right-shifted by one, but the                 In order to decrease the memory footprint of the algorithm,
+text pointer remains the same, and the number of remaining              we follow two key ideas. First, we apply a divide-and-conquer
+errors is decremented. Thus, <x, y, z> becomes <x –1, y, z –1>          approach (similar to the tiling approach of Darwin’s align-
+after we find an insertion (e.g., Text[–] in Figure 6c).                ment accelerator, GACT [162]). Instead of storing all of the
+    When we find a 0 at del[textI][curError][patternI] (i.e.,           bitvectors for m + k text characters, we divide the text and pat-
+a deletion (D) is found for the current position; Lines 15 and          tern into overlapping windows (i.e., sub-text and sub-pattern;
+23), the deleted character does not appear in the pattern, and          Lines 3–4 in Algorithm 2) and perform the traceback com-
+only a character from the text is consumed. The 0 currently             putation for each window. After all of the windows’ partial
+being processed is not right-shifted, but the pointer moves to          traceback outputs are generated, we merge them to find the
+
+
+                                                                    6
+
+
+===== Page 7 =====
+
+complete traceback output. This approach helps us to de-                                    logic. A PB consists of multiple processing elements (PEs).
+crease the memory footprint from ((m + k) × 4 × k × m)                                      Each PE contains a single processing core (PC; Figure 7b) and
+bits to (W × 4 × W × W ) bits, where W is the window size.                                  flip-flop-based storage logic. The PC is the primary compute
+This divide-and-conquer approach also helps us to reduce                                    unit, and implements Lines 15–19 of Algorithm 1 to perform
+the complexity of the bitvector generation step (Section 5)                                 the approximate string matching for a w-bit query pattern.
+from d m                  W
+         w e × n × k to d w e × W × W . Second, instead of
+                                                                                            The number of PEs in a PB is based on compute, area, memory
+storing all 4 bitvectors (i.e., match, substitution, insertion,                             bandwidth and power requirements. This block also imple-
+deletion) separately, we only need to store bitvectors for                                  ments the logic to load data from outside of the array (i.e.,
+match, insertion, and deletion, as the substitution bitvector                               DC-SRAM; Figure 7a) or internally for cyclic operations.
+can be obtained easily by left-shifting the deletion bitvector                                 GenASM-DC uses two types of SRAM buffers (Figure 7a):
+by 1 (Line 16 in Algorithm 1). This modification helps us                                   (1) DC-SRAM, which stores the reference text, the pattern
+to decrease the required write bandwidth and the memory                                     bitmasks for the query read, and the intermediate data gener-
+footprint to (W × 3 × W × W ) bits.                                                         ated from PEs (i.e., oldR values and MSBs required for shifts;
+    GenASM-TB restricts the number of consumed characters                                   Section 5); and (2) TB-SRAM, which stores the intermediate
+from the text or the pattern to W-O (Line 11 in Algorithm 2)                                bitvectors from GenASM-DC for later use by GenASM-TB.
+to ensure that consecutive windows share O characters (i.e.,                                For a 64-PE configuration with 64 bits of processing per PE,
+overlap size), and thus, the traceback output can be generated                              and for the case where we have a long (10Kbp) read1 with
+accurately. The sub-text and the sub-pattern corresponding                                  a high error rate (15%) and a corresponding text region of
+to each window are found using the number of consumed text                                  11.5Kbp, GenASM-DC requires a total of 8KB DC-SRAM stor-
+characters (textConsumed) and the number of consumed pat-                                   age. For each PE, we have a dedicated TB-SRAM, which stores
+tern characters (patternConsumed) in the previous window                                    the match, insertion and deletion bitvectors generated by the
+(Lines 31–32 in Algorithm 2).                                                               corresponding PE. For the same configuration of GenASM-
+    Partial Support for Complex Scoring Schemes. We                                         DC, each PE requires a total of 1.5KB TB-SRAM storage, with
+extend the GenASM-TB algorithm to provide partial sup-                                      a single R/W port. In each cycle, 192 bits of data (24B) is
+port (Section 10.2) for non-unit costs for different edits and                              written to each TB-SRAM by each PE.
+the affine gap penalty model [14, 62, 117, 168]. By changing                                   When each thread (i.e., each column) in Figure 5 is mapped
+the order in which different traceback cases are checked in                                 to a PE, GenASM-DC coordinates the data dependencies
+Lines 13–24 in Algorithm 2, we can support different types                                  across DC iterations, with the help of two flip-flops in each
+of scoring schemes. For example, in order to mimic the be-                                  PE. For example, T2–R2 in Figure 5 is generated by PEx in
+havior of the affine gap penalty model, we check whether                                    Cycley , and is mapped to R[d]. In order to generate T2–R2,
+the traceback output that has been chosen for the previous                                  T2–R1 (which maps to R[d – 1]) needs to be generated by
+position (i.e., prev) is an insertion or a deletion. If the pre-                            PEx–1 in Cycley–1 ( 1 in Figure 7), T1–R1 (which maps to
+vious edit is a gap (insertion or deletion), and there is a 0                               oldR[d – 1]) needs to be generated by PEx–1 in Cycley–2 ( 2 ),
+at the current position of the insertion or deletion bitvector                              and T1–R2 (which maps to oldR[d]) needs to be generated
+(Lines 13 and 15 in Algorithm 2), then we prioritize extending                              by PEx in Cycley–1 ( 3 ), where x is the PE index and y is the
+this previously opened gap, and choose insertion-extend or                                  cycle index. With this dependency-aware mapping, regard-
+deletion-extend as the current position’s traceback output, de-                             less of the number of instantiated PEs, we can successfully
+pending on the type of the previous gap. As another example,                                limit DC-SRAM traffic for a single PB to only one read and
+in order to mimic the behavior of non-unit costs for differ-                                one write per cycle.
+ent edits, we can simply sort three error cases (substitution,                                 GenASM-TB Hardware. After GenASM-DC finishes
+insertion-open, deletion-open) from the lowest penalty to the                               writing all of the intermediate bitvectors to TB-SRAMs,
+highest penalty. If substitutions have a lower penalty than                                 GenASM-TB reads them by following an irregular control
+gap openings, the order shown in Algorithm 2 should remain                                  flow, which depends on the text and the pattern to find the
+the same. However, if substitutions have a greater penalty                                  optimal alignment (by implementing Algorithm 2).
+than gap openings, we should check for the substitution case                                   In our GenASM configuration, where we have 64 PEs and
+after checking the insertion-open and deletion-open cases                                   64 bits per PE in a GenASM-DC accelerator, and the win-
+(i.e., Lines 19–20 should come after Line 24 in Algorithm 2).                               dow size (W ) is 64 (Section 6), we have one 1.5KB TB-SRAM
+7. GenASM Hardware Design                                                                   (which fits our 24B/cycle × 64 cycles/window output storage
+   GenASM-DC Hardware. We implement GenASM-DC as                                            requirement) for each of the 64 PEs. As Figure 8 shows, a
+a linear cyclic systolic array [93, 94] based accelerator. The                              single GenASM-TB accelerator is connected to all of these
+accelerator is optimized to reduce both the memory band-                                    64 TB-SRAMs (96KB, in total). In each GenASM-TB cycle,
+width and the memory footprint. Feedback logic enabling                                     we read from only one TB-SRAM. curError provides the
+cyclic systolic behavior allows us to fix the required number
+of memory ports [93] and to reduce memory footprint.                                            1 Although we use 10Kbp-long reads in our analysis (Section 9), GenASM
+   A GenASM-DC accelerator consists of a processing block                                   does not have any limitation on the length of reads as a result of our divide-
+(PB; Figure 7a) along with a control and memory management                                  and-conquer approach (Section 6).
+
+                          TB-SRAM1            TB-SRAM2                    TB-SRAMp-1               TB-SRAMp
+                                                                                                                                                           Deletion
+                                                       Intermediate Bitvectors                                      OldR[d-1]      <<                      Substitution
+
+
+                                     OldR                                                  OldR
+                                                                                                    1                                                      R[d]
+                                                                                                                       R[d-1]      <<
+            OldR in                   out                                                   out
+                              PC                  PC                             PC                     PC
+  DC-SRAM
+             PM in                   PM                                                    PM     2           3       OldR[d]      <<                       Insertion
+                                     out                                                   out
+                        PE1                 PE2                         PEp-1                     PEp                                                      Match
+                                                                                                                  PatternMask
+
+                      (a) Processing Block (PB), DC-SRAM and TB-SRAMs for each PE                                               (b) Processing Core (PC)
+                                                  Figure 7. Hardware design of GenASM-DC.
+
+                                                                                       7
+
+
+===== Page 8 =====
+
+index of the TB-SRAM that we read from; textI provides the                                                      8. GenASM Framework
+starting index within this TB-SRAM, which we read the next                                                          We demonstrate the efficiency and flexibility of the
+set of bitvectors from; and patternI provides the position of                                                   GenASM acceleration framework by describing three use
+the 0 being processed (Algorithm 2).                                                                            cases of approximate string matching in genome sequence
+   We implement the GenASM-TB hardware using very sim-                                                          analysis: (1) read alignment step of short and long read map-
+ple logic (Figure 8), which 1 reads the bitvectors from one of                                                  ping, (2) pre-alignment filtering for short reads, and (3) edit
+the TB-SRAMs using the computed address, 2 performs the                                                         distance calculation between any two sequences. We believe
+required bitwise comparisons to find the CIGAR character                                                        the GenASM framework can be useful for many other use
+for the current position, and 3 computes the next TB-SRAM                                                       cases, and we discuss some of them briefly in Section 11.
+address to read the new set of bitvectors. After GenASM-TB                                                          Read Alignment of Short and Long Reads. As we ex-
+finds the complete CIGAR string, it writes the output to main                                                   plain in Section 2.1, read alignment is the last step of short
+memory and completes its execution.                                                                             and long read mapping. In read alignment, all of the remain-
+                                                                                                                ing candidate mapping regions of the reference genome and
+          1         curError
+                                                        Last CIGAR
+          1
+                                                                                                                the query reads are aligned, in order to identify the mapping
+                                 64          match                   2               CIGAR string               that yields either the lowest total number of errors (if using
+          2
+                                      64   insertion                                                            edit distance based scoring) or the highest score (if using
+          .          192                                 Bitwise  CIGAR
+          .                      64        deletion
+                                                       Comparisons out                         3                a user-defined scoring function). Thus, read alignment can
+                                                                                     Next Rd
+                                           << subs
+   192                                64                                                                        be a use case for approximate string matching, since errors
+          64                                                                           Addr
+                                                                     patternI        Compute                    (i.e., substitutions, insertions, deletions) should be taken into
+                           192
+              192                                                                         textI                 account when aligning the sequences. As part of read align-
+                                                                                                                ment, we also need to generate the traceback output for the
+                                                                                          Rd
+    1.5KB                 1.5KB                GenASM-TB                   1.5KB                                best alignment between the reference region and the read.
+  TB-SRAM1              TB-SRAM2                                         TB-SRAM64                                  For read alignment, the whole GenASM pipeline, as ex-
+                                               GenASM-DC
+                                                                                          Wr      to main       plained in Section 4, should be executed, including the trace-
+    PE1                      PE2                                           PE65                   memory        back step. In general, read alignment requires more complex
+                                                                                                                scoring schemes, where different types of edits have non-unit
+              Figure 8. Hardware design of GenASM-TB.                                                           costs. Thus, GenASM-TB should be configured based on the
+   Overall System. We design our system to take advantage                                                       given cost of each type of edit (Section 6). As GenASM frame-
+of modern 3D-stacked memory systems [58, 92], such as the                                                       work can work with arbitrary length sequences, we can use
+Hybrid Memory Cube (HMC) [76] or High-Bandwidth Mem-                                                            it to accelerate both short read and long read alignment.
+ory (HBM) [86, 99]. Such memories are made up of multiple                                                           Pre-Alignment Filtering for Short Reads. In the pre-
+layers of DRAM arrays that are stacked vertically in a single                                                   alignment filtering step of short read mapping, the candidate
+package. These layers are connected via high-bandwidth links                                                    mapping locations, reported by the seeding step, are fur-
+called through-silicon vias (TSVs) that provide lower-latency                                                   ther filtered by using different mechanisms. Although the
+and more energy-efficient data access to the layers than the                                                    regions of the reference at these candidate mapping loca-
+external DRAM I/O pins [39, 99]. Memories such as HMC                                                           tions share common seeds with query reads, they are not
+and HBM include a dedicated logic layer that connects to                                                        necessarily similar sequences. To avoid examining dissimi-
+the TSVs and allows processing elements to be implemented                                                       lar sequences at the downstream computationally-expensive
+in memory to exploit the efficient data access. Due to ther-                                                    read alignment step, a pre-alignment filter estimates the edit
+mal and area constraints, only simple processing elements                                                       distance between every read and the regions of the reference
+that execute low-complexity operations (e.g., bitwise logic,                                                    at each read’s candidate mapping locations, and uses this
+simple arithmetic, simple cores) can be included in the logic                                                   estimation to quickly decide whether or not read alignment
+layer [3, 4, 23, 24, 43, 56, 72, 73, 91, 119, 137].                                                             is needed. If the sequences are dissimilar enough, significant
+   We decide to implement GenASM in the logic layer of 3D-                                                      amount of time is saved by avoiding the expensive alignment
+stacked memory, for two reasons. First, we can exploit the                                                      step [9, 10, 13, 176, 177].
+natural subdivision within 3D-stacked memory (e.g., vaults                                                          In pre-alignment filtering, since we only need to estimate
+in HMC [76], pseudo-channels in HBM [86]) to efficiently en-                                                    (approximately) the edit distance and check whether it is
+able parallelism across multiple GenASM accelerators. This                                                      above a user-defined threshold, GenASM-DC can be used as
+subdivision allows accelerators to work in parallel without                                                     a pre-alignment filter. As GenASM-DC is very efficient when
+interfering with each other. Second, we can reduce the power                                                    we have shorter sequences and a low error threshold (due to
+consumed for DRAM accesses by reducing off-chip data move-                                                      the O(m × n × k) complexity of the underlying Bitap algo-
+ment across the memory channel [119]. Both of our hardware                                                      rithm, where m is the query length, n is the reference length,
+accelerators are highly efficient in terms of area and power                                                    and k is the number of allowed errors), GenASM framework
+(Section 10.1), and can fit within the logic layer’s constraints.                                               can efficiently accelerate the pre-alignment filtering step of
+   To illustrate how GenASM takes advantage of 3D-stacked                                                       especially short read mapping.2
+memory, we discuss an example implementation of GenASM                                                              Edit Distance Calculation. Edit distance, also called Lev-
+inside the logic layer of a 16GB HMC with 32 vaults [76].                                                       enshtein distance [100], is the minimum number of edits (i.e.,
+Within each vault, the logic layer contains a GenASM-DC                                                         substitutions, insertions and deletions) required to convert
+accelerator, its associated DC-SRAM (8KB), a GenASM-TB                                                          one sequence to another. Edit distance calculation is one of
+accelerator, and TB-SRAMs (64×1.5KB). Since we have small                                                       the fundamental operations in genomics to measure the simi-
+SRAM buffers for both DC and TB to exploit locality, GenASM                                                     larity or distance between two sequences [155]. As we explain
+accesses the memory and utilizes the memory bandwidth                                                           in Section 2.3, the Bitap algorithm, which is the underlying
+only to read the reference and the query sequences. One                                                         algorithm of GenASM-DC, is originally designed for edit dis-
+GenASM accelerator at each vault requires 105–142 MB/s                                                          tance calculation. Thus, GenASM framework can accelerate
+bandwidth, thus the total bandwidth requirement of all 32
+GenASM accelerators is 3.3–4.4 GB/s (which is much less than                                                          2 Although we believe that GenASM can also be used as a pre-alignment
+peak bandwidth provided by modern 3D-stacked memories).                                                         filter for long reads, we leave the evaluation of this use case for future work.
+
+
+                                                                                                            8
+
+
+===== Page 9 =====
+
+edit distance calculation between any two arbitrary-length             of BWA-MEM and Minimap2, for short reads and long reads,
+genomic sequences.                                                     respectively. We obtain the BWA-MEM and Minimap2 align-
+   Although GenASM-DC can find the edit distance by itself             ments by running the tools with their default settings.
+and traceback is optional for this use case, DC-TB interaction            Pre-Alignment Filtering Comparisons. We compare
+is required in our accelerator to exploit the efficient divide-        GenASM with Shouji [9], which is the state-of-the-art FPGA-
+and-conquer approach GenASM follows. Thus, GenASM-DC                   based pre-alignment filter for short reads. For execution time
+and GenASM-TB work together to find the minimum edit                   and filtering accuracy analyses, we use data reported by the
+distance in a fast and memory-efficient way, but the traceback         original work [9]. For power analysis, we report the total
+output is not generated or reported by default (though it can          power consumption of Shouji using the power analysis tool
+optionally be enabled).                                                in Xilinx Vivado [175], after synthesizing and implementing
+9. Evaluation Methodology                                              the open-source FPGA design of Shouji [149].
+   Area and Power Analysis. We synthesize and place &                     Edit Distance Calculation Comparisons. We compare
+route the GenASM-DC and GenASM-TB accelerator data-                    GenASM with the state-of-the-art software-based read align-
+paths using the Synopsys Design Compiler [156] with a typi-            ment library, Edlib [155], running on an Intel® Xeon® Gold
+cal 28nm low-power process, with memories generated using              6126 CPU [80] operating at 2.60GHz, with 64GB DDR4 mem-
+an industry-grade SRAM compiler, to analyze the acceler-               ory. Edlib uses the Myers’ bitvector algorithm [121] to find
+ators’ area and power. Our synthesis targets post-routing              the edit distance between two sequences. We use the default
+timing closure at 1GHz clock frequency. We then use an                 global Needleman-Wunsch (NW) [126] mode of Edlib to per-
+in-house cycle-accurate simulator parameterized with the               form our comparisons. We measure the power consumed by
+synthesis and memory estimations to drive the performance              Edlib using Intel’s PCM power utility [81].
+and power analysis.                                                       We also compare GenASM with ASAP [22], which is the
+   We evaluate a 16GB HMC-like 3D-stacked DRAM archi-                  state-of-the-art FPGA-based accelerator for computing the
+tecture, with 32 vaults [76] and 256GB/s of internal band-             edit distance between two short reads. We estimate the perfor-
+width [23, 76], and a clock frequency of 1.25GHz [76]. The             mance of ASAP using data reported by the original work [22].
+amount of available area in the logic layer for GenASM is                 Datasets. For the read alignment use case, we evaluate
+around 3.5–4.4 mm2 per vault [23, 43]. The power budget of             GenASM using the latest major release of the human genome
+our PIM logic per vault is 312mW [43].                                 assembly, GRCh38 [124]. We use the 1–22, X, and Y chromo-
+   Performance Model. We build a spreadsheet-based ana-                somes by filtering the unmapped contigs, unlocalized contigs,
+lytical model for GenASM-DC and GenASM-TB, which con-                  and mitochondrial genome. Genome characters are encoded
+siders reference genome (i.e., text) length, query read (i.e.,         into 2-bit patterns (A = 00, C = 01, G = 10, T = 11). With this
+pattern) length, maximum edit distance, window size, hard-             encoding, the reference genome uses 715 MB of memory.
+ware design parameters (number of PEs, bit width of each PE)              We generate four sets of long reads (i.e., PacBio and ONT
+and number of vaults as input parameters and projects com-             datasets) using PBSIM [131] and three sets of short reads (i.e.,
+pute cycles, DRAM read/write bandwidth, SRAM read/write                Illumina datasets) using Mason [71]. For the PacBio datasets,
+bandwidth, and memory footprint. We verify the analytically-           we use the default error profile for the continuous long reads
+estimated cycle counts for various PE configurations with the          (CLR) in PBSIM. For the ONT datasets, we modify the settings
+cycle counts collected from our RTL simulations.                       to match the error profile of ONT reads sequenced using R9.0
+   Read Alignment Comparisons. For the read alignment                  chemistry [84]. Both datasets have 240,000 reads of length
+use case, we compare GenASM with the read alignment steps              10Kbp, each simulated with 10% and 15% error rates. The
+of two commonly-used state-of-the-art read mappers: Min-               Illumina datasets have 200,000 reads of length 100bp, 150bp,
+imap2 [102] and BWA-MEM [101], running on an Intel®                    and 250bp, each simulated with a 5% error rate.
+Xeon® Gold 6126 CPU [80] operating at 2.60GHz, with 64GB                  For the pre-alignment filtering use case, we use two
+DDR4 memory. Software baselines are run with a single                  datasets that Shouji [9] provides as test cases: reference-read
+thread and with 12 threads. We measure the execution time              pairs (1) of length 100bp with an edit distance threshold of 5,
+and power consumption of the alignment steps in Minimap2               and (2) of length 250bp with an edit distance threshold of 15.
+and BWA-MEM. We measure the individual power consumed                     For the edit distance calculation use case, we use the
+by each tool using Intel’s PCM power utility [81].                     publicly-available dataset that Edlib [155] provides. The
+   We also compare GenASM with a state-of-the-art GPU-                 dataset includes two real DNA sequences, which are 100Kbp
+accelerated short read alignment tool, GASAL2 [2]. We run              and 1Mbp in length, and artificially-mutated versions of the
+GASAL2 on an Nvidia Titan V GPU [129] with 12GB HBM2                   original DNA sequences with measures of similarity ranging
+memory [86]. To fully utilize the GPU, we configure the                between 60%–99%. Evaluating this set of sequences with vary-
+number of alignments per batch based on the GPU’s number               ing values of similarity and length enables us to demonstrate
+of multiprocessors and the maximum number of threads per               how these parameters affect performance.
+multiprocessor, as described in the GASAL2 paper [2]. To               10. Results
+better analyze the high parallelism that the GPU provides,
+we replicate our datasets to obtain datasets with 100K, 1M             10.1. Area and Power Analysis
+and 10M reference-read pairs for short reads. We run the                  Table 1 shows the area and power breakdown of each com-
+datasets with GASAL2, and collect kernel time and average              ponent in GenASM, and the total area overhead and power
+power consumption using nvprof [130].                                  consumption of (1) a single GenASM accelerator (in 1 vault)
+   We also compare GenASM with two state-of-the-art                    and (2) 32 GenASM accelerators (in 32 vaults). Both GenASM-
+hardware-based alignment accelerators, GACT of Darwin                  DC and GenASM-TB operate at 1GHz.
+[162] and SillaX of GenAx [55]. We synthesize and execute                 The area overhead of one GenASM accelerator is
+the open-source RTL for GACT [161]. We estimate the perfor-            0.334 mm2 , and the power consumption of one GenASM accel-
+mance of SillaX using data reported by the original work [55].         erator, including the SRAM power, is 101 mW. When we com-
+   We analyze the alignment accuracy of GenASM by compar-              pare GenASM with a single core of a modern Intel® Xeon®
+ing the alignment outputs (i.e., alignment score, edit distance,       Gold 6126 CPU [80] (which we conservatively estimate to
+and CIGAR string) of GenASM with the alignment outputs                 use 10.4 W [80] and 32.2 mm2 [36] per core), we find that
+
+
+                                                                   9
+
+
+===== Page 10 =====
+
+GenASM is significantly more efficient in terms of both area                                                                   throughput improvement over the alignment step of Min-
+and power consumption. As we have one GenASM acceler-                                                                          imap2 for its single-thread and 12-thread execution.
+ator per vault, the total area overhead of GenASM in all 32                                                                       Based on our power analysis with short reads, we find
+vaults is 10.69 mm2 . Similarly, the total power consumption                                                                   that GenASM reduces the power consumption over the align-
+of 32 GenASM accelerators is 3.23 W.                                                                                           ment steps of BWA-MEM and Minimap2 by 16× and 18× for
+                             Table 1. Area and power breakdown of GenASM.                                                      single-thread execution, and by 33× and 31× for 12-thread
+                                        Component                        Area (mm2)          Power (W)
+                                                                                                                               execution, respectively.
+                                   GenASM-DC (64 PEs)                       0.049              0.033                              Figure 11 shows the total execution time of the entire BWA-
+                                        GenASM-TB                           0.016              0.004                           MEM and Minimap2 pipelines, along with the total execution
+                                     DC-SRAM (8 KB)                         0.013              0.009                           time when the alignment steps of each pipeline are replaced
+                                  TB-SRAMs (64 x 1.5 KB)                    0.256              0.055                           by GenASM, for the three representative input datasets. As
+                                 Total − 1 vault (32 vaults)            0.334 (10.69)       0.101 (3.23)                       Figure 11 shows, GenASM provides (1) 2.4× and 1.9× speedup
+                                                                                                                               for Illumina reads (250bp); (2) 6.5× and 3.4× speedup for
+10.2. Use Case 1: Read Alignment                                                                                               PacBio reads (15%); and (3) 4.9× and 2.1× speedup for ONT
+   Software Baselines (CPU). Figure 9 shows the read align-                                                                    reads (15%), over the entire pipeline executions of BWA-MEM
+ment throughput (reads/sec) of GenASM and the alignment                                                                        and Minimap2, respectively.
+                                                                                                                                                              BWA-MEM        GenASM (w/ BWA-MEM)     Minimap2     GenASM (w/ Minimap2)
+steps of BWA-MEM and Minimap2, when aligning long noisy                                                                                               1E+06
+
+
+
+
+                                                                                                                               Execution time (sec)
+PacBio and ONT reads against the human reference genome.                                                                                              1E+05                                                           4.9 𝑥
+                                                                                                                                                                                            6.5 𝑥
+When comparing with BWA-MEM, we run GenASM with the                                                                                                   1E+04
+                                                                                                                                                      1E+03                                               3.4 𝑥                   2.1 𝑥
+candidate locations reported by BWA-MEM’s filtering step.                                                                                             1E+02      2.4 𝑥
+                                                                                                                                                                            1.9 𝑥
+Similarly, when comparing with Minimap2, we run GenASM                                                                                                1E+01
+with the candidate locations reported by Minimap2’s filtering                                                                                         1E+00
+                                                                                                                                                               Illumina-250bp              PacBio - 15%               ONT - 15%
+step. GenASM’s throughput is determined by the through-
+put of the execution of GenASM-DC and GenASM-TB with                                                                           Figure 11. Total execution time of the entire BWA-MEM and
+                                                                                                                               Minimap2 pipelines with and without GenASM.
+window size (W ) of 64 and overlap size (O) of 24.
+   As Figure 9 shows, GenASM provides (1) 7173× and 648×                                                                          Software Baselines (GPU). We compare GenASM with
+throughput improvement over the alignment step of BWA-                                                                         the state-of-the-art GPU aligner, GASAL2 [2], using three
+MEM for its single-thread and 12-thread execution, respec-                                                                     datasets of varying size (100K, 1M, and 10M reference-read
+tively, and (2) 1126× and 116× throughput improvement                                                                          pairs). Based on our analysis, we make three findings. First,
+over the alignment step of Minimap2 for its single-thread and                                                                  for 100bp Illumina reads, GenASM provides 9.9×, 9.2×, and
+12-thread execution, respectively.                                                                                             8.5× speedup over GASAL2, while reducing the power con-
+                                  BWA-MEM (t=1)                    BWA-MEM (t=12)                GenASM (w/ BWA-MEM)           sumption by 15.6×, 17.3× and 17.6× for 100K, 1M, and 10M
+                                  Minimap2 (t=1)                   Minimap2 (t=12)               GenASM (w/ Minimap2)          datasets, respectively. Second, for 150bp Illumina reads,
+                         1E+06
+Throughput (reads/sec)
+
+
+
+
+                                                                                                                  116 𝑥
+                         1E+05                                                                            648 𝑥
+                                                                                                                               GenASM provides 15.8×, 13.1×, and 13.4× speedup over
+                         1E+04                                                                                                 GASAL2, while reducing the power consumption by 15.4×,
+                         1E+03                                                                                                 18.0×, and 18.7× for 100K, 1M, and 10M datasets, respec-
+                         1E+02
+                         1E+01
+                                                                                                                               tively. Third, for 250bp Illumina reads, GenASM provides
+                         1E+00                                                                                                 21.5×, 20.6×, and 21.1× speedup over GASAL2, while re-
+                                 PacBio - 10%       PacBio - 15%       ONT - 10%        ONT - 15%           Average            ducing the power consumption by 16.8×, 20.2×, and 20.6×
+Figure 9. Throughput comparison of GenASM and the align-                                                                       for 100K, 1M, and 10M datasets, respectively. We conclude
+ment steps of BWA-MEM and Minimap2 for long reads.                                                                             that GenASM provides significant performance benefits and
+   Based on our power analysis with long reads, we find that                                                                   energy efficiency over GPU aligners for short reads.
+power consumption of BWA-MEM’s alignment step is 58.6 W                                                                           Hardware Baselines. We compare GenASM with two
+and 109.5 W, and power consumption of Minimap2’s read                                                                          state-of-the-art hardware accelerators for read alignment:
+alignment step is 59.8 W and 118.9 W for their single-thread                                                                   GACT (from Darwin [162]) and SillaX (from GenAx [55]).
+and 12-thread executions, respectively. GenASM consumes                                                                           Darwin is a hardware accelerator designed for long read
+only 3.23W, and thus reduces the power consumption of the                                                                      alignment [162]. Darwin contains components that acceler-
+alignment steps of BWA-MEM and Minimap2 by 18× and                                                                             ate both the filtering (D-SOFT) and alignment (GACT) steps
+19× for single-thread execution, and by 34× and 37× for                                                                        of read mapping. The open-source RTL code available for
+12-thread execution, respectively.                                                                                             the GACT accelerator of Darwin allows us to estimate the
+   Figure 10 compares the read alignment throughput                                                                            throughput, area and power consumption of GACT and com-
+(reads/sec) of GenASM with that of the alignment steps of                                                                      pare it with GenASM for read alignment. In Darwin, GACT
+BWA-MEM and Minimap2, when aligning short Illumina                                                                             logic and the associated 128KB SRAM are responsible for fill-
+reads against the human reference genome. GenASM pro-                                                                          ing the dynamic programming matrix, generating the trace-
+vides (1) 1390× and 111× throughput improvement over                                                                           back pointers and finding the maximum score. Thus, we
+the alignment step of BWA-MEM for its single-thread and                                                                        believe that it is fair to compare the power consumption and
+12-thread execution, respectively, and (2) 1839× and 158×                                                                      the area of the GACT logic and GenASM logic, along with
+                                   BWA-MEM (t=1)                   BWA-MEM (t=12)                GenASM (w/ BWA-MEM)
+                                                                                                                               their associated SRAMs.
+                                   Minimap2 (t=1)                  Minimap2 (t=12)               GenASM (w/ Minimap2)             In order to have an iso-bandwidth comparison with Dar-
+                         1E+08                                                                                    158 𝑥
+Throughput (reads/sec)
+
+
+
+
+                                                                                                        111 𝑥                  win’s GACT, we compare only a single array of GACT
+                         1E+06                                                                                                 and a single set of GenASM-DC and GenASM-TB, because
+                         1E+04                                                                                                 (1) GenASM utilizes the high memory bandwidth that PIM
+                         1E+02                                                                                                 provides only to parallelize many sets of GenASM-DC and
+                         1E+00
+                                                                                                                               GenASM-TB, and a single set of GenASM-DC and GenASM-
+                                  Illumina-100bp         Illumina-150bp         Illumina-250bp           Average               TB does not require high bandwidth, and (2) all internal data
+Figure 10. Throughput comparison of GenASM and the align-                                                                      of both GenASM and Darwin is provided by local SRAMs. We
+ment steps of BWA-MEM and Minimap2 for short reads.                                                                            synthesize both designs (i.e., GenASM and GACT) at an iso-
+
+
+                                                                                                                          10
+
+
+===== Page 11 =====
+
+PVT (process, voltage, temperature) corner, with the same                                                                          numbers reported for the computation logic of SillaX, we
+number of PEs, and with their optimum parameters.                                                                                  find that GenASM requires 63% less logic area (2.08 mm2 vs.
+   As Figure 12 shows, for a single GACT array with 64 PEs at                                                                      5.64 mm2 ) and 82% less logic power (1.18 W vs. 6.6 W).
+1GHz, the throughput of GACT decreases from 55,556 to 6,289                                                                            In order to compare the total area of SillaX and GenASM,
+alignments per second when the sequence length increases                                                                           we perform a CACTI-based analysis [172] for the SillaX SRAM
+from 1Kbp to 10Kbp, while consuming 277.7 mW of power. In                                                                          (2.02 MB). We find that the SillaX SRAM consumes an area
+comparison, for a single GenASM accelerator at 1GHz (with a                                                                        of 3.47 mm2 , resulting in a total area of 9.11 mm2 for Sil-
+64-PE configuration), the throughput decreases from 236,686                                                                        laX. Although GenASM (10.69 mm2 ) requires 17% more total
+to 23,669 alignments per second when the sequence length                                                                           area than SillaX, we find that GenASM provides 1.6× better
+increases from 1Kbp to 10Kbp, while consuming 101 mW of                                                                            throughput per unit area for short reads than SillaX.
+power. This shows that, on average, GenASM provides 3.9×                                                                               Accuracy Analysis. We compare the traceback outputs of
+better throughput than GACT, while consuming 2.7× less                                                                             GenASM and (1) BWA-MEM for short reads, (2) Minimap2 for
+power. Thus, GenASM provides 10.5× better throughput per                                                                           long reads, to assess the accuracy and correctness of GenASM-
+unit power for long reads when compared to GACT.                                                                                   TB. We find that the optimum (W , O) setting (i.e., window
+                              1.E+06
+Throughput (reads/sec)
+
+
+
+
+                                                                     GACT (Darwin)      GenASM                       3.9 𝑥         size and overlap size) for the GenASM-TB algorithm in terms
+                              1.E+04
+                                                                                                                                   of performance and accuracy is W = 64 and O = 24. With
+                                                                                                                                   this setting, GenASM completes the alignment of all reads in
+                              1.E+02                                                                                               each dataset, and increasing the window size does not change
+                                                                                                                                   the alignment output.
+                              1.E+00
+                                       1Kbp   2Kbp   3Kbp     4Kbp     5Kbp     6Kbp   7Kbp    8Kbp    9Kbp   10Kbp Average            For short reads, we use the default scoring setting of BWA-
+Figure 12. Throughput comparison of GenASM and GACT                                                                                MEM (i.e., match=+1, substitution=-4, gap opening=-6, and
+from Darwin for long reads.                                                                                                        gap extension=-1). For 96.6% of the short reads, GenASM
+                                                                                                                                   finds an alignment whose score is equal to the score of the
+  As Figure 13 shows, we also compare the throughput of                                                                            alignment reported by BWA-MEM. This fraction increases to
+GenASM and GACT for short read alignment (i.e., 100–300bp                                                                          99.7% when we consider scores that are within ±4.5% of the
+reads). We find that GenASM performs 7.4× better than                                                                              scores reported by BWA-MEM.
+GACT when aligning short reads, on average. Thus, GenASM                                                                               For long reads, we use the default scoring setting of Min-
+provides 20.0× better throughput per unit power for short                                                                          imap2 (i.e., match=+2, substitution=-4, gap opening=-4, and
+reads when compared to GACT.                                                                                                       gap extension=-2). For 99.6% of the long reads with a 10%
+                              1.E+08
+     Throughput (reads/sec)
+
+
+
+
+                                                                     GACT (Darwin)      GenASM
+                                                                                                                 7.4 𝑥
+                                                                                                                                   error rate, GenASM finds an alignment whose score is within
+                              1.E+06                                                                                               ±0.4% of the score of the alignment reported by Minimap2.
+                              1.E+04                                                                                               For 99.7% of the long reads with a 15% error rate, GenASM
+                              1.E+02
+                                                                                                                                   finds an alignment whose score is within ±0.7% of the score
+                                                                                                                                   of the alignment reported by Minimap2.
+                              1.E+00
+                                         100bp        150bp             200bp          250bp          300bp      Average               There are two reasons for the difference between the align-
+Figure 13. Throughput comparison of GenASM and GACT                                                                                ment scores reported by GenASM and the scores reported
+from Darwin for short reads.                                                                                                       by the baseline tools. First, GenASM performs traceback for
+                                                                                                                                   the alignment with the minimum edit distance. However,
+   We compare the required area for the GACT logic with                                                                            the baseline can report an alignment that has a higher num-
+128KB of SRAM and the required area for the GenASM logic                                                                           ber of edits but a lower score than the alignment reported
+(GenASM-DC and GenASM-TB) with 8KB of DC-SRAM and                                                                                  by GenASM, when more complex scoring schemes are used.
+96KB of TB-SRAMs, at 28nm. We find that GenASM requires                                                                            Second, during the TB stage, GenASM follows a fixed order
+1.7× less area than GACT. Thus, GenASM provides 6.6× and                                                                           at each iteration when picking between substitutions, inser-
+12.6× better throughput per unit area for long reads and for                                                                       tions, or deletions (based on the penalty of each error type).
+short reads, respectively, when compared to GACT.                                                                                  While we pick the error type with the lowest possible cost at
+   The main difference between GenASM and GACT is the un-                                                                          the current iteration, another error type with a higher initial
+derlying algorithms. GenASM uses our modified Bitap algo-                                                                          cost may lead to a better (i.e., lower-cost) alignment in later
+rithm, which requires only simple and fast bitwise operations.                                                                     iterations, which cannot be known beforehand.3
+On the other hand, GACT uses the complex and computation-                                                                              Although GenASM is optimized for unit-cost based scoring
+ally more expensive dynamic programming based algorithm                                                                            (i.e., edit distance) and currently provides only partial support
+for alignment. This is the main reason why GenASM is more                                                                          for more complex scoring schemes, we show that GenASM
+efficient than GACT of Darwin.                                                                                                     framework can still serve as a fast, memory- and power-
+   GenAx is a hardware accelerator designed for short read                                                                         efficient, and quite accurate alternative for read alignment.
+alignment [55]. Similar to Darwin, GenAx accelerates both
+the filtering and alignment steps of read mapping. Unlike                                                                          10.3. Use Case 2: Pre-Alignment Filtering
+GenAx, whose design is optimized only for short reads,                                                                                We compare GenASM with the state-of-the-art FPGA-
+GenASM is more robust and works with both short and                                                                                based pre-alignment filter for short reads, Shouji [9], us-
+long reads. While we are unable to reimplement GenAx,                                                                              ing two datasets provided in [9]. When we compare Shouji
+the throughput analysis of SillaX (the alignment accelerator                                                                       (with maximum filtering units) and GenASM for the dataset
+of GenAx) provided by the original work [55] allows us to                                                                          with 100bp sequences, we find that GenASM provides 3.7×
+provide a performance comparison between GenASM and                                                                                speedup over Shouji, while reducing power consumption by
+SillaX for short read alignment.                                                                                                   1.7×. When we perform the same analysis with 250bp se-
+   We compare SillaX with GenASM at their optimal oper-                                                                            quences, we find that GenASM does not provide speedup
+ating frequencies (2GHz for SillaX, 1GHz for GenASM), and                                                                          over Shouji, but reduces power consumption by 1.6×.
+find that GenASM provides 1.9× higher throughput for short
+reads (101bp) than SillaX (whose approximate throughput                                                                                 3 We can add support for different orderings by adding more configura-
+is 50M alignments per second). Using the area and power                                                                            bility to the GenASM-TB accelerator, which we leave for future work.
+
+
+                                                                                                                              11
+
+
+===== Page 12 =====
+
+    In pre-alignment filtering for short reads, only GenASM-                          execution time for both of the cases. When the sequence
+DC is executed (Section 8). The complexity of GenASM-DC                               length increases from 100Kbp to 1Mbp, the execution time of
+is O(n × m × k) whereas the complexity of Shouji is O(m × k),                         GenASM increases linearly (since W is constant, but m + k
+where n is the text length, m is the read length, and k is the                        increases linearly). However, due to its quadratic complexity,
+edit distance threshold. Going from the 100bp dataset to the                          Edlib cannot scale linearly. Thus, for the edit distance calcu-
+250bp dataset, all these three parameters increase linearly.                          lation of 1Mbp sequences, GenASM provides 262–5413× and
+Thus, the speedup of GenASM over Shouji for pre-alignment                             627–12501× speedup over Edlib execution without and with
+filtering decreases for datasets with longer reads.                                   traceback, respectively.
+    To analyze filtering accuracy, we use Edlib [155] to gener-                          Although both the GenASM algorithm and Edlib’s under-
+ate the ground truth edit distance value for each sequence                            lying Myers’ algorithm [121] use bitwise operations only for
+pair in the datasets (similar to Shouji). We evaluate the accu-                       edit distance calculation and exploit bit-level parallelism, the
+racy of GenASM as a pre-alignment filter by computing its                             main advantages of the GenASM algorithm come from (1) the
+false accept rate and false reject rate (as defined in [9]).                          divide-and-conquer approach we follow for efficient support
+    The false accept rate [9] is the ratio of the number of dis-                      for longer sequences, and (2) our efficient co-design of the
+similar sequences that are falsely accepted by the filter (as                         GenASM algorithm with the GenASM hardware accelerator.
+similar) and the total number of dissimilar sequences that are
+rejected by the ground truth. The goal is to minimize the false
+accept rate to maximize the number of dissimilar sequences
+that are eliminated by the filter. For the 100bp dataset with
+an edit distance threshold of 5, Shouji has a 4% false accept
+rate, whereas GenASM has a false accept rate of only 0.02%.
+For the 250bp dataset with an edit distance threshold of 15,
+Shouji has a 17% false accept rate, whereas GenASM has a                              Figure 14. Execution time comparison of GenASM and Edlib
+false accept rate of only 0.002%. Thus, GenASM provides a                             for edit distance calculation.
+very low rate of falsely-accepted dissimilar sequences, and                              Based on our power analysis, we find that power con-
+significantly improves the accuracy of pre-alignment filtering                        sumption of Edlib is 55.3 W and 58.8 W when finding the
+compared to Shouji.                                                                   edit distance between two 100Kbp sequences and two 1Mbp
+    While Shouji approximates the edit distance, GenASM cal-                          sequences, respectively. Thus, GenASM reduces power con-
+culates the actual distance. Although calculation requires                            sumption by 548× and 582× over Edlib, respectively.
+more computation than approximation, a computed distance                                 We also compare GenASM with ASAP [22], the state-of-
+results in a near-zero (0.002%) false accept rate.4 Thus,                             the-art FPGA-based accelerator for edit distance calculation.
+GenASM filters more false-positive locations out, leaving                             While we are unable to reimplement ASAP, the execution
+fewer candidate locations for the expensive alignment step                            time and power consumption analysis of ASAP provided
+to process. This greatly reduces the combined execution time                          in [22] allows us to provide a comparison between GenASM
+of filtering and alignment. Thus, even though GenASM does                             and ASAP. ASAP is optimized for shorter sequences and
+not provide any speedup over Shouji when filtering the 250bp                          reports execution time only for sequences of length 64bp–
+sequences, its lower false accept rate makes it a better option                       320bp [22]. Based on [22], the execution time of one ASAP
+for this step of the pipeline with greater overall benefits.                          accelerator increases from 6.8 µs to 18.8 µs when the sequence
+    The false reject rate [9] is the ratio of the number of similar                   length increases from 64bp to 320bp, while consuming 6.8 W
+sequences that are rejected by the filter (as dissimilar) and                         of power. In comparison, we report that the execution time of
+the total number of similar sequences that are accepted by                            one GenASM accelerator increases from 0.017 µs to 2.025 µs
+the ground truth. The false reject rate should always be equal                        when the sequence length increases from 64bp to 320bp, while
+to 0%. We observe that GenASM always provides a 0% false                              consuming 0.101 W of power. This shows that GenASM pro-
+reject rate, and thus does not filter out similar sequence pairs,                     vides 9.3–400× speedup over ASAP, while consuming 67×
+as does Shouji.                                                                       less power.
+10.4. Use Case 3: Edit Distance Calculation                                           10.5. Sources of Improvement in GenASM
+   We compare GenASM with the state-of-the-art edit dis-
+tance calculation library, Edlib [155]. Figure 14 compares the                           GenASM’s performance improvements come from our al-
+execution time of Edlib (with and without finding the trace-                          gorithm/hardware co-design, i.e., both from our modified
+back output) and GenASM when finding the edit distance                                algorithm and our co-designed architecture for this algo-
+between two sequences of length 100Kbp, and also two se-                              rithm. The sources of the large improvements in GenASM are
+quences of length 1Mbp, which have similarity ranging from                            (1) the very simple computations it performs; (2) the divide-
+60% to 99% (Section 9). Since Edlib is a single-thread edit                           and-conquer approach we follow, which makes our design
+distance calculation tool, for a fair comparison, we compare                          efficient for both short and long reads despite their different
+the throughput of only one GenASM accelerator (i.e., in one                           error profiles; and (3) the very high degree of parallelism
+vault) with a single-thread execution of the Edlib tool.                              obtained with the help of specialized compute units, dedi-
+   As Figure 14 shows, when performing edit distance cal-                             cated SRAMs for both GenASM-DC and GenASM-TB, and
+culation between two 100Kbp sequences, GenASM provides                                the vault-level parallelism provided by processing in the logic
+22–716× and 146–1458× speedup over Edlib execution with-                              layer of 3D-stacked memory.
+out and with traceback, respectively. GenASM has the same                                Algorithm-Level. Our divide-and-conquer approach al-
+                                                                                      lows us to decrease the execution time of GenASM-DC
+     4 The reason for the non-zero false accept rate of GenASM is that when           from ( m×(m+k)×k
+                                                                                                 P×w     ) cycles to (( W ×WP×w
+                                                                                                                            ×min(W ,k)    m+k ) cycles,
+                                                                                                                                       )× W –O
+there is a deletion in the first character of the query, GenASM does not count        where m is the pattern size, k is the edit distance threshold,
+this as an edit, and skips this extra character of the text when computing
+the edit distance. Since GenASM reports an edit distance that is one lower
+                                                                                      P is the number of PEs that GenASM-DC has (i.e., 64), w
+than the edit distance reported by the ground truth, if GenASM’s reported             is the number of bits processed by each PE (i.e., 64), W is
+edit distance is below the threshold but the ground truth’s is not, GenASM            the window size (i.e., 64), and O is the overlap size between
+leads to a false accept.                                                              windows (i.e., 24). Although the total GenASM-TB execution
+
+
+                                                                                 12
+
+
+===== Page 13 =====
+
+time does not change ((m + k) cycles vs. ((W – O) × W   m+k )                 ates the Bitap algorithm, and demonstrates the effectiveness
+                                                          –O
+cycles), our divide-and-conquer approach helps us decrease                    of the framework for multiple use cases in genome sequence
+the GenASM-DC execution time by 3662× for long reads, and                     analysis. Many previous works have attempted to improve (in
+by 1.6 – 3.9× for short reads.                                                software or in hardware) the performance of a single step of
+   Hardware-Level. GenASM-DC’s systolic-array-based de-                       the genome sequence analysis pipeline. Recent acceleration
+sign removes the data dependency limitation of the underly-                   works tend to follow one of two key directions [8].
+ing Bitap algorithm, and provides 64× parallelism by perform-                     The first approach is to build pre-alignment filters that
+ing 64 iterations of the GenASM-DC algorithm in parallel.                     use heuristics to first check the differences between two ge-
+Our hardware accelerator for GenASM-TB makes use of spe-                      nomic sequences before using the computationally-expensive
+cialized per-PE TB-SRAMs, which eliminates the otherwise                      approximate string matching algorithms. Examples of such
+very high memory bandwidth consumption of traceback and                       filters are the Adjacency Filter [177] that is implemented for
+enables efficient execution.                                                  standard CPUs, SHD [176] that uses SIMD-capable CPUs, and
+   Technology-Level. With the help of 3D-stacked mem-                         GRIM-Filter [91] that is built in 3D-stacked memory. Many
+ory’s vault-level parallelism, we can obtain 32× parallelism                  works also exploit the large amounts of parallelism offered by
+by performing 32 alignments in parallel in different vaults.                  FPGA architectures for pre-alignment filtering, such as Gate-
+11. Other Use Cases of GenASM                                                 Keeper [10], MAGNET [11], Shouji [9], and SneakySnake [13].
+                                                                              A recent work, GenCache [122], proposes an in-cache accel-
+    We have quantitatively evaluated three use cases of ap-                   erator to improve the filtering (i.e., seeding) mechanism of
+proximate string matching for genome sequence analysis                        GenAx (for short reads) by using in-cache operations [1] and
+(Section 10). We discuss four other potential use cases of                    software modifications.
+GenASM, whose evaluation we leave for future work.                                The second approach is to use hardware accelerators for
+    Read-to-Read Overlap Finding Step of de Novo As-                          the computationally-expensive read alignment step. Ex-
+sembly. De novo assembly [31] is an alternate genome se-                      amples of such hardware accelerators are RADAR [74],
+quencing approach that assembles an entire DNA sequence                       FindeR [181], and AligneR [180], which make use of ReRAM
+without the use of a reference genome. The first step of de                   based designs for faster FM-index search, or RAPID [65] and
+novo assembly is to find read-to-read overlaps since the refer-               BioSEAL [88], which target dynamic programming accelera-
+ence genome does not exist [152]. Pairwise read alignment                     tion with processing-in-memory. Other read alignment ac-
+(i.e., read-to-read alignment) is the last step of read-to-read               celeration works include SIMD-capable CPUs [38], multicore
+overlap finding [102, 138]. As sequencing devices can intro-                  CPUs [57, 109], and specialized hardware accelerators such
+duce errors to the reads, read alignment in overlap finding                   as GPUs (e.g., GSWABE [109], CUDASW++ 3.0 [110]), FPGAs
+also needs to take these errors into account. GenASM can be                   (e.g., FPGASW [49], ASAP [22]), or ASICs (e.g., Darwin [162]
+used for the pairwise read alignment step of overlap finding.                 and GenAx [55]).
+    Hash-Table Based Indexing. In the indexing step of read                       In contrast to GenASM, all of these prior works focus on ac-
+mapping, the reference genome is indexed and stored as a                      celerating only a single use case in genome sequence analysis,
+hash table, whose keys are all possible fixed-length substrings               whereas GenASM is capable of accelerating at least three dif-
+(i.e., seeds) and whose values are the locations of these seeds               ferent use cases (i.e., read alignment, pre-alignment filtering,
+in the reference genome. This index structure is queried in                   edit distance calculation) where approximate string matching
+the seeding step to find the candidate matching locations of                  is required.
+query reads. As we need to find the locations of each seed in
+the reference text to form the index structure, GenASM can                    13. Conclusion
+be used to generate the hash-table based index.                                  We propose GenASM, an approximate string matching
+    Whole Genome Alignment. Whole genome alignment                            (ASM) acceleration framework for genome sequence analy-
+[42, 136] is the method of aligning two genomes (from the                     sis built upon our modified and enhanced Bitap algorithm.
+same or different species) for predicting evolutionary or famil-              GenASM performs bitvector-based ASM, which can acceler-
+ial relationships between these genomes. In whole genome                      ate multiple steps of genome sequence analysis. We co-design
+alignment, we need to align two very long sequences. Since                    our highly-parallel, scalable and memory-efficient algorithms
+GenASM can operate on arbitrary-length sequences as a re-                     with low-power and area-efficient hardware accelerators. We
+sult of our divide-and-conquer approach, whole genome align-                  evaluate GenASM for three different use cases of ASM in
+ment can be accelerated using the GenASM framework.                           genome sequence analysis for both short and long reads:
+    Generic Text Search. Although GenASM-DC is opti-                          read alignment, pre-alignment filtering, and edit distance cal-
+mized for genomic sequences (i.e., DNA sequences), which are                  culation. We show that GenASM is significantly faster and
+composed of only 4 characters (i.e., A, C, G and T), GenASM-                  more power- and area-efficient than state-of-the-art software
+DC can be extended to support larger alphabets, thus enabling                 and hardware tools for each of these use cases. We hope that
+generic text search. When generating the pattern bitmasks                     GenASM inspires future work in co-designing algorithms
+during the pre-processing step, the only change that is re-                   and hardware together to create powerful frameworks that
+quired is to generate bitmasks for the entire alphabet, instead               accelerate other bioinformatics workloads and emerging ap-
+of for only four characters. There is no change required to                   plications.
+the edit distance calculation step.
+    As special cases of general text search, the alphabet can be
+defined as RNA bases (i.e., A, C, G, U) for RNA sequences or
+                                                                              Acknowledgments
+as amino acids (i.e., A, R, N, D, C, Q, E, G, H, I, L, K, M, F, P,               Part of this work was completed during Damla Senol Cali’s
+S, T, W, Y, V) for protein sequences. This enables GenASM                     internship at Intel Labs. This work is supported by funding
+to be used for RNA sequence alignment or protein sequence                     from Intel, the Semiconductor Research Corporation, the
+alignment [15, 16, 44, 67, 69, 90, 108, 126, 126, 128, 154, 157, 182].        National Institutes of Health (NIH), the industrial partners of
+                                                                              the SAFARI Research Group, and partly by EMBO Installation
+12. Related Work                                                              Grant 2521 awarded to Can Alkan. We thank the anonymous
+ To our knowledge, this is the first approximate string                       reviewers of MICRO 2019, ASPLOS 2020, ISCA 2020, and
+matching acceleration framework that enhances and acceler-                    MICRO 2020 for their comments.
+
+
+                                                                         13
+
+
+===== Page 14 =====
+
+References                                                                               [29] H. Carrillo and D. Lipman, “The Multiple Sequence Alignment Problem
+                                                                                              in Biology,” SIAP, 1988.
+ [1] S. Aga, S. Jeloka, A. Subramaniyan, S. Narayanasamy, D. Blaauw, and                 [30] M. Chaisson, P. Pevzner, and H. Tang, “Fragment Assembly with Short
+     R. Das, “Compute Caches,” in HPCA, 2017.                                                 Reads,” Bioinformatics, 2004.
+ [2] N. Ahmed, J. Lévy, S. Ren, H. Mushtaq, K. Bertels, and Z. Al-Ars,                   [31] M. J. Chaisson, R. K. Wilson, and E. E. Eichler, “Genetic Variation and
+     “GASAL2: A GPU Accelerated Sequence Alignment Library for High-                          the De Novo Assembly of Human Genomes,” Nature Reviews Genetics,
+     Throughput NGS Data,” BMC Bioinformatics, 2019.                                          2015.
+ [3] J. Ahn, S. Hong, S. Yoo, O. Mutlu, and K. Choi, “A Scalable Processing-             [32] E. Check Hayden, “Technology: The 1,000 Genome,” Nature News,
+     in-Memory Accelerator for Parallel Graph Processing,” in ISCA, 2015.                     2014.
+ [4] J. Ahn, S. Yoo, O. Mutlu, and K. Choi, “PIM-Enabled Instructions: A                 [33] P. Chen, C. Wang, X. Li, and X. Zhou, “Accelerating the Next Gen-
+     Low-Overhead, Locality-Aware Processing-in-Memory Architecture,”                         eration Long Read Mapping with the FPGA-Based System,” TCBB,
+     in ISCA, 2015.                                                                           2014.
+ [5] C. Alkan, B. P. Coe, and E. E. Eichler, “Genome Structural Variation                [34] L. Chin, J. N. Andersen, and P. A. Futreal, “Cancer Genomics: From
+     Discovery and Genotyping,” Nature Reviews Genetics, 2011.                                Discovery Science to Personalized Medicine,” Nature Medicine, 2011.
+ [6] C. Alkan, J. M. Kidd, T. Marques-Bonet, G. Aksay, F. Antonacci, F. Hor-             [35] J. Clarke, H.-C. Wu, L. Jayasinghe, A. Patel, S. Reid, and H. Bayley,
+     mozdiari, J. O. Kitzman, C. Baker, M. Malig, O. Mutlu, S. C. Sahinalp,                   “Continuous Base Identification for Single-Molecule Nanopore DNA
+     R. A. Gibbs, and E. E. Eichler, “Personalized Copy Number and Seg-                       Sequencing,” Nature Nanotechnology, 2009.
+     mental Duplication Maps Using Next-Generation Sequencing,” Nature                   [36] I. Curtis, “The Intel Skylake-X Review: Core i9 7900X, i7 7820X
+     Genetics, 2009.                                                                          and i7 7800X Tested: Die Size Estimates and Arrangements,”
+ [7] C. Alkan, S. Sajjadian, and E. E. Eichler, “Limitations of Next-                         AnandTech.         https://www.anandtech.com/show/11550/the-intel-
+     Generation Genome Sequence Assembly,” Nature Methods, 2011.                              skylakex-review-core-i9-7900x-i7-7820x-and-i7-7800x-tested/6
+ [8] M. Alser, Z. Bingöl, D. Senol Cali, J. Kim, S. Ghose, C. Alkan, and                 [37] D. da Silva Candido, I. M. Claro, J. G. de Jesus, W. M. de Souza, F. R. R.
+     O. Mutlu, “Accelerating Genome Analysis: A Primer on an Ongoing                          Moreira, S. Dellicour, T. A. Mellan, L. du Plessis, R. H. M. Pereira, F. C.
+     Journey,” IEEE Micro, 2020.                                                              da Silva Sales, E. R. Manuli, J. Theze, L. Almeida, M. T. de Menezes,
+ [9] M. Alser, H. Hassan, A. Kumar, O. Mutlu, and C. Alkan, “Shouji: A Fast                   C. M. Voloch, M. J. Fumagalli et al., “Evolution and Epidemic Spread
+     and Efficient Pre-Alignment Filter for Sequence Alignment,” Bioinfor-                    of SARS-CoV-2 in Brazil,” Science, 2020.
+     matics, 2019.                                                                       [38] J. Daily, “Parasail: SIMD C Library for Global, Semi-Global, and Local
+[10] M. Alser, H. Hassan, H. Xin, O. Ergin, O. Mutlu, and C. Alkan, “Gate-                    Pairwise Sequence Alignments,” BMC Bioinformatics, 2016.
+     Keeper: A New Hardware Architecture for Accelerating Pre-Alignment                  [39] W. R. Davis, J. Wilson, S. Mick, J. Xu, H. Hua, C. Mineo, A. M. Sule,
+     in DNA Short Read Mapping,” Bioinformatics, 2017.                                        M. Steer, and P. D. Franzon, “Demystifying 3D ICs: The Pros and Cons
+[11] M. Alser, O. Mutlu, and C. Alkan, “MAGNET: Understanding and                             of Going Vertical,” IEEE Design & Test of Computers, 2005.
+     Improving the Accuracy of Genome Pre-Alignment Filtering,” TIR,                     [40] D. Deamer, M. Akeson, and D. Branton, “Three Decades of Nanopore
+     2017.                                                                                    Sequencing,” Nature Biotechnology, 2016.
+[12] M. Alser, J. Rotman, K. Taraszka, H. Shi, P. I. Baykal, H. T. Yang,                 [41] A. L. Delcher, S. Kasif, R. D. Fleischmann, J. Peterson, O. White, and
+     V. Xue, S. Knyazev, B. D. Singer, B. Balliu, D. Koslicki, P. Skums, A. Ze-               S. L. Salzberg, “Alignment of Whole Genomes,” Nucleic Acids Research,
+     likovsky, C. Alkan, O. Mutlu, and S. Mangul, “Technology Dictates Al-                    1999.
+     gorithms: Recent Developments in Read Alignment,” arXiv:2003.00110                  [42] C. N. Dewey, “Whole-Genome Alignment,” in Evolutionary Genomics,
+     [q-bio.GN], 2020.                                                                        2019.
+[13] M. Alser, T. Shahroodi, J. Gomez-Luna, C. Alkan, and O. Mutlu,                      [43] M. Drumond, A. Daglis, N. Mirzadeh, D. Ustiugov, J. Picorel, B. Falsafi,
+     “SneakySnake: A Fast and Accurate Universal Genome Pre-Alignment                         B. Grot, and D. Pnevmatikatos, “The Mondrian Data Engine,” in ISCA,
+     Filter for CPUs, GPUs, and FPGAs,” arXiv:1910.09020 [q-bio.GN], 2019.                    2017.
+[14] S. F. Altschul and B. W. Erickson, “Optimal Sequence Alignment using                [44] R. C. Edgar, “MUSCLE: Multiple Sequence Alignment with High Accu-
+     Affine Gap Costs,” Bulletin of Mathematical Biology, 1986.                               racy and High Throughput,” Nucleic Acids Research, 2004.
+[15] S. F. Altschul, W. Gish, W. Miller, E. W. Myers, and D. J. Lipman, “Basic           [45] R. C. Edgar and S. Batzoglou, “Multiple Sequence Alignment,” COSB,
+     Local Alignment Search Tool,” Journal of Molecular Biology, 1990.                        2006.
+[16] S. F. Altschul, T. L. Madden, A. A. Schäffer, J. Zhang, Z. Zhang, W. Miller,        [46] H. Ellegren, “Genome Sequencing and Population Genomics in Non-
+     and D. J. Lipman, “Gapped BLAST and PSI-BLAST: A New Generation                          Model Organisms,” Trends in Ecology & Evolution, 2014.
+     of Protein Database Search Programs,” Nucleic Acids Research, 1997.                 [47] A. C. English, S. Richards, Y. Han, M. Wang, V. Vee, J. Qu, X. Qin,
+[17] M. J. Alvarez-Cubero, M. Saiz, B. Martínez-García, S. M. Sayalero,                       D. M. Muzny, J. G. Reid, K. C. Worley, and R. A. Gibbs, “Mind the
+     C. Entrala, J. A. Lorente, and L. J. Martinez-Gonzalez, “Next Generation                 Gap: Upgrading Genomes with Pacific Biosciences RS Long-Read
+     Sequencing: An Application in Forensic Sciences?” Annals of Human                        Sequencing Technology,” PloS One, 2012.
+     Biology, 2017.                                                                      [48] N. R. Faria, E. C. Sabino, M. R. Nunes, L. C. J. Alcantara, N. J. Loman,
+[18] S. L. Amarasinghe, S. Su, X. Dong, L. Zappia, M. E. Ritchie, and Q. Gouil,               and O. G. Pybus, “Mobile Real-Time Surveillance of Zika Virus in
+     “Opportunities and Challenges in Long-Read Sequencing Data Analy-                        Brazil,” Genome Medicine, 2016.
+     sis,” Genome Biology, 2020.                                                         [49] X. Fei, Z. Dan, L. Lina, M. Xin, and Z. Chunlei, “FPGASW: Accelerating
+                                                                                              Large-Scale Smith–Waterman Sequence Alignment Application with
+[19] S. Ardui, A. Ameur, J. R. Vermeesch, and M. S. Hestand, “Single                          Backtracking on FPGA Linear Systolic Array,” Interdisciplinary Sciences:
+     Molecule Real-Time (SMRT) Sequencing Comes of Age: Applications                          Computational Life Sciences, 2018.
+     and Utilities for Medical Diagnostics,” Nucleic Acids Research, 2018.               [50] L. Feuk, A. R. Carson, and S. W. Scherer, “Structural Variation in the
+[20] E. A. Ashley, “Towards Precision Medicine,” Nature Reviews Genetics,                     Human Genome,” Nature Reviews Genetics, 2006.
+     2016.                                                                               [51] J. W. Fickett, “Fast Optimal Alignment,” Nucleic Acids Research, 1984.
+[21] R. Baeza-Yates and G. H. Gonnet, “A New Approach to Text Searching,”                [52] C. Firtina and C. Alkan, “On Genomic Repeats and Reproducibility,”
+     CACM, 1992.                                                                              Bioinformatics, 2016.
+[22] S. S. Banerjee, M. El-Hadedy, J. B. Lim, Z. T. Kalbarczyk, D. Chen, S. S.
+     Lumetta, and R. K. Iyer, “ASAP: Accelerated Short-Read Alignment on                 [53] M. Flores, G. Glusman, K. Brogaard, N. D. Price, and L. Hood, “P4
+     Programmable Hardware,” TC, 2019.                                                        Medicine: How Systems Medicine Will Transform the Healthcare
+[23] A. Boroumand, S. Ghose, Y. Kim, R. Ausavarungnirun, E. Shiu,                             Sector and Society,” Personalized Medicine, 2013.
+     R. Thakur, D. Kim, A. Kuusela, A. Knies, P. Ranganathan, and O. Mutlu,              [54] E. J. Fox, K. S. Reid-Bayliss, M. J. Emond, and L. A. Loeb, “Accuracy of
+     “Google Workloads for Consumer Devices: Mitigating Data Movement                         Next Generation Sequencing Platforms,” Next Generation Sequencing
+     Bottlenecks,” in ASPLOS, 2018.                                                           & Applications, 2014.
+[24] A. Boroumand, S. Ghose, M. Patel, H. Hassan, B. Lucia, R. Ausavarung-               [55] D. Fujiki, A. Subramaniyan, T. Zhang, Y. Zeng, R. Das, D. Blaauw, and
+     nirun, K. Hsieh, N. Hajinazar, K. T. Malladi, H. Zheng, and O. Mutlu,                    S. Narayanasamy, “GenAx: A Genome Sequencing Accelerator,” in
+     “CoNDA: Efficient Cache Coherence Support for Near-Data Accelera-                        ISCA, 2018.
+     tors,” in ISCA, 2019.                                                               [56] M. Gao, J. Pu, X. Yang, M. Horowitz, and C. Kozyrakis, “TETRIS: Scal-
+[25] C. Børsting and N. Morling, “Next Generation Sequencing and Its Ap-                      able and Efficient Neural Network Acceleration with 3D Memory,” in
+     plications in Forensic Genetics,” Forensic Science International: Genetics,              ASPLOS, 2017.
+     2015.                                                                               [57] E. Georganas, A. Buluc, J. Chapman, L. Oliker, D. Rokhsar, and K. Yelick,
+[26] D. Branton, D. W. Deamer, A. Marziali, H. Bayley, S. A. Benner, T. Butler,               “merAligner: A Fully Parallel Sequence Aligner,” in IPDPS, 2015.
+     M. D. Ventra, S. Garaj, A. Hibbs, X. Huang, S. B. Jovanovich, P. S. Krstic,         [58] S. Ghose, T. Li, N. Hajinazar, D. S. Cali, and O. Mutlu, “Demystifying
+     S. Lindsay, X. S. Ling, C. H. Mastrangelo, A. Meller et al., “The Potential              Complex Workload-DRAM Interactions: An Experimental Study,” in
+     and Challenges of Nanopore Sequencing,” Nature Biotechnology, 2008.                      SIGMETRICS, 2019.
+[27] N. Bray, I. Dubchak, and L. Pachter, “AVID: A Global Alignment Pro-                 [59] G. S. Ginsburg and H. F. Willard, “Genomic and Personalized Medicine:
+     gram,” Genome Research, 2003.                                                            Foundations and Applications,” Translational Research, 2009.
+[28] M. Brudno, C. B. Do, G. M. Cooper, M. F. Kim, E. Davydov, NISC Com-                 [60] T. C. Glenn, “Field Guide to Next-Generation DNA Sequencers,” Molec-
+     parative Sequencing Program, E. D. Green, A. Sidow, and S. Batzoglou,                    ular Ecology Resources, 2011.
+     “LAGAN and Multi-LAGAN: Efficient Tools for Large-Scale Multiple
+     Alignment of Genomic DNA,” Genome Research, 2003.
+
+
+                                                                                    14
+
+
+===== Page 15 =====
+
+[61] S. Goodwin, J. D. McPherson, and W. R. McCombie, “Coming of Age:                       [89] J. J. Kasianowicz, E. Brandin, D. Branton, and D. W. Deamer, “Charac-
+     Ten Years of Next-Generation Sequencing Technologies,” Nature Re-                           terization of Individual Polynucleotide Molecules using a Membrane
+     views Genetics, 2016.                                                                       Channel,” PNAS, 1996.
+[62] O. Gotoh, “An Improved Algorithm for Matching Biological Sequences,”                   [90] W. J. Kent, “BLAT—The BLAST-Like Alignment Tool,” Genome Research,
+     Journal of Molecular Biology, 1982.                                                         2002.
+[63] O. Gotoh, “Alignment of Three Biological Sequences with an Efficient                   [91] J. S. Kim, D. Senol Cali, H. Xin, D. Lee, S. Ghose, M. Alser, H. Hassan,
+     Traceback Procedure,” Journal of Theoretical Biology, 1986.                                 O. Ergin, C. Alkan, and O. Mutlu, “GRIM-Filter: Fast Seed Location
+[64] A. L. Greninger, S. N. Naccache, S. Federman, G. Yu, P. Mbala, V. Bres,                     Filtering in DNA Read Mapping using Processing-in-Memory Tech-
+     D. Stryke, J. Bouquet, S. Somasekar, J. M. Linnen, R. Dodd, P. Mulem-                       nologies,” BMC Genomics, 2018.
+     bakani, B. S. Schneide, J.-J. Muyembe-Tamfum, S. L. Stramer, and C. Y.                 [92] Y. Kim, W. Yang, and O. Mutlu, “Ramulator: A Fast and Extensible
+     Chiu, “Rapid Metagenomic Identification of Viral Pathogens in Clini-                        DRAM Simulator,” IEEE CAL, 2016.
+     cal Samples by Real-Time Nanopore Sequencing Analysis,” Genome                         [93] H. T. Kung, “Why Systolic Architectures?” IEEE Computer, 1982.
+     Medicine, 2015.                                                                        [94] H. T. Kung and C. E. Leiserson, “Systolic Arrays (for VLSI),” in Sparse
+[65] S. Gupta, M. Imani, B. Khaleghi, V. Kumar, and T. Rosing, “RAPID:                           Matrix Proceedings, 1978.
+     A ReRAM Processing in-Memory Architecture for DNA Sequence                             [95] S. Kurtz, A. Phillippy, A. L. Delcher, M. Smoot, M. Shumway, C. An-
+     Alignment,” in ISLPED, 2019.                                                                tonescu, and S. L. Salzberg, “Versatile and Open Software for Compar-
+[66] T. J. Ham, D. Bruns-Smith, B. Sweeney, Y. Lee, S. H. Seo, U. G. Song,                       ing Large Genomes,” Genome Biology, 2004.
+     Y. H. Oh, K. Asanovic, J. W. Lee, and L. W. Wills, “Genesis: A Hardware                [96] B. Langmead and S. L. Salzberg, “Fast Gapped-Read Alignment with
+     Acceleration Framework for Genomic Data Analysis,” in ISCA, 2020.                           Bowtie 2,” Nature Methods, 2012.
+[67] W. Haque, A. Aravind, and B. Reddy, “Pairwise Sequence Alignment                       [97] T. Laver, J. Harrison, P. O’neill, K. Moore, A. Farbos, K. Paszkiewicz, and
+     Algorithms: A Survey,” in ISTA, 2009.                                                       D. J. Studholme, “Assessing the Performance of the Oxford Nanopore
+[68] J. Harcourt, A. Tamin, X. Lu, S. Kamili, S. K. Sakthivel, L. Wang, J. Mur-                  Technologies MinION,” Biomolecular Detection and Quantification,
+     ray, K. Queen, B. Lynch, B. Whitaker, B. Lynch, R. Gautam, C. Schinde-                      2015.
+     wolf, K. G. Lokugamage, D. Scharton, J. A. Plante et al., “Isolation and               [98] C. Lee, C. Grasso, and M. F. Sharlow, “Multiple Sequence Alignment
+     Characterization of SARS-CoV-2 from the First US COVID-19 Patient,”                         using Partial Order Graphs,” Bioinformatics, 2002.
+     bioRxiv 2020.03.02.972935, 2020.                                                       [99] D. Lee, S. Ghose, G. Pekhimenko, S. Khan, and O. Mutlu, “Simultaneous
+[69] D. G. Higgins and P. M. Sharp, “CLUSTAL: A Package for Performing                           Multi-Layer Access: Improving 3D-Stacked Memory Bandwidth at
+     Multiple Sequence Alignment on a Microcomputer,” Gene, 1988.                                Low Cost,” TACO, 2016.
+[70] M. Höhl, S. Kurtz, and E. Ohlebusch, “Efficient Multiple Genome Align-                [100] V. I. Levenshtein, “Binary Codes Capable of Correcting Deletions,
+     ment,” Bioinformatics, 2002.                                                                Insertions, and Reversals,” in Soviet Physics Doklady, 1966.
+[71] M. Holtgrewe, “Mason–A Read Simulator for Second Generation Se-                       [101] H. Li, “Aligning Sequence Reads, Clone Sequences and Assembly Con-
+     quencing Data,” Free Univ. of Berlin, Dept. of Mathematics and Com-                         tigs with BWA-MEM,” arXiv:1303.3997 [q-bio.GN], 2013.
+     puter Sci., Tech. Rep. TR-B-10-06, 2010.                                              [102] H. Li, “Minimap2: Pairwise Alignment for Nucleotide Sequences,”
+[72] K. Hsieh, E. Ebrahimi, G. Kim, N. Chatterjee, M. O’Connor, N. Vijayku-                      Bioinformatics, 2018.
+     mar, O. Mutlu, and S. W. Keckler, “Transparent Offloading and Mapping                 [103] H. Li, B. Handsaker, A. Wysoker, T. Fennell, J. Ruan, N. Homer,
+     (TOM): Enabling Programmer-Transparent Near-Data Processing in                              G. Marth, G. Abecasis, and R. Durbin, “The Sequence Alignment/Map
+     GPU Systems,” in ISCA, 2016.                                                                Format and SAMtools,” Bioinformatics, 2009.
+[73] K. Hsieh, S. Khan, N. Vijaykumar, K. K. Chang, A. Boroumand, S. Ghose,                [104] H. Li, B. Ni, M.-H. Wong, and K.-S. Leung, “A Fast CUDA Imple-
+     and O. Mutlu, “Accelerating Pointer Chasing in 3D-Stacked Memory:                           mentation of Agrep Algorithm for Approximate Nucleotide Sequence
+     Challenges, Mechanisms, Evaluation,” in ICCD, 2016.                                         Matching,” in SASP, 2011.
+[74] W. Huangfu, S. Li, X. Hu, and Y. Xie, “RADAR: A 3D-ReRAM based                        [105] R. Li, C. Yu, Y. Li, T.-W. Lam, S.-M. Yiu, K. Kristiansen, and J. Wang,
+     DNA Alignment Accelerator Architecture,” in DAC, 2018.                                      “SOAP2: An Improved Ultrafast Tool for Short Read Alignment,” Bioin-
+[75] W. Huangfu, X. Li, S. Li, X. Hu, P. Gu, and Y. Xie, “MEDAL: Scalable                        formatics, 2009.
+     DIMM Based Near Data Processing Accelerator for DNA Seeding                           [106] H.-N. Lin and W.-L. Hsu, “GSAlign: An Efficient Sequence Alignment
+     Algorithm,” in MICRO, 2019.                                                                 Tool for Intra-Species Genomes,” BMC Genomics, 2020.
+[76] Hybrid Memory Cube Consortium, “Hybrid Memory Cube Specifica-                         [107] D. J. Lipman, S. F. Altschul, and J. D. Kececioglu, “A Tool for Multiple
+     tion 2.1,” 2015.                                                                            Sequence Alignment,” PNAS, 1989.
+[77] Illumina, Inc., “MiSeq System.” https://www.illumina.com/systems/                     [108] D. J. Lipman and W. R. Pearson, “Rapid and Sensitive Protein Similarity
+     sequencing-platforms/miseq.html                                                             Searches,” Science, 1985.
+[78] Illumina, Inc., “NextSeq 2000 System.” https://www.illumina.com/                      [109] Y. Liu and B. Schmidt, “GSWABE: Faster GPU-Accelerated Sequence
+     systems/sequencing-platforms/nextseq-1000-2000.html                                         Alignment with Optimal Alignment Retrieval for Short DNA Se-
+[79] Illumina, Inc., “NovaSeq 6000 System.” https://www.illumina.com/                            quences,” Concurrency Computation, 2015.
+     systems/sequencing-platforms/novaseq.html                                             [110] Y. Liu, A. Wirawan, and B. Schmidt, “CUDASW++ 3.0: Accelerating
+[80] Intel      Corp.,      “Intel®     Xeon®         Gold       6126     Proces-                Smith–Waterman Protein Database Search by Coupling CPU and GPU
+     sor     (19.25M       Cache,     2.60      GHz)      Product      Specifica-                SIMD Instructions,” BMC Bioinformatics, 2013.
+     tions.” https://ark.intel.com/content/www/us/en/ark/products/120483/                  [111] G. A. Logsdon, M. R. Vollger, and E. E. Eichler, “Long-Read Human
+     intel-xeon-gold-6126-processor-19-25m-cache-2-60-ghz.html                                   Genome Sequencing and Its Applications,” Nature Reviews Genetics,
+[81] Intel Corp., “Intel® Performance Counter Monitor,” 2017. https:                             2020.
+     //www.intel.com/software/pcm                                                          [112] H. Lu, F. Giordano, and Z. Ning, “Oxford Nanopore MinION Sequenc-
+[82] C. L. Ip, M. Loose, J. R. Tyson, M. de Cesare, B. L. Brown4, M. Jain,                       ing and Genome Assembly,” Genomics, Proteomics & Bioinformatics,
+     R. M. Leggett, D. A. Eccles, V. Zalunin, J. M. Urban, P. Piazza, R. J.                      2016.
+     Bowden, B. Paten, S. Mwaigwisya, E. M. Batty, J. T. Simpson et al.,                   [113] A. Magi, R. Semeraro, A. Mingrino, B. Giusti, and R. D’Aurizio,
+     “MinION Analysis and Reference Consortium: Phase 1 Data Release                             “Nanopore Sequencing Data Analysis: State of the Art, Applications
+     and Analysis,” F1000Research, 2015.                                                         and Challenges,” Briefings in Bioinformatics, 2017.
+[83] M. Jain, S. Koren, K. H. Miga, J. Quick, A. C. Rand, T. A. Sasani, J. R.              [114] T. Mantere, S. Kersten, and A. Hoischen, “Long-Read Sequencing
+     Tyson, A. D. Beggs, A. T. Dilthey, I. T. Fiddes, S. Malla, H. Marriott,                     Emerging in Medical Genetics,” Frontiers in Genetics, 2019.
+     T. Nieto, J. O’Grady, H. E. Olsen, B. S. Pedersen et al., “Nanopore                   [115] G. Marçais, A. L. Delcher, A. M. Phillippy, R. Coston, S. L. Salzberg,
+     Sequencing and Assembly of a Human Genome with Ultra-Long Reads,”                           and A. Zimin, “MUMmer4: A Fast and Versatile Genome Alignment
+     Nature Biotechnology, 2018.                                                                 System,” PLoS Computational Biology, 2018.
+[84] M. Jain, J. R. Tyson, M. Loose, C. L. Ip, D. A. Eccles, J. O’Grady, S. Malla,         [116] V. Marx, “Nanopores: A Sequencer in Your Backpack,” Nature Methods,
+     R. M. Leggett, O. Wallerman, H. J. Jansen, V. Zulunin, E. Birney, B. L.                     2015.
+     Brown, T. P. Snutch, H. E. Olsen, and MinION Analysis Reference                       [117] W. Miller and E. W. Myers, “Sequence Comparison with Concave
+     Consortium, “MinION Analysis and Reference Consortium: Phase 2                              Weighting Functions,” Bulletin of Mathematical Biology, 1988.
+     Data Release and Analysis of R9.0 Chemistry,” F1000Research, 2017.                    [118] O. Mutlu, “Accelerating Genome Analysis: A Primer on an Ongoing
+[85] P. James, D. Stoddart, E. D. Harrington, J. Beaulaurier, L. Ly, S. Reid, D. J.              Journey,” Keynote Talk at AACBB, 2019.
+     Turner, and S. Juul, “LamPORE: Rapid, Accurate and Highly Scalable                    [119] O. Mutlu, S. Ghose, J. Gómez-Luna, and R. Ausavarungnirun, “Process-
+     Molecular Screening for SARS-CoV-2 Infection, Based on Nanopore                             ing Data Where It Makes Sense: Enabling In-Memory Computation,”
+     Sequencing,” medRxiv 2020.08.07.20161737, 2020.                                             MICPRO, 2019.
+[86] JEDEC Solid State Technology Assn., “JESD235C: High Bandwidth                         [120] E. W. Myers and W. Miller, “Optimal Alignments in Linear Space,”
+     Memory (HBM) DRAM,” January 2020.                                                           Bioinformatics, 1988.
+[87] X. Jiang, X. Liu, L. Xu, P. Zhang, and N. Sun, “A Reconfigurable Accel-               [121] G. Myers, “A Fast Bit-Vector Algorithm for Approximate String Match-
+     erator for Smith–Waterman Algorithm,” TCAS-II, 2007.                                        ing Based on Dynamic Programming,” Journal of the ACM, 1999.
+[88] R. Kaplan, L. Yavits, and R. Ginosar, “BioSEAL: In-Memory Biological                  [122] A. Nag, C. Ramachandra, R. Balasubramonian, R. Stutsman, E. Gia-
+     Sequence Alignment Accelerator for Large-Scale Genomic Data,” in                            comin, H. Kambalasubramanyam, and P.-E. Gaillardon, “GenCache:
+     PACT, 2019.                                                                                 Leveraging In-Cache Operators for Efficient Sequence Alignment,” in
+                                                                                                 MICRO, 2019.
+
+
+                                                                                      15
+
+
+===== Page 16 =====
+
+[123] K. Nakano, A. Shiroma, M. Shimoji, H. Tamotsu, N. Ashimine, S. Ohki,             [154] T. F. Smith and M. S. Waterman, “Identification of Common Molecular
+      M. Shinzato, M. Minami, T. Nakanishi, K. Teruya, K. Satou, and T. Hi-                  Subsequences,” Journal of Molecular Biology, 1981.
+      rano, “Advantages of Genome Sequencing by Long-Read Sequencer                    [155] M. Šošić and M. Šikić, “Edlib: A C/C++ Library for Fast, Exact Sequence
+      using SMRT Technology in Medical Area,” Human Cell, 2017.                              Alignment Using Edit Distance,” Bioinformatics, 2017.
+[124] National Center for Biotechnology Information, “GRCh38.p13,” 2019.               [156] Synopsys, Inc., “Design Compiler.” https://www.synopsys.com/
+      https://www.ncbi.nlm.nih.gov/assembly/GCA_000001405.28                                 implementation-and-signoff/rtl-synthesis-test/design-compiler-
+[125] G. Navarro, “A Guided Tour to Approximate String Matching,” CSUR,                      graphical.html
+      2001.                                                                            [157] J. D. Thompson, D. G. Higgins, and T. J. Gibson, “CLUSTAL W: Im-
+[126] S. B. Needleman and C. D. Wunsch, “A General Method Applicable                         proving the Sensitivity of Progressive Multiple Sequence Alignment
+      to the Search for Similarities in the Amino Acid Sequence of Two                       Through Sequence Weighting, Position-Specific Gap Penalties and
+      Proteins,” Journal of Molecular Biology, 1970.                                         Weight Matrix Choice,” Nucleic Acids Research, 1994.
+[127] C. Notredame, “Recent Progress in Multiple Sequence Alignment: A                 [158] C. Trapnell and S. L. Salzberg, “How to Map Billions of Short Reads
+      Survey,” Pharmacogenomics, 2002.                                                       onto Genomes,” Nature Biotechnology, 2009.
+[128] C. Notredame, D. G. Higgins, and J. Heringa, “T-Coffee: A Novel                  [159] T. J. Treangen and S. L. Salzberg, “Repetitive DNA and Next-Generation
+      Method for Fast and Accurate Multiple Sequence Alignment,” JMB,                        Sequencing: Computational Challenges and Solutions,” Nature Reviews
+      2000.                                                                                  Genetics, 2011.
+[129] NVIDIA Corp., “NVIDIA TITAN V.” https://www.nvidia.com/en-                       [160] Y. Turakhia, S. D. Goenka, G. Bejerano, and W. J. Dally, “Darwin-
+      us/titan/titan-v/                                                                      WGA: A Co-processor Provides Increased Sensitivity in Whole Genome
+[130] NVIDIA Corp., “nvprof.” https://docs.nvidia.com/cuda/profiler-users-                   Alignments with High Speedup,” in HPCA, 2019.
+      guide/index.html#nvprof-overview                                                 [161] Y. Turakhia, “Darwin — GitHub Repository.” https://github.com/
+[131] Y. Ono, K. Asai, and M. Hamada, “PBSIM: PacBio Reads Simulator–                        yatisht/darwin
+      Toward Accurate Genome Assembly,” Bioinformatics, 2012.                          [162] Y. Turakhia, G. Bejerano, and W. J. Dally, “Darwin: A Genomics Co-
+[132] Oxford Nanopore Technologies Ltd., “GridION.” https://nanoporetech.                    Processor Provides up to 15,000x Acceleration on Long Read Assembly,”
+      com/products/gridion                                                                   in ASPLOS, 2018.
+[133] Oxford Nanopore Technologies Ltd., “MinION.” https://nanoporetech.               [163] E. Ukkonen, “Algorithms for Approximate String Matching,” Informa-
+      com/products/minion                                                                    tion and Control, 1985.
+[134] Oxford Nanopore Technologies Ltd., “PromethION.” https:                          [164] E. L. van Dijk, H. Auger, Y. Jaszczyszyn, and C. Thermes, “Ten Years
+      //nanoporetech.com/products/promethion                                                 of Next-Generation Sequencing Technology,” Trends in Genetics, 2014.
+[135] Pacific Biosciences of California, Inc., “Sequel Systems.” https:                [165] E. L. van Dijk, Y. Jaszczyszyn, D. Naquin, and C. Thermes, “The Third
+      //www.pacb.com/products-and-services/sequel-system                                     Revolution in Sequencing Technology,” Trends in Genetics, 2018.
+[136] B. Paten, D. Earl, N. Nguyen, M. Diekhans, D. Zerbino, and D. Haus-              [166] J. C. Venter, M. D. Adams, E. W. Myers, P. W. Li, R. J. Mural, G. G.
+      sler, “Cactus: Algorithms for Genome Multiple Sequence Alignment,”                     Sutton, H. O. Smith, M. Yandell, C. A. Evans, R. A. Holt, J. D. Gocayne,
+      Genome Research, 2011.                                                                 P. Amanatides, R. M. Ballew, D. H. Huson, J. R. Wortman, Q. Zhang
+[137] A. Pattnaik, X. Tang, A. Jog, O. Kayiran, A. K. Mishra, M. T. Kandemir,                et al., “The Sequence of the Human Genome,” Science, 2001.
+      O. Mutlu, and C. R. Das, “Scheduling Techniques for GPU Architectures            [167] J. Wang, N. E. Moore, Y.-M. Deng, D. A. Eccles, and R. J. Hall, “MinION
+      with Processing-In-Memory Capabilities,” in PACT, 2016.                                Nanopore Sequencing of an Influenza Genome,” Frontiers in Microbiol-
+[138] P. A. Pevzner, H. Tang, and M. S. Waterman, “An Eulerian Path Ap-                      ogy, 2015.
+      proach to DNA Fragment Assembly,” PNAS, 2001.                                    [168] M. S. Waterman, “Efficient Sequence Alignment Algorithms,” Journal
+[139] J. Prado-Martinez, P. H. Sudmant, J. M. Kidd, H. Li, J. L. Kelley,                     of Theoretical Biology, 1984.
+      B. Lorente-Galdos, K. R. Veeramah, A. E. Woerner, T. D. O’Connor,                [169] M. S. Waterman, T. F. Smith, and W. A. Beyer, “Some Biological Se-
+      G. Santpere, A. Cagan, C. Theunert, F. Casals, H. Laayouni, K. Munch,                  quence Metrics,” Advances in Mathematics, 1976.
+      A. Hobolth et al., “Great Ape Genetic Diversity and Population History,”         [170] J. L. Weirather, M. de Cesare, Y. Wang, P. Piazza, V. Sebastiano, X.-J.
+      Nature, 2013.                                                                          Wang, D. Buck, and K. F. Au, “Comprehensive Comparison of Pacific
+[140] A. Prohaska, F. Racimo, A. J. Schork, M. Sikora, A. J. Stern, M. Ilardo,               Biosciences and Oxford Nanopore Technologies and Their Applica-
+      M. E. Allentoft, L. Folkersen, A. Buil, J. V. Moreno-Mayar, T. Ko-                     tions to Transcriptome Analysis,” F1000Research, 2017.
+      rneliussen, D. Geschwind, A. Ingason, T. Werge, R. Nielsen, and                  [171] A. M. Wenger, P. Peluso, W. J. Rowell, P.-C. Chang, R. J. Hall, G. T.
+      E. Willerslev, “Human Disease Variation in the Light of Population                     Concepcion, J. Ebler, A. Fungtammasan, A. Kolesnikov, N. D. Olson,
+      Genomics,” Cell, 2019.                                                                 A. Töpfer, M. Alonge, M. Mahmoud, Y. Qian, C.-S. Chin, A. M. Phillippy
+[141] M. A. Quail, M. Smith, P. Coupland, T. D. Otto, S. R. Harris, T. R.                    et al., “Accurate Circular Consensus Long-Read Sequencing Improves
+      Connor, A. Bertoni, H. P. Swerdlow, and Y. Gu, “A Tale of Three Next                   Variant Detection and Assembly of a Human Genome,” Nature Biotech-
+      Generation Sequencing Platforms: Comparison of Ion Torrent, Pacific                    nology, 2019.
+      Biosciences and Illumina MiSeq Sequencers,” BMC Genomics, 2012.                  [172] S. J. Wilton and N. P. Jouppi, “CACTI: An Enhanced Cache Access and
+[142] J. Quick, N. J. Loman, S. Duraffour, J. T. Simpson, E. Severi, L. Cow-                 Cycle Time Model,” JSSC, 1996.
+      ley, J. A. Bore, R. Koundouno, G. Dudas, A. Mikhail, N. Ouédraogo,               [173] F. Wu, S. Zhao, B. Yu, Y.-M. Chen, W. Wang, Z.-G. Song, Y. Hu, Z.-W.
+      B. Afrough, A. Bah, J. H. J. Baum, B. Becker-Ziaja, J. P. Boettcher                    Tao, J.-H. Tian, Y.-Y. Pei, M.-L. Yuan, Y.-L. Zhang, F.-H. Dai, Y. Liu,
+      et al., “Real-Time, Portable Genome Sequencing for Ebola Surveillance,”                Q.-M. Wang, J.-J. Zheng et al., “A New Coronavirus Associated with
+      Nature, 2016.                                                                          Human Respiratory Disease in China,” Nature, 2020.
+[143] J. Quick, A. R. Quinlan, and N. J. Loman, “A Reference Bacterial                 [174] S. Wu and U. Manber, “Fast Text Searching Allowing Errors,” CACM,
+      Genome Dataset Generated on the MinION Portable Single-Molecule                        1992.
+      Nanopore Sequencer,” Gigascience, 2014.                                          [175] Xilinx, Inc., “Vivado Design Suite.” https://www.xilinx.com/products/
+[144] J. A. Reuter, D. V. Spacek, and M. P. Snyder, “High-Throughput Se-                     design-tools/vivado.html
+      quencing Technologies,” Molecular Cell, 2015.                                    [176] H. Xin, J. Greth, J. Emmons, G. Pekhimenko, C. Kingsford, C. Alkan,
+[145] A. Rhoads and K. F. Au, “PacBio Sequencing and Its Applications,”                      and O. Mutlu, “Shifted Hamming Distance: A Fast and Accurate SIMD-
+      Genomics, Proteomics & Bioinformatics, 2015.                                           Friendly Filter to Accelerate Alignment Verification in Read Mapping,”
+[146] R. J. Roberts, M. O. Carneiro, and M. C. Schatz, “The Advantages of                    Bioinformatics, 2015.
+      SMRT Sequencing,” Genome Biology, 2013.                                          [177] H. Xin, D. Lee, F. Hormozdiari, S. Yedkar, O. Mutlu, and C. Alkan,
+[147] E. Rucci, C. Garcia, G. Botella, A. De Giusti, M. Naiouf, and M. Prieto-               “Accelerating Read Mapping with FastHASH,” BMC Genomics, 2013.
+      Matias, “SWIFOLD: Smith–Waterman Implementation on FPGA with                     [178] H. Xin, S. Nahar, R. Zhu, J. Emmons, G. Pekhimenko, C. Kingsford,
+      OpenCL for Long DNA Sequences,” BMC Systems Biology, 2018.                             C. Alkan, and O. Mutlu, “Optimal Seed Solver: Optimizing Seed Selec-
+[148] SAFARI Research Group, “GenASM — GitHub Repository.” https:                            tion in Read Mapping,” Bioinformatics, 2016.
+      //github.com/CMU-SAFARI/GenASM                                                   [179] Y. Yang, B. Xie, and J. Yan, “Application of Next-Generation Sequencing
+[149] SAFARI Research Group, “Shouji — GitHub Repository.” https:                            Technology in Forensic Science,” Genomics, Proteomics & Bioinformat-
+      //github.com/CMU-SAFARI/Shouji                                                         ics, 2014.
+[150] D. Sankoff, “Minimal Mutation Trees of Sequences,” SIAP, 1975.                   [180] F. Zokaee, H. R. Zarandi, and L. Jiang, “AligneR: A Process-in-Memory
+[151] S. Schwartz, W. J. Kent, A. Smit, Z. Zhang, R. Baertsch, R. C. Hardison,               Architecture for Short Read Alignment in ReRAMs,” IEEE CAL, 2018.
+      D. Haussler, and W. Miller, “Human–Mouse Alignments with BLASTZ,”                [181] F. Zokaee, M. Zhang, and L. Jiang, “FindeR: Accelerating FM-Index-
+      Genome Research, 2003.                                                                 Based Exact Pattern Matching in Genomic Sequences Through ReRAM
+[152] D. Senol Cali, J. S. Kim, S. Ghose, C. Alkan, and O. Mutlu, “Nanopore                  Technology,” in PACT, 2019.
+      Sequencing Technology and Tools for Genome Assembly: Computa-                    [182] Q. Zou, Q. Hu, M. Guo, and G. Wang, “HAlign: Fast Multiple Similar
+      tional Analysis of the Current State, Bottlenecks and Future Directions,”              DNA/RNA Sequence Alignment Based on the Centre Star Strategy,”
+      Briefings in Bioinformatics, 2018.                                                     Bioinformatics, 2015.
+[153] J. Shendure, S. Balasubramanian, G. M. Church, W. Gilbert, J. Rogers,
+      J. A. Schloss, and R. H. Waterston, “DNA Sequencing at 40: Past,
+      Present and Future,” Nature, 2017.
+
+
+
+
+                                                                                  16

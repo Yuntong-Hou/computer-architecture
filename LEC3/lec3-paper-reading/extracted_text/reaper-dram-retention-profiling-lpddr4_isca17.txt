@@ -1,0 +1,1441 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/reaper-dram-retention-profiling-lpddr4_isca17.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/reaper-dram-retention-profiling-lpddr4_isca17.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+                            The Reach Profiler (REAPER):
+                 Enabling the Mitigation of DRAM Retention Failures
+                        via Profiling at Aggressive Conditions
+                                               Minesh Patel§‡                   Jeremie S. Kim‡§                Onur Mutlu§‡
+                                                             § ETH Zürich            ‡ Carnegie Mellon University
+
+
+ABSTRACT                                                                                          KEYWORDS
+Modern DRAM-based systems suffer from significant energy and                                      DRAM, refresh, retention failures, reliability, testing, memory
+latency penalties due to conservative DRAM refresh standards.
+Volatile DRAM cells can retain information across a wide distri-
+bution of times ranging from milliseconds to many minutes, but each                               1    INTRODUCTION
+cell is currently refreshed every 64ms to account for the extreme                                 DRAM stores data in volatile capacitors that constantly leak charge
+tail end of the retention time distribution, leading to a high refresh                            and therefore requires periodic charge restoration to maintain data
+overhead. Due to poor DRAM technology scaling, this problem                                       correctness. As cell capacitor sizes decrease with process scaling
+is expected to get worse in future device generations. Hence, the                                 and the total number of cells per chip increases each device gener-
+current approach of refreshing all cells with the worst-case refresh                              ation [36], the total amount of time and energy required to restore
+rate must be replaced with a more intelligent design.                                             all cells to their correct value, a process known as DRAM refresh,
+   Many prior works propose reducing the refresh overhead by ex-                                  scales unfavorably [23, 41, 63]. The periodic refresh of DRAM
+tending the default refresh interval to a higher value, which we refer                            cell capacitors consumes up to 50% of total DRAM power [63] and
+to as the target refresh interval, across parts or all of a DRAM chip.                            incurs large performance penalties as DRAM cells are unavailable
+These proposals handle the small set of failing cells that cannot                                 during refresh [23, 63, 73, 75].
+retain data throughout the entire extended refresh interval via reten-                               The DRAM refresh rate, dictated by the refresh interval or tREFI ,
+tion failure mitigation mechanisms (e.g., error correcting codes or                               is a standardized constant to ensure interoperability of devices from
+bit-repair mechanisms). This set of failing cells is discovered via                               different vendors and across product generations. DRAM chips
+retention failure profiling, which is currently a brute-force process                             are designed to operate reliably at this refresh rate under worst-case
+that writes a set of known data to DRAM, disables refresh and waits                               operating conditions. However, it is well known that DRAM cells ex-
+for the duration of the target refresh interval, and then checks for                              hibit large variations in charge retention time [42, 47, 54, 62, 63, 81].
+retention failures across the DRAM chip. We show that this brute-                                 Therefore, a fixed refresh interval causes all DRAM cells to be
+force approach is too slow and is detrimental to system execution,                                refreshed at the worst-case rate even though most DRAM cells
+especially with frequent online profiling.                                                        can hold data for much longer. Prior works explore increasing the
+   This paper presents reach profiling, a new methodology for re-                                 default refresh interval to what we call a target refresh interval
+tention failure profiling based on the key observation that an over-                              while maintaining correctness of DRAM operation. These works
+whelming majority of failing DRAM cells at a target refresh interval                              assume that a small finite set of failing cells (due to the extended
+fail more reliably at both longer refresh intervals and higher tem-                               refresh interval) are handled with various retention failure mitiga-
+peratures. Using 368 state-of-the-art LPDDR4 DRAM chips from                                      tion mechanisms (e.g., ECC, more frequent refreshes, bit repair
+three major vendors, we conduct a thorough experimental charac-                                   mechanisms) [6, 7, 26, 42, 61–63, 76, 81, 95–97].
+terization of the complex set of tradeoffs inherent in the profiling                                 Many of these works that extend the refresh interval assume
+process. We identify three key metrics to guide design choices for                                that the set of failing cells can be quickly and efficiently identified
+retention failure profiling and mitigation mechanisms: coverage,                                  using a brute-force retention failure profiling mechanism, which
+false positive rate, and runtime. We propose reach profiling, a new                               involves writing known data to DRAM, waiting for the duration
+retention failure profiling mechanism whose key idea is to profile                                of the required target refresh interval, and reading the data back
+failing cells at a longer refresh interval and/or higher temperature                              out to check for errors, for every row of cells in a DRAM chip.
+relative to the target conditions in order to maximize failure cover-                             However, these works do not rigorously explore the efficacy and
+age while minimizing the false positive rate and profiling runtime.                               reliability of such a mechanism. Effects such as variable retention
+We thoroughly explore the tradeoffs associated with reach profiling                               time (VRT) [41, 42, 62, 72, 81, 82, 101] and data pattern dependence
+and show that there is significant room for improvement in DRAM                                   (DPD) [42–44, 49, 59, 60, 62] invalidate the assumption that a small
+retention failure profiling beyond the brute-force approach. We show                              finite set of failing cells exists and therefore complicate the brute-
+with experimental data that on average, by profiling at 250ms above                               force approach, likely requiring efficient online profiling mechanisms
+the target refresh interval, our first implementation of reach profiling                          to discover a continuously-changing set of failing cells. To this
+(called REAPER) can attain greater than 99% coverage of failing                                   end, our goal is to (1) thoroughly analyze the different tradeoffs
+DRAM cells with less than a 50% false positive rate while running                                 inherent to retention failure profiling via experimental analysis of a
+2.5x faster than the brute-force approach. In addition, our end-to-end                            large number of real state-of-the-art LPDDR4 DRAM chips and (2)
+evaluations show that REAPER enables significant system perfor-                                   use our observations to develop a robust retention failure profiling
+mance improvement and DRAM power reduction, outperforming the                                     mechanism that identifies an overwhelming majority of all possible
+brute-force approach and enabling high-performance operation at                                   failing cells at a given target refresh interval within a short time.
+longer refresh intervals that were previously unreasonable to employ                                 We identify three key properties that any effective retention failure
+due to the high associated profiling overhead.                                                    profiling mechanism should have. First, for a given target refresh
+                                                                                                  interval, profiling should achieve high coverage, i.e., the ratio of the
+Permission to make digital or hard copies of all or part of this work for personal or             number of failing cells discovered by the profiling mechanism to
+classroom use is granted without fee provided that copies are not made or distributed             the number of all possible failing cells at the target refresh interval.
+for profit or commercial advantage and that copies bear this notice and the full citation
+on the first page. Copyrights for components of this work owned by others than ACM                This is required to minimize the cost of the mitigation mechanism
+must be honored. Abstracting with credit is permitted. To copy otherwise, or republish,           for the failing cells at the target refresh interval. Second, profiling
+to post on servers or to redistribute to lists, requires prior specific permission and/or a       should result in only a small number of false positives, i.e., cells
+fee. Request permissions from permissions@acm.org.
+ISCA ’17, Toronto, ON, Canada
+                                                                                                  that are observed to fail during profiling but never during actual
+© 2017 ACM. 978-1-4503-4892-8/17/06. . . $15.00                                                   operation at the target refresh interval. This is beneficial to minimize
+DOI: http://dx.doi.org/10.1145/3079856.3080242                                                    the necessary work done by, and thus the overhead of, the retention
+
+                                                                                              1
+
+
+===== Page 2 =====
+
+ISCA ’17, June 24-28, 2017, Toronto, ON, Canada                                                                                       Patel, Kim, Mutlu
+
+
+failure mitigation mechanism. Third, the profiling runtime should be               profiling enables a wide range of previously proposed refresh re-
+as short as possible to minimize the performance impact of profiling               duction techniques [61, 63, 76, 79, 95, 96] (Section 3).
+on the system.                                                                   ◦ It experimentally shows, with analysis of 368 LPDDR4 DRAM
+    To understand the complex tradeoffs inherent in DRAM retention                 chips at many different operating conditions, that reach profiling
+failure profiling with a focus on these three metrics, we conduct                  is effective. We experimentally demonstrate that by profiling
+a thorough experimental analysis of 368 state-of-the-art LPDDR4                    at 250ms above the target refresh interval, reach profiling can
+DRAM chips across three major DRAM vendors. Our rigorous                           provide greater than 99% coverage of failing cells with less than
+experimental analysis yields three new major observations. First, the              a 50% false positive rate, while running 2.5x faster than the state-
+brute-force approach to profiling is inefficient and does not attain               of-the-art brute-force profiling mechanism.
+high coverage within a short time. Second, the cells that fail at a              ◦ It shows that DRAM cells cannot easily be classified as “weak”
+given refresh interval fail more reliably at a higher refresh interval             or “strong”, based on a rigorous analysis of cell retention time
+and at a higher temperature. Third, retention failure profiling has                distribution and individual cell retention failure data. We use this
+a complex tradeoff space between three key parameters (coverage,                   analysis and data to provide a theoretical basis for the effectiveness
+false positive rate, and runtime).                                                 of reach profiling (Section 5.5).
+    Based on our observations from this rigorous experimental char-              ◦ It presents a formal analysis of tolerable raw bit error rates
+acterization of the complex tradeoff space, we propose a novel                     (RBERs) based on using ECC to better understand profiling re-
+low-overhead and high-coverage DRAM retention failure profiling                    quirements. We use this analysis to present a new model for the
+methodology called reach profiling. The key idea of reach profiling                minimum length of time that a retention profile remains valid. For
+is to profile at reach conditions, which consist of either a larger                example, given a system with a desired uncorrectable bit error
+refresh interval and/or a higher temperature relative to the target                rate (UBER) of 10−15 and a target refresh interval of 1024ms
+refresh interval/temperature to quickly discover an overwhelming                   operating at 45◦ C, reach profiling results in a profile with 99%
+majority of all possible failing cells at the target conditions. Intu-             coverage that is valid for approximately 2.3 days (Section 6.2.2).
+itively, given that failing cells are more likely to fail at a higher            ◦ It provides an implementation of reach profiling, called REAPER,
+refresh interval and at a higher temperature, we can quickly obtain                which enables significant end-to-end system performance im-
+all failing cells for a target condition by profiling at reach conditions,         provement and DRAM power reduction. REAPER outperforms
+at the cost of also identifying some false positive cells as failing. The          the brute-force approach and enables high-performance operation
+profiling parameters can be adjusted to maximize coverage while                    at longer refresh intervals that were previously unreasonable to
+minimizing the false positive rate and runtime.                                    employ due to the high associated profiling overhead (Section 7).
+    We find that on average, across 368 different DRAM chips from
+three vendors, reach profiling attains a speedup of 2.5x over brute-             2     BACKGROUND
+force profiling while providing over 99% coverage of failing cells               We discuss the necessary background material required for under-
+with less than a 50% false positive rate. Further speedups of up to              standing our experimental investigation and new profiling mecha-
+3.5x can be obtained at the expense of significantly greater false               nism. For further detail on fundamental DRAM operation, we refer
+positive rates. By manipulating the profiling conditions relative to             the reader to [21–25, 32, 48, 52, 54–58, 62, 63, 87–90].
+the target conditions, we can select an appropriate tradeoff between
+coverage, false positive rate, and runtime that suits the desired system
+configuration.
+                                                                                 2.1    DRAM Organization
+    Reach profiling results in a set of failing cells that can be handled        DRAM can be thought of as a hierarchy of 2-dimensional cell arrays.
+by various retention failure mitigation mechanisms (e.g., error cor-             Figure 1 illustrates the basic DRAM array structure and function.
+recting codes, higher refresh rates, and remapping mechanisms for                Figure 1(a) depicts a DRAM array along with peripheral circuitry
+failing cells) to reliably operate a system at a target refresh rate. As         used for i) selecting a row to read (row decoder) and ii) reading out
+an example, consider a scheme where the DRAM memory controller                   the data in the selected row (sense amplifiers). Each row of cells
+maps addresses with failing cells out of the system address space.               is connected with a wire called the wordline, and each column of
+For any target refresh interval, reach profiling can be used to quickly          cells with a wire called the bitline. Each cell, shown in Figure 1(b),
+determine the set of failing cells with high coverage. The memory                encodes one bit of data in a capacitor using logic “high” (Vdd ) to
+controller can then map out the addresses containing the failed cells            represent one binary value and logic “low” (0V ) for its inverse.
+from the system address space in order to maintain system reliability               During an access, the row decoder asserts a single wordline,
+at a higher refresh interval. Alternatively, the system can employ               connecting an entire row of cells to their respective bitlines and sense
+any other error mitigation mechanism proposed by prior work to                   amplifiers. Each bitline is initially charged to V2dd and connection
+handle the failing cells (e.g., [6, 7, 26, 42, 61–63, 76, 81, 95, 97]).          with the cell capacitor results in a shift in bitline voltage towards
+For example, when used with ArchShield [76], REAPER reliably                     either Vdd or 0V . Each sense amplifier resolves the directional shift
+enables an average end-to-end system performance improvement of                  in voltage on its bitline to determine the original value stored in the
+12.5% (maximum 23.7%) on our workloads (Section 7.3.2).                          cell. After resolving the shift, the data has been read out of the row
+    This paper makes the following major contributions:                          of cells and can be accessed by the system and written back into the
+◦ It is the first work to 1) experimentally characterize data reten-             cells via the sense amplifiers.
+   tion behavior and retention failures for state-of-the-art LPDDR4
+   DRAM chips (Section 5) and 2) demonstrate the complex tradeoff                2.2    DRAM Refresh
+   space between the three key metrics associated with DRAM reten-               Data stored in DRAM cell capacitors is volatile as a result of a
+   tion failure profiling: coverage, false positive rate, and profiling          combination of various charge leakage mechanisms [62, 84]. Over
+   runtime (Section 6).                                                          time, the data stored in a DRAM cell degrades and is eventually
+◦ It proposes reach profiling, a novel DRAM cell retention failure               lost. This is called a retention failure. In order to prevent a retention
+   profiling technique that efficiently and reliably identifies cells            failure, cell data must be periodically restored with a process called
+   with a high likelihood to fail at a target refresh interval. The              DRAM refresh. The JEDEC specification [37] defines the time
+   key idea of reach profiling is to profile at a longer refresh in-             interval between refresh commands, tREFI , to be 64ms for typical
+   terval and/or a higher temperature relative to the target refresh             operating conditions and 32ms at above 85◦ C.
+   interval/temperature in order to quickly discover an overwhelming                The refresh operation relies on using the sense amplifiers to read
+   majority of all possible failing cells at the target conditions. Reach        out a row of data and write it back into the cells in order to restore the
+
+                                                                             2
+
+
+===== Page 3 =====
+
+The Reach Profiler (REAPER)                                                                                                                    ISCA ’17, June 24-28, 2017, Toronto, ON, Canada
+
+                                                                                                                               Standard
+                                                                                                                 Refresh       Standard    Refresh        Longer tREFI           Refresh
+                                                                                                                 Refresh         t         Refresh        Longer tREFI           Refresh
+                             Wordlines                                 Wordline                                                  tREFI
+                                                                                                                                   REFI                                                    Time
+                             Wordlines                                 Wordline                                                                                                            Time
+                                                                             Access
+                                                                                                          Cell
+               Decoder
+
+
+                                                                             Access
+                                                                                                          Cell
+                                      Cell
+                                                                           Transistor                                                                                    Retention    Retention
+           RowDecoder
+
+
+                                      Cell
+                                                                                                                                                                         Retention    Retention
+
+
+
+
+                                             Bitlines
+                                                                           Transistor
+                                                                                                           A:                                                             Failure      Failure
+
+
+
+
+                                              Bitlines
+                                                                                                           A:                                                             Failure      Failure
+
+
+
+
+                                                               Capacitor
+                                                          CellCapacitor
+                                                                                                          Cell
+                                                                                        1
+          Row
+
+
+
+
+                                                                                        —V
+
+
+
+
+                                                                                               Bitline
+                                                                                        1 DD
+                                                                                                          Cell
+                                                                                        2
+                                                                                        —V
+
+
+
+
+                                                                                                Bitline
+                                                                                        2 DD
+
+                                                                                                           B:
+                                                                                                           B:
+
+
+                                                         Cell
+                          Sense Amplifiers
+                          Sense Amplifiers
+                         (a) DRAM Array                                    (b) DRAM Cell                                           (c) Charge Levels of Two DRAM Cells
+                         (a) DRAM Array                                    (b) DRAM Cell                                           (c) Charge Levels of Two DRAM Cells
+Figure 1: (a) A 2-D DRAM array composed of cells. (b) A DRAM cell consisting of a capacitor and transistor. (c) Effect of extending
+the refresh interval on two cells with different leakage rates (high-leakage cell A and low-leakage cell B).
+original fully charged/discharged states of cells. However, refreshing                                                     Operating conditions, architectural design, and process variation all
+a cell is conditional on a correct read, so if a cell’s logical state                                                      change the DPD effects, further complicating the problem.
+has already changed by the time a refresh operation is performed,
+refresh could simply restore the incorrectly-read data. Figure 1(c)                                                        3     REFRESH OVERHEAD MITIGATION
+demonstrates the charge levels of two DRAM cells, A and B, with                                                            Given the ability to perfectly predict each DRAM cell’s charge
+different leakage rates, when they are both refreshed at two different                                                     retention behavior, we would ideally refresh each cell only when it
+refresh intervals. While both cells retain data correctly with the                                                         is about to fail, wasting no cycles for issuing unnecessary refresh
+standard refresh interval, cell A is unable to retain data with a longer                                                   operations. However, achieving this ideal is very difficult, and
+refresh interval.                                                                                                          many prior works propose mechanisms to approximate the ideal
+   Prior works show that due to process variation and other effects                                                        case. We provide a brief overview of prior efforts to eliminate
+discussed in Section 2.3, cells can hold data for a wide distribution                                                      unnecessary refresh operations and discuss their limitations with
+of retention times ranging from milliseconds to minutes, and only a                                                        respect to retention failure discovery, to motivate our experimental
+small percentage of cells, called worst-case cells, actually require                                                       characterization in Section 5 and new mechanism in Section 6.
+the JEDEC-specified 64ms refresh interval [33, 42, 47, 54, 60, 62,
+63, 81, 95]. However, determining the set of cells that require a                                                          3.1     Retention Failure Mitigation
+given refresh interval is a nontrivial process, so each cell is simply
+refreshed at the rate required by the worst-case cells to guarantee                                                        Many prior works attempt to reduce unnecessary refresh operations
+correct operation across all of DRAM [63]. As a result, the mem-                                                           by extending the default refresh interval while mitigating the handful
+ory controller is responsible for ensuring that each DRAM row is                                                           of resulting retention failures. RAIDR [63] refreshes DRAM rows at
+refreshed every tREFI , which in turn results in considerable overhead                                                     different intervals according to the retention time of the worst-case
+in both energy consumption and performance due to extra DRAM                                                               cell in each row. Ohsawa et al. [79] propose storing the retention
+accesses and in-progress row refresh operations that spend energy                                                          time of each row’s weakest cell within DRAM structures and varying
+and delay program-issued DRAM requests [21, 23, 63, 74, 81, 95].                                                           the refresh interval based on this information. ProactiveDRAM [96]
+                                                                                                                           extends the default refresh interval and issues additional refreshes
+                                                                                                                           to rows that cannot sustain the longer refresh interval. RAPID [95]
+2.3    DRAM Retention Phenomena                                                                                            prioritizes allocating data to rows with longer retention times and
+In addition to the inherent process variation from manufacturing, two                                                      chooses the refresh interval based on the retention time of the allo-
+major phenomena affect the data retention behavior of a DRAM cell:                                                         cated row with the highest leakage rate. SECRET [61] identifies the
+1) variable retention time (VRT) [41, 42, 62, 72, 81, 82, 101], and                                                        set of failing cells at a longer refresh interval and remaps such cells
+2) data pattern dependence (DPD) [42–44, 49, 59, 60, 62]. These                                                            to known-good cells. ArchShield [76] maintains a data structure of
+phenomena dynamically change the effective retention time of each                                                          known-failing cells at an extended refresh interval and replicates
+cell, which complicates the identification of the set of all cells that                                                    these cells using a portion of DRAM at an architectural level.
+fail under a longer refresh interval. We discuss these phenomena                                                              These works all demonstrate significant improvements in over-
+in detail in this section in order to demonstrate the difficulty of the                                                    all system performance and energy consumption due to reduction
+retention failure identification problem.                                                                                  in unnecessary refresh operations (e.g., 35% average performance
+                                                                                                                           improvement [81]). Unfortunately, all of these works depend on
+   2.3.1 Variable Retention Time (VRT). VRT is the phenome-                                                                accurate identification of failing cells at a longer refresh interval.
+non where a DRAM cell’s retention characteristics alternate between                                                        As we discuss in Section 3.2, no such identification mechanism that
+two or more different retention time values. This phenomenon has                                                           guarantees data correctness exists. Additionally, challenges that
+been demonstrated to be ubiquitous and unpredictable [41, 42, 62,                                                          arise from VRT effects (Sections 2.3.1 and 5.3) necessitate an online
+72, 81, 82, 101]. A VRT cell stays in a given retention time state for                                                     profiling mechanism [42, 56, 62, 81].
+an unpredictable length of time, and this time period is based on a
+memoryless random process that changes with supply voltage and
+ambient temperature [101]. This results in a dynamically-changing                                                          3.2     Retention Failure Profiling
+set of cells that experience retention failures at a given target condi-                                                   Prior works propose approaches to profiling retention failures. We
+tion (i.e., the more time passes after determining the profile of failing                                                  find that there is no solution that is both reliable and efficient. We
+cells at a target condition, the more the profile coverage degrades).                                                      identify two major approaches to profiling: 1) ECC-scrubbing [81],
+                                                                                                                           a method that relies on ECC to detect retention failures, and 2) brute-
+   2.3.2 Data Pattern Dependence (DPD). The retention time                                                                 force profiling [62], a trial-and-error method that detects failures
+of a cell has been shown to depend on the data values stored both                                                          by testing cells many times and with different data patterns. Unfor-
+in the cell itself and the data stored in its neighboring cells [42–                                                       tunately, each of these proposals has shortcomings that limit their
+44, 49, 59, 60, 62]. DPD effects occur due to coupling between                                                             effectiveness in DRAM retention failure profiling.
+adjacent circuit elements, exacerbating charge leakage in affected                                                            ECC scrubbing approaches (e.g., AVATAR [81]) suffer from a
+cells and resulting in difficult-to-predict retention times [43, 59,                                                       lack of reliability due to their passive approach to failure detection.
+62]. This means that different data patterns (DPs) stored in DRAM                                                          These techniques periodically check the ECC codes for every DRAM
+induce retention failures at different refresh intervals for each cell.                                                    word and record the set of rows/cells that fail at a given refresh
+
+                                                                                                                    3
+
+
+===== Page 4 =====
+
+ISCA ’17, June 24-28, 2017, Toronto, ON, Canada                                                                                     Patel, Kim, Mutlu
+
+
+interval. Unfortunately, these techniques do not account for data                  All tests, unless specified otherwise, were performed using 368
+pattern changes in a given DRAM row between the periodic scrubs.                2y-nm LPDDR4 DRAM chips [37] from three major vendors in a
+As a result, they can extend the refresh interval for a row at the end          thermally-controlled chamber at 45◦ C ambient temperature. In our
+of a period, but that row may be written to with a new unfavorable              infrastructure, ambient temperature is maintained using heaters and
+data pattern, which leads to uncorrectable errors in the next period.           fans controlled via a microcontroller-based PID loop to within an
+Without deliberately (i.e., actively) testing with the worst-case data          accuracy of 0.25◦ C, with a reliable range of 40◦ C to 55◦ C. DRAM
+patterns, ECC scrubbing cannot make an estimate as to what fraction             temperature is held at 15◦ C above ambient using a separate local
+of all possible failures have been detected, which limits the reliability       heating source and temperature sensors to smooth out temperature
+of this approach.                                                               variations due to self-heating.
+   In order to account for all possible failures with different data
+patterns, a second class of profiling mechanisms takes an active                5     NEW LPDDR4 CHARACTERIZATION
+approach: they extensively test DRAM for many rounds of tests
+and with different data patterns. We call this approach brute-force             We experimentally study the retention characteristics of 368 LPDDR4
+profiling since it runs multiple iterations of a brute-force testing            chips and compare our findings with prior works, which examine
+loop that 1) writes data patterns to DRAM, 2) waits for the target              DDR3 DRAM [42, 49, 62, 81]. We present data showing failure
+refresh interval, and 3) checks for retention failures, as shown in             discovery rates, data pattern dependence (DPD) effects and variable
+Algorithm 1. Prior works identify effective data patterns useful                retention time (VRT) effects to demonstrate the difficulties involved
+for retention failure discovery, including solid 1s and 0s, checker-            in retention failure profiling. We then extensively analyze single-cell
+boards, row/column stripes, walking 1s/0s, random data, and their               failure probabilities to motivate profiling at a longer refresh interval
+inverses [42, 49, 62]. By testing sufficiently many data patterns,              and/or a higher temperature to quickly discover failing cells. We
+this approach approximates testing with the worst-case data pattern             present four key observations resulting from our experimentation
+and therefore can find a significant fraction of all failing cells at the       and describe the implications of each observation on retention failure
+target refresh interval. In addition, multiple iterations of testing are        profiling.
+required in order to account for the probabilistic nature of retention
+failures (as we show in Section 5.5). However, as we experimentally             5.1    Temperature Dependence
+demonstrate in Sections 5.3-5.5, brute-force profiling requires a large         We observe an exponential dependence of failure rate on temper-
+number of iterations in order to achieve a high coverage of failures            ature for refresh intervals below 4096ms, as consistent with prior
+at the target refresh interval. This causes brute-force profiling to            work [31, 34, 62]. We find and make use of the following tempera-
+have a high performance overhead, which is only exacerbated by                  ture relationships throughout the rest of this paper:
+circumstances that require frequent profiling (Section 7.3).
+                                                                                       RA ∝ e0.22∆T          RB ∝ e0.20∆T          RC ∝ e0.26∆T      (1)
+ Algorithm 1: Brute-Force Profiling Algorithm                                   where RX represents the proportion of failures for Vendor X and ∆T
+ 1 PROFILE(target tREF , num iterations):                                       is the change in ambient temperature. These relationships approxi-
+ 2   failed cells = []                                                          mately translate to scaling the retention failure rate by a factor of 10
+ 3   for it ← {1 to num iterations}:                                            for every 10◦ C increase in temperature.
+ 4        for dp ∈ data patterns:
+ 5            write DRAM(dp)
+ 6            disable refresh()
+                                                                                5.2    Aggregate Retention Time Distributions
+ 7            wait(target tREF )                                                Figure 2 shows the effect of increasing the refresh interval on the bit
+ 8            enable refresh()                                                  error rates (BER) averaged across 368 total chips from three different
+ 9            this iteration failures ← get DRAM errors()                       vendors. For each refresh interval, we compare the population of
+10            failed cells.add(this iteration failures)                         failing cells to the population of failing cells at all lower refresh
+11   return failed cells                                                        intervals. Failures that are 1) not observed at lower refresh intervals
+                                                                                are shown in purple (called unique), 2) observed at lower refresh
+   Our goal in this paper is to develop an effective and efficient              intervals but not at the given interval are shown in orange (called non-
+profiling technique that can reliably identify the set of failing DRAM          repeat), and 3) also observed at lower refresh intervals are shown in
+cells at target conditions so that we can 1) extend the refresh interval        green (called repeat). We make one key observation.
+to the target interval and 2) employ an error mitigation mechanism                 Observation 1: A large proportion of cells that are observed to
+to handle the retention failures that result from the longer refresh            fail at a given refresh interval are likely to fail again at a higher
+interval. We would like this profiling mechanism to provide high                refresh interval.
+failure coverage and a low number of false positives, while having a               Corollary 1: Determining the set of failing cells at a given refresh
+short runtime.                                                                  interval provides a large proportion of the failures found at lower
+   To this end, we need to understand the tradeoffs involved in                 refresh intervals.
+profiling and its associated metrics. We first discuss our experimental
+methodology to develop this understanding based on analysis of real
+DRAM chips. We then experimentally characterize the retention                   5.3    Variable Retention Time Effects
+behavior of modern DRAM chips with respect to the three profiling               We observe variable retention time (VRT) effects that prevent reli-
+metrics: coverage, false positive rate, and runtime.                            able detection of failing cells. Figure 3 shows the number of failing
+                                                                                cells discovered over six days of data collection using brute-force
+                                                                                profiling at a refresh interval of 2048ms at 45◦ C ambient tempera-
+4    EXPERIMENTAL METHODOLOGY                                                   ture. The data is shown for a single representative chip from Vendor
+In order to develop an effective and efficient retention failure pro-           B, but we find a similar trend across all chips from all vendors.
+filing mechanism for modern DRAM chips, we need to first better                 Profiling follows the procedure described in Algorithm 1, using six
+understand their data retention characteristics. To this end, we de-            data patterns and their inverses (Section 3.2) per iteration over 800
+veloped a thermally-controlled DRAM testing infrastructure to char-             iterations throughout the length of the test. The cumulative set of
+acterize state-of-the-art LPDDR4 DRAM chips. Our infrastructure                 discovered failures is shown in orange and the set of failures discov-
+provides precise control over DRAM commands, which we verified                  ered each iteration is broken up into unique (i.e., newly-discovered)
+via a logic analyzer by probing the DRAM command bus.                           failures and repeat failures, shown in purple and green, respectively.
+
+                                                                            4
+
+
+===== Page 5 =====
+
+     The Reach Profiler (REAPER)                                                                                                                        ISCA ’17, June 24-28, 2017, Toronto, ON, Canada
+
+                             Unique: failures not observed at lower refresh intervals                              Observation 2: No matter how comprehensive the set of failures
+                             Non-repeat: failures observed at lower refresh intervals, but not at current       discovered is, the population of failing cells continues to change due
+                             Repeat: failures observed at both current and lower refresh intervals              to VRT effects.
+                       2.0 ×10
+                                 4                                                                                 Corollary 2: The retention failure profile inevitably needs to
+                       1.5 Vendor A                                                                             be re-generated after some period of time. In other words, online
+                       1.0                                                                                      profiling is required.
+                       0.5                                                                                                                   10−7
+                       0.0 ×10 5
+                         8                                                                                                                             Vendor A (fit: y = 3.3e-10 · x3.6 )
+bit error rate
+
+
+
+
+                                                                                                                failure rate (RBER / hour)
+                         6 Vendor B                                                                                                                    Vendor B (fit: y = 2.9e-10 · x3.6 )
+                         4                                                                                                                             Vendor C (fit: y = 6.6e-11 · x3.8 )
+                         2
+                         0 ×10 5
+                         8                                                                                                                   10−8
+                         6 Vendor C
+                         4
+                         2
+                         0
+                         256
+                         512
+                         768
+                        1024
+                        1280
+                        1536
+                        1792
+                        2048
+                        2304
+                        2560
+                        2816
+                        3072
+                        3328
+                        3584
+                        3840
+                        4096
+                        4352
+                        4608
+                        4864
+                        5120
+                        5376
+                        5632
+                        5888
+                        6144
+                        6400
+                        6656
+                        6912
+                        7168
+                        7424
+                        7680
+                        7936
+                        8192
+                                                                                                                                             10−9
+                                                       refresh interval (ms)
+     Figure 2: Retention failure rates for different refresh intervals.                                                                         1.0     1.5         2.0          2.5        3.0   3.5   4.0
+     Cells are categorized as unique, repeat, or non-repeat based on                                                                                                      refresh interval (s)
+     whether or not they are observed at the given interval and at                                              Figure 4: Steady-state failure accumulation rates vs. refresh in-
+     lower refresh intervals.                                                                                   terval for 368 chips across the three DRAM vendors at 45◦ C.
+                                                                                                                The best-fit curve for each vendor is shown in black.
+        We find that after about 10 hours of testing, brute-force profiling
+     enters the steady-state accumulation phase, in which new failures
+     continue to accumulate with a rate of approximately one cell every                                         5.4                             Data Pattern Dependence Effects
+     20 seconds. In other words, it takes about 10 hours to find the                                            Figure 5 shows the cumulative number of retention failures discov-
+     base set of failures for a given refresh interval using the brute-force                                    ered over 800 iterations spanning 6 days of continuous brute-force
+     approach. We attribute the continual discovery of new failures to the                                      profiling with different data patterns across the three vendors at
+     VRT phenomenon, which can cause a cell to shift from a retention                                           45◦ C. Profiling uses Algorithm 1, in which each iteration consists of
+     time greater than 2048ms to one that is lower. However, we also                                            writing a data pattern to DRAM, pausing refresh for 2048ms, and
+     observe that the total set of failures (unique + repeat) found in                                          then checking for retention failures. New failures found by each data
+     each iteration is nearly constant in size, implying that the rate of                                       pattern each iteration are added to a running set representing the total
+     failure accumulation is very close to the rate of failures leaving the                                     number of failures discovered so far. The ratio of failures discovered
+     failing set. This finding is consistent with prior work on DDR3                                            by each data pattern to the total number of failures discovered by all
+     chips [62, 81], showing that newer DRAM generations face similar                                           data patterns together is plotted against time. We see that failures
+     profiling difficulties to older generations.                                                               continue to accumulate over time, as expected from Section 5.3, and
+                                                                                                                different data patterns uncover different fractions of failures. Of
+                                                                                                                the six data patterns tested, the random pattern (solid dark purple)
+                       103                                                                                      discovers the most failing cells across all three vendors.
+log(# failing cells)
+
+
+
+
+                                                        Cumulative: all failures observed so far                   Observation 3: Unlike DDR3 DRAM [62], the random data
+                                                        Repeat: previously-observed failures                    pattern most closely approaches full coverage after 800 iterations
+                       102                              Unique: newly-observed failures                         spanning 6 days, but it still cannot detect every failure on its own.
+                                                                                                                   Corollary 3: A robust profiling mechanism should use multiple
+                       101                               Steady-state accumulation
+                                                                                                                data patterns to attain a high coverage of the set of failing cells.
+
+                       100                                                                                      5.5                             Individual Cell Failure Probability
+                             0          1          2           3           4          5           6             We experimentally study the retention characteristics of individual
+                                                    profiling runtime (days)                                    DRAM cells. We find that each cell’s probability of retention failure
+                                                                                                                follows a normal distribution with respect to the refresh interval.
+      Figure 3: Number of failing cells discovered using brute-force
+                                                                                                                Figure 6(a) shows the effect of changing the refresh interval (shown
+      profiling at a refresh interval of 2048ms at 45◦ C ambient tem-                                           normalized from between 64ms and 4096ms to x = 0.00s) on the
+      perature using a single representative chip (from Vendor B).                                              probability of retention failure for almost all of the failing cells from
+        We conduct this same analysis for different refresh intervals on                                        a representative DRAM chip of Vendor B.1 Each curve represents
+     368 chips from across the three DRAM vendors at 45◦ C. Figure 4                                            the failure cumulative distribution function (CDF) of a single cell,
+     shows the steady-state new failure accumulation rates for different                                        with failure probabilities of 0.0 and 1.0 representing 0% and 100%
+     refresh intervals aggregated across all chips of each vendor. The                                          incorrect reads out of 16 total test iterations, respectively. All distri-
+     y-axis represents the steady-state new failure accumulation rate, and                                      butions’ means are normalized to x = 0.00s in order to highlight the
+     the x-axis shows the refresh interval. Each data point is drawn at                                         similarity in failure pattern between different cells. We see that due
+     the average value across all chips from the vendor with error bars                                         to the normally-distributed failure probability of each cell, every cell
+     representing the respective standard deviation. We find that the                                           becomes more likely to fail at longer refresh intervals.
+     steady-state failure accumulation rate grows at a polynomial rate                                             Figure 6(b) shows a histogram of the standard deviations of each
+     with respect to the refresh interval. Figure 4 overlays the data with                                      cell’s unique failure distribution. We find that the standard deviations
+     well-fitting polynomial regressions of the form y = a ∗ xb , and the
+                                                                                                                1
+     exact fit equations are provided in the figure itself.                                                      Cells exhibiting VRT behavior (∼2% of all cells for these conditions) are excluded
+                                                                                                                from this plot, for ease of explanation.
+
+
+                                                                                                            5
+
+
+===== Page 6 =====
+
+   ISCA ’17, June 24-28, 2017, Toronto, ON, Canada                                                                                                                   Patel, Kim, Mutlu
+
+                                          random                 colstripe             solid                     in DRAM cells follow lognormal distributions, which we hypoth-
+                                          checkered              walk                  rowstripe                 esize is responsible for our observation of lognormally-distributed
+            1.00                                                                                                 standard deviations (Figure 7(b)). Given that different cells leak at
+            0.75                                                                                                 lognormally-distributed rates, we would expect the length of time
+            0.50                                                                                                 that a cell’s charge is within the noise margin of the sense amplifier
+            0.25                                                                                                 to also be lognormally distributed.
+            0.00
+                                                                                        Vendor A                    We extend this analysis to different temperatures, and we aggre-
+                                                                                                                 gate the normal distribution fit parameters (µ, σ ) for each failing
+            1.00                                                                                                 cell into the distributions shown in Figure 7 (a) and (b), respectively.
+            0.75
+coverage
+
+
+
+
+                                                                                                                 We see that at higher temperatures, the distributions for both the
+            0.50                                                                                                 means and standard deviations shift left. This means that on average,
+            0.25                                                                                                 cell retention times shift to lower values and their failure distribution
+            0.00
+                                                                                        Vendor B                 becomes narrower around that retention time. We can take advantage
+                                                                                                                 of this observation by profiling not only at a longer refresh interval,
+            1.00                                                                                                 but also at a higher temperature, thus ensuring that a large majority
+            0.75                                                                                                 of the cells observed to inconsistently fail at the target refresh inter-
+            0.50                                                                                                 val and temperature are very likely to fail at the (longer) profiling
+            0.25                                                                        Vendor C
+                                                                                                                 refresh interval and the (higher) profiling temperature.
+            0.00
+                             0        1          2         3                   4       5           6
+                                               profiling runtime (days)                                                        0.06        40 C
+   Figure 5: Coverage of unique retention failures discovered by                                                                           45 C                              (a)
+                                                                                                             PDF probability
+   different data patterns using brute-force profiling across 800
+                                                                                                                               0.04        50 C
+   iterations spanning 6 days.                                                                                                             55 C
+                      1.0                                                  0.12
+                      0.8
+                          (a)                                              0.10
+                                                                                                   (b)                         0.02
+failure probability
+
+
+
+
+                                                         PDF probability
+  individual cell
+
+
+
+
+                                                                           0.08
+                      0.6                                                                                                      0.00
+                                                                           0.06                                                       0        1        2              3              4
+                      0.4
+                                                                           0.04                                                                          (s)
+                      0.2                                                                                                      0.06
+                                                                           0.02                                                                                                40 C
+                                                                                                                                                       (b)                     45 C
+                                                                                                             PDF probability
+
+
+
+
+                      0.0                                                  0.00
+                            0.50 0.25 0.00 0.25 0.50                           0.0 0.1 0.2 0.3 0.4 0.5                         0.04                                            50 C
+                            delta refresh interval (s)                          standard deviation (s)                                                                         55 C
+   Figure 6: (a) Individual cells fail with a normally-distributed
+   cumulative distribution function with respect to refresh interval                                                           0.02
+   (CDF means are normalized to x = 0.00s) and (b) their standard
+   deviations follow a lognormal distribution (right). This data is
+   taken from a single representative chip of Vendor B at 40◦ C and                                                            0.00
+   base refresh intervals ranging from 64ms to 4096ms.
+                                                                                                                                      0   25   50   75 100 125 150 175 200
+                                                                                                                                                       (ms)
+   follow a tight lognormal distribution, with the majority of cells                                             Figure 7: Distributions of individual cells’ normal distribution
+   having a standard deviation of less than 200ms at these conditions.2                                          parameters (µ, σ ) over different temperatures taken from a rep-
+   This means that slightly extending the refresh interval results in                                            resentative chip from Vendor B. We see that both distributions
+   significantly increasing the failure probability of almost all cells,                                         shift left with increasing temperature, which means that an in-
+   which makes cells with low failure probabilities easier to detect.                                            crease in temperature causes individual cells to both fail at a
+      We can explain the shape of these distributions using circuit-level                                        lower refresh interval and also exhibit a narrower failure prob-
+   DRAM characteristics. As described in Section 2.2, the DRAM                                                   ability distribution.
+   cell read process requires sense amplifiers to resolve the direction
+   of a shift in bitline voltage. This shift is known as the sense am-                                             Observation 4: Cells that inconsistently fail at the target condi-
+   plifier voltage offset, and due to various manufacturing variations,                                         tions may be missed with brute-force profiling, but are more likely to
+   the magnitude of this shift across different cells is found to be nor-                                       be found when profiling at a longer refresh interval and/or a higher
+   mally distributed [60, 100]. While using an extended refresh interval,                                       temperature.
+   DRAM cell leakage causes some cells’ voltage offsets to be too small                                            Corollary 4: In order to find failures quickly and consistently, we
+   to resolve correctly, causing the sense amplifier to probabilistically                                       should profile at a longer refresh interval or a higher temperature.
+   read an incorrect value. Therefore, our observation of normally-                                                By combining the normal distributions of individual cell fail-
+   distributed failure probabilities for all cells (Figure 7(a)) is a direct                                    ures from a representative chip of Vendor B, we obtain the data
+   consequence of the normal distribution of the sense amplifier voltage                                        in Figure 8, which shows the failure probability for the combined
+   offsets. Furthermore, Li et al. [60] find that leakage components                                            distribution over different temperatures and refresh intervals. The
+   2
+                                                                                                                dashed regions represent the combined standard deviation for each
+    Note that this is not the same result as the well-known lognormal distribution of the                       tested temperature, and the solid black curve in-between represents
+   number of retention failures with respect to refresh interval [31, 60]. Our observation is
+   that the spread of each individual cell failure distribution is lognormally-distributed as
+                                                                                                                the combined mean. From this data, we draw two major conclusions:
+   opposed to the overall number of failing cells at different refresh intervals.                               1) at a higher temperature or a longer refresh interval, the typical cell
+
+
+                                                                                                         6
+
+
+===== Page 7 =====
+
+     The Reach Profiler (REAPER)                                                                            ISCA ’17, June 24-28, 2017, Toronto, ON, Canada
+
+
+     is more likely to fail, and 2) raising the temperature and extending             profiling and show the effects of changing the refresh interval and
+     the refresh interval have similar effects on cell failure probability            the temperature on the three key profiling metrics. We present data
+     (e.g., at 45◦ C, a 1s change in refresh interval has a similar effect to a       for interesting choices of reach conditions and analyze the results to
+     10◦ C change in temperature).                                                    show how the profiling system can make a reasonable choice.
+
+                       4                                                                  6.1.1 Manipulating Refresh Interval and Temperature.
+                                                                    FAIL              Figure 9 demonstrates the effect of choosing different reach pro-
+refresh interval (s)
+
+
+
+
+                                                                                      filing conditions on failure coverage and false positive rate for a
+                       3                                                              representative chip. In order to perform this analysis, brute-force
+                                                                                      profiling is conducted at regularly spaced points throughout the
+                       2                                                              graphs in Figure 9 using 16 iterations of 6 different data patterns and
+                                                                                      their inverses as per Algorithm 1. Each point in the graph space is
+                       1
+                       0
+                            PASS                                                      then treated as a target condition with all other points as its reach
+                                                                                      conditions. This results in a distribution of coverage/false positive
+                                                                                      rates for every delta temperature/refresh interval combination.
+                           40   42   44     46 48 50           52      54                 We find that these distributions are highly similar for each delta
+                                          temperature ( C)                            temperature/refresh interval combination, with standard deviations
+      Figure 8: Effect of manipulating temperature/refresh interval                   of less than 10% of the data range for both coverage and false
+      on the combined normal distribution of failing cells from a rep-                positive rate. This allows us to use the means of these distributions
+                                                                                      to reasonably demonstrate the overall effect of manipulating the
+      resentative chip from Vendor B. Dashed regions represent the                    temperature and/or refresh interval independently of a particular
+      combined standard deviation and the central line represents the                 target refresh interval. We show these means in Figure 9, with
+      combined mean for each tested temperature.                                      (x, y) = (0.00, 0) effectively representing any target refresh interval
+                                                                                      and all other points in the figure representing its reach conditions.
+                                                                                      The contours represent the coverage (top graph) and false positive
+      6                REACH PROFILING                                                rate (bottom graph).3 As these two graphs show, by increasing the
+     Reach profiling accelerates the process of finding the set of DRAM               refresh interval and/or temperature, we can obtain a higher failure
+     cells that experience retention failures by profiling DRAM under                 coverage (Figure 9, top), as expected given the individual cell failure
+     conditions that increase the likelihood of failure, called reach condi-          probability analysis in Section 5.5. However, this also results in an
+     tions. This enables the profiler to discover the failures much more              increase in the false positive rate (Figure 9, bottom). Thus, there is a
+     quickly, leading to a significant reduction in overall profiling run-            direct tradeoff between coverage and false positive rate.
+     time. Given a set of desired target conditions consisting of a target                Profiling runtime is more difficult to evaluate since it depends
+     refresh interval and a target operating temperature, the key idea of             on 1) the profiling refresh interval, 2) number of profiling iterations
+     reach profiling is to profile at reach conditions, a combination of a            (see Algorithm 1), and 3) overheads of reading and writing the data
+     longer refresh interval and a higher temperature relative to the target          patterns to all of DRAM. We experimentally find that the amount
+     conditions. As experimentally demonstrated in Section 5.5, each                  of time taken to read/write data to all DRAM channels and check
+     DRAM cell is more likely to fail at such reach conditions than at the            for errors is slightly less than 250ms for our evaluated chips. So, we
+     target conditions. While this enables reach profiling to attain high             assume a fixed overhead of 250ms per profiling iteration per data
+     failure coverage (i.e., the ratio of correctly identified failing cells          pattern tested. Figure 10 shows the results of such an analysis for a
+     over the total number of failing cells at the target conditions), it also        representative chip where (x, y) = (0.00, 0) represents profiling at the
+     causes reach profiling to have false positives (i.e., failing cells at the       target conditions (i.e., brute-force profiling) and all other points show
+     reach conditions that do not fail at the target conditions), leading to          the results of reach profiling with the same analysis as in Figure 9.
+     more work for a retention failure mitigation mechanism that is used              Here, each contour curve shows the profiling runtime at different
+     to correct the retention failures (including false positives). More              reach conditions, all normalized to the runtime at the target refresh
+     work done by the mitigation mechanism leads to higher overhead                   interval (i.e., brute-force profiling runtime). Profiling runtime is
+     in terms of performance, energy, or area. This results in a com-                 determined by the number of profiling iterations required to achieve
+     plex tradeoff space between the choice of reach conditions and the               over 90% coverage.
+     resulting profiling coverage, false positive rate, and runtime.                      We see that we can obtain drastic profiling runtime speedups by
+        Given this complex tradeoff space, we need to address three key               aggressively increasing the reach conditions (e.g., +0.5s, +5◦ C), but
+     questions to develop an effective implementation of reach profiling:             from Figure 9, we know that this will result in a very high number
+          (1) What are the desirable reach conditions?                                of false positives (e.g., over 90% false positive rate). Although
+          (2) Given the continuous accumulation of new failures (e.g.,                the runtime numbers in Figure 10 assume a fixed coverage, we
+              due to VRT), how long does a retention failure profile                  observe the same trends across different coverage requirements.
+              remain useful (i.e., how often must we reprofile)?                      Therefore, we conclude that high coverage and low runtime are
+          (3) What information does the profiler need in order to deter-              generally competing goals to low false positive rates, and choosing a
+              mine desirable reach conditions for a given system?                     good set of reach conditions at which to profile depends on the user’s
+     We explore the answers to these questions in the rest of this section.           and the system’s requirements and failure mitigation capabilities.
+     Then, in Section 7, we use our exploration to develop REAPER, a                      We repeat this analysis for all 368 of our DRAM chips and find
+     robust implementation of reach profiling.                                        that each chip demonstrates the same trends, showing that the same
+                                                                                      tradeoff analysis we have done for Figures 9 and 10 also applies to
+      6.1                   Desirable Reach Conditions                                every other chip we tested. In the following section, we analyze the
+     The three key metrics of profiling, coverage, false positive rate,               data presented here and determine how to select a desirable set of
+     and runtime (Section 1), lead to contradictory optimization goals.               reach conditions.
+     While an ideal configuration would achieve high coverage, low false
+     positive rate, and low runtime, we find that there is a large tradeoff           3
+                                                                                       The contours are not perfectly smooth due to variations in the data resulting from
+     space involving these three goals. Using experimental data, we                   small shifts (<0.25◦ C) in temperature throughout testing and the probabilistic nature of
+     demonstrate the large scale of the tradeoff space inherent in reach              retention failures, including VRT effects.
+
+
+                                                                                  7
+
+
+===== Page 8 =====
+
+      ISCA ’17, June 24-28, 2017, Toronto, ON, Canada                                                                                           Patel, Kim, Mutlu
+
+
+
+                        10
+                                                  Coverage                                  the system designer should take these factors into account and make
+                                                                                            the best tradeoff for the target system.
+                                                                 RELIABLE                      However, although the exact choice of reach conditions depends
+delta temperature (C)
+
+
+
+                                                                                            on the system goals, we observe from Figures 9 and 10 that higher
+
+                                           0.95
+                         5                                                                  coverage and higher runtime are directly and positively correlated,
+                                                                                            and both come at the expense of false positives. This means that
+                                 0.5
+
+
+                                                  0.90
+                                                                                            when selecting suitable reach profiling conditions, the system de-
+                                      0
+
+                         0                                                                  signer can feasibly select as high a refresh interval/temperature as
+                             brute-force                                                    possible that keeps the resulting amount of false positives tractable.
+                         5    profiling                                 0.99                This approach primarily relies on identifying the cost of false posi-
+                                                                                            tives for the particular system in question, possibly sacrificing the
+                             UNRELIABLE                          0.70                       ability to handle a large number of false positives in favor of low
+                        10                                                                  profiling runtime.
+                          0.50 0.25 0.00 0.25 0.50 0.75 1.00                                   As a concrete example, from studying data similar to those pre-
+                                   delta refresh interval (s)                               sented in Figures 9 and 10 averaged across all 368 chips, we find
+
+                        10
+                                  False    Positive Rate                                    that for 99% coverage at a modest 50% false positive rate, we attain
+                                                                                            a profiling runtime speedup of 2.5x over the brute-force mechanism
+                                                                        BAD                 when we extend the refresh interval by 250ms. We find that we can
+delta temperature (C)
+
+
+
+
+                                                                                            push the speedup to over 3.5x while maintaining the same level of
+                         5             0.50                     0.90                        coverage by either increasing the temperature or lengthening the
+                              0.10                                                          refresh interval even further, but such aggressive reach profiling
+                                                                                            conditions result in greater than 75% false positive rates.
+                         0                           0.25                0.75
+                             brute-force                                                    6.2    Online Profiling Frequency
+                         5    profiling                                                     In order to enable a longer refresh interval, we not only have to pro-
+                             GOOD                                                           vide a way to profile for retention failures, but also have to guarantee
+                                                                                            that retention failure profiling provides sufficient coverage to pre-
+                        10                                                                  vent erroneous system operation. Given failures that are missed by
+                          0.50 0.25 0.00 0.25 0.50 0.75 1.00                                profiling due to less-than-100% coverage and non-zero new failure
+                                   delta refresh interval (s)                               accumulation rates (Section 5.3), we need a method by which to
+      Figure 9: Failure coverage (top) and false positive rates (bot-                       estimate profile longevity, i.e., the amount of time before a profile
+      tom) as a result of different choices of reach profiling conditions                   is no longer correct (i.e., when reprofiling becomes necessary). In
+      for a representative chip from Vendor B. Contours represent                           this section, we analyze the types of errors that can be missed by
+      coverage (top) and false positive rate (bottom) obtained relative                     profiling and present a theoretical model for allowable error rates
+      to brute-force profiling at (x, y) = (0.00, 0).                                       and profile longevity.
+
+                                                                                               6.2.1 Failures Missed by Profiling. Retention failure profil-
+
+                        10
+                                          Profiling Runtime                                 ing can only capture cells that fail at the profiling conditions. Cells
+                                                                                            missed during profiling due to DPD effects (Section 5.4) and newly-
+                                                                        FAST
+delta temperature (C)
+
+
+
+
+                                                                                            failing cells that did not fail during profiling due to environmental
+                                 2.0x                                                       factors (e.g., temperature shifts, soft errors) or due to VRT effects
+                         5                 1.5           0.2x                               (Section 5.3) cannot be observed by profiling. Prior works acknowl-
+                                              x                          0.1x               edge that there will inevitably be failures that are missed by profiling
+                         0                                                                  and argue that some form of ECC is necessary to allow safe opera-
+                                     brute-force                1.0x     0.5
+                                                                                            tion with a longer refresh interval [42, 62, 81]. Our observation of
+                                      profiling                              x              continuously-accumulating new failures in LPDDR4 DRAM chips
+                         5                                                                  (Section 5) leads us to agree with this argument for the use of ECC.
+                             SLOW                                                           Thus, in order to enable online profiling, we need to determine 1)
+                        10                                                                  what error rates can be tolerated by an ECC-based system and 2)
+                          0.50           0.25       0.00       0.25              0.50       at what point the accumulated failures will exceed the correction
+                                                                                            capability of ECC and require reprofiling.
+                                         delta refresh interval (s)
+      Figure 10: Profiling runtime as a result of different choices of                         6.2.2 Allowable Errors and Tolerable Error Rates. In or-
+      reach conditions for a representative chip from Vendor B. Con-                        der to estimate the probability of system failure given DRAM reten-
+      tours represent profiling runtime relative to brute-force profil-                     tion errors in the presence of various types of error correction codes
+      ing at (x, y) = (0.00, 0).                                                            (ECC), we estimate the error rate as observed by the system, called
+                                                                                            the uncorrectable bit error rate (UBER), as a function of the raw bit
+         6.1.2 Choice of Desirable Parameters. The exact choice of                          error rate (RBER), defined as the ratio of failing DRAM cells. We de-
+      reach conditions depends on the overall system design and its partic-                 fine system failure as exceeding an UBER of 1) 10−15 for consumer
+      ular optimization goals. For example, in a highly latency-sensitive                   applications [71] and 2) 10−17 for enterprise applications [4].
+      system, the primary goal may be to minimize profiling runtime, in                        Given a general system using k-bit ECC (with k = 0 defined as no
+      which case giving up a low false positive rate to obtain a low profil-                ECC, k = 1 as SECDED ECC [67], etc.) and an ECC word size of
+      ing runtime may be necessary. On the other hand, if the retention                     w, we define the UBER as the probability of observing an error in a
+      failure mitigation mechanism in use is intolerant to high false posi-                 single DRAM ECC word, normalized to the number of bits per ECC
+      tive rates (e.g., discarding all DRAM rows containing failing cells),                 word:
+      a low false positive rate may be the primary design goal. In general,                                   1
+                                                                                                   UBER = P[uncorrectable error in a w-bit ECC word] (2)
+                                                                                                             w
+
+                                                                                        8
+
+
+===== Page 9 =====
+
+The Reach Profiler (REAPER)                                                                     ISCA ’17, June 24-28, 2017, Toronto, ON, Canada
+
+
+We obtain an uncorrectable error in an ECC word when we have an                   For example, with a 2GB DRAM and SECDED ECC as the failure
+n-bit error ∀ n > k. This means that we can expand Equation 2 in              mitigation mechanism, we can afford up to N = 65 failures while
+terms of n:                                                                   still maintaining correct DRAM operation. Assuming an aggressive
+                 1 w                                                          target refresh interval of 1024ms at 45◦ C, we empirically observe
+       UBER =        ∑ P[n-bit failure in a w-bit ECC word] (3)               2464 retention failures (Figure 2) and a new failure accumulation
+                 w n=k+1                                                      rate of A = 0.73 cells / hour (Figure 4). With 99% coverage, we
+representing the sum of the probabilities of all possible k-bit ECC           compute C = 24.6 ≈ 25 cells, and applying Equation 7, we obtain
+uncorrectable errors. In particular, for k = 0 and k = 1, we have 0           T = 2.3 days. We can use a similar analysis to determine the profile
+and 8 additional bits per 64-bit data word, respectively. For these           longevity for any desired configuration and choose an appropriate
+cases, Equation 3 takes the form:                                             tradeoff point between the different reach profiling parameters.
+                      1 64                                                    6.3    Enabling Reliable Relaxed-Refresh Operation
+  UBER(k = 0) =         ∑ P[n-bit failure in a 64-bit ECC word]
+                     64 n=1                                                   In order to determine good reach conditions at which to profile for
+                                                                   (4)        a real system running at a longer refresh interval than the default,
+                 1 72                                                         we need to know two key pieces of information: 1) the particu-
+  UBER(k = 1) =    ∑ P[n-bit failure in a 72-bit ECC word]
+                72 n=2                                                        lar retention failure mitigation mechanism in use, so that we can
+   The probability of an n-bit error in a k-bit word can be modeled           constrain the reach profiling tradeoff space, and 2) detailed chip
+by a binomial distribution, assuming that DRAM retention failures             characterization data, in order to make reliable estimates of reach
+are independent and randomly distributed, as has been shown in                profiling benefits and profile longevity, allowing us to determine
+previous work [6, 95]. Given that these assumptions hold, we can              which point in the tradeoff space will provide the best overall system
+use the RBER R as the probability of a single-bit failure within              performance/energy improvement.
+DRAM, and expand the probability of an n-bit failure in a k-bit ECC              The choice of retention failure mitigation mechanism determines
+word using a binomial distribution in terms of R:                             the hardware/energy/performance overhead of managing failing
+                                                                            cells, which determines how aggressively we can push the tar-
+                                              w n                             get/reach conditions before the system can no longer cope with the
+   P[n-bit failure in a w-bit ECC word] =        R (1 − R) w−n (5)
+                                              n                               number of failures and false positives. The mitigation mechanism
+Putting the pieces together, we arrive at:                                    therefore constrains both the target conditions (i.e., the resultant
+                                                                              RBER without mitigation) and the maximum number of false posi-
+                          1 w
+                                   
+                                    w                                         tives, which in turn restricts the range of the reach conditions.
+                UBER =        ∑ n Rn (1 − R) w−n                 (6)             Detailed chip characterization data (as in Figures 9 and 10) is nec-
+                          w n=k+1
+                                                                              essary to produce accurate estimates of all of the parameters of the
+Table 1 summarizes the maximum tolerable RBER for a target UBER               actual system, including the expected RBER, the profile longevity,
+of 10−15 , for various choices of ECC strength. In order to provide           the required coverage, and even the reach conditions themselves.
+comparison points, the table also translates the tolerable RBER into          While these parameters can be estimated from general trends across
+actual number of tolerable bit errors for various DRAM sizes.                 many chips, the variations among different chips mean that truly
+                                                                              reliable relaxed refresh operation requires estimating profiling pa-
+                                    ECC Strength                              rameters based on data from the actual chip.
+                             No ECC SECDED ECC-2                                 Currently, DRAM vendors do not provide this data, but it would
+       Tolerable RBER        1.0e−15   3.8e−9    6.9e−7                       be reasonable for vendors to provide this data in the on-DIMM serial
+                                                                              presence detect (SPD) as done in [52]. Otherwise, the user would
+             512MB      4.3e−6       16.3      3.0e3
+                                                                              have to characterize his/her own device. Even though a detailed
+       # Tolerable
+       Bit Errors
+
+
+
+
+             1GB        8.6e−6       32.6     5.9e+3                          characterization may take prohibitive amounts of time, a few sample
+             2GB        1.7e−5       65.3     1.2e+4                          points around the tradeoff space could provide enough information in
+             4GB        3.4e−5      130.6     2.4e+4                          conjunction with the general trends across many devices to develop
+             8GB        6.9e−5      261.1     4.7e+4                          accurate estimations. However, the general problem of efficiently
+Table 1: Tolerable RBER and tolerable number of bit errors                    obtaining per-chip characterization data is itself an open research
+                                                                              direction and is beyond the scope of this work.
+for UBER = 10−15 across different ECC strengths for selected                     Once these two critical pieces of information are available, the
+DRAM sizes                                                                    system designer can decide what the best tradeoff is between profile
+                                                                              longevity, coverage, false positive rate, and runtime according to
+   Thus, for any target UBER, we can compute the tolerable RBER,
+                                                                              his/her own system configuration. Despite the overall trend similari-
+and hence the maximum number of cells that can be allowed to
+                                                                              ties we observe between the DRAM chips we evaluate in Section 5,
+escape (i.e., not be detected by) our retention failure profiling mech-
+                                                                              the optimal choice of reach conditions depends on the particular
+anism while still maintaining correct DRAM operation. By applying
+                                                                              system and its tradeoffs between cost, performance, power, and
+the maximum tolerable RBER to the RBER at any desired target
+                                                                              complexity, and it is up to the user to determine the most suitable
+refresh interval, we can directly compute the minimum coverage
+                                                                              configuration for his/her own needs.
+required from a profiling mechanism in order for the retention failure
+mitigation mechanism to guarantee correct system operation.                   7     END-TO-END IMPLEMENTATION
+   6.2.3 Profile Longevity. Given the maximum tolerable num-                  Reach profiling provides a general-purpose retention failure pro-
+ber of retention failures N provided by Table 1, the number of failures       filing methodology whose exact use and design parameters (Sec-
+C missed by profiling due to imperfect profiling coverage, and the            tion 6.3) depend on the error mitigation mechanism used for reduced-
+accumulation rate A of new failures as measured in Section 5.3, we            refresh-rate operation. A system designer should utilize reach profil-
+can estimate T , the length of time before we need to reprofile, as:          ing uniquely depending on desired performance/energy targets and
+                                                                              ease/overhead of implementation. For example, the designer is free
+                                   N −C
+                              T=                                    (7)       to choose where to implement the core profiling algorithm (e.g., at
+                                     A                                        the memory controller, the operating system, etc.), how to save and
+                                                                              restore the state of DRAM before and after a profiling round (i.e.,
+
+                                                                          9
+
+
+===== Page 10 =====
+
+ISCA ’17, June 24-28, 2017, Toronto, ON, Canada                                                                                                     Patel, Kim, Mutlu
+
+
+each individual instance of online profiling consisting of all itera-                         can be on the order of hours (Section 6.2.3), we cannot feasibly
+tions and data patterns), how to efficiently profile large portions of                        simulate workloads in order to demonstrate latency effects due to
+DRAM without significant performance loss, etc. However, a thor-                              online profiling. Instead, we simulate our workloads without the
+ough exploration of the design space regarding the implementation                             profiling overhead and report performance results using throughput
+of reach profiling is beyond the scope of this paper.                                         in terms of instructions-per-cycle (IPC). We then use the following
+   In order to effectively present the insight behind the tradeoffs                           model to compute overall system performance accounting for online
+involved in reach profiling, we provide and evaluate REAPER, a                                profiling overhead:
+naı̈ve (yet robust) example implementation of reach profiling that                                       IPC real = IPC ideal × (1 − profiling overhead)       (8)
+assumes a full-system pause each time retention failures are profiled.
+REAPER enables a variety of retention failure mitigation mecha-                               where IPC ideal is the measured throughput of simulated workloads,
+nisms [61, 63, 76, 79, 95, 96] for reliable operation at longer refresh                       and pro f iling overhead is the proportion of real system time spent
+intervals. We experimentally validate that, even with these worst-                            in profiling. Our profiling overhead model assumes worst-case
+case assumptions, REAPER preserves a significant amount of the                                configurations, pessimistically assuming that applications make zero
+benefit of an ideal profiling mechanism that has zero overhead while                          forward progress while profiling. Our full system performance
+outperforming brute-force profiling in terms of both performance                              model roughly estimates the worst-case performance degradation
+and power consumption.                                                                        expected from an implementation of reach profiling.
+                                                                                                 We use Ramulator [2, 53] to evaluate performance and DRAM-
+7.1     REAPER Implementation                                                                 Power [1] to evaluate DRAM power consumption. We simulate 20
+                                                                                              multiprogrammed heterogeneous workload mixes, each of which
+Reach profiling requires the ability to manipulate the DRAM re-                               is constructed by randomly selecting 4 benchmarks from the SPEC
+fresh interval and/or the DRAM temperature, both of which can be                              CPU2006 benchmark suite [3]. Multi-core system performance is
+achieved with commodity off-the-shelf DRAM. REAPER imple-                                     measured in terms of the weighted speedup metric [28, 91]. We
+ments reach profiling in firmware running directly in the memory                              provide our evaluated system configuration in Table 2.
+controller. Each time the set of retention failures must be updated,
+profiling is initiated by gaining exclusive access to DRAM. REAPER                                                 4 cores, 4GHz clock frequency, 3-wide issue, 8
+                                                                                                Processor
+has the ability to manipulate the refresh interval directly, but for sim-                                          MSHRs/core, 128-entry instruction window
+plicity, we assume that temperature is not adjustable (as shown in                              Last-level Cache   64B cache line, 16-way, 8MB cache size
+Section 5.5, manipulating either the temperature or the refresh in-                                                64-entry read/write request queues, FR-FCFS schedul-
+terval achieves the same effect). REAPER conducts reach profiling                               Memory
+                                                                                                                   ing policy [83, 102], open/closed row policy [50, 51]
+and stores the addresses of the failing cells it finds at locations dic-                        Controller
+                                                                                                                   for single/multi-core
+tated by the retention failure mitigation mechanism of choice.4 At                                                 LPDDR4-3200 [37], 4 channels, 1 rank, 8 banks/rank,
+                                                                                                DRAM
+the completion of profiling, REAPER releases exclusive DRAM                                                        32K-256k rows/bank, 2KB row buffer
+access and the system resumes normal operation. In the remainder                                             Table 2: Evaluated system configuration
+of this section, we describe how this implementation of reach profil-
+ing can be combined with two example retention failure mitigation                             7.3    Performance and Energy Evaluation
+mechanisms from prior work to reduce refresh operations.                                      We develop a detailed model for profiling overhead, taking into
+   7.1.1 REAPER Supporting ArchShield. As a demonstrative                                     account extra DRAM accesses required for profiling, latencies in-
+example, we combine REAPER with ArchShield [76] to enable                                     volved in reading/writing data patterns to DRAM, and time con-
+refresh rate reduction. ArchShield requires a small amount of ad-                             sumed waiting for the extended refresh intervals. We use this model
+ditional logic in the memory controller for detecting accesses to                             in conjunction with Equation 8 to reliably estimate worst-case sys-
+known-faulty addresses, which are stored in 4% of DRAM in a                                   tem performance impact and additional DRAM power consumption.
+reserved segment known as the FaultMap. The REAPER firmware                                   In this section, we present our 1) model for profiling performance
+provides these faulty addresses via periodically profiling DRAM                               and power consumption overhead for brute-force profiling and reach
+for retention failures following the methodology in Section 3.2. All                          profiling, and 2) results for end-to-end system performance and
+detected failures are stored into the FaultMap, which ArchShield                              DRAM power consumption using brute-force profiling, reach profil-
+accesses to determine which failing addresses must be remapped.                               ing, and the ideal profiling mechanism that does not impact system
+                                                                                              performance or power consumption. We find that while profiling
+   7.1.2 REAPER Supporting Multi-Rate Refresh. In order to                                    power consumption overheads are very low across a wide range of
+show REAPER’s flexibility for integration with other retention fail-                          DRAM sizes and refresh intervals, profiling performance overheads
+ure mitigation mechanisms, we describe REAPER working with                                    become significant for large DRAM chips and high online profiling
+RAIDR [63]. RAIDR groups DRAM rows into different bins, ac-                                   frequencies. In such cases where profiling performance significantly
+cording to the rows’ retention times, and applies different refresh                           impacts overall system performance, reach profiling maintains a
+rates to each bin. REAPER enables RAIDR by periodically updating                              large fraction of the benefits of using a longer refresh interval (e.g.,
+the bins using the set of failures discovered each time profiling is                          providing 14.8% higher performance than brute-force profiling on
+conducted. This enables the system to reduce the refresh interval                             average for a 64Gb chip running at a 1280ms refresh interval at
+for most of the rows within DRAM, which results in overall system                             45◦ C), as we show in Section 7.3.2.
+performance increase and energy reduction.
+                                                                                                 7.3.1 Profiling Overhead. We model the overhead of online
+7.2     Evaluation Methodology                                                                profiling by accumulating the latencies of individual operations re-
+Given that profiling rounds require on the order of seconds or min-                           quired to run a single round of profiling. We assume that profiling
+utes (Section 7.3.1) and the time between online profiling rounds                             requires a full system pause, with no useful work being done while
+4
+                                                                                              the profiler is running. One round of profiling consists of Nit iter-
+ Profiling involves modifying the contents of DRAM. Data must be saved and restored           ations, each of which consists of reading/writing DRAM with Ndp
+before and after profiling is run, respectively. While a naı̈ve implementation may
+flush all DRAM data to secondary storage (e.g., hard disk drive, SSD, NVM) or other           different data patterns. Our end-to-end runtime model is as follows:
+parts of DRAM, a more efficient implementation could hide most or all of this latency.               Tprofile = (TREFI + Twr DRAM + Trd DRAM ) ∗ Ndp ∗ Nit     (9)
+Efficiently implementing DRAM data save and restore is an orthogonal problem to this
+work. Therefore, we do not take DRAM data save and restore overheads into account in          where TREFI is the profiling refresh interval that DRAM must wait
+our performance and energy evaluations.                                                       with refresh disabled in order to accumulate errors; Twr DRAM is the
+
+                                                                                         10
+
+
+===== Page 11 =====
+
+     The Reach Profiler (REAPER)                                                                                              ISCA ’17, June 24-28, 2017, Toronto, ON, Canada
+
+
+     time to write a data pattern into DRAM; and Trd DRAM is the time to
+                                                                                                                                                          Brute-force
+     read DRAM and compare against the original data pattern. For 32                                                120                                  8Gb            32Gb
+
+
+
+
+                                                                                              DRAM power consumed
+     8Gb DRAM chips with TREFI = 1024ms, Trd/wr DRAM = 0.125s† ,                                                                                         16Gb           64Gb
+                                                                                                                    100
+
+
+
+
+                                                                                                by profiling (nW)
+     Ndp = 6, and Nit = 6, we find that Tprofile ≈ 3.01 minutes, and for 32
+                                                                                                                                                           REAPER
+     64Gb chips, Tprofile ≈ 19.8 minutes.                                                                            80                                  8Gb            32Gb
+        In order to demonstrate the overall system performance degrada-                                                                                  16Gb           64Gb
+     tion from profiling, Figure 11 plots the proportion of overall system                                           60
+     time spent profiling for a variety of different profiling intervals
+     and DRAM sizes assuming 16 iterations of brute-force profiling at                                               40
+     1024ms using 6 data patterns and their inverses. The x-axis repre-
+     sents the online profiling frequency in hours, and the y-axis shows
+                                                                                                                     20
+     the proportion of total system-time spent profiling. To compare                                                  0
+     the brute-force method against REAPER, we plot the performance                                                       1     2       4       8       16 32 64         128
+     overheads with hashed (brute-force) and solid (REAPER) bars. We                                                                online profiling interval (hours)
+     show results for the 2.5x profiling runtime speedup of reach profiling                      Figure 12: DRAM power consumption of REAPER and brute-
+     over brute-force profiling, found experimentally in Section 6.1.2.                          force profiling for different online profiling intervals using 32
+     The differently-colored bars represent DRAM modules consisting                              DRAM chips, for different chip sizes
+     of 32 individual DRAM chips, with each chip ranging from 8Gb                                                                .
+     to 64Gb in size. We observe that at shorter profiling intervals, the
+     performance degradation is prohibitively high and is exacerbated by                            7.3.2 End-to-end System Evaluation Results. We evaluate
+     larger DRAM chip sizes. For example, we find that for a profiling                          the overall effects of REAPER on system performance and DRAM
+     interval of 4 hours and a 64Gb chip size, 22.7% of total system time                       power consumption by applying our profiling overhead model to
+     is spent profiling with brute-force profiling while 9.1% of time is                        Equation 8. We compare REAPER with both online brute-force pro-
+     spent profiling with REAPER.                                                               filing and the ideal profiling mechanism that incurs no performance
+                                                                                                or energy overhead. The ideal mechanism mirrors the approach
+                                                                                                taken by prior works on refresh rate reduction [61, 63, 76, 79, 95, 96],
+                                                             Brute-force
+                       80%                                  8Gb             32Gb                which assume that offline profiling is sufficient. Considerable ev-
+                                                            16Gb            64Gb                idence against the sufficiency of offline profiling is provided by
+time spent profiling
+
+
+
+
+                                                                                                both prior work on DRAM characterization [42, 62] and our own
+                       60%                                     REAPER                           observations (Sections 5.3 and 6.2.1). We exclude ECC-scrubbing
+                                                            8Gb             32Gb                based mechanisms from our evaluations due to their passive ap-
+                                                            16Gb            64Gb
+                       40%                                                                      proach to failure profiling, which cannot guarantee failure coverage
+                                                                                                in the same way as an active profiling mechanism, as discussed in
+                                                                                                Section 3.2.
+                       20%                                                                          Figure 13 shows the results of this analysis, demonstrating the
+                                                                                                overall system performance improvement (top) and DRAM power
+                                                                                                consumption reduction (bottom) due to operating with a longer
+                       0%
+                             1   2       4       8       16      32    64     128               refresh interval across all of our simulated workloads for a variety
+                                     online profiling interval (hours)                          of DRAM sizes each consisting of 32 individual DRAM chips of the
+                                                                                                specified capacity (8-64Gb). Each triplet of boxes presents results
+      Figure 11: Total system time spent profiling with REAPER and
+                                                                                                for online brute-force profiling, REAPER, and the ideal profiling
+      brute-force profiling for different online profiling intervals us-
+                                                                                                mechanism, in order from left to right. Results are shown for various
+      ing 32 DRAM chips, for different chip sizes.                                              lengthened refresh intervals from 128ms to 1536ms and for the case
+         In order to demonstrate the overall DRAM power overhead as-                            of no refresh, which is shown as a single box. For each refresh
+      sociated with profiling, Figure 12 shows the total DRAM power                             interval, the profiling parameters used to compute overhead are
+      required for profiling across the same sweep of configurations as                         obtained using the experimental data for failure rates at 45◦ C as
+      Figure 11. Power consumption overhead is calculated using the                             shown in Section 5. Profile longevity is estimated in the best case for
+      average energy-per-bit costs for different DDR commands obtained                          each configuration, assuming that the profilers achieve full coverage
+      from our LPDDR4 DRAMPower model [1]. We estimate the num-                                 each time they are run. This assumption is reasonable for profilers
+      ber of extra commands required for profiling and show the total                           achieving high (e.g., 99%) coverage and allows us to decouple the
+      DRAM energy consumed for one round of profiling divided by the                            results from failure rates of specific DRAM chips. Results are
+      online profiling interval. The x-axis represents the online profiling                     all normalized to the base performance or power consumption at
+      frequency in hours, and the y-axis shows the DRAM power con-                              the default refresh interval of 64ms without profiling. The boxes
+      sumption in nanowatts. We see that power consumption has a strong                         represent the distribution of benchmarks from the 25th to the 75th
+      dependence on DRAM size and shows a similar scaling trend as                              percentiles, the whiskers show the data range, and the orange and
+      profiling performance overhead with respect to the profiling interval.                    black lines represent medians and means, respectively. We make
+      However, the absolute power consumption is very low (on the order                         four major observations based on these results.
+      of nanowatts), because the majority of profiling runtime is spent wait-                       First, REAPER enables a high performance improvement and
+      ing for retention failures to occur (i.e., the profiling refresh interval)                a high DRAM power reduction by reliably increasing the refresh
+      rather than actively accessing DRAM. We show in Section 7.3.2 how                         interval. REAPER enables 512ms as the best overall operating
+      profiling itself results in negligible additional power in the DRAM                       point across all evaluated DRAM chip sizes, providing an average of
+      system, even in the extreme case of very frequent profiling and large                     16.3% (maximum 27.0%) performance improvement and an average
+      DRAM sizes.                                                                               of 36.4% (maximum 47.4%) power reduction for 64Gb chips. This
+                                                                                                is very close to the average performance gain of 18.8% (31.2% max-
+     †
+       This value is based on empirical measurements from our infrastructure using 2GB          imum) and average power reduction of 41.3% (54.1% maximum)
+      of LPDDR4 DRAM. We scale this number according to DRAM size throughout our                that comes with eliminating all refreshes (rightmost “no ref” bars).
+      evaluation to account for the larger number of accesses.
+
+
+                                                                                         11
+
+
+===== Page 12 =====
+
+    ISCA ’17, June 24-28, 2017, Toronto, ON, Canada                                                                                       Patel, Kim, Mutlu
+
+                                                           Brute-force profiling           REAPER          Ideal profiling
+                           30% 8 Gb                16 Gb                                  32 Gb                              64 Gb
+system performance gain
+
+
+
+
+                           20%
+      end-to-end
+
+
+
+
+                           10%
+                            0%
+                          -10%
+                          -20%
+                                  128
+                                  256
+                                  512
+                                  768
+                                 1024
+                                 1280
+                                 1536
+
+
+                                                     128
+                                                     256
+                                                     512
+                                                     768
+                                                    1024
+                                                    1280
+                                                    1536
+
+
+                                                                                           128
+                                                                                           256
+                                                                                           512
+                                                                                           768
+                                                                                          1024
+                                                                                          1280
+                                                                                          1536
+
+
+                                                                                                                               128
+                                                                                                                               256
+                                                                                                                               512
+                                                                                                                               768
+                                                                                                                              1024
+                                                                                                                              1280
+                                                                                                                              1536
+                                no ref
+
+
+
+
+                                                   no ref
+
+
+
+
+                                                                                         no ref
+
+
+
+
+                                                                                                                             no ref
+                                      tREFI (ms)               tREFI (ms)                             tREFI (ms)                       tREFI (ms)
+
+                          50% 8 Gb                 16 Gb                                  32 Gb                              64 Gb
+DRAM power reduction
+
+
+
+
+                          40%
+    end-to-end
+
+
+
+
+                          30%
+                          20%
+                          10%
+                           0%
+                                  128
+                                  256
+                                  512
+                                  768
+                                 1024
+                                 1280
+                                 1536
+
+
+                                                     128
+                                                     256
+                                                     512
+                                                     768
+                                                    1024
+                                                    1280
+                                                    1536
+
+
+                                                                                           128
+                                                                                           256
+                                                                                           512
+                                                                                           768
+                                                                                          1024
+                                                                                          1280
+                                                                                          1536
+
+
+                                                                                                                               128
+                                                                                                                               256
+                                                                                                                               512
+                                                                                                                               768
+                                                                                                                              1024
+                                                                                                                              1280
+                                                                                                                              1536
+                                no ref
+
+
+
+
+                                                   no ref
+
+
+
+
+                                                                                         no ref
+
+
+
+
+                                                                                                                             no ref
+                                      tREFI (ms)               tREFI (ms)                             tREFI (ms)                       tREFI (ms)
+    Figure 13: Simulated end-to-end system performance improvement (top) and DRAM power reduction (bottom) over 20 heteroge-
+    neous 4-core workloads for different refresh intervals at 45◦ C, taking into account online profiling frequency and profiling overhead.
+        Second, REAPER significantly outperforms the brute-force mech-                  on average) at 1280ms, demonstrating that REAPER enables longer
+    anism, especially at high refresh intervals (>= 1024ms). While                      refresh intervals that were previously unreasonable to operate the
+    the ideal profiling mechanism enables increasing gains with longer                  system at.
+    refresh intervals, both REAPER and brute-force profiling overheads                      Fourth, both REAPER and brute-force profiling have negligible
+    become more significant for refresh intervals beyond 1024ms. This                   impact on overall DRAM power consumption across all refresh in-
+    is due to the high VRT failure accumulation rate (Section 5.3) at                   tervals and DRAM chip sizes. While Figure 12 shows that REAPER
+    long refresh intervals, which requires a high online profiling fre-                 consumes significantly less power than brute-force profiling at the
+    quency. However, at such high refresh intervals, REAPER preserves                   same configuration, profiling power consumption is a very small
+    much more of the ideal profiling benefit than does brute-force pro-                 fraction of total DRAM power consumption to begin with. This
+    filing. For example, with 64Gb DRAM chips, at a refresh interval                    means that although the profiling process has a large effect on over-
+    of 1024ms, using REAPER provides 13.5% average (24.7%) maxi-                        all system performance, it does not contribute significantly to DRAM
+    mum performance improvement while using brute-force profiling                       power consumption. Thus, both REAPER and brute-force profil-
+    provides only 7.5% average (18% maximum) performance improve-                       ing are effective at greatly reducing DRAM power consumption by
+    ment. REAPER’s performance benefit over brute-force profiling                       enabling a longer refresh interval.
+    increases with longer refresh intervals because REAPER can sustain                      We can use the results of Figure 13 to estimate the benefits ob-
+    higher online profiling frequencies better, showing that REAPER is                  tained by using any retention failure mitigation mechanism. For
+    superior to brute-force profiling.                                                  example, ArchShield [76] extends the default refresh interval up to
+        For refresh intervals below 512ms, both REAPER and brute-                       1024ms at the cost of approximately 1% overall system performance
+    force profiling provide benefits that are very close to that of ideal               (Section 5.1 of [76]). The overall system performance improvement
+    profiling since the performance overhead of both mechanisms is low.                 can be estimated by subtracting ArchShield’s reported performance
+    This is due to the low VRT failure accumulation rate observed in                    cost (in [76]) from the ideal profiling performance gain (in Fig-
+    Section 5.3 for short refresh intervals, resulting in a high profile                ure 13), resulting in an overall performance improvement of 15.7%
+    longevity. However, short refresh intervals do not provide the full                 on average (28.2% maximum) using 64Gb DRAM chips at a re-
+    benefits of employing longer refresh intervals, so we would like to                 fresh interval of 1024ms. However, as we show the need for an
+    enable as high a refresh interval as possible with as low overhead as               online profiling mechanism (Section 6.2), the actual overall perfor-
+    possible.                                                                           mance benefit must be adjusted to account for profiling overhead.
+        Third, REAPER enables high performance operation at very long                   We observe performance improvements of 6.5% on average (17%
+    refresh intervals that were previously unreasonable to operate the                  maximum) when ArchShield is combined with brute-force profiling,
+    system at. For refresh intervals longer than 512ms, the high online                 and 12.5% on average (23.7% maximum) when it is combined with
+    profiling frequency means that profiling overhead becomes signif-                   REAPER. Thus, we find that using REAPER leads to an average
+    icant (as supported by Figure 11), and this overhead eventually                     performance improvement of 5.6% over using brute-force profiling.
+    results in overall performance degradation. At a refresh interval                   A similar analysis can be conducted using other state-of-the-art re-
+    of 1280ms, the performance impact of profiling becomes clearly                      tention failure mitigation mechanisms to estimate overall system
+    visible: using brute-force profiling with 64Gb DRAM chips leads to                  speedup and DRAM power consumption.
+    overall system performance degradation (-5.4% on average). How-                         We conclude that REAPER is an effective and low-overhead pro-
+    ever, REAPER still maintains significant performance benefit (8.6%                  filing mechanism that enables high-performance operation at very
+
+
+                                                                                   12
+
+
+===== Page 13 =====
+
+The Reach Profiler (REAPER)                                                                             ISCA ’17, June 24-28, 2017, Toronto, ON, Canada
+
+
+long refresh intervals (beyond 1024ms) that were previously not rea-            such failing cells, thereby enabling many proposed mechanisms that
+sonable to employ due to the high associated profiling overhead. As             depend on accurate and efficient identification of failing cells.
+a caveat to the data presented in this section, it is important to note            Other works proposed reducing refresh overheads without requir-
+that Figures 11, 12, and 13 are all based on specific assumptions (e.g.,        ing knowledge of cells that fail at larger refresh intervals [5, 6, 8,
+45◦ C temperature, 2.5x performance improvement of reach profil-                26, 27, 30, 35, 40, 45, 46, 64, 67, 73, 74, 80, 94], e.g., by better
+ing vs. online brute-force profiling, 32 chips per DRAM module,                 scheduling, taking advantage of software and hardware access pat-
+100% coverage by profiling, 20 randomly-formed heterogeneous                    terns to reduce refreshes, and reducing refreshes for non-critical data.
+workload mixes) and we are not covering the entire design space                 These works can be used together with the more aggressive refresh
+with these results. This means that there likely exist other conditions         reduction techniques that REAPER enables.
+under which REAPER may perform even better, including both
+different temperatures, at which we would expect failure rates and              9         CONCLUSION
+therefore profile longevity to change, and varying system require-              This paper rigorously explores the complex tradeoff space associated
+ments (e.g., choice of retention failure mitigation mechanism, target           with DRAM retention profiling mechanisms using new experimen-
+profiling coverage and false positive rate, target profile longevity,           tal data from 368 modern LPDDR4 DRAM chips. In an effort to
+target UBER, etc.). These conditions may result in different choices            develop a rigorous understanding of how retention failure profiling
+of reach profiling parameters, which can lead to a higher-than-2.5x             can be made viable for increasing the refresh interval, we experimen-
+performance improvement for reach profiling over brute-force profil-            tally characterize DRAM chips at various temperatures and refresh
+ing. This increase in reach profiling performance translates directly           intervals and analyze the probability of failure of different cells in
+to reduction in profiling overhead, which in turn translates to even            DRAM as well as tradeoffs of retention time profiling. Following
+greater end-to-end system performance improvement and greater                   rigorous analysis of the collected data, we propose reach profiling,
+DRAM power reduction than presented here.                                       a technique whose key idea is to profile DRAM at a longer refresh
+                                                                                interval and/or a higher temperature relative to the target refresh
+                                                                                interval/temperature in order to quickly discover an overwhelming
+8    RELATED WORK                                                               majority of all possible failing cells at the target conditions. We
+To our knowledge, this is the first work that 1) analyzes and                   show that reach profiling enables significant system performance
+presents experimental data on the data retention characteristics of             improvement and DRAM power reduction, outperforming the brute-
+real LPDDR4 DRAM chips, 2) proposes a viable mechanism for pro-                 force approach and enabling high-performance operation at longer
+filing DRAM retention failures quickly and efficiently, 3) presents a           refresh intervals that were previously unreasonable to employ due
+rigorous analysis framework for understanding and evaluating mer-               to the high associated profiling overhead. We conclude that reach
+its of retention time profiling mechanisms, and 4) experimentally               profiling can be an enabler for many past and future DRAM refresh
+characterizes the complex tradeoff space of retention time profiling            reduction mechanisms. We also hope that the new experimental
+mechanisms in terms of the three major metrics we introduce for                 characterization and the analysis of the data retention characteristics
+profiling: coverage, false positive rate, and profiling runtime.                of modern LPDDR4 DRAM devices presented in this work will
+    As part of our analysis framework, we provide, for the first time,          serve as an enabler for others to develop new techniques to tackle
+retention time data from 368 LPDDR4 DRAM devices. Many recent                   the difficult yet critical problem of DRAM refresh.
+works conduct detailed experimental studies of real DRAM chips
+in terms of their reliability, data retention, and latency behavior [20–        ACKNOWLEDGMENTS
+22, 25, 33, 38–40, 42–44, 48, 49, 54–56, 62, 70, 86, 92, 93, 98, 99].           We thank our shepherd Alper Büyüktosunoğlu, anonymous review-
+Similarly, many recent works conduct detailed experimental studies              ers, and SAFARI group members for feedback.
+of the reliability and data retention behavior of real NAND flash
+memory chips [9–19, 29, 65, 66, 69, 78, 85]. None of these works                REFERENCES
+analyze and present data from real LPDDR4 DRAM chips, which                         [1]   “DRAMPower Source Code,” https://github.com/ravenrd/DRAMPower.
+we do in this paper.                                                                [2]   “Ramulator Source Code,” https://github.com/CMU-SAFARI/ramulator.
+    We have already discussed and analyzed various retention fail-                  [3]   “Standard Performance Evaluation Corporation,” http://www.spec.org/cpu2006.
+                                                                                    [4]   “SAS SSDs for Enterprise: High Performance with Extreme Reliability,” 2012.
+ure mitigation mechanisms in Section 3.1. This proliferation of                     [5]   A. Agrawal et al., “Refrint: Intelligent Refresh to Minimize Power in On-chip
+works [61, 63, 76, 79, 95, 96] reflects the importance of the re-                         Multiprocessor Cache Hierarchies,” in HPCA, 2013.
+fresh problem, which is also a major scaling challenge for modern                   [6]   S. Baek et al., “Refresh Now and Then,” in TC, 2014.
+                                                                                    [7]   I. Bhati et al., “DRAM Refresh Mechanisms, Penalties, and Trade-Offs,” in TC,
+DRAM [41, 68]. AVATAR [81] proposes a profiling technique to                              2016.
+enable these refresh reduction mechanisms, but as discussed in Sec-                 [8]   I. Bhati et al., “Coordinated Refresh: Energy Efficient Techniques for DRAM
+tion 3.2, it does not guarantee finding the full set of failing cells in                  Refresh Scheduling,” in ISPLED, 2013.
+                                                                                    [9]   Y. Cai et al., “Vulnerabilities in MLC NAND Flash Memory Programming:
+the presence of data pattern dependence. REAPER solves this by                            Experimental Analysis, Exploits, and Mitigation Techniques,” in HPCA, 2017.
+testing with numerous data patterns at longer refresh intervals and/or           [10]     Y. Cai et al., “FPGA-Based Solid-State Drive Prototyping Platform,” in FCCM,
+higher temperatures to quickly identify the set of failing cells.                         2011.
+    A scheme that would only refresh each cell right before it is                [11]     Y. Cai et al., “Error Patterns in MLC NAND Flash Memory: Measurement,
+                                                                                          Characterization, and Analysis,” in DATE, 2012.
+about to experience a retention failure is the ideal refresh scheme              [12]     Y. Cai et al., “Threshold Voltage Distribution in MLC NAND Flash Memory:
+for DRAM, but it is very difficult to employ in the field because                         Characterization, Analysis, and Modeling,” in DATE, 2013.
+of numerous complications in DRAM cells. Many works show                         [13]     Y. Cai et al., “Read Disturb Errors in MLC NAND Flash Memory: Characteriza-
+                                                                                          tion, Mitigation, and Recovery,” in DSN, 2015.
+how retention failures also depend on many different variables [40–              [14]     Y. Cai et al., “Data Retention in MLC NAND Flash Memory: Characterization,
+44, 49, 60, 62, 81, 82, 98, 101] and state that it is a very difficult                    Optimization, and Recovery,” in HPCA, 2015.
+problem to find a comprehensive set of failing cells [60, 62, 77].               [15]     Y. Cai et al., “Program Interference in MLC NAND Flash Memory: Characteri-
+Several prior works analyze retention failures in real DRAM de-                           zation, Modeling, and Mitigation,” in ICCD, 2013.
+                                                                                 [16]     Y. Cai et al., “Flash Memory SSD Errors, Mitigation, and Recovery,” in Pro-
+vices [6, 25, 33, 38, 42–44, 49, 56, 62, 81, 86, 93, 95] and propose                      ceedings of the IEEE, to appear in 2017.
+methods to approach benefits of the ideal refresh scheme, but they               [17]     Y. Cai et al., “Flash Correct-and-Refresh: Retention-Aware Error Management
+do not comprehensively develop efficient methods for or explore                           for Increased Flash Memory Lifetime,” in ICCD, 2012.
+the tradeoff space of retention failure profiling. To our knowledge,             [18]     Y. Cai et al., “Error Analysis and Retention-Aware Error Management for NAND
+                                                                                          Flash Memory,” in ITJ, 2013.
+we are the first explore the complex tradeoff space of profiling the             [19]     Y. Cai et al., “Neighbor-Cell Assisted Error Correction for MLC NAND Flash
+failing cells and the first to propose an efficient method for finding                    Memories,” in SIGMETRICS, 2014.
+
+
+                                                                           13
+
+
+===== Page 14 =====
+
+ISCA ’17, June 24-28, 2017, Toronto, ON, Canada                                                                                                           Patel, Kim, Mutlu
+
+
+[20] K. Chandrasekar et al., “Exploiting Expendable Process-margins in DRAMs for            [61] C.-H. Lin et al., “SECRET: Selective Error Correction for Refresh Energy
+     Run-time Performance Optimization,” in DATE, 2014.                                          Reduction in DRAMs,” in ICCD, 2012.
+[21] K. K. Chang, “Understanding and Improving Latency of DRAM-Based Memory                 [62] J. Liu et al., “An Experimental Study of Data Retention Behavior in Modern
+     Systems,” Ph.D. dissertation, Carnegie Mellon University, 2017.                             DRAM Devices: Implications for Retention Time Profiling Mechanisms,” in
+[22] K. K. Chang et al., “Understanding Latency Variation in Modern DRAM Chips:                  ISCA, 2013.
+     Experimental Characterization, Analysis, and Optimization,” in SIGMETRICS,             [63] J. Liu et al., “RAIDR: Retention-Aware Intelligent DRAM Refresh,” in ISCA,
+     2016.                                                                                       2012.
+[23] K. K. Chang et al., “Improving DRAM Performance by Parallelizing Refreshes             [64] S. Liu et al., “Flikker: Saving DRAM Refresh-power Through Critical Data
+     with Accesses,” in HPCA, 2014.                                                              Partitioning,” in ASPLOS, 2012.
+[24] K. K. Chang et al., “Low-cost Inter-linked Subarrays (LISA): Enabling Fast             [65] Y. Luo et al., “WARM: Improving NAND Flash Memory Lifetime with Write-
+     Inter-subarray Data Movement in DRAM,” in HPCA, 2016.                                       Hotness Aware Retention Management,” in MSST, 2015.
+[25] K. K. Chang et al., “Understanding Reduced-Voltage Operation in Modern                 [66] Y. Luo et al., “Enabling Accurate and Practical Online Flash Channel Modeling
+     DRAM Devices: Experimental Characterization, Analysis, and Mechanisms,” in                  for Modern MLC NAND Flash Memory,” in JSAC, 2016.
+     SIGMETRICS, 2017.                                                                      [67] Y. Luo et al., “Characterizing Application Memory Error Vulnerability to Opti-
+[26] Z. Cui et al., “DTail: A Flexible Approach to DRAM Refresh Management,” in                  mize Datacenter Cost via Heterogeneous-reliability Memory,” in DSN, 2014.
+     SC, 2014.                                                                              [68] J. A. Mandelman et al., “Challenges and Future Directions for the Scaling of
+[27] P. G. Emma et al., “Rethinking Refresh: Increasing Availability and Reducing                Dynamic Random-access Memory (DRAM),” in IBM JRD, 2002.
+     Power in DRAM for Cache Applications,” in MICRO, 2008.                                 [69] J. Meza et al., “A Large-scale Study of Flash Memory Errors in the Field,” in
+[28] S. Eyerman and L. Eeckhout, “System-level Performance Metrics for Multipro-                 SIGMETRICS, 2015.
+     gram Workloads,” in IEEE Micro, 2008.                                                  [70] J. Meza et al., “Revisiting Memory Errors in Large-scale Production Data
+[29] A. Fukami et al., “Improving the Reliability of Chip-Off Forensic Analysis of               Centers: Analysis and Modeling of New Trends from the Field,” in DSN, 2015.
+     NAND Flash Memory Devices,” in Digital Investigation, 2017.                            [71] R. Micheloni et al., “Apparatus and Method Based on LDPC Codes for Adjusting
+[30] M. Ghosh and H.-H. S. Lee, “Smart Refresh: An Enhanced Memory Controller                    a Correctable Raw Bit Error Rate Limit in a Memory System,” US Patent
+     Design for Reducing Energy in Conventional and 3D Die-stacked DRAMs,” in                    9,092,353. 2015.
+     MICRO, 2007.                                                                           [72] Y. Mori et al., “The Origin of Variable Retention Time in DRAM,” in IEDM,
+[31] T. Hamamoto et al., “On the Retention Time Distribution of Dynamic Random                   2005.
+     Access Memory (DRAM),” in TED, 1998.                                                   [73] J. Mukundan et al., “Understanding and Mitigating Refresh Overheads in High-
+[32] H. Hassan et al., “ChargeCache: Reducing DRAM Latency by Exploiting Row                     density DDR4 DRAM Systems,” in ISCA, 2013.
+     Access Locality,” in HPCA, 2016.                                                       [74] P. Nair et al., “A Case for Refresh Pausing in DRAM Memory Systems,” in
+[33] H. Hassan et al., “SoftMC: A Flexible and Practical Open-source Infrastructure              HPCA, 2013.
+     for Enabling Experimental DRAM Studies,” in HPCA, 2017.                                [75] P. J. Nair et al., “Refresh Pausing in DRAM Memory Systems,” in TACO, 2014.
+[34] C.-S. Hou et al., “An FPGA-based Test Platform for Analyzing Data Retention            [76] P. J. Nair et al., “ArchShield: Architectural Framework for Assisting DRAM
+     Time Distribution of DRAMs,” in VLSI-DAT, 2013.                                             Scaling by Tolerating High Error Rates,” in ISCA, 2013.
+[35] C. Isen and L. John, “ESKIMO: Energy Savings Using Semantic Knowledge of               [77] Y. Nakagome et al., “The Impact of Data-line Interference Noise on DRAM
+     Inconsequential Memory Occupancy for DRAM Subsystem,” in MICRO, 2009.                       Scaling,” in JSSC, 1988.
+[36] ITRS, “International Technology Roadmap for Semiconductors Executive Sum-              [78] I. Narayanan et al., “SSD Failures in Datacenters: What, When and Why?” in
+     mary,” 2013, http://www.itrs2.net/2013-itrs.html.                                           SIGMETRICS, 2016.
+[37] JEDEC, “Low Power Double Data Rate 4 (LPDDR4) SDRAM Specification,”                    [79] T. Ohsawa et al., “Optimizing the DRAM Refresh Count for Merged
+     JEDEC Solid State Technology Association, 2014.                                             DRAM/logic LSIs,” in ISLPED, 1998.
+[38] M. Jung et al., “Reverse Engineering of DRAMs: Row Hammer with Crosshair,”             [80] K. Patel et al., “Energy-Efficient Value-based Selective Refresh for Embedded
+     in MEMSYS, 2016.                                                                            DRAMs,” in PATMOS, 2005.
+[39] M. Jung et al., “Optimized Active and Power-down Mode Refresh Control in               [81] M. K. Qureshi et al., “AVATAR: A Variable-retention-time (VRT) Aware Refresh
+     3D-DRAMs,” in VLSI-SoC, 2014.                                                               for DRAM Systems,” in DSN, 2015.
+[40] M. Jung et al., “Omitting Refresh: A Case Study for Commodity and Wide I/O             [82] P. J. Restle et al., “DRAM Variable Retention Time,” in IEDM, 1992.
+     DRAMs,” in MEMSYS, 2015.                                                               [83] S. Rixner et al., “Memory Access Scheduling,” in ISCA, 2000.
+[41] U. Kang et al., “Co-architecting Controllers and DRAM to Enhance DRAM                  [84] K. Saino et al., “Impact of Gate-induced Drain Leakage Current on the Tail
+     Process Scaling,” in The Memory Forum, 2014.                                                Distribution of DRAM Data Retention Time,” in IEDM, 2000.
+[42] S. Khan et al., “The Efficacy of Error Mitigation Techniques for DRAM Reten-           [85] B. Schroeder et al., “Flash Reliability in Production: The Expected and the
+     tion Failures: A Comparative Experimental Study,” in SIGMETRICS, 2014.                      Unexpected.” in FAST, 2016.
+[43] S. Khan et al., “PARBOR: An Efficient System-Level Technique to Detect                 [86] B. Schroeder et al., “DRAM Errors in the Wild: a Large-scale Field Study,” in
+     Data-Dependent Failures in DRAM,” in DSN, 2016.                                             SIGMETRICS, 2009.
+[44] S. Khan et al., “A Case for Memory Content-Based Detection and Mitigation of           [87] V. Seshadri, “Simple DRAM and Virtual Memory Abstractions to Enable Highly
+     Data-Dependent Failures in DRAM,” in CAL, 2016.                                             Efficient Memory Systems,” Ph.D. dissertation, Carnegie Mellon University,
+[45] J. Kim and M. C. Papaefthymiou, “Dynamic Memory Design for Low Data-                        2016.
+     retention Power,” in PATMOS, 2000.                                                     [88] V. Seshadri et al., “RowClone: Fast and Energy-Efficient In-DRAM Bulk Data
+[46] J. Kim and M. C. Papaefthymiou, “Block-based Multiperiod Dynamic Memory                     Copy and Initialization,” in MICRO, 2013.
+     Design for Low Data-retention Power,” in TVLSI, 2003.                                  [89] V. Seshadri et al., “Buddy-RAM: Improving the Performance and Efficiency of
+[47] K. Kim and J. Lee, “A New Investigation of Data Retention Time in Truly                     Bulk Bitwise Operations Using DRAM,” in arXiv, 2016.
+     Nanoscaled DRAMs,” in EDL, 2009.                                                       [90] V. Seshadri et al., “Gather-scatter DRAM: In-DRAM Address Translation to
+[48] Y. Kim, “Architectural Techniques to Enhance DRAM Scaling,” Ph.D. disserta-                 Improve the Spatial Locality of Non-unit Strided Accesses,” in MICRO, 2015.
+     tion, Carnegie Mellon University, 2015.                                                [91] A. Snavely and D. M. Tullsen, “Symbiotic Jobscheduling for a Simultaneous
+[49] Y. Kim et al., “Flipping Bits in Memory Without Accessing Them: An Experi-                  Mutlithreading Processor,” in ASPLOS, 2000.
+     mental Study of DRAM Disturbance Errors,” in ISCA, 2014.                               [92] V. Sridharan et al., “Memory Errors in Modern Systems: The Good, the Bad,
+[50] Y. Kim et al., “ATLAS: A Scalable and High-Performance Scheduling Algorithm                 and the Ugly,” in ASPLOS, 2015.
+     for Multiple Memory Controllers,” in HPCA, 2010.                                       [93] V. Sridharan and D. Liberty, “A Study of DRAM Failures in the Field,” in SC,
+[51] Y. Kim et al., “Thread Cluster Memory Scheduling: Exploiting Differences in                 2012.
+     Memory Access Behavior,” in MICRO, 2010.                                               [94] J. Stuecheli et al., “Elastic Refresh: Techniques to Mitigate Refresh Penalties in
+[52] Y. Kim et al., “A Case for Exploiting Subarray-level Parallelism (SALP) in                  High Density Memory,” in MICRO, 2010.
+     DRAM,” in ISCA, 2012.                                                                  [95] R. K. Venkatesan et al., “Retention-aware Placement in DRAM (RAPID): Soft-
+[53] Y. Kim et al., “Ramulator: A Fast and Extensible DRAM Simulator,” in CAL,                   ware Methods for Quasi-non-volatile DRAM,” in HPCA, 2006.
+     2015.                                                                                  [96] J. Wang et al., “ProactiveDRAM: A DRAM-initiated Retention Management
+[54] D. Lee et al., “Adaptive-latency DRAM: Optimizing DRAM Timing for the                       Scheme,” in ICCD, 2014.
+     Common-case,” in HPCA, 2015.                                                           [97] Y. Wang et al., “RADAR: A Case for Retention-aware DRAM Assembly and
+[55] D. Lee, “Reducing DRAM Latency at Low Cost by Exploiting Heterogeneity,”                    Repair in Future FGR DRAM Memory,” in DAC, 2015.
+     Ph.D. dissertation, Carnegie Mellon University, 2016.                                  [98] C. Weis et al., “Retention Time Measurements and Modelling of Bit Error Rates
+[56] D. Lee et al., “Design-Induced Latency Variation in Modern DRAM Chips: Char-                of Wide I/O DRAM in MPSoCs,” in DATE, 2015.
+     acterization, Analysis, and Latency Reduction Mechanisms,” in SIGMETRICS,              [99] C. Weis et al., “Thermal Aspects and High-Level Explorations of 3D Stacked
+     2017.                                                                                       DRAMs,” in ISVLSI, 2015.
+[57] D. Lee et al., “Tiered-latency DRAM: A Low Latency and Low Cost DRAM                  [100] B. Wicht et al., “Yield and Speed Optimization of a Latch-type Voltage Sense
+     Architecture,” in HPCA, 2013.                                                               Amplifier,” in JSSC, 2004.
+[58] D. Lee et al., “Decoupled Direct Memory Access: Isolating CPU and IO Traffic          [101] D. S. Yaney et al., “A Meta-stable Leakage Phenomenon in DRAM Charge
+     by Leveraging a Dual-Data-Port DRAM,” in PACT, 2015.                                        Storage-Variable Hold Time,” in IEDM, 1987.
+[59] M. J. Lee and K. W. Park, “A Mechanism for Dependence of Refresh Time on              [102] W. K. Zuravleff and T. Robinson, “Controller for a Synchronous DRAM that
+     Data Pattern in DRAM,” in EDL, 2010.                                                        Maximizes Throughput by Allowing Memory Requests and Commands to be
+[60] Y. Li et al., “DRAM Yield Analysis and Optimization by a Statistical Design                 Issued Out of Order,” US Patent 5,630,096. 1997.
+     Approach,” in CSI, 2011.
+
+
+
+                                                                                      14

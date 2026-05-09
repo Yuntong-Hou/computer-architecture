@@ -1,0 +1,1356 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/parbor-efficient-system-level-test-for-DRAM-failures_dsn16.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/parbor-efficient-system-level-test-for-DRAM-failures_dsn16.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+                    PARBOR: An Efficient System-Level Technique
+                     to Detect Data-Dependent Failures in DRAM
+                                  Samira Khan?          Donghyuk Lee†‡                 Onur Mutlu∗†
+                         ? University of Virginia   † Carnegie Mellon University        ‡ Nvidia           ∗ ETH Zürich
+
+
+
+                           Abstract                                      DRAM failure detection. A large fraction of DRAM failures oc-
+                                                                         cur due to interference between cells located in close proximity:
+   System-level detection and mitigation of DRAM failures of-            some cells fail when specific patterns are stored in neighboring
+fer a variety of system enhancements, such as better reliability,        cells, as shown in prior works [18, 35, 39, 43, 45, 47, 64]. We
+scalability, energy, and performance. Unfortunately, system-             call this phenomenon data-dependent failures. These failures
+level detection is challenging for DRAM failures that depend on          can be detected by testing neighboring cells with a data pattern
+the data content of neighboring cells (data-dependent failures).         that induces the maximum interference between the cells, which
+DRAM vendors internally scramble/remap the system-level ad-              we call the worst-case data pattern. Detecting data-dependent
+dress space. Therefore, testing data-dependent failures using            failures at the system level is particularly challenging: DRAM
+neighboring system-level addresses does not actually test the            vendors internally scramble the address space, and therefore,
+cells that are physically adjacent. In this work, we argue that          adjacent bit addresses in the system (i.e., system addresses) do
+one promising way to uncover data-dependent failures in the              not map to adjacent cells in the physical DRAM cell arrays
+system is to determine the location of physically neighboring            (i.e., physical addresses). This mapping of system address to
+cells in the system address space. Unfortunately, if done naively,       physical address, referred to as address mapping, is different
+such a test takes 49 days to detect neighboring addresses even           for each vendor and each chip generation (depending on the
+in a single memory row, making it infeasible in real systems.            internal design of chips), making it difficult to expose it to the
+   We develop PARBOR, an efficient system-level technique that           system. Without precise knowledge of the address mapping, the
+determines the locations of the physically neighboring DRAM              worst-case data pattern cannot be applied to induce the maxi-
+cells in the system address space and uses this information to           mum interference in physically neighboring cells, since adjacent
+detect data-dependent failures. To our knowledge, this is the            bit addresses at the system level might not map to cells that are
+first work that solves the challenge of detecting data-dependent         physically adjacent.
+failures in DRAM in the presence of DRAM-internal scram-                    Figure 1 shows one example of address scrambling. If the
+bling of system-level addresses. We experimentally demonstrate           system address and physical address are mapped linearly, data-
+the effectiveness of PARBOR using 144 real DRAM chips from               dependent failure in the cell at the system-level bit address X
+three major vendors. Our experimental evaluation shows that              can be detected by writing the worst-case pattern at system-
+PARBOR 1) detects neighboring cell locations with only 66-90             level bit addresses X-1, X, and X+1. Unfortunately, due to
+tests, a 745,654X reduction compared to the naive test, and 2)           scrambled mapping of system addresses to physical addresses,
+uncovers 21.9% more failures compared to a random-pattern                physically neighboring cells can have completely different sys-
+test that is unaware of the neighbor cell locations. We introduce        tem addresses. In this example, the left physical neighbor is
+a new mechanism that utilizes PARBOR to reduce refresh rate              located at system address X+1, the right physical neighbor at
+based on the data content of memory locations, thereby improv-           X+5.
+                                                                                           Left Victim Right                 Left Victim Right
+ing system performance and efficiency. We hope that our fast
+                                                                                            0     1    0                      0     1    0
+and efficient system-level detection technique enables other new
+                                                                             LINEAR                              SCRAMBLED
+ideas and mechanisms that improve the reliability, performance,              MAPPING       X−1 X X+1             MAPPING     X+1 X X+5
+and energy efficiency of DRAM-based memory systems.
+                                                                          Figure 1: Scrambled mapping of system address to physical
+1. Introduction                                                             In this work, we show that one way to uncover data-dependent
+   The tremendous growth in DRAM capacity over the last few              DRAM failures at the system level is to determine the location
+decades resulted from the continued scaling of DRAM process              of physically neighboring cells in the system address space
+technology. By making the cell dimensions smaller, more cells            and use that information to devise test patterns that ensure that
+can be packed in the same die area, enabling more capacity at            the physically neighboring cells are tested with the worst-case
+the same cost. Unfortunately, scaling cells to smaller technology        data pattern. This is a promising approach considering that
+nodes introduces major reliability issues in DRAM [34, 37, 39,           each generation of chips can have different address mappings,
+46, 47, 52, 56, 57, 58, 60, 64]. In order to enable reliable DRAM        and a technique that can learn the mapping will be generally
+in future memory systems, prior works proposed to detect and             applicable to any system with any chip. As a cell is primar-
+mitigate DRAM failures in the field, while the system is under           ily affected by two immediate neighbor cells [1, 60], such a
+operation. Such system-level detection of DRAM failures has              system-level mechanism should detect the locations of these
+three advantages. First, it can enable better scaling of DRAM            immediate neighbors. Unfortunately, naively ensuring that all
+by manufacturing smaller and unreliable cells, but providing             two physically neighboring cells are covered in testing requires
+reliability guarantees by detecting and mitigating failures at the       exhaustively testing every combination of two bit addresses in a
+system level [6, 35, 47, 51, 59, 62]. Second, it can provide             row, an O(n2 ) test where n is the number of cells, which takes
+better reliability against failures that escape the manufacturing        49 days of testing even for a single row with 8K cells. As cells
+tests [30, 39, 53, 67, 74, 75]. Third, it can improve system             get smaller and more vulnerable to cell-to-cell interference, it
+performance and power/energy consumption by enabling the                 is likely that potentially more neighboring cells will affect each
+system to reduce the access latency [18, 27, 43] and refresh             other in the future [2], increasing the test time to 1115 years
+rate [46, 48, 62, 80] of robust DRAM cells, while maintaining a          for three neighbors and 9.1M years for four neighbors. Clearly,
+higher latency and higher refresh rate for likely-to-fail cells.         it is not feasible to run tests for such a long time to uncover
+   Even though a system-level detection and mitigation tech-             data-dependent failures.
+nique offers better reliability, performance, and energy effi-              Our goal in this work is to propose a fast and efficient mech-
+ciency, such a technique faces a major unresolved challenge in           anism to determine the locations of the physically neighboring
+
+
+                                                                     1
+
+
+===== Page 2 =====
+
+cells in the system address space. Doing so would help to detect              We show that PARBOR enables not only prior optimizations
+data-dependent failures in the system and thus would enable                that rely on system-level detection of data-dependent failures,
+techniques that improve DRAM reliability, latency, and energy,             but also new system-level optimizations that improve the reliabil-
+and aid DRAM technology scaling.                                           ity, performance, and energy efficiency of DRAM. We propose
+   To this end, we develop an efficient test method based on two           and evaluate one such mechanism that improves DRAM perfor-
+key ideas. The first key idea leverages the observation that cells         mance by reducing refresh operations. We call this new refresh
+exhibit variability in the way they get affected by cell-to-cell           reduction technique data content-based refresh (DC-REF). The
+interference. Even though cells get affected by both left and right        key idea of DC-REF is to employ a high refresh rate only in rows
+neighbors, some cells are strongly coupled to only one neighbor            where the data content of the application matches the worst-case
+(due to process variation) and fail when the data content of only          pattern that causes failures. Our evaluation shows that DC-REF
+one neighbor changes. We call these cells strongly coupled cells.          reduces the number of refreshes by 73% and improves perfor-
+Figure 2 shows the variability in coupling in three different              mance by 18% for a system with 32 Gbit DRAM chips and 8
+cells (A, B, C, each marked as Victim). Cells A and B are                  cores running a wide range of applications.
+strongly coupled cells: they fail depending on the content of                 This paper makes the following contributions:
+only the left or the right neighbor, respectively. Cell C is a               • This is the first work to propose an efficient system-level
+weakly coupled cell: it fails only when both neighbors contain                  mechanism for locating the addresses of neighboring cells
+the worst-case data pattern. Leveraging our observation, our                    in DRAM devices. Our mechanism, PARBOR, reduces
+key idea to reduce the test time is to locate the address of only               the test time for such detection by exploiting the notion of
+one neighboring cell of strongly coupled cells. This approach                   strongly coupled cells and recursively testing multiple rows
+reduces the test time from O(n2 ) to O(n), as each address bit                  in parallel. We use the addresses of physically neighboring
+needs to be tested linearly once to determine the address that                  cells to devise a new test methodology that can efficiently
+causes the data-dependent failure in the strongly coupled cell.                 uncover data-dependent failures.
+                                                                             • We experimentally demonstrate that PARBOR can detect
+        Left Victim Right             Left Victim Right  Left Victim Right      the neighboring cell locations with a small number of tests.
+                                                                                Using an FPGA-based infrastructure, we show that PAR-
+         0 A                                 B 0           0 C 0                BOR detects neighboring locations with only 66 − 90 tests
+                                                                                in 144 real DRAM chips from three major manufacturers, a
+                       (a) Strongly Coupled             (b) Weakly Coupled      90X and 745,654X reduction compared to optimized/naive
+     Figure 2: Strong vs. weak coupling of neighboring cells                    tests, with respectively O(n) and O(n2 ) complexity.
+                                                                             • We show that PARBOR uncovers, on average, 21.9% more
+   However, detecting the address of only one neighbor can have                 failures than a test with random data patterns that is unaware
+a negative effect on the coverage of failures for weakly coupled                of the locations of neighboring cells.
+cells, as these cells depend on the content of both neighbors
+instead of one. Our second key idea enables us to detect both                • We show that PARBOR enables new mechanisms to improve
+neighboring locations with multiple simple linear tests. The idea               future memory systems. Based on the detected patterns that
+is based on the observation that internal DRAM organization                     cause failures in cells, we propose a data content-based
+is mostly regular and repetitive, with an abundance of paral-                   refresh minimization mechanism, DC-REF, which improves
+lelism in rows. Due to the regularity in internal DRAM address                  performance by 18% for a system with 32 Gbit DRAM chips
+mapping, the distance of the left neighbor in the system address                and 8 cores over a wide range of applications.
+space is the same for many cells in multiple rows. Ditto for 2. Background
+the distance of the right neighbor. And, due to randomness in
+process variation, some strongly coupled cells fail based on the              We provide necessary background on DRAM organization
+content of the left neighbor and some on the right neighbor. By and cell operation to understand the causes of data-dependent
+running parallel tests in different rows simultaneously, we can failures. We refer the reader to other works for more detail on
+detect the system address distance of both the left neighbor and the DRAM system and its operation [16, 38, 42, 43, 44, 46, 69].
+the right neighbor for different strongly coupled cells, which 2.1. DRAM Organization
+together serve as the distances of the left and right neighbors for           Figure 3a shows the high level organization of DRAM. A
+weakly coupled cells (since internal DRAM address mapping DRAM module is connected to the memory controller through
+is very regular across rows). Consequently, it is possible to a channel and each module is hierarchically organized into mul-
+estimate the addresses of all neighboring cells by testing multi- tiple ranks, chips, and banks. For example, a typical DRAM
+ple cells in different rows simultaneously and aggregating the module can have one rank with 8 chips, where each chip consists
+distances of the neighboring locations found in those rows.                of 8 banks. While accessing a 64-byte cache line from DRAM,
+   Based on these two key ideas, we propose PArallel Recursive each chip transfers 64 bits of data in 8 bursts.
+neighBOR (PARBOR) testing, which detects the locations of
+physically neighboring cells efficiently by recursively testing
+                                                                                                                                          Wordline
+multiple rows in parallel. We demonstrate the effectiveness of
+                                                                                                       Bank 7
+                                                                              Controller
+
+
+
+
+                                                                                                        Bank 1
+                                                                               Memory
+
+
+
+
+                                                                                                         Bank 0
+
+
+
+
+                                                                                                                                   Capacitor
+
+
+
+
+PARBOR by evaluating it using real DRAM chips. Using an
+                                                                                                                                               Bitline
+
+
+
+
+                                                                                                     ...
+                                                                                                                                          Transistor
+FPGA-based infrastructure, we are able to find the locations of                       Chip 0  Chip 1
+                                                                                                             ...
+                                                                                                         Chip 7
+physically neighboring cells in 144 real DRAM chips manufac-                                   Rank              Sense Amplifier
+                                                                                                                                              Cell
+tured by three major vendors with only 66 − 90 tests, a 90X and                      (a) DRAM Hierarchy                    (b) Cell Array
+745,654X reduction, respectively, compared to tests with O(n)
+and O(n2 ) complexity. Using this neighboring cell location in-                                Figure 3: DRAM organization
+formation, we devise a new test methodology, which performs
+only a small number of test iterations to uncover data dependent              DRAM banks are organized as multiple 2D arrays of cells.
+failures in the entire chip. PARBOR uncovers 21.9% more fail- Figure 3b shows a cell array within a bank, and sense amplifiers
+ures than a test with random data patterns that is unaware of the that are used to latch data values read from cells. A cell consists
+locations of neighboring cells in 144 tested DRAM chips.                   of a capacitor and a transistor. The capacitor stores data as
+
+
+                                                                         2
+
+
+===== Page 3 =====
+
+                                                                                    Left Victim Right                                                                         Left Victim Right
+
+
+
+
+                          Cell
+
+
+
+
+                                                                                                           Cell
+
+
+
+
+                                                                                                                                                                                                     Cell
+     0       Q       0                                               0    Q    0      0       Q       0                                                          0   0   0      0       Q       0                                                   0   0       0
+
+
+
+
+                                                                                                                                2 VDD +δ -ε
+                                                                                                                     ¶
+
+
+
+
+                                                                                                                                                                                                                          2 VDD +δ
+                                                                                                                                                  2 VDD -δ
+
+
+
+
+                                                                                                                                                                                                                                     2 VDD -δ
+                                                                                                                                                                                                               2 VDD -δ
+                                                                                                                                                                                                                                                    ·
+
+
+
+
+                                               2 VDD +δ
+                                                                                                                                                             ·
+
+
+
+                                    2 VDD -δ
+
+
+
+
+                                                          2 VDD -δ
+
+
+
+
+                                                                                                                     2 VDD -δ
+
+
+
+
+                                                                                                                                                                                     2 VDD
+
+
+                                                                                                                                                                                             2 VDD
+                                                                                                   2 VDD
+
+
+
+
+                                                                                                                                                                             2 VDD
+                                                                                   2 VDD
+
+
+                                                                                           2 VDD
+                                                                         VDD
+                          Bitline
+
+
+
+
+                                                                                                           Bitline
+
+
+
+
+                                                                                                                                                                                                     Bitline
+
+
+
+
+                                                                                                                                                                                                                                                0
+
+                                                                                                                                                                                                                                                        0
+
+                                                                                                                                                                                                                                                                0
+                                                                                                                                                                 0
+
+                                                                                                                                                                     0
+
+                                                                                                                                                                         0
+  2 VDD
+
+
+          2 VDD
+
+
+                  2 VDD
+
+
+
+
+                                                                     0
+
+
+
+                                                                               0
+
+
+
+
+                                                                                                                                                                                     1
+
+
+                                                                                                                                                                                             1
+                                                                                                   1
+
+
+
+
+                                                                                                                                1
+
+
+                                                                                                                                                  1
+
+
+
+
+                                                                                                                                                                             1
+
+
+
+
+                                                                                                                                                                                                                                     1
+                                                                                                                                              ¸                                                                                                             ¸
+
+
+
+
+                                                                                   1
+
+
+                                                                                           1
+
+
+
+
+                                                                                                                                                                                                                          1
+                                                                                                                                                                                                               1
+  1
+
+
+          1
+
+
+                  1
+
+                                                                                                                                                                                                                                                ¶
+                                    1
+
+
+                                               1
+
+
+                                                          1
+
+
+
+
+                                                                                                                     1
+                          SA
+
+
+
+
+                                                                                                           SA
+
+
+
+
+                                                                                                                                                                                                     SA
+                                                                     0     1   0                                                                                 0   0   0                                                                          0   0       0
+   À P RECHARGED Á C HARGE S HARING Â A MPLIFICATION                               À P RECHARGED Á C HARGE S HARING Â A MPLIFICATION                                          À P RECHARGED Á C HARGE S HARING Â A MPLIFICATION
+
+                               (a) Cell operation                                              (b) Failure during charge sharing                                                (c) Failure during sensing and amplification
+
+                                                                          Figure 4: Example data-dependent failures due to coupling
+charge, and the transistor acts as a switch to the capacitor. While                                                                           ing the CHARGE SHARING phase. A capacitor starts to build up
+accessing a row, all cells in the row are selected in parallel using                                                                          charge in the presence of a voltage difference between its two
+a wire called wordline. An individual cell in each column is                                                                                  nodes, but remains quiescent otherwise. In the presence of a
+accessed through a vertical wire called bitline.                                                                                              voltage difference in neighboring bitlines, coupling capacitance
+2.2. DRAM Cell Operation                                                                                                                      between adjacent bitlines builds up, providing an extra path for
+                                                                                                                                              charge flow that perturbs the voltage in bitlines. Figure 4b de-
+   Figure 4a describes DRAM cell operation in detail. A cell is                                                                               picts this effect, where we show three neighboring cells in a row.
+represented as a circle and a sense amplifier is represented as a                                                                             The middle cell is the victim that is in charged state (Q), and the
+rectangular box. We represent the amount of charge in grayscale                                                                               two adjacent cells (left and right neighbors) are discharged (0).
+where white depicts the discharged state, 0 (data value ‘0’), dark                                                                            A data-dependent failure during the CHARGE SHARING phase
+gray the charged state, Q (data value ‘1’), and light gray the                                                                                occurs in three steps:
+quiescent state. DRAM cell operation can be explained with                                                                                       ¶ Once the wordline is raised, charge flows out of the victim
+three major steps:
+   À P RECHARGED . Initially, each cell in a bank is in charged                                                                               cell (Q), perturbing the bitline voltage to 12 VDD + δ . At the same
+(Q) or discharged (0) state, depending on the data value stored                                                                               time, charge flows from the bitline to discharged neighbor cells
+in the cell. Bitlines are maintained at a voltage level of 12 VDD , to                                                                        (0), perturbing the neighboring bitlines towards 0 ( 21 VDD − δ ).
+enable access to the bank.                                                                                                                       · The coupling capacitor between the victim and neighbors
+   Á C HARGE S HARING . Activation of a row raises the voltage                                                                                now experiences the voltage 12 VDD +δ at one node and 12 VDD −δ
+in the wordline, connecting the cell capacitor to the bitline.                                                                                at the other. Due to the increasing voltage difference between the
+Depending on whether the cell is charged (Q) or discharged (0),                                                                               neighboring bitlines, the coupling capacitance starts to increase.
+charge flows out of or into the cell, slightly perturbing the bitline                                                                            ¸ As a result, some charge from the victim bitline flows
+voltage from 12 VDD to 12 VDD ± δ .                                                                                                           towards the parasitic capacitor, decreasing the bitline voltage
+   Â S ENSING AND A MPLIFICATION . After the charge sharing                                                                                   from 12 VDD + δ to 12 VDD + δ − ε. If the voltage decreases to the
+phase, the sense amplifier “senses” the voltage perturbation                                                                                  point that the sense amplifier senses the voltage perturbation as
+towards VDD or 0 in its corresponding bitlines and starts to                                                                                  data value ‘0’, it drives the victim bitline towards 0 instead of
+“amplify” this voltage in the same direction. Data values can be                                                                              VDD , resulting in a failure in the victim cell.
+read from the sense amplifiers during this time. A cell remains                                                                                  Note that this failure is data-dependent because it would not
+in quiescent state during this transition and is restored to its                                                                              occur if the adjacent cells have the same initial data value. In
+original state once the bitline voltage stabilizes to VDD or 0.                                                                               that case, all neighboring bitlines experience similar changes in
+   Once read or write accesses to the row are complete, the bank                                                                              bitline voltage during the charge sharing phase (either 12 VDD + δ
+is brought back to the P RECHARGED state: the cell capacitor
+                                                                                                                                              or 12 VDD −δ for all bitlines). The coupling capacitor experiences
+and sense amplifiers are disconnected from the bitlines, and the
+                                                                                                                                              minimal voltage difference, and thus there is no effect on cell
+bitlines are driven back to 12 VDD .                                                                                                          access.
+   So far, we discussed cell operation without considering inter-                                                                                During S ENSING AND A MPLIFICATION . The time-delay
+ference among cells. We next discuss the impact of data values                                                                                in sensing two adjacent bitlines is responsible for data-dependent
+of neighboring cells on cell operation.                                                                                                       failures during the SENSING AND AMPLIFICATION phase. In the
+2.3. Data-Dependent Failures: Causes and Examples                                                                                             presence of a sudden voltage change in one node of a capacitor,
+   Adjacent cells can interfere with (i.e., disturb) each other,                                                                              the coupling effect changes the voltage of the other node in
+depending on the values (i.e., charge) stored in them. A bit                                                                                  the same direction. During SENSING AND AMPLIFICATION,
+failure occurs when a cell is disturbed enough to alter the data                                                                              due to imperfect timing, if one bitline is sensed and amplified
+value stored in the cell. We call such a failure that is a func-                                                                              before the neighbors are sensed, the sudden change in the bitline
+tion of the data values of neighboring cells as data-dependent                                                                                voltage perturbs the neighboring bitlines, which can lead to
+failure. The cell experiencing the failure is the victim cell. A                                                                              a data-dependent failure. Figure 4c depicts this effect, where
+data-dependent failure is caused by coupling between adjacent                                                                                 the middle cell is the victim in charged state (Q), and the two
+bitlines due to parasitic coupling capacitance [1, 45, 47, 60, 64].                                                                           adjacent cells (left and right neighbors) are discharged (0). Once
+This capacitance provides an indirect path between neighboring                                                                                the wordline is raised, voltages in the bitlines are perturbed to
+                                                                                                                                              1
+cells, which affects cell operation and hence value. Here, we                                                                                 2 VDD ± δ depending on the initial state of the cells. A data-
+discuss the impact of the coupling capacitance between adjacent                                                                               dependent failure during the SENSING AND AMPLIFICATION
+bitlines on data-dependent failures in an open bitline DRAM                                                                                   phase occurs in three steps:
+architecture [66, 68].1 We examine data-dependent failures in                                                                                    ¶ Due to time delay, the two neighboring bitlines are sensed
+two groups based on the affected stage of cell operation.                                                                                     and amplified towards 0 before the victim bitline is sensed.
+   During C HARGE S HARING . The voltage difference in two                                                                                       · As a result, the coupling capacitor between the victim and
+adjacent bitlines is responsible for data-dependent failures dur-                                                                             the neighbor experiences a sudden voltage change towards 0 in
+                                                                                                                                              the node connected to the neighbor bitline. Consequently, the
+   1 All major DRAM vendors use the open bitline architecture, as it enables                                                                  other node of the capacitor connected to the victim bitline also
+higher DRAM density.                                                                                                                          experiences a similar voltage change towards 0.
+
+
+                                                                                                                                      3
+
+
+===== Page 4 =====
+
+   ¸ When the sense amplifier finally starts to sense the victim             cells) in multiple cell arrays. The data of the activated row gets
+bitline, it senses a value less than 12 VDD + δ and can wrongly              latched in the local sense-amplifiers (LSA). As each LSA’s width
+sense it as data value ‘0’, resulting in a failure in the victim cell.       is approximately twice the width of a cell, data from a row is
+   This failure is data-dependent because it would not occur                 latched in two different rows of LSAs [17, 68], one at the top
+if the adjacent cells have the same initial data value. In this              and the other at the bottom of each cell array. Second, upon a
+case, all the bitlines are driven in the same direction during the           read command, data is transferred from the LSAs to global sense-
+sensing and amplification phase. Therefore, voltage in the cou-              amplifiers (GSA) via long global bitlines. Each bank contains
+pling capacitor increases or decreases the voltage of all bitlines           only a small number (64 – 128) of global bitlines and GSAs due
+towards the original values of the cells. Thus, neighboring cells            to their large width and hence high cost. Because of this large
+with the same content do not lead to data-dependent failures.                mismatch in the number of LSAs and GSAs, only a fraction of
+   Manufacturing Tests for Data-Dependent Failures. Man-                     data from the LSAs can be transferred to GSAs at a given time.
+ufacturers exhaustively test DRAM cells for data-dependent                                                                          MUX
+failures after production. First, they determine the data pattern                                                                   Top LSA Row
+that introduces maximum cell-to-cell interference through the                                    +1 X +5 +4           +3 +2 +7 +6   Cells
+coupling capacitor, which can lead to a data-dependent fail-
+                                                                                                                                    Bottom LSA Row
+ure [3, 4, 19, 33, 36, 70, 71, 78]. This pattern is the worst-case
+pattern. Second, they test the chips with the worst-case pattern,
+                                                                                                                                    GSA
+while the cells store the minimum possible amount of charge,                    Burst0      X      X+1        X+2        X+3
+to make sure that cells are more vulnerable to failure. DRAM                    Burst1    X+4      X+5        X+6        X+7
+                                                                                                                                     I/O
+cells leak charge gradually and are refreshed periodically over
+                                                                                                Data Bits in Bursts
+time. A cell contains the minimum amount of charge just before
+refresh and is thus more vulnerable to data-dependent failures                           Figure 5: An example of address scrambling
+just before refresh [3, 35, 43, 47, 83]. Manufacturers test for
+data-dependent failures by writing the worst-case pattern in the               Depending on how (i) cells are connected to LSAs and (ii)
+cells and waiting for the end of the refresh interval before access-         LSAs are connected to GSAs, different address mappings are
+ing the cells again. A data-dependent failure is detected if the             possible in a DRAM chip. Figure 5 illustrates one example map-
+data value read from a cell does not match the value originally              ping. The system writes to bit addresses X to X+7 in two bursts
+written into the cell. The chip is either discarded or repaired if           through the I/O pins. The number in a cell in the figure repre-
+there is any data-dependent failure.                                         sents the address of that cell as a difference from address X (e.g.,
+                                                                             X: X+0, +7: X+7). When the first burst of data arrives at the
+3. Challenges of System-Level Detection                                      IO pins, the data first gets distributed into two groups (X, X+1),
+   of Data-Dependent Failures                                                (X+2, X+3), where each group is buffered in GSAs connected
+                                                                             to different cell arrays. Then, depending on the way top and
+   Traditionally, DRAM chips are tested for data-dependent                   bottom LSAs are connected to cells, data bits get swapped when
+failures at the manufacturing time. However, data-dependent                  transferred from LSAs to cells (X, X+1 to X+1, X). Similarly,
+failures are becoming more difficult to test for as DRAM cell                data in the second burst ends up in different arrays swapped as
+size reduces. Recent works propose different system optimiza-                (X+5, X+4) and (X+7, X+6).
+tions that can be enabled by detecting data-dependent failures                  As shown in the figure, finally, the neighboring cells of X
+while DRAM is being used in the field, during online system                  get data from system address bits X+1 and X+5. Due to this
+operation. As described in Section 1, such system-level detec-               internal address scrambling, testing for data-dependent failures
+tion of data-dependent failures can enable better DRAM scal-                 with neighboring system addresses (X, X+1, X+2) would not
+ing [6, 35, 47, 51, 59, 62], reliability [39, 53, 67, 74, 75], and           test physically neighboring cells within DRAM.
+latency and refresh reduction [18, 27, 43, 46, 48, 62, 80]. Un-                 Challenge 2: Long Test Time. Without knowledge of ad-
+fortunately, detection of data-dependent failures at the system              dress mapping, detecting data-dependent failures at the system
+level faces two major challenges.                                            level is hard, as the system does not know the addresses of
+   Challenge 1: Address Scrambling. The system can theoret-                  physically neighboring cells. Many prior works that depend
+ically detect data-dependent failures by writing the worst-case              on system-level detection of data-dependent failures assume
+pattern in the neighboring bit addresses in DRAM. Unfortu-                   that simple tests with all 0s/1s data patterns can detect data-
+nately, DRAM vendors scramble the system address space inter-                dependent failures. Unfortunately, prior studies [6, 47] show
+nally in the DRAM chip. As a result, neighboring addresses in                that a large fraction of failures remain undetected with such
+the system address space do not correspond to neighboring cells              simple tests. As a result, mechanisms built on top of such sim-
+in the physical cell array. The mapping of system address space              ple tests are impractical as they would face severe reliability
+to physical address space, which we call address mapping, is                 issues. One prior work [35] tries to solve this problem by testing
+not exposed to the system. This mapping could be different for               DRAM with a large number of random data patterns. Many
+different vendors and generations of DRAM chips, making it                   rounds of tests with random patterns increase the probability of
+difficult to expose it to the system. DRAM manufacturers might               discovering more failures by increasing the likelihood of writing
+also not want to expose this mapping to the system as it might               the worst case pattern into the addresses mapped to physically
+provide competitive information related to DRAM yield.                       neighboring cells [35]. Unfortunately, system-level testing with
+   The reason behind this address scrambling lies in the cost-               random patterns take very long, are expensive, and make it diffi-
+optimized organization of DRAM internals [70, 78]. During                    cult to provide any guarantees on the fraction of data-dependent
+an access, DRAM data is buffered internally in multiple stages               failures that remain undetected [35] (as we will quantitatively
+before it is sent over the bus through the IO pins [44]. To                  show in Section 7).
+minimize cost, DRAM-internal buffers are organized in a hi-                     One alternate way to uncover data-dependent failures is to
+erarchical manner, where each level has a different number of                determine the location of physically neighboring cells in the
+entries. Data gets scrambled while passing from a wider to a                 system address space and use that information to ensure that
+narrower structure [70, 78].                                                 the physically neighboring cells are tested with the worst-case
+   Figure 5 shows two stages of buffering in a DRAM bank.                    pattern. This is a promising approach, since each generation
+First, an access to a DRAM bank activates an entire row (8K                  of chips can have different address mappings: a technique that
+
+
+                                                                         4
+
+
+===== Page 5 =====
+
+can quickly learn that mapping is applicable to any system                                          both neighbors contain the opposite data value than the victim,
+with any chip. As a cell receives the most interference from                                        the victim bitline experiences a large enough interference that
+its two immediate neighbors [1, 60], it is possible to devise an                                    makes the cell fail. Figure 6b shows an example of a weakly
+exhaustive test to determine the locations of these two neighbors.                                  coupled cell.
+   For each potential failing cell (victim), such a test would ex-                                     Leveraging our observation, our key idea to reduce test time
+haustively test all combinations of two bit addresses in a DRAM                                     is to locate the address of only one neighboring cell of a strongly
+row. The victim would fail when the addresses of the neighbors                                      coupled cell. Instead of detecting the addresses of both neigh-
+are being tested, indicating where the neighbors are located in                                     bors by testing every combination of two bit addresses in a
+the system address space. For example, when the cell at address                                     DRAM row, each address now has to be tested linearly just once.
+X in Figure 5 is tested, out of all two bit address combinations                                    This approach has two major advantages. First, it reduces the
+within the row, the cell at X would fail only when content in                                       test time from quadratic O(n2 ) to linear O(n), where n is the
+addresses X+1 and X+5 is set to the worst case pattern, revealing                                   number of cells in a row. Second, it makes other well-known
+the system addresses of immediate neighbors. Unfortunately, se-                                     optimizations applicable to this linear test. In this work, we
+lecting every combination of 2 bit addresses from n bit addresses                                   apply a recursive test to further reduce test time. Instead of
+requires O(n2 ) tests and takes 49 days of testing for a row with                                   testing one bit address at a time, we divide the address space
+n = 8K cells (Discussed in Appendix). As cells get smaller                                          of an entire row into smaller regions and test all addresses in
+and more vulnerable to cell-to-cell interference, it is likely that                                 one region at once. Only the region that contains the neighbor
+potentially more neighboring cells will affect each other in the                                    address is tested in the next levels of the recursion. When the
+future [2]. Determining the location of k-neighboring cells re-                                     region size becomes one, we find the exact bit address of the
+quires O(nk ) tests, increasing the test time to 1115 years/9.1M                                    neighboring cell. This divide and conquer mechanism reduces
+years for detecting physical addresses of three/four neighbors.                                     our test time to θ (n) (See details in Appendix).
+Clearly, it is not feasible to run tests for such a long time.                                      4.2. Key Idea 2: Exploiting DRAM Regularity
+   Our goal in this work is to develop a fast and efficient testing                                       and Parallelism
+method to determine the locations of physically neighboring                                            Our first key idea to detect the address of only one neighbor
+cells in the system address space and use that information to                                       significantly reduces test time. Unfortunately, it decreases the
+detect data-dependent failures in DRAM.                                                             coverage of failures, as without the knowledge of both neighbor-
+4. Key Ideas                                                                                        ing addresses, it will not be possible to detect all data-dependent
+                                                                                                    failures (i.e., weakly coupled cells). Our second key idea en-
+  In this work, (i) we develop an efficient system-level test                                       ables us to detect both neighboring locations only with simple
+method to detect data-dependent failures in DRAM, (ii) ex-                                          linear tests. The idea is based on the observation that DRAM is
+perimentally demonstrate the effectiveness of our mechanism                                         internally organized as a 2D array of similar and repetitive tiles.
+using real DRAM chips, and (iii) discuss new uses cases of                                          The regularity in tiles results in regularity in address mapping
+our mechanism to improve system reliability and performance.                                        within and across the tiles.2
+Our system-level test method for determining the location of                                           Figure 7 shows a bank with 32K rows and 8K cells per row,
+neighboring cells builds upon two key ideas.                                                        where cells are divided into smaller tiles. Two cells located at
+4.1. Key Idea 1: Exploiting Strongly Coupled Cells                                                  the same column of a tile likely have the same address mapping
+   Our first key idea is based on the observation that cells af-                                    for their neighboring cells. For example, the system address
+fected by bitline coupling due to parasitic capacitance between                                     offsets of the two neighboring cells of each of X, Y and Z are
+neighboring bitlines can be divided into two groups based on                                        +1 and +5, in Figure 7.
+their sensitivity to coupling: Strongly vs. Weakly coupled.
+   (i) Strongly Coupled Cells. In Section 2, we discussed that                          8K Cells
+a victim cell experiences the largest interference when it is                                    ...            Local Sense Amplifiers
+                                                                                                      32K Rows
+
+
+
+
+surrounded by neighboring cells containing the opposite data                                                       ... +1 X +5
+                                                                                                 ...               ... +1 Y +5
+value (e.g., charged victim cell (Q) surrounded by discharged                  ...        ...            ...
+(0) neighbors). However, due to process variation, some cells                                    ...               ... +1 Z +5
+experience a large enough interference to cause a data-dependent                   Global Sense Amplifiers
+                                                                                                                Local Sense Amplifiers
+failure even when only one neighbor has the opposite value. We                           Bank                           Tile
+call such cells strongly coupled cells. Figure 6a illustrates a              Figure 7: Regularity in address mapping across rows
+strongly coupled victim cell that fails based on the data content
+of only the left neighbor, irrespective of the content of the right       We propose to utilize this regularity in mapping by running
+one. A strongly coupled cell can be coupled with either the left parallel tests in different rows simultaneously. Due to random-
+or the right neighbor.                                                 ness in process variation, some strongly coupled cells will fail
+                                                                       depending on the content of the right neighbor and some on
+    Left Victim Right                 Left Victim Right                left. As the mapping is the same in different rows, even if the
+                          Cell
+
+
+
+
+                                                                          Cell
+
+
+
+
+     0     Q     Q       0     0    Q  0     Q      0     0     0    0 cells tested are located in different rows, the location of the
+                                                                       neighboring cells will be the same. By running parallel tests
+                                            VDD
+          2 VDD
+
+
+                  2 VDD
+
+
+
+
+                                                                  2 VDD
+  2 VDD
+
+
+
+
+                                                  2 VDD
+
+
+                                                          2 VDD
+                          Bitline
+
+                                    0
+
+                                        0
+
+
+
+
+                                                                          Bitline
+
+
+
+
+                                                                       in different rows simultaneously, we can detect the system ad-
+                                                                                    0
+
+                                                                                        0
+
+                                                                                            0
+          1
+
+
+                  1
+
+
+
+
+                                                                  1
+
+
+
+
+                                                                       dress distance of both the left neighbor and the right neighbor
+  1
+
+
+
+
+                                                  1
+
+
+                                                          1
+
+
+
+
+                                                                       for different strongly coupled cells, which together serve as the
+                          SA
+
+
+
+
+                                                                          SA
+
+
+
+
+                         0     0    1                     0     0    0
+    P RECHARGED        S HARING AND   P RECHARGED       S HARING AND   distances of the left and right neighbors for weakly coupled
+                       A MPLIFICATION                   A MPLIFICATION
+                                                                       cells. Consequently, it is possible to estimate the addresses of
+        (a) Strongly coupled cell          (b) Weakly coupled cell     all neighboring cells by testing multiple cells in different rows
+                                                                       simultaneously and aggregating the distances of the neighboring
+        Figure 6: Cells have different sensitivity to coupling         locations found in those rows. For example, in Figure 7, the
+  (ii) Weakly Coupled Cells. For these cells, the content of                                           2 A very small fraction of faulty cells are remapped in DRAM [28, 41, 78].
+
+only one neighbor cannot make the victim fail. Only when                                            Section 7.3 discusses how remapped cells can be handled.
+
+
+                                                                                                5
+
+
+===== Page 6 =====
+
+test of some rows would find +1 as the neighbor distance (for dependence.3 PARBOR includes such a cell in the initial set of
+strongly coupled cells that are coupled with their left neighbors) victim cells. We demonstrate the effect of the size of this initial
+and the test of some other rows would find +5. Aggregating the set in Section 7.3.
+single neighbor distances found in all rows would provide both          Note that accurately detecting data-dependent failures is chal-
+distances as the locations of neighboring cells.                     lenging as it is difficult to resolve the root cause behind fail-
+                                                                     ures. For example, some weak cells fail irrespective of the con-
+5. PARBOR: System-Level Parallel Recursive tent of the neighbors [47], soft failures occur randomly across
+    Neighbor Testing                                                 cells [7, 76], VRT cells fail when charge randomly gets trapped
+                                                                     in the gate of the transistor and causes the capacitor to leak
+   Based on our two key ideas, we propose an efficient system- charge faster [47, 55, 65, 85], etc. Thus, when a failure is found
+level technique for detecting the locations of neighboring cells, (during the determination of the initial set of victim cells), its
+called PArallel Recursive neighBOR (PARBOR) testing. We cause might not be data dependence. We resolve this issue by
+first present the high-level design of PARBOR, and then discuss making PARBOR robust to such random failures. PARBOR
+design challenges and our solutions to solve those challenges.       first detects a set of failures (i.e., the initial set of victim cells)
+5.1. Design Overview                                                 that are likely to be caused by data dependence. It later filters
+                                                                     out random failures from this set (Section 5.2.4).
+   At the high level, PARBOR first determines the location of 5.2.2. Representation of Neighbor Addresses
+neighbors in the system address space by simultaneously testing
+multiple rows containing data-dependent failures and aggregat-          PARBOR determines the physically neighboring cell ad-
+ing the neighbor locations found in each row. Next, PARBOR dresses by running simultaneous recursive tests in multiple rows
+uses this information to test every cell in DRAM by applying to exploit the regularity in DRAM chips. Representing the neigh-
+the worst-case data pattern to the neighboring cells and detects bor addresses efficiently is important as recording the neighbor
+all data-dependent failures. PARBOR has five major steps.            address for every bit in a row will incur a large overhead. PAR-
+                                                                     BOR simplifies the representation of neighbor addresses by
+   ¶ Construct an initial set of victims that fail depending on expressing each neighbor address as a distance (or, offset) from
+the data content in the neighboring cells (Section 5.2.1).           the victim cell. We observe that, due to regularity in address
+   · Simultaneously test all the rows containing the initial set mapping, the distance of any physically neighboring cell from
+of victims. Test each row recursively by dividing it into smaller the victim can be represented with a limited set of numbers.
+subregions until PARBOR finds the bit addresses of the neigh- Figure 8 demonstrates the possible distances of any cell with
+boring cells (Section 5.2.3).                                        the example mapping discussed in Figure 5 of Section 3. The
+   ¸ Aggregate the locations of neighboring cells found in each system address for the cells in the row runs from 0 to 15, as
+row. Due to the regularity of DRAM tiles, the neighbors of shown below the cell array. The figure shows that all physi-
+different victim cells are found at common regular distances cally neighboring cells are located at a distance of {±1, ±5},
+from each victim cell’s system address (Section 5.2.2). Thus, irrespective of the absolute address of the victim cell. This
+the union of all distances found in step · for the initial set of distance-based representation not only eliminates the necessity
+victims provides a set of possible distances where the physically to record every single neighbor address, but also simplifies the
+neighboring cells can be located for any cell in the chip.           recursive algorithm, which we discuss next.
+   ¹ Filter out the random (non-data-dependent) failures that
+occurred during the tests, as these failures can potentially include        Left Victim Right                               Left Victim Right
+some non-neighbor locations in the set of possible distances                                                                 +1 A +5
+determined in step ¸ (Section 5.2.4).                                                       +1 B +5                                           Cell Array
+                                                                                                                 −5 C −1
+   º Use the information on neighbor distances to detect data-
+                                                                             −5 D −1
+dependent failures in the entire chip by ensuring that all phys-
+ically neighboring cells are tested with the worst-case pattern.         1 0 5 4 9 8 13 12                   3 2 7 6 11 10 15 14 Address
+Test independent bits in the address space simultaneously to              ±1 ±5 ±1 ±5 ±1 ±5 ±1                 ±1 ±5 ±1 ±5 ±1 ±5 ±1
+reduce the test time (Section 5.2.5).                                                         Distance = Address Difference
+
+5.2. Detailed Design                                                     Figure 8: Representing neighbor addresses as distances
+
+    PARBOR has five design challenges. (i) How to determine the
+initial set of victim cells that exhibit data-dependent failures? (ii)
+                                                                   5.2.3. Recursive Test Algorithm
+How to represent the neighbor locations efficiently for all cells?    PARBOR recursively divides a row into smaller regions. The
+(iii) How to recursively test a row? (iv) How to identify and filter
+                                                                   region that contains the victim address is called the victim re-
+out random (non-data-dependent) failures during the tests? (v)     gion. Each region is tested to determine if the neighbor address
+How to efficiently use the location information of neighboring     belongs to that region. To test a region, opposite data values are
+cells to test the entire chip for data-dependent failures? Next,   written to the victim address and to the bits in the test region.
+we provide a full overview of these challenges and describe our    This ensures that if the neighbor cell is located in the test region,
+proposed mechanisms that address these challenges.                 victim and neighbor cells contain the worst-case pattern. If the
+5.2.1. Determining the Initial Set of Victim Cells                 victim is strongly coupled to the neighbor cell, data value written
+                                                                   to the victim will flip due to interference from the neighbor cell.
+   PARBOR relies on a set of known victim cells that exhibit When data is read back from the victim region and compared
+data-dependent failures to determine the locations of the phys- to the original values written, victim data will result in a mis-
+ically neighboring cells. This initial victim set is needed as match. The region that contains the address of the neighbor that
+testing for neighbor addresses in any random cell will likely not causes the victim to fail is referred to as neighbor region. We
+work, as that cell might not be vulnerable to failure at all. To represent the regions using distance, too. If the neighbor address
+determine the initial set of victim cells, PARBOR first tests a
+DRAM chip with multiple different data patterns. A cell that           3 DRAM cells can store data value 1 as either charged state or discharged
+operates correctly for one pattern, but fails when the content in state [47]. To make sure that both types of cells are tested, every pattern tested
+the row changes with a different pattern is likely to exhibit data in PARBOR is also accompanied with the inverse pattern.
+
+
+                                                                           6
+
+
+===== Page 7 =====
+
+is located within the victim region, then the distance is 0; if                                          ±1} (as shown at L2 in Figure 10), At the next level, only the
+neighbor address is located in the immediate neighbor region,                                            regions at these distances are tested.
+then distance is ±1, and so on. These neighbor distances found                                              ¸ PARBOR keeps dividing the neighbor regions until the
+in multiple rows represent possible neighbor locations in the                                            region size becomes 1 at level 4. At this level, D fails while
+entire chip. The reason is that, due to the regularity in mapping,                                       testing the region located at distance -5. Thus, we can deduce
+the left or the right neighbor locations for all cells in the chip                                       the location of the neighbor bit address. Note that the union of
+can be represented with a limited set of distances, as shown in                                          distances found for only four cells (A, B, C, and D) at this level
+Figure 8. In order to find all possible neighbor locations, each                                         ({±1, ±5}) provides the possible distances of neighbors for any
+neighbor distance found in multiple rows is aggregated at each                                           cell in this chip.
+level. In the next level of the recursive algorithm, only those                                          5.2.4. Filtering Random Failures During Tests
+regions where a neighbor is found are subdivided into smaller
+regions and tested recursively until the region size becomes one.                                           PARBOR starts the recursive tests with an approximate set of
+The aggregate list of all found distances provide the neighbor                                           data-dependent failures. However, some of these failures might
+locations for any cell in the entire chip.                                                               be caused by other phenomena (for example, soft failures [7, 76],
+   We provide a simple example of our recursive testing method.                                          VRT [55, 65, 85], wordline coupling [39, 64], etc.). Failures
+PARBOR starts with an initial set of victims that exhibit data-                                          might also occur due to marginal cells that hold barely enough
+dependent failures ({A, B, C, D}), as shown in Figure 8. The                                             charge to reliably store data until the end of the refresh interval.
+victims are strongly coupled with one of their neighbors, denoted                                        Content in these marginal cells are sometimes read correctly,
+by red circles in the figure. The distance between the victim                                            sometimes not. These random failures interfere with PARBOR
+and neighbor address is shown within the cell. In this example,                                          during the recursive testing. A random failure may occur while
+PARBOR divides a region into equal halves at every level of the                                          testing some region at a level, which wrongfully indicates that
+recursive algorithm. As the address space is 16 bits, the region                                         region as a neighbor region, even though the region may not
+size becomes 8 in the first level of the recursion. This region is                                       contain any physically neighboring cells. PARBOR has to be
+recursively divided into smaller regions of sizes 4, 2, and 1 in                                         robust to such random failures, as our goal is to accurately
+the next levels. In Figure 9, we show the steps of the recursive                                         detect the neighboring locations of data-dependent cell failures.
+test for cell D, located at address 5. Each level of the recursive                                       In order to eliminate the noise induced by random failures,
+test is labeled as L1, L2, and so on. At each level, the neighbor                                        PARBOR takes two steps. First, PARBOR discards the distances
+region found is shown with a red outlined box. Figure 10 shows                                           found due to a victim cell that repeatedly exhibits failures while
+the union of distances found at each level for all victim cells.                                         testing most of the regions. These are likely to be marginal
+                                                                                                         failures as opposed to data-dependent ones. Second, PARBOR
+              Neighbor Address        Victim Address                                                     ranks the distances of neighboring regions at each level. It
+                     0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15                                               only considers the distances that occur very frequently. Due
+                 0 1 2 3 4 5 6 7                               8 9 10 11 12 13 14 15            L1       to regularity in mapping, victims are likely to fail at a limited,
+               0 1 2 3
+                             Distance 0
+                                      4 5 6 7              8 9 10 11           12 13 14 15      L2
+                                                                                                         common set of distances. Hence, infrequent distances are likely
+               Distance −1                                                                               to occur due to random failures. We provide the frequency
+              0 1        2 3       4 5          6 7        8 9     10 11       12 13    14 15   L3
+        Distance −2                                                                                      of different distances found in real chips in Section 7.3, and
+          0     1    2        3   4     5       6      7   8     9 10 11 12 13 14 15 L4                  demonstrate how ranking helps to avoid noise from random
+      Distance −5
+                                                                                                         failures.
+                         Figure 9: Recursive test for cell D                                             5.2.5. Finding Data-Dependent Failures in the Entire Chip
+                                                                                                            Once the addresses of the physically neighboring cells are
+                                   D   C B   A
+                         0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
+                                                                                                         known, well-known test methods, such as neighborhood pattern-
+                                                8                                                        sensitive fault (NPSF) tests [19, 77]), can be applied. These
+                                                0                              L1 {0}                    tests identify hard faults depending on the data stored in nearby
+                             4                  4                 4
+                             −1                 0                 +1           L2 {0, ±1}
+                                                                                                         memory cells. Efficient algorithms for detecting NPSFs are
+                         2                      2                      2                                 based on March algorithms, which repeat a set of operations
+                      −2                        0                     −2       L3 {0, ±2}
+                                                                                                         for each bit. However, testing one bit at a time is not cost-
+                     1                      1          1                   1
+                    −5                    −1        +1                 +5      L4 {±1, ±5}               effective at the system level, as multiple data bits are transferred
+ Figure 10: Union of distances at each level for A, B, C, and D                                          in parallel (typically 8/16 bits per chip) from DRAM to the
+                                                                                                         processor. In order to take advantage of parallel data transfer in
+                                                                                                         real systems, we devise neighbor location-aware data patterns
+   ¶ At the first level of the recursion (L1), the entire row is                                         that can simultaneously test different independent parts of the
+divided into two regions, each containing 8 bits: Region 0 (ad-                                          row and reduce the number of required tests. The system can test
+dress bits 0–7) and Region 1 (address bits 8–15). D fails while                                          for a data-dependent failure by writing the worst-case pattern
+Region 0 is tested. As D also belongs to Region 0, PARBOR                                                in the victim cell and at the neighboring addresses. We observe
+determines that the distance between the victim and neighbor                                             that multiple victim cells and their potential neighbors can be
+region for D is 0. By testing the other rows simultaneously,                                             tested simultaneously, if they do not interfere with each other.
+PARBOR finds that all victims fail at distance 0 at this level.                                             At the end of the recursive algorithm, PARBOR already has
+   · At the next level, PARBOR divides the neighbor regions                                              a set of distances that contain the possible locations of neigh-
+found in level 1 into two smaller regions of size 4. For cell D,                                         boring addresses. We use this information in two ways to test
+these two regions contain address bits 0–3 and 4–7 (as shown in                                          independent parts of rows in parallel. First, PARBOR deter-
+the second level in Figure 9, denoted by L2). The neighbor of D                                          mines the maximum distance between a victim and the neighbor,
+is located at address 0, which resides in the region at distance -1.                                     as any address located outside that region does not interfere with
+Therefore, D fails while testing the region at distance -1. On the                                       the victim cell and therefore, can be tested at the same time.
+other hand, cell A is located at the region with address bits 8–11                                       PARBOR divides row addresses into chunks, where the length
+and the neighbor (address 15) is located in the next immediate                                           of a chunk is equal to the maximum distance between the victim
+region with address bits 12–15. Therefore, A fails at distance                                           and neighbors, and tests each of these chunks in parallel. For ex-
++1. Similarly, PARBOR determines that B and C fail at distance                                           ample, if the neighboring cells are located at distance ±8, each
+0. PARBOR creates a union of the distances at level 2 as {0,                                             16-bit chunk in a row can be tested at once. However, within
+
+
+                                                                                                     7
+
+
+===== Page 8 =====
+
+each chunk, each bit is tested serially. Therefore, this method                                     locations of any cell and (ii) uncovering data-dependent failures.
+would require 16 rounds to test each bit in a chunk of size 16.                                     Then, we provide detailed analyses of PARBOR.
+Second, within each chunk, only the victim and the neighbor are
+dependent. Bits in-between these two locations in the system                                        7.1. Determining Neighbor Locations with PARBOR
+address space can be tested independently at the same time. In                                         We provide (i) the implementation details of the recursive al-
+this example, as the neighbor is located at distance 8, the first 8                                 gorithm used in our experiments, (ii) neighbor address distances
+bits in the 16-bit chunk (bit 0–7) do not interfere with each other                                 found by PARBOR at each level of the recursion, and (iii) the
+and are independent. Therefore, instead of testing one bit at a                                     number of tests performed during the recursion.
+time within the chunk, the first 8 bits within the chunk are tested                                    Details of the recursive algorithm. The tested modules in
+at once. As a result, each chunk can be tested in two rounds: the                                   this work all have 8K cells in a row. In our experiments, PAR-
+first 8 bits in round 1 and the second 8 bits in round 2. As all                                    BOR recursively tests 8K cells in a row by dividing the row into
+the chunks in the system address space are tested in parallel, all                                  smaller regions until the region size becomes 1. PARBOR uses
+cells in the chip can be tested in two rounds.                                                      5 levels of recursive testing to get to a region size of 1 from
+   We conclude that PARBOR is an efficient mechanism that                                           a row size of 8K. The row is divided into two regions of size
+determines the location of physically neighboring cells with a                                      4096 bits at the first level. At the remaining levels, each region
+recursive test and uses that information to test the entire chip for                                is divided into eight subregions (of sizes 512, 64, 8, and 1 for
+data-dependent failures with a small number of neighbor-aware                                       levels 2 to 5, respectively).
+data patterns.                                                                                         Neighbor distances at each level of the recursion. Fig-
+                                                                                                    ure 11 shows the union of distances of neighbor locations found
+6. Experimental Design and Infrastructure                                                           by PARBOR at each level of the recursion for modules from
+   In order to determine the efficacy of PARBOR in finding                                          three different vendors. We found that all modules from a spe-
+the neighboring bit locations and uncovering data-dependent                                         cific vendor and generation exhibit the same distances. Fig-
+failures, we test PARBOR with real DRAM chips using an                                              ure 11a shows that in the first two levels (L1 and L2), when the
+FPGA-based infrastructure. Similar to our prior works that                                          row is divided into regions of 4096 bits and 512 bits respectively,
+studied DRAM failures in off-the-shelf chips [18, 35, 39, 43, 47],                                  modules from A always have the neighbor region at distance
+our infrastructure consists of a Xilinx ML605 board that is                                         0. In the next levels, neighbor regions are found at multiple
+connected to a host PC using a PCIe bus [84]. PARBOR is                                             distances. For example, neighbors are found at distances {0,
+implemented as a system-level test in the host, interfaced with                                     ±1} at L3, and at distances {±1, ±2, ±6} at L4. Finally, at
+the memory controller to read and write DRAM modules.                                               the last level (L5), when region size becomes 1, neighbors are
+   Temperature. The amount of time DRAM cells can retain                                            found at distances {±8, ±16, ±48}. This set represents the
+charge largely depends on the operating temperature and almost                                      possible distances of the physically neighboring cells for any
+halves with every 10 ◦ C increase in temperature [35, 39]. As                                       cell in the system address space. We observe that neighbor
+data-dependent failures get affected by the amount of charge in                                     distances found by PARBOR are different across vendors. For
+the victim cells, our experiments isolate the effect of the temper-                                 example, distances of neighbor cells for A is {±8, ±16, ±48},
+ature using a temperature-controlled heat chamber. PARBOR is                                        whereas it is {±1, ±64} for B, and {±16, ±33, ±49} for C.
+targeted for systems running in the field, which usually operate                                    We conclude that PARBOR is capable of determining neighbor
+at the temperature range of 20 ◦ C–60 ◦ C [24, 43, 49]. Conse-                                      locations across different vendors and generations.
+quently, we run our experiments at 45 ◦ C, with sensitivity tests                                      Number of tests for the recursive algorithm. PARBOR
+at 40 ◦ C and 50 ◦ C. We find that neighbor locations determined                                    takes the union of neighbor distances found for all victim cells
+by PARBOR are not dependent on temperature.                                                         at each level of the recursive test. Neighbor regions found at
+   Refresh Interval. A large refresh interval makes a cell more                                     each level are divided into smaller regions, and these smaller
+vulnerable to failures. Prior works test DRAM at a large refresh                                    regions are tested serially at the next level to determine which of
+interval to model increased cell vulnerability in the future [29,                                   them contains the neighbor location. As a result, the number of
+35, 47, 62]. In this work, PARBOR operates at a higher refresh                                      tests at each level directly depends on the number of neighbor
+interval of 4 s (4 s at 45 ◦ C corresponds to 328 ms at 85 ◦ C [47]).                               regions found at the prior level. If the number of tests at level
+We expect that our results will hold at other refresh intervals as                                  i is ti , the number of neighbor regions found in the prior level
+prior works show that data-dependent failures exhibit similar                                       is Ni−1 , and each region is divided into Si subregions at level i,
+characteristics across different refresh intervals [35, 47].                                        then ti =Ni−1 * Si .
+   DRAM Modules. We tested PARBOR using 18 DRAM                                                        Table 1 shows the number of tests performed at each level
+modules containing 144 chips from three different vendors. All                                      for modules from three different vendors. At the first level, the
+modules have a capacity of 2 GB and were manufactured within                                        entire row is divided into two regions of size 4096 bits, and
+the last five years (2011–2014).                                                                    therefore requires two tests (shown in the column labeled as
+   Source Code and Data Release. We will release the source                                         L1 in the table). Figure 11 shows that for modules from A,
+code of PARBOR and data for all DRAM chips we tested at [61].                                       PARBOR always finds the neighbor region at distance 0 at L1
+                                                                                                    and L2. As a result, it subdivides this region into 8 smaller
+7. Results and Analysis                                                                             regions at the next levels and therefore, requires 1*8=8 tests at
+   We first show the efficacy of PARBOR in (i) finding the                                          L2 and L3, respectively. At L3, for the same modules, PARBOR
+distances in the system address space of physically neighboring                                     finds three neighboring regions at distances {0, ±1}. Therefore,
+                                           4096                                              4096                                               4096
+                                            0                           L1                    0                     L1                           0                           L1
+                                           512                                               512                                                512
+                                            0                           L2                    0                     L2                           0                           L2
+                          64               64                 64                   64        64           64                   64               64                 64
+                          −1                0                 +1        L3         −1         0           +1        L3         −1                0                 +1        L3
+                     8         8       8          8       8        8          8               8                8          8         8       8          8       8        8
+                    −6     −2      −1             +1      +2       +6 L4     −8              0                 +8 L4     −6     −4       −2            +2      +4       +6 L4
+                     1         1   1                  1    1        1        1           1          1           1        1          1   1                  1    1        1
+                    −48   −16      −8             +8      +16      +48 L5    −64        −1          +1         +64 L5    −49   −33      −16            +16     +33      +49 L5
+
+                          (a) Modules from A                                       (b) Modules from B                          (c) Modules from C
+
+                          Figure 11: Distances of neighbor regions at each level for modules from A, B, and C
+
+
+
+                                                                                             8
+
+
+===== Page 9 =====
+
+it requires 3*8=24 tests at the next level (L4). The rightmost
+
+
+
+
+                                                                                                                                                                                            Increase in Failures (%)
+                                                                                                     1000000	                                                                    100	  
+                                                                                                                              Absolute Increase              % Increase
+column of Table 1 shows that the total number of tests performed                                      100000	  
+
+
+
+
+                                                                                           New Failures
+                                                                                                                                                                                  80	  
+
+
+
+
+                                                                                            Number of
+                                                                                                       10000	  
+by PARBOR is 90/66/90 for modules from vendors A/B/C, a                                                 1000	  
+                                                                                                                                                                                  60	  
+                                                                                                                                                                                  40	  
+90X/745,654X reduction compared to tests with O(n)/O(n2 )                                                100	  
+                                                                                                          10	                                                                    20	  
+runtime. We conclude that PARBOR determines the neighbor                                                   1	                                                                    0	  
+locations very efficiently with a small number of tests.                                                           A1 A2 A3 A4 A5 A6     B1 B2 B3 B4 B5 B6    C1 C2 C3 C4 C5 C6
+                                                                                                                                              Modules
+
+      Manufacturer        L1      L2     L3      L4     L5        Total                       Figure 12: Extra failures uncovered using PARBOR
+
+            A              2       8      8      24     48         90                 across vendors and depends on the vulnerability of the chips in
+            B              2       8      8      24     24         66                 the module. For example, on average, modules from C are more
+            C              2       8      8      24     48         90                 vulnerable to data dependent failures compared to modules from
+                                                                                      A and B (Notice the log scale). We conclude that PARBOR
+         Table 1: Number of tests performed by PARBOR                                 can effectively uncover more data-dependent failures in DRAM
+                                                                                      by testing with neighbor-aware data patterns instead of random
+    We also find that different modules from a given vendor re-                       data patterns.
+quire the same number of tests in our experiments (not tabu-                             Coverage of failures. We examine the fraction of failures
+lated). We believe this is because each vendor may have their                         detected by PARBOR compared to all failures uncovered by
+own unique address scrambling mechanisms and internal de-                             both PARBOR and random pattern tests. Figure 13 shows the
+signs that last across multiple DRAM generations.                                     percentage of failures in three specific modules detected by (i)
+7.2. Uncovering Data Dependent Failures with PARBOR                                   only PARBOR, (ii) only random tests, and (iii) both PARBOR
+    After discovering the distances of neighbor locations, PAR-                       and random tests. We make two major observations from this
+BOR utilizes this information to develop generalized neighbor-                        figure. First, a significant fraction of failures are detected only
+aware test patterns for the entire chip. We provide (i) the number                    by PARBOR (20-30%). Second, only a small fraction of failures
+of neighbor-aware data patterns for different modules in our ex-                      remains undetected by PARBOR (less than 1% for Module A1
+periments, (ii) the number of data-dependent failures detected                        and C1 and around 5% for Module B1 ).
+using those patterns, and (iii) the fraction of failures detected by
+                                                                                                           Detected by Both            Detected by Both       Detected by Both
+PARBOR compared to all known failures (coverage).                                                          Only by Random              Only by Random         Only by Random
+                                                                                                           Only by PARBOR              Only by PARBOR         Only by PARBOR
+    Number of neighbor-aware test patterns. As discussed in
+section 5.2.5, PARBOR generates neighbor-aware data patterns
+such that independent regions of a row that do not interfere with
+each other can be tested simultaneously. In our experiments, all
+tested DRAM chips have neighboring locations within distances
+of ±64. Consequently, PARBOR can test each 128-bit chunk in
+a row at the same time.4 PARBOR further reduces the number                                                (a) Module A1            (b) Module B1             (c) Module C1
+of test data patterns when addresses within a 128-bit chunk do                                   Figure 13: Coverage of failures for A1 , B1 , and C1
+not interfere with each other. For example, neighboring cells
+in modules from A are located at distances ±48, ±16, and                                  There are two possible sources for failures that occur only
+±8. As a result, each set of 8 bits in the 128-bit chunk do not                       in tests with random patterns. First, prior works have shown
+interfere with each other and therefore, are tested in parallel                       that DRAM cells are vulnerable to randomly-occurring failures,
+for A, requiring a total of 16 rounds of tests. In order to test                      such as soft failures [7, 76], VRT [55, 65, 85], etc. As these fail-
+both true and anti cells [47], each pattern is accompanied with                       ures occur randomly, it is possible that such failures happened to
+the inverse pattern. Therefore, 2*16=32 rounds are required                           occur during random pattern tests and not during PARBOR tests.
+to test every bit in the entire chip for modules from A. In our                       Second, PARBOR depends on the regularity of physical address
+experiments, modules from B and C require a total of 32 and 16                        mapping in DRAM. However, a small fraction of faulty columns
+rounds of tests, respectively.                                                        are remapped to some redundant columns available in the cell
+    Increase in detected failures. Figure 12 shows the addi-                          array, which reduces regularity in physical address mapping in
+tional failures detected by PARBOR using the neighbor-aware                           DRAM. As such redundant columns may have neighbor cells
+data patterns compared to tests with random patterns that are                         located at different positions than regular cells, PARBOR cannot
+unaware of the neighboring locations. We keep the number of                           detect data-dependent failures in these cells. As the number of
+performed tests constant in this figure, i.e., the number of ran-                     failures not detected by PARBOR is relatively small, we con-
+dom pattern tests is limited to the number of tests performed by                      clude that our neighbor-aware test method effectively uncovers
+PARBOR. The total number of tests in PARBOR is the sum of                             more failures than testing with random patterns.
+(i) recursive test to determine the neighbor locations (66-90), (ii)
+tests with neighbor-aware patterns (16-32), and (iii) initial tests                   7.3. Sensitivity and Analysis
+for locating sample victim bits (10). This amounts to 92-132                              As discussed in Section 5.2.4, PARBOR ranks the distances
+tests depending on vendor, which takes 38-55 seconds for a                            found at each level of the recursive algorithm based on the
+2GB module with a refresh interval of 64 ms (See Appendix for                         frequency of distances. It eliminates the infrequent distances
+details). The bars in the figure depict the new failures detected                     from consideration, to avoid detecting the random, non-data-
+by PARBOR and the lines depict the percentage increase in                             dependent failures that occur throughout the tests. In this section,
+detected failures with PARBOR.                                                        we (i) show how these random failures impact the frequency of
+    We make two observations from Figure 12. First, PARBOR                            distances, (ii) demonstrate the effect of the size of initial set of
+identifies 1K to 45K more failures in every tested module, result-                    victim cells, i.e., sample size, on the ranking of distances, and
+ing in a 2–55% increase in total detected failures. Second, the                       (iii) discuss the limitations of PARBOR.
+absolute number of failures detected by PARBOR is different                               Avoiding random failures with ranking of distances. Fig-
+                                                                                      ure 14 shows the ranks of regions at level 4 for three different
+   4 Note that these 128 bits belong to a single chip. As our tested modules          modules. Each bar at distance X in the figure represents the
+access 8 bits per chip in a burst, accessing these 128 bits requires 16 bursts.       number of times a neighbor region at distance ±x is discovered,
+
+
+                                                                                  9
+
+
+===== Page 10 =====
+
+                         1	                                                                                                                                              1	                                                                                                                 1	  
+    Normalized
+
+
+
+
+                                                                                                                                                      Normalized
+
+
+
+
+                                                                                                                                                                                                                                                                               Normalized
+                       0.8	                                                                                                                                            0.8	                                                                                                               0.8	  
+      Count
+
+
+
+
+                                                                                                                                                        Count
+                       0.6	                                                                                                                                            0.6	  
+
+
+
+
+                                                                                                                                                                                                                                                                                 Count
+                                                                                                                                                                                                                                                                                            0.6	  
+                       0.4	                                                                                                                                            0.4	                                                                                                               0.4	  
+                       0.2	                                                                                                                                            0.2	                                                                                                               0.2	  
+                         0	                                                                                                                                              0	                                                                                                                 0	  
+                                       0	   1	        2	     3	      4	      5	      6	     7	      8	     9	   10	   11	   12	                                           0	   1	        2	   3	   4	   5	   6	   7	   8	   9	   10	   11	   12	                            0	   1	     2	   3	   4	   5	   6	   7	   8	   9	   10	   11	   12	  
+                                                        Distance of Neighbor Region                                                                                                                        Distance of Neighbor Region                                                                               Distance of Neighbor Region
+
+                                                       (a) Module A1                                                                                                                                    (b) Module B1                                                                                               (c) Module C1
+                                                                                                           Figure 14: Ranking of regions in recursion level 4 for A1 , B1 , and C1
+normalized to the most frequent distance. We observe that some                                                                                                                                                                We provide a simple way to extend PARBOR to detect data-
+distances occur very frequently (for example, distances ±1, ±2,                                                                                                                                                            dependent failures in remapped columns. If a large fraction of
+±6 in Module A1 ). These are the regions where the neighbor                                                                                                                                                                cells gets remapped in the future, the initial set of victim cells
+cells are very likely located. On the other hand, some distances                                                                                                                                                           will likely include some of the remapped cells. Therefore, neigh-
+occur relatively infrequently (for example, distances ±3 and ±9                                                                                                                                                            bor regions for these cells will show up as infrequent regions
+in Module B1 ). These distances are most likely noise caused by                                                                                                                                                            in the ranking stage of PARBOR. In the current implementa-
+random failures. By not considering such distances that occur                                                                                                                                                              tion, PARBOR discards infrequent neighbor distances to filter
+very infrequently, PARBOR eliminates the effect of random                                                                                                                                                                  out random failures. By taking into account these infrequent
+failures from the determination of distances of neighboring cells.                                                                                                                                                         regions in intelligent ways, it would be possible to detect the
+We conclude that ranking of distances is an effective way to                                                                                                                                                               neighboring locations of remapped cells.
+filter out the noise caused by random failures.
+    Effect of the size of the initial set of victim cells (i.e., sam-                                                                                                                                                      8. A New Use Case for PARBOR
+ple size). PARBOR identifies an initial set of victim cells and                                                                                                                                                               PARBOR enables existing mechanisms that require detecting
+determines the neighboring locations for these cells with the                                                                                                                                                              data-dependent failures in the system [6, 35, 46, 47, 48, 59, 80].
+recursive testing it employs. The sample size of this initial set                                                                                                                                                          On top of that, PARBOR can also enable new mechanisms to
+can affect the ranking of distances performed at each level of the                                                                                                                                                         improve DRAM reliability, performance, and energy efficiency.
+recursive test. For example, a small set of victim cells might not                                                                                                                                                         We propose one such new use case for PARBOR.
+be enough to differentiate data-dependent failures from random                                                                                                                                                                Data content-based refresh. Existing refresh optimization
+failures that are due to non-data-dependent reasons. Figure 15                                                                                                                                                             techniques minimize refresh operations by using a lower refresh
+shows the effect of sample size on ranking. We perform this                                                                                                                                                                rate for rows that can reliably retain data at that refresh rate [46,
+sensitivity study in two modules (Module B1 , and C1 ) with four                                                                                                                                                           48, 62, 80]. These works rely on detecting weak cells that
+different sample sizes (1K, 5K, 10K, and 15K). We observe that                                                                                                                                                             have low retention times, so that they can refresh the rows
+for some modules (e.g., B1 ), there is a clear partition between                                                                                                                                                           such cells reside in at a higher refresh rate, to avoid data loss.
+frequent and non-frequent regions: the amplitude of the frequent                                                                                                                                                           However, these techniques do not take into account the fact that
+regions is much higher than that of the others. Therefore, ran-                                                                                                                                                            retention failures in such weak rows occur only with the worst-
+dom failures do not affect the frequent regions, as we vary the                                                                                                                                                            case pattern. Instead, they always refresh weak rows frequently.
+sample size of initial set of victim cells. On the other hand, for                                                                                                                                                         In reality, application data does not always contain the worst-
+some modules (e.g., C1 ) the difference between frequent and                                                                                                                                                               case pattern in weak rows. Therefore, there is an opportunity to
+non-frequent regions is not as clear. A small sample size might                                                                                                                                                            further reduce the refresh rate based on the current data content
+negatively affect the ranking of distances in such modules. For                                                                                                                                                            of DRAM rows.
+example, distance 5 in module C1 is frequent when testing with                                                                                                                                                                We propose a new refresh reduction technique, called Data
+a small sample size (1K), but, with a larger sample size, it is                                                                                                                                                            Content-based REFresh (DC-REF). The key idea of DC-REF
+clear that this distance is not frequent relative to others. We                                                                                                                                                            is to employ a high refresh rate only when the data content of
+conclude that a larger sample size for the initial set of victim                                                                                                                                                           the row exhibits the worst-case pattern. DC-REF uses PARBOR
+cells makes ranking more robust to random failures and thus                                                                                                                                                                to determine the location of data-dependent failures and the
+PARBOR more accurate in identifying data-dependent failures.                                                                                                                                                               worst-case pattern that causes the failures. When there is a write
+                                                                                                                                                                                                                           to a row containing a cell vulnerable to data-dependent failure,
+                      1000              5000                    10000                     15000                                    1000             5000                 10000                  15000                      the new data content is checked against the worst-case pattern.
+ Normalized
+
+
+
+
+                                                                                                              Normalized
+
+
+
+
+              1	                                                                                                          1	  
+                                                                                                                                                                                                                           If and only if the new content matches the worst-case pattern,
+   Count
+
+
+
+
+                                                                                                                Count
+
+
+
+
+          0.5	                                                                                                         0.5	                                                                                              the row is designated to be refreshed frequently.
+              0	                                                                                                          0	                                                                                                Evaluation of DC-REF. We evaluate the performance of
+                       0	   1	   2	   3	   4	   5	   6	   7	   8	   9	   10	   11	   12	                              0	   1	   2	   3	   4	   5	   6	   7	   8	   9	   10	   11	   12	  
+                       Distance of Neighbor Region                                                                                   Distance of Neighbor Region
+                                                                                                                                                                                                                           DC-REF with Ramulator [40], an open-source cycle-accurate
+                                                                                                                                                                                                                           DRAM simulator [63]. We use representative phases of 17
+                             (a) Module B1                                                                                                 (b) Module C1                                                                   SPEC CPU2006 [73] applications as CPU traces [50]. We
+ Figure 15: Ranking for B1 and C1 with different sample sizes                                                                                                                                                              evaluate 32 8-core multi-programmed workloads by randomly
+                                                                                                                                                                                                                           assigning one application to each core. Our simulation executes
+   Limitation. PARBOR depends on the regularity of DRAM                                                                                                                                                                    at least 256 ms on each core. We report performance as weighted
+organization to determine the locations of the neighboring cells.                                                                                                                                                          speedup [25, 72]. Table 2 shows the simulation parameters.
+Unfortunately, a small number of cells in DRAM chips can                                                                                                                                                                      Figure 16 illustrates the system performance improvement
+have neighboring cells in different distances than regular cells.                                                                                                                                                          of DC-REF over the baseline system with a uniform refresh
+These cell are remapped in redundant columns to correct per-                                                                                                                                                               interval of 64 ms. On average, DC-REF improves system perfor-
+manent faults in the cell array [28, 41].5 As the fraction of                                                                                                                                                              mance by 18.0% for 32Gbit DRAM across all 32 workloads.6
+remapped cells is quite low [78], such cells do not greatly af-                                                                                                                                                            Compared to RAIDR [46], a refresh reduction technique that
+fect the coverage of our mechanism. However, as cells become                                                                                                                                                               refreshes all rows with weak cells using a high refresh rate, irre-
+more vulnerable with scaling, it is likely that DRAM chips will                                                                                                                                                            spective of the data content of such rows, DC-REF reduces re-
+include more redundancy in the future, and PARBOR might                                                                                                                                                                    fresh operations by 27.6% and improves performance for 32Gbit
+become less effective in detecting all data-dependent failures.
+                                                                                                                                                                                                                              6 We estimate tRFC (refresh latency) for 16/32Gbit DRAM as 590ns/1us,
+   5 Remapped rows will have the same mapping as the rest of the cell array.                                                                                                                                               similarly to the tRFC estimation in [46].
+
+
+                                                                                                                                                                                                                      10
+
+
+===== Page 11 =====
+
+ Component                   Main Parameters                                              10. Conclusion
+  Processor                                                              We introduced PARBOR, an efficient system-level technique
+                             8 cores, 3.2GHz, 3-wide issue, 128-entry inst. window
+   Last-level     64B cache-line, 16-way associative,
+                                                                      that  1) determines the locations of physically neighboring
+     cache        512KB private cache-slice per core                  cells in DRAM and 2) uses this information to uncover data-
+                                                                      dependent failures. PARBOR greatly reduces the test time re-
+    Memory        DDR3-1600 [31], 2 channels, 2 ranks-per-channel     quired to determine physically neighboring cells by exploiting
+    Refresh       RAIDR [46]: 64/256 ms for 16.4%/83.6% rows          1) our new observation that some DRAM cells are strongly af-
+    Interval      DC-REF: 64 ms for rows with the worst-case pattern, fected by only one of their neighbors and 2) the regularity and
+                  256 ms for the remaining rows                       abundant parallelism found in modern DRAM chips. To our
+                                                                      knowledge, this is the first work to provide a fast and practical
+            Table 2: Configuration of simulated systems               method to detect data-dependent DRAM failures at the system
+                                                                      level, in the presence of scrambling of addresses within DRAM.
+DRAM by 3.0%. Note that the fraction of weak cells in RAIDR              We experimentally demonstrate the effectiveness of PARBOR
+is collected from real chips, using our FPGA-based infrastruc- using a large number of real DRAM chips. PARBOR greatly
+ture. RAIDR always refreshes 16.4% of the rows with a high reduces the number of tests (by orders of magnitude) while un-
+refresh rate, while DC-REF reduces that fraction to only 2.7% covering significantly more data-dependent failures than state-
+on average over 17 SPEC benchmarks.                                   of-the-art testing methods. We demonstrate that PARBOR en-
+                                                                      ables both previously-proposed and new techniques that improve
+                20
+                                                                      DRAM reliability, performance and energy efficiency. We in-
+          Weighted Speedup
+          Improvement (%)
+
+
+
+
+                          RAIDR    DC-REF
+                15                                                    troduce the notion of Data Content-based REFresh (DC-REF)
+                10                                                    as one example new technique, and show that it significantly
+                 5                                                    improves system performance. We hope that PARBOR will also
+                 0                                                    inspire the development of a wide range of new system-level
+                        4           8          16        32           mechanisms that take advantage of efficient dynamic detection
+                              DRAM Chip Capacity (Gbit)               of data-dependent DRAM failures.
+         Figure 16: Performance of DC-REF vs. RAIDR
+                                                                                          Acknowledgements
+   We conclude that DC-REF is an effective mechanism to                                  We thank Chris Wilkerson, Uksong Kang, anonymous review-
+improve system performance by leveraging both PARBOR                                  ers, and SAFARI group members for feedback. We acknowl-
+and the dynamic data content information of memory rows.                              edge the support of Google, Intel, Nvidia, and Samsung. This
+We believe similar data-content aware optimizations can also                          research was supported in part by the ISTC-CC and NSF (grants
+be developed on top of DRAM latency reduction mecha-                                  1212962, 1320531, and 1566483).
+nisms [17, 18, 27, 43, 69] to achieve further latency reduction
+benefits.                                                                                 References
+                                                                                           [1] Z. Al-Ars et al. Effects of bit line coupling on the faulty behavior of
+                                                                                               DRAMs. VTS, 2004.
+9. Related Work                                                                            [2] Z. Al-Ars et al. Influence of bit line twisting on the faulty behavior of
+                                                                                               DRAMs. MTDT, 2004.
+   This is the first work to propose a feasible, fast and efficient                        [3] Z. Al-ars et al. Space of DRAM fault models and corresponding testing.
+system-level detection mechanism to determine the locations of                                 DATE, 2006.
+physically neighboring DRAM cells and use that information                                 [4] Z. Al-Ars et al. Defect oriented testing of the strap problem under process
+                                                                                               variations in DRAMs. TEST, 2008.
+to detect all data-dependent cell failures. Prior works have                               [5] Z. Al-Ars and S. Hamdioui. Evaluation of SRAM faulty behavior under
+examined data-dependent failures in DRAM [1, 18, 35, 39, 43,                                   bit line coupling. IDT, 2008.
+45, 47, 60, 64], NAND flash memory [8, 9, 10, 11, 12, 13, 14,                              [6] A. Bacchini et al. Characterization of data retention faults in DRAM
+                                                                                               devices. DFT, 2014.
+15, 26, 54], and SRAM [5, 23, 32, 79, 81, 82]. None of these                               [7] R. Baumann. The impact of technology scaling on soft error rate perfor-
+works developed a method for finding neighboring cell locations.                               mance and limits to the efficacy of error correction. IEDM, 2002.
+Some prior works focus on detecting data-dependent DRAM                                    [8] Y. Cai et al. Error patterns in MLC NAND flash memory: Measurement,
+failures, either in the system or using specialized logic within                               characterization, and analysis. DATE, 2012.
+                                                                                           [9] Y. Cai et al. Error analysis and retention-aware error management for
+DRAM with built-in self tests. Both of these types of works,                                   NAND flash memory. Intel Technology Journal, 2013.
+which we discuss next, have limitations that make them either                             [10] Y. Cai et al. Program interference in MLC NAND flash memory: Charac-
+infeasible or impractical in a real system.                                                    terization, modeling, and mitigation. ICCD, 2013.
+                                                                                          [11] Y. Cai et al. Threshold voltage distribution in MLC NAND flash memory:
+   System-level detection. Prior works that depend on detecting                                Characterization, analysis and modeling. DATE, 2013.
+data-dependent DRAM failures in the system assume that a                                  [12] Y. Cai et al. Neighbor-cell assisted error correction for MLC NAND flash
+                                                                                               memories. SIGMETRICS, 2014.
+simple test with all 0s/1s data pattern or random patterns can                            [13] Y. Cai et al. Data retention in MLC NAND flash memory: Characterization,
+detect all data-dependent failures [6, 35, 46, 48, 59, 80]. These                              optimization and recovery. HPCA, 2015.
+works are unaware of the location of physically neighboring                               [14] Y. Cai et al. Read disturb errors in MLC NAND flash memory: Character-
+cells and, therefore, cannot detect all data-dependent failures, as                            ization, mitigation, and recovery. DSN, 2015.
+                                                                                          [15] J. Cha et al. New fault detection algorithm for multi-level cell flash
+we showed in Section 7 with random patterns. Thus, they could                                  memories. ATS, 2011.
+face serious reliability issues if deployed in a real system.                             [16] K. Chang et al. Improving DRAM performance by parallelizing refreshes
+                                                                                               with accesses. HPCA, 2014.
+   Built-in self test. Prior works propose to detect data-                                [17] K. Chang et al. Low-cost inter-linked subarrays (LISA): Enabling fast
+dependent failures by implementing specialized built-in self                                   inter-subarray data movement in DRAM. HPCA, 2016.
+test (BIST) logic within DRAM chips. These works either as-                               [18] K. Chang et al. Understanding latency variation in modern DRAM chips:
+sume that designers are aware of the locations of the physically                               Experimental characterization, analysis, and optimization. SIGMETRICS,
+                                                                                               2016.
+neighboring cells [19, 77] or use exhaustive testing mechanisms                           [19] K.-L. Cheng et al. Neighborhood pattern-sensitive fault testing and diag-
+to detect failures over the scrambled address space [20, 22]. Due                              nostics for random-access memories. IEEE TCAD, 2006.
+to their high runtime and complexity, these techniques cannot                             [20] B. Cockburn and Y.-F. Sat. A transparent built-in self-test scheme for
+                                                                                               detecting single V-coupling faults in RAMs. MTDT, 1994.
+be used for system-level detection of neighbor cell locations or                          [21] T. H. Cormen et al. Introduction to Algorithms. 2001.
+data-dependent failures, which is the focus of our work.                                  [22] D. Das and M. Karpovsky. Exhaustive and near-exhaustive memory testing
+
+
+                                                                                     11
+
+
+===== Page 12 =====
+
+     techniques and their BIST implementations. Journal of Electronic Testing,       [64] M. Redeker, B. F. Cockburn, and D. G. Elliott. An investigation into
+     10(3), 1997.                                                                         crosstalk noise in DRAM structures. MTDT, 2002.
+[23] R. Dekker et al. A realistic fault model and test algorithms for static         [65] P. J. Restle, J. W. Park, and B. F. Lloyd. DRAM variable retention time.
+     random access memories. TCAD, 1990.                                                  IEDM, 1992.
+[24] N. El-Sayed et al. Temperature management in data centers: Why some             [66] T. Schloesser et al. 6F 2 buried wordline DRAM cell for 40nm and beyond.
+     (might) like it hot. SIGMETRICS, 2012.                                               IEDM, 2008.
+[25] S. Eyerman and L. Eeckhout. System-level performance metrics for                [67] B. Schroeder et al. DRAM errors in the wild: A large-scale field study.
+     multiprogram workloads. IEEE Micro, 2008.                                            SIGMETRICS, 2009.
+[26] O. Ginez et al. Embedded flash testing: Overview and perspectives. DTIS,        [68] T. Sekiguchi et al. A low-impedance open-bitline array for multigigabit
+     2006.                                                                                DRAM. JSSC, 2002.
+[27] H. Hassan et al. ChargeCache: Reducing DRAM latency by exploiting               [69] V. Seshadri et al. RowClone: Fast and efficient In-DRAM copy and
+     row access locality. HPCA, 2016.                                                     initialization of bulk data. MICRO, 2013.
+[28] M. Horiguchi and K. Itoh. Repair for Nanoscale Memories. Springer               [70] Y. Sfikas et al. Layout-based refined NPSF model for DRAM characteri-
+     Publishing Company, 2011.                                                            zation and testing. VLSI, 2014.
+[29] C.-S. Hou et al. An FPGA-based test platform for analyzing data retention       [71] Y. Sfikas and Y. Tsiatouhas. Physical design oriented DRAM neighbor-
+     time distribution of DRAMs. VLSI-DAT, 2013.                                          hood pattern sensitive fault testing. DDECS, 2009.
+[30] A. A. Hwang et al. Cosmic rays don’t strike twice: understanding the            [72] A. Snavely and D. Tullsen. Symbiotic job scheduling for a simultaneous
+     nature of DRAM errors and the implications for system design. ASPLOS,                multithreading processor. ASPLOS, 2000.
+     2012.                                                                           [73] SPEC CPU2006.           Standard Performance Evaluation Corporation.
+[31] JEDEC. Standard No. 79-3F. DDR3 SDRAM Specification, July 2012.                      http://www.spec.org/cpu2006.
+[32] R. R. Julie et al. 12N test procedure for NPSF testing and diagnosis for        [74] V. Sridharan et al. Memory errors in modern systems: The good, the bad,
+     SRAMs. ICSE, 2008.                                                                   and the ugly. ASPLOS, 2015.
+[33] D.-C. Kang et al. An efficient built-in self test algorithm for neighborhood    [75] V. Sridharan and D. Liberty. A study of DRAM failures in the field. SC,
+     pattern and bit-line-sensitive faults in high density memories. ETRI, 2004.          2012.
+[34] U. Kang et al. Co-architecting controllers and DRAM to enhance DRAM             [76] G. R. Srinivasan et al. Accurate, predictive modeling of soft error rate due
+     process scaling. In The Memory Forum, 2014.                                          to cosmic rays and chip alpha radiation. IRPS, 1994.
+[35] S. Khan et al. The efficacy of error mitigation techniques for DRAM             [77] D. S. Suk and S. M. Reddy. Test procedures for a class of pattern-sensitive
+     retention failures: A comparative experimental study. SIGMETRICS,                    faults in semiconductor random-access memories. IEEE TC, 1980.
+     2014.                                                                           [78] A. J. van de Goor and I. Schanstra. Address and data scrambling: Causes
+[36] J. Y. Kim et al. Parallely testable design for detection of neighborhood             and impact on memory tests. DELTA, 2002.
+     pattern sensitive faults in high density DRAMs. ISCAS, 2005.                    [79] A. J. van de Goor and I. B. S. Tlili. Disturb neighborhood pattern sensitive
+[37] K. Kim. Technology for sub-50nm DRAM and NAND flash manufactur-                      fault. VTEST, 1997.
+     ing. IEDM, 2005.                                                                [80] R. K. Venkatesan et al. Retention-aware placement in DRAM (RAPID):
+[38] Y. Kim et al. A case for subarray-level parallelism (SALP) in DRAM. In               Software methods for quasi-non-volatile DRAM. HPCA, 2006.
+     ISCA, 2012.                                                                     [81] B. Wang et al. Reducing test time of embedded SRAMs. MTDT, 2003.
+[39] Y. Kim et al. Flipping bits in memory without accessing them: An                [82] X. Wang et al. Testing of inter-word coupling faults in word-oriented
+     experimental study of DRAM disturbance errors. ISCA, 2014.                           SRAMs. DFTVS, 2004.
+[40] Y. Kim, W. Yang, and O. Mutlu. Ramulator: A Fast and Extensible DRAM            [83] C. Weis et al. Retention time measurements and modeling of bit error
+     Simulator. IEEE CAL, 2015.                                                           rates of WIDE I/O DRAM in MPSoCs. DATE, 2015.
+[41] T. Kirihata, Watanabe, et al. Fault-tolerant designs for 256 Mb DRAM.           [84] Xilinx. ML605 Hardware User Guide, Oct. 2012.
+     JSSC, 1996.                                                                     [85] D. Yaney et al. A meta-stable leakage phenomenon in DRAM charge
+[42] D. Lee et al. Tiered-latency DRAM: A low latency and low cost DRAM                   storage - Variable hold time. IEDM, 1987.
+     architecture. HPCA, 2013.
+[43] D. Lee et al. Adaptive-latency DRAM: Optimizing DRAM timing for the
+     common-case. HPCA, 2015.                                                        Appendix
+[44] D. Lee et al. Simultaneous multi-layer access: Improving 3D-stacked                Time for Determining Neighboring Locations with Exhaustive
+     memory bandwidth at low cost. TACO, 2016.
+[45] M. J. Lee and K. W. Park. A mechanism for dependence of refresh time            Testing. For each bit address in a row, we need to write the worst-case
+     on data pattern in DRAM. Electron Device Letters, 31(2), 2010.                  pattern in the victim and the test cell, wait for 64 ms, and read them back
+[46] J. Liu et al. RAIDR: Retention-aware intelligent DRAM refresh. ISCA,            to detect the failures. In order to read/write these two cells, we need
+     2012.                                                                           to read data from the cells in the row buffer (tRCD ), transfer the blocks
+[47] J. Liu et al. An experimental study of data retention behavior in modern        containing the corresponding bits to the memory controller, and close
+     DRAM devices: Implications for retention time profiling mechanisms.             the row (tRP ). According to DDR3-1600 timing, time to read/write two
+     ISCA, 2013.                                                                     cache blocks is: tr = tRCD + tCCD + tRP = 13.75 + 5 ∗ 2 + 13.75 = 42.5
+[48] S. Liu et al. Flikker: Saving DRAM refresh-power through critical data          ns. Therefore, testing one address bit in a row takes 42.5 ns + 64 ms +
+     partitioning. ASPLOS, 2011.
+[49] S. Liu et al. Hardware/software techniques for DRAM thermal manage-             42.5 ns ≈ 64 ms. Testing all cells in an 8K-cell row (O(n) test) requires
+     ment. HPCA, 2011.                                                               64 ∗ 8192 ms = 8.73 minutes, n2 tests require 64 ∗ 81922 ms = 49 days,
+[50] C.-K. Luk et al. Pin: Building customized program analysis tools with           n3 tests require 64 ∗ 81923 ms = 1115 years, n4 tests require 64 ∗ 81924
+     dynamic instrumentation. In PLDI, 2005.
+[51] Y. Luo et al. Characterizing application memory error vulnerability to          ms = 9.1 M years.
+     optimize datacenter cost via heterogeneous-reliability memory. DSN,                Computational Complexity of the Recursive Divide and Con-
+     2014.                                                                           quer Algorithm. Recurrence relations in divide and conquer algo-
+[52] J. A. Mandelman et al. Challenges and future directions for the scaling         rithms have the following form: T (n) = aT (n/b) + f (n), where the
+     of dynamic random-access memory (DRAM). IBM J. of Res. and Dev.,                problem of size n is divided into b subproblems at each level, and only
+     2002.                                                                           a of those subproblems are solved in the next level. f (n) corresponds
+[53] J. Meza et al. Revisiting memory errors in large-scale production data          to the additional work done outside the recursion. The solution for this
+     centers: Analysis and modeling of new trends from the field. DSN, 2015.
+[54] M. G. Mohammad and K. K. Saluja. Flash memory disturbances: Model-              recursion is: T (n) = θ (n logb a) when f (n)=O(1) [21]. In PARBOR,
+     ing and test. VTS, 2001.                                                        each region is divided into 8 smaller regions at each level. The execu-
+[55] Y. Mori et al. The origin of variable retention time in DRAM. IEDM,             tion time becomes T (n) = 8T (n/8) + O(1). Solving this recurrence,
+     2005.                                                                           T (n) = θ (n log8 8) = θ (n).
+[56] W. Mueller et al. Challenges for the DRAM cell scaling to 40nm. IEDM,              Time for Detecting Data-dependent Failures in an Entire Mod-
+     2005.                                                                           ule with PARBOR. To test for data-dependent failures in an entire
+[57] O. Mutlu. Memory scaling: A systems architecture perspective. IMW,
+     2013.                                                                           module, we write a neighbor-aware data pattern in the entire module,
+[58] O. Mutlu and L. Subramanian. Research problems and opportunities in             wait for 64 ms, and read the module to detect failures. In order to
+     memory systems. SUPERFRI, 2014.                                                 read/write a row, we read data from the cells in the row buffer (tRCD ),
+[59] P. J. Nair et al. ArchShield: Architectural framework for assisting DRAM        transfer the row to the memory controller, and close the row (tRP ).
+     scaling by tolerating high error rates. ISCA, 2013.                             According to DDR3-1600 timing, time to read/write an 8KB row is:
+[60] Y. Nakagome et al. The impact of data-line interference noise on DRAM           tr = tRCD +tCCD ∗(8KB/64B)+tRP = 13.75+5∗128+13.75 = 667.5
+     scaling. JSSC, 1988.                                                            ns. In a 2GB module, there are 262144 rows, so reading/writing the
+[61] PARBOR Source Code.                 https://github.com/CMU-SAFARI/
+                                                                                     entire module would take tr ∗ 262144 ns = 174.98 ms. So, to test a
+     PARBOR/.
+[62] M. Qureshi et al. AVATAR: A Variable-Retention-Time (VRT) Aware                 module once, it would take 174.98 + 64 + 174.98 ms = 413.96 ms. 92
+     Refresh for DRAM Systems. DSN, 2015.                                            tests with PARBOR take 92*413.96 ms = 32 seconds and 132 tests
+[63] Ramulator Source Code.              https://github.com/CMU-SAFARI/              take 132*413.96 ms = 55 seconds.
+     ramulator/.
+
+
+
+                                                                                12

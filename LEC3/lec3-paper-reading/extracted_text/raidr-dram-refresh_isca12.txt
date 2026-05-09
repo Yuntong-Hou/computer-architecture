@@ -1,0 +1,992 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/raidr-dram-refresh_isca12.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/raidr-dram-refresh_isca12.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+                        RAIDR: Retention-Aware Intelligent DRAM Refresh
+
+                               Jamie Liu        Ben Jaiyen Richard Veras Onur Mutlu
+                                                 Carnegie Mellon University
+                                     {jamiel,bjaiyen,rveras,onur}@cmu.edu
+
+
+                          Abstract                                       rate and tolerate retention errors using error-correcting codes
+   Dynamic random-access memory (DRAM) is the building                   (ECC) [5, 17, 51], but these suffer from significant storage or
+block of modern main memory systems. DRAM cells must be                  bandwidth overheads. Hardware-software cooperative tech-
+periodically refreshed to prevent loss of data. These refresh            niques have been proposed to decrease refresh rate and allow
+operations waste energy and degrade system performance by                retention errors only in unused [11, 50] or non-critical [26]
+interfering with memory accesses. The negative effects of                regions of memory, but these substantially complicate the
+DRAM refresh increase as DRAM device capacity increases.                 operating system while still requiring significant hardware
+Existing DRAM devices refresh all cells at a rate determined             support.
+by the leakiest cell in the device. However, most DRAM cells                 In this paper, our goal is to minimize the number of re-
+can retain data for significantly longer. Therefore, many of             fresh operations performed without significantly increasing
+these refreshes are unnecessary.                                         hardware or software complexity and without making mod-
+   In this paper, we propose RAIDR (Retention-Aware Intelli-             ifications to DRAM chips. We exploit the observation that
+gent DRAM Refresh), a low-cost mechanism that can identify               only a small number of weak DRAM cells require the conser-
+and skip unnecessary refreshes using knowledge of cell reten-            vative minimum refresh interval of 64 ms that is common in
+tion times. Our key idea is to group DRAM rows into retention            current DRAM standards. For example, Figure 1 shows that
+time bins and apply a different refresh rate to each bin. As a re-       in a 32 GB DRAM system, fewer than 1000 cells (out of over
+sult, rows containing leaky cells are refreshed as frequently as         1011 ) require a refresh interval shorter than 256 ms, which is
+normal, while most rows are refreshed less frequently. RAIDR             four times the minimum refresh interval. Therefore, refreshing
+uses Bloom filters to efficiently implement retention time bins.         most DRAM cells at a low rate, while selectively refreshing
+RAIDR requires no modification to DRAM and minimal mod-                  weak cells at a higher rate, can result in a significant decrease
+ification to the memory controller. In an 8-core system with             in refresh overhead. To this end, we propose Retention-Aware
+32 GB DRAM, RAIDR achieves a 74.6% refresh reduction, an                 Intelligent DRAM Refresh (RAIDR). RAIDR groups DRAM
+average DRAM power reduction of 16.1%, and an average                    rows into retention time bins based on the refresh rate they
+system performance improvement of 8.6% over existing sys-                require to retain data. Rows in each bin are refreshed at a
+tems, at a modest storage overhead of 1.25 KB in the memory              different rate, so that rows are only refreshed frequently if
+controller. RAIDR’s benefits are robust to variation in DRAM             they require a high refresh rate. RAIDR stores retention time
+system configuration, and increase as memory capacity in-                bins in the memory controller, avoiding the need to modify
+creases.                                                                 DRAM devices. Retention time bins are stored using Bloom
+                                                                         filters [2]. This allows for low storage overhead and ensures
+1. Introduction                                                          that bins never overflow, yielding correct operation regardless
+Modern main memory is composed of dynamic random-access                  of variation in DRAM system capacity or in retention time
+memory (DRAM) cells. A DRAM cell stores data as charge                   distribution between DRAM chips.
+on a capacitor. Over time, this charge leaks, causing the                   Our experimental results show that a configuration of
+stored data to be lost. To prevent this, data stored in DRAM             RAIDR with only two retention time bins is able to reduce
+must be periodically read out and rewritten, a process called            DRAM system power by 16.1% while improving system per-
+refreshing. DRAM refresh operations waste energy and also                formance by 8.6% in a 32 GB DRAM system at a modest
+degrade performance by delaying memory requests. These                   storage overhead of 1.25 KB in the memory controller. We
+problems are expected to worsen as DRAM scales to higher                 compare our mechanism to previous mechanisms that reduce
+densities.                                                               refresh overhead and show that RAIDR results in the highest
+   Previous work has attacked the problems caused by DRAM                energy savings and performance gains.
+refresh from both hardware and software angles. Some
+hardware-only approaches have proposed modifying DRAM                      Our contributions are as follows:
+devices to refresh DRAM cells at different rates [19, 20, 37,            • We propose a low-cost mechanism that exploits inter-cell
+52], but these incur 5–20% area overheads on the DRAM                      variation in retention time in order to decrease refresh rate.
+die [20, 37] and are therefore difficult to implement given                In a configuration with only two retention time bins, RAIDR
+the cost-sensitive DRAM market. Other hardware-only ap-                    achieves a 74.6% refresh reduction with no modifications
+proaches have proposed modifying memory controllers, ei-                   to DRAM and only 1.25 KB storage overhead in a 32 GB
+ther to avoid unnecessary refreshes [7] or decrease refresh                memory controller.
+
+
+                                                                     1
+
+
+===== Page 2 =====
+
+                                                                                                                                                     Cumulative cell failure probability
+
+
+
+
+                                                                                                                                                                                                                                                  Number of cells in 32 GB DRAM
+      Cumulative cell failure probability
+
+
+
+
+                                                                                                                 Number of cells in 32 GB DRAM
+                                              100                                                                                                                                          10−5
+                                                                                                           1011                                                                                                                                106
+                                            10−2                                                                                                                                           10−6
+                                                                                                           109                                                                                                                                 105
+                                                                                                                                                                                           10−7
+                                            10−4                                                                                                                                                                                               104
+                                                                                                           106                                                                             10−8                  ≈ 1000 cells @ 256 ms
+                                            10−6                                                                                                                                                                                               103
+                                                                                                                                                                                           10−9
+                                            10−8                                                                                                                                                          ≈ 30 cells @ 128 ms                  102
+                                                                < 1000 cell failures @ 256 ms              103                                                                             10−10
+                                                                                                                                                                                                                                               101
+                                            10−10                                                                                                                                          10−11        Cutoff @ 64 ms                          100
+                                                                                                         100                                                                               10−12 −2
+                                            10−12 −2
+                                               10       10−1      100         101       102     103    104                                                                                    10                           10−1               100
+                                                                      Refresh interval (s)                                                                                                                          Refresh interval (s)
+                                                                        (a) Overview                                                                                                                                (b) Detailed view
+
+                                                       Figure 1: DRAM cell retention time distribution in a 60 nm process (based on data from [21])
+
+                                                                                                 Channel                                                                                                      Bit lines
+                                                                                              Rank     Rank
+                                                                                                                                                                                                                                        Row
+                                                                                              Bank    Bank                                              Word                                                 Cell
+                                                                      Processor
+                                                                                                                                                        lines
+                                                                            Memory
+                                                               Core        Controller
+
+                                                                                              Rank     Rank
+
+                                                                                              Bank     Bank                                                                                Sense         Sense            Sense      Row
+                                                                                                 Channel                                                                                   Amp           Amp              Amp       Buffer
+
+                                                                             (a) DRAM hierarchy                                                                                                       (b) DRAM bank structure
+
+                                                                                              Figure 2: DRAM system organization
+
+• We show that RAIDR is configurable, allowing a system                                                                                                                 of a capacitor and an access transistor. Each access transistor
+  designer to balance implementation overhead and refresh                                                                                                               connects a capacitor to a wire called a bitline and is controlled
+  reduction. We show that RAIDR scales effectively to pro-                                                                                                              by a wire called a wordline. Cells sharing a wordline form a
+  jected future systems, offering increasing performance and                                                                                                            row. Each bank also contains a row of sense amplifiers, where
+  energy benefits as DRAM devices scale in density.                                                                                                                     each sense amplifier is connected to a single bitline. This row
+2. Background and Motivation                                                                                                                                            of sense amplifiers is called the bank’s row buffer.
+                                                                                                                                                                           Data is represented by charge on a DRAM cell capacitor.
+2.1. DRAM Organization and Operation                                                                                                                                    In order to access data in DRAM, the row containing the
+We present a brief outline of the organization and operation of                                                                                                         data must first be opened (or activated) to place the data on
+a modern DRAM main memory system. Physical structures                                                                                                                   the bitlines. To open a row, all bitlines must previously be
+such as the DIMM, chip, and sub-array are abstracted by the                                                                                                             precharged to VDD /2. The row’s wordline is enabled, connect-
+logical structures of rank and bank for clarity where possible.                                                                                                         ing all capacitors in that row to their respective bitlines. This
+More details can be found in [18].                                                                                                                                      causes charge to flow from the capacitor to the bitline (if the
+   A modern DRAM main memory system is organized hi-                                                                                                                    capacitor is charged to VDD ) or vice versa (if the capacitor is
+erarchically as shown in Figure 2a. The highest level of the                                                                                                            at 0 V). In either case, the sense amplifier connected to that
+hierarchy is the channel. Each channel has command, address,                                                                                                            bitline detects the voltage change and amplifies it, driving the
+and data buses that are independent from those of other chan-                                                                                                           bitline fully to either VDD or 0 V. Data in the open row can
+nels, allowing for fully concurrent access between channels.                                                                                                            then be read or written by sensing or driving the voltage on
+A channel contains one or more ranks. Each rank corresponds                                                                                                             the appropriate bitlines.
+to an independent set of DRAM devices. Hence, all ranks                                                                                                                    Successive accesses to the same row, called row hits, can
+in a channel can operate in parallel, although this rank-level                                                                                                          be serviced without opening a new row. Accesses to different
+parallelism is constrained by the shared channel bandwidth.                                                                                                             rows in the same bank, called row misses, require a different
+Within each rank is one or more banks. Each bank corresponds                                                                                                            row to be opened. Since all rows in the bank share the same
+to a distinct DRAM cell array. As such, all banks in a rank                                                                                                             bitlines, only one row can be open at a time. To close a row,
+can operate in parallel, although this bank-level parallelism is                                                                                                        the row’s word line is disabled, disconnecting the capacitors
+constrained both by the shared channel bandwidth as well as                                                                                                             from the bitlines, and the bitlines are precharged to VDD /2
+by resources that are shared between banks on each DRAM                                                                                                                 so that another row can be opened. Opening a row requires
+device, such as device power.                                                                                                                                           driving the row’s wordline as well as all of the bitlines; due
+   Each DRAM bank consists of a two-dimensional array of                                                                                                                to the high parasitic capacitance of each wire, opening a row
+DRAM cells, as shown in Figure 2b. A DRAM cell consists                                                                                                                 is expensive both in latency and in power. Therefore, row
+
+
+                                                                                                                                                 2
+
+
+===== Page 3 =====
+
+                                                                                                                   100                                                                             350
+
+
+
+
+                                                                                                                                                               Power consumption per device (mW)
+                                    2500
+Auto-refresh command latency (ns)
+
+
+                                                                                                                                                    Future                                                     Refresh power
+                                                                                                                              DDR3                                                                 300                             Future
+
+
+
+
+                                                                                        Throughput loss (% time)
+                                                                                                                    80                                                                                         Non-refresh power
+                                    2000
+                                            Past                  Future                                                                                                                           250
+                                    1500                                                                            60                                                                             200        DDR3
+
+                                                                                                                    40                                                                             150
+                                    1000
+                                                                                                                                                                                                   100
+                                     500                                                                            20
+                                                                                                                                                                                                   50
+
+                                       00          16 Gb     32 Gb      48 Gb   64 Gb
+                                                                                                                     0 2 Gb   4 Gb    8 Gb 16 Gb 32 Gb 64 Gb                                        0 2 Gb    4 Gb    8 Gb 16 Gb 32 Gb 64 Gb
+                                                           Device capacity                                                           Device capacity                                                                 Device capacity
+
+                                                   (a) Refresh latency                                                        (b) Throughput loss                                                            (c) Power consumption
+
+                                                                  Figure 3: Adverse effects of refresh in contemporary and future DRAM devices
+
+hits are serviced with both lower latency and lower energy                                                                                 also allowed the memory controller to perform refreshes by
+consumption than row misses.                                                                                                               opening rows one-by-one (called RAS-only refresh [30]), but
+   The capacity of a DRAM device is the number of rows                                                                                     this method has been deprecated due to the additional power
+in the device times the number of bits per row. Increasing                                                                                 required to send row addresses on the bus.
+the number of bits per row increases the latency and power                                                                                    Refresh operations negatively impact both performance and
+consumption of opening a row due to longer wordlines and the                                                                               energy efficiency. Refresh operations degrade performance in
+increased number of bitlines driven per activation [18]. Hence,                                                                            three ways:
+the size of each row has remained limited to between 1 KB                                                                                  1. Loss of bank-level parallelism: A DRAM bank cannot
+and 2 KB for several DRAM generations, while the number                                                                                        service requests whenever it is refreshing, which results in
+of rows per device has scaled linearly with DRAM device                                                                                        decreased memory system throughput.
+capacity [13, 14, 15].                                                                                                                     2. Increased memory access latency: Any accesses to a
+2.2. DRAM Refresh                                                                                                                              DRAM bank that is refreshing must wait for the refresh la-
+DRAM cells lose data because capacitors leak charge over                                                                                       tency tRFC , which is on the order of 300 ns in contemporary
+time. In order to preserve data integrity, the charge on each                                                                                  DRAM [15].
+capacitor must be periodically restored or refreshed. When                                                                                 3. Decreased row hit rate: A refresh operation causes all open
+a row is opened, sense amplifiers drive each bit line fully to                                                                                 rows at a rank to be closed, which causes a large number of
+either VDD or 0 V. This causes the opened row’s cell capacitors                                                                                row misses after each refresh operation, leading to reduced
+to be fully charged to VDD or discharged to 0 V as well. Hence,                                                                                memory throughput and increased memory latency.
+a row is refreshed by opening it.1 The refresh interval (time                                                                                 Refresh operations also degrade energy efficiency, both by
+between refreshes for a given cell) has remained constant at                                                                               consuming significant amounts of energy (since opening a row
+64 ms for several DRAM generations [13, 14, 15, 18].                                                                                       is a high power operation) and by reducing memory system
+   In typical modern DRAM systems, the memory controller                                                                                   performance (as increased execution time results in increased
+periodically issues an auto-refresh command to the DRAM.2                                                                                  static energy consumption). The power cost of refresh oper-
+The DRAM chip then chooses which rows to refresh using                                                                                     ations also limits the extent to which refresh operations can
+an internal counter, and refreshes a number of rows based                                                                                  be parallelized to overlap their latencies, exacerbating the
+on the device capacity. During normal temperature opera-                                                                                   performance problem.
+tion (below 85 ◦ C), the average time between auto-refresh                                                                                    All of these problems are expected to worsen as DRAM
+commands (called tREFI ) is 7.8 µs [15]. In the extended tem-                                                                              device capacity increases. We estimate refresh latency by lin-
+perature range (between 85 ◦ C and 95 ◦ C), the temperature                                                                                early extrapolating tRFC from its value in previous and current
+range in which dense server environments operate [10] and                                                                                  DRAM generations, as shown in Figure 3a. Note that even
+3D-stacked DRAMs are expected to operate [1], the time be-                                                                                 with conservative estimates to account for future innovations
+tween auto-refresh commands is halved to 3.9 µs [15]. An                                                                                   in DRAM technology, the refresh operation latency exceeds
+auto-refresh operation occupies all banks on the rank simul-                                                                               1 µs by the 32 Gb density node, because power constraints
+taneously (preventing the rank from servicing any requests)                                                                                force refresh latency to increase approximately linearly with
+for a length of time tRFC , where tRFC depends on the num-                                                                                 DRAM density. Next, we estimate throughput loss from re-
+ber of rows being refreshed.3 Previous DRAM generations                                                                                    fresh operations by observing that it is equal to the time spent
+                                                                                                                                           refreshing per refresh command (tRFC ) divided by the time
+    1 After the refresh operation, it is of course necessary to precharge the bank
+                                                                                                                                           interval between refresh commands (tREFI ). This estimated
+before another row can be opened to service requests.
+    2 Auto-refresh is sometimes called CAS-before-RAS refresh [30].                                                                        throughput loss (in extended-temperature operation) is shown
+    3 Some devices support per-bank refresh commands, which refresh several                                                                in Figure 3b. Throughput loss caused by refreshing quickly
+rows at a single bank [16], allowing for bank-level parallelism at a rank during                                                           becomes untenable, reaching nearly 50% at the 64 Gb density
+refreshes. However, this feature is not available in most DRAM devices.                                                                    node. Finally, to estimate refresh energy consumption, we
+
+
+                                                                                                                                       3
+
+
+===== Page 4 =====
+
+                                                                                                                                     No
+ 1 Profile retention time of all rows                               Get time since row's last refresh      Last refresh 128ms ago?        Last refresh 256ms ago?
+
+                                                                                No                                Yes
+           Store rows into bins                Choose a refresh
+         2                                      candidate row           Row in 64-128ms bin?               Row in 128-256ms bin?           Yes            No
+            by retention time
+                                                 every 64ms
+                                                                               Yes                                Yes
+         Memory controller issues                                                                                                                 Do not refresh
+     3
+         refreshes when necessary                                                                             Refresh the row                        the row
+
+
+                                                                  Figure 4: RAIDR operation
+
+apply the power evaluation methodology described in [31],                              into that bin’s range. The shortest retention time covered by a
+extrapolating from previous and current DRAM devices, as                               given bin is the bin’s refresh interval. The shortest retention
+shown in Figure 3c. Refresh power rapidly becomes the domi-                            time that is not covered by any bins is the new default refresh
+nant component of DRAM power, since as DRAM scales in                                  interval. In the example shown in Figure 4, there are 2 bins.
+density, other components of DRAM power increase slowly                                One bin contains all rows with retention time between 64 and
+or not at all.4 Hence, DRAM refresh poses a clear scaling                              128 ms; its bin refresh interval is 64 ms. The other bin contains
+challenge due to both performance and energy considerations.                           all rows with retention time between 128 and 256 ms; its bin
+2.3. DRAM Retention Time Distribution                                                  refresh interval is 128 ms. The new default refresh interval
+                                                                                       is set to 256 ms. The number of bins is an implementation
+The time before a DRAM cell loses data depends on the leak-
+                                                                                       choice that we will investigate in Section 6.5.
+age current for that cell’s capacitor, which varies between cells
+                                                                                          A retention time profiling step determines each row’s reten-
+within a device. This gives each DRAM cell a characteristic
+                                                                                       tion time ( 1 in Figure 4). For each row, if the row’s retention
+retention time. Previous studies have shown that DRAM cell
+                                                                                       time is less than the new default refresh interval, the memory
+retention time can be modeled by categorizing cells as either
+                                                                                       controller inserts it into the appropriate bin 2 . During system
+normal or leaky. Retention time within each category follows
+                                                                                       operation 3 , the memory controller ensures that each row is
+a log-normal distribution [8, 21, 25]. The overall retention
+                                                                                       chosen as a refresh candidate every 64 ms. Whenever a row is
+time distribution is therefore as shown in Figure 1 [21].5
+                                                                                       chosen as a refresh candidate, the memory controller checks
+   The DRAM refresh interval is set by the DRAM cell with
+                                                                                       each bin to determine the row’s retention time. If the row
+the lowest retention time. However, the vast majority of cells
+                                                                                       appears in a bin, the memory controller issues a refresh opera-
+can tolerate a much longer refresh interval. Figure 1b shows
+                                                                                       tion for the row if the bin’s refresh interval has elapsed since
+that in a 32 GB DRAM system, on average only ≈ 30 cells
+                                                                                       the row was last refreshed. Otherwise, the memory controller
+cannot tolerate a refresh interval that is twice as long, and
+                                                                                       issues a refresh operation for the row if the default refresh
+only ≈ 103 cells cannot tolerate a refresh interval four times
+                                                                                       interval has elapsed since the row was last refreshed. Since
+longer. For the vast majority of the 1011 cells in the system,
+                                                                                       each row is refreshed at an interval that is equal to or shorter
+the refresh interval of 64 ms represents a significant waste of
+                                                                                       than its measured retention time, data integrity is guaranteed.
+energy and time.
+                                                                                          Our idea consists of three key components: (1) retention
+   Our goal in this paper is to design a mechanism to minimize
+                                                                                       time profiling, (2) storing rows into retention time bins, and
+this waste. By refreshing only rows containing low-retention
+                                                                                       (3) issuing refreshes to rows when necessary. We discuss how
+cells at the maximum refresh rate, while decreasing the refresh
+                                                                                       to implement each of these components in turn in order to
+rate for other rows, we aim to significantly reduce the number
+                                                                                       design an efficient implementation of our mechanism.
+of refresh operations performed.
+                                                                                       3.2. Retention Time Profiling
+3. Retention-Aware Intelligent DRAM Refresh
+                                                                                       Measuring row retention times requires measuring the reten-
+3.1. Overview                                                                          tion time of each cell in the row. The straightforward method
+A conceptual overview of our mechanism is shown in Figure 4.                           of conducting these measurements is to write a small number
+We define a row’s retention time as the minimum retention time                         of static patterns (such as “all 1s” or “all 0s”), turning off
+across all cells in that row. A set of bins is added to the memory                     refreshes, and observing when the first bit changes [50].6
+controller, each associated with a range of retention times.                              Before the row retention times for a system are collected, the
+Each bin contains all of the rows whose retention time falls                           memory controller performs refreshes using the baseline auto-
+    4 DRAM static power dissipation is dominated by leakage in periphery               refresh mechanism. After the row retention times for a system
+such as I/O ports, which does not usually scale with density. Outside of refresh       have been measured, the results can be saved in a file by the
+operations, DRAM dynamic power consumption is dominated by activation                  operating system. During future boot-ups, the results can be
+power and I/O power. Activation power is limited by activation latency, which
+has remained roughly constant, while I/O power is limited by bus frequency,               6 Circuit-level crosstalk effects cause retention times to vary depending
+
+which scales much more slowly than device capacity [12].                               on the values stored in nearby bits, and the values that cause the worst-case
+    5 Note that the curve is truncated on the left at 64 ms because a cell with        retention time depend on the DRAM bit array architecture of a particular
+retention time less than 64 ms results in the die being discarded.                     device [36, 25]. We leave further analysis of this problem to future work.
+
+
+                                                                                   4
+
+
+===== Page 5 =====
+
+                           1 insert(x)    4 insert(y)                 m = 16 bits
+                                                                      k = 3 hash functions                                           Refresh Rate Scaler Period
+
+                                                                                                Period Counter         Row Counter
+     0     0    1    0    1     1    0    0     0       1     0   0    1    0     1    0
+                                                                                                                                     Refresh Rate Scaler Counter
+                                                                                                       64-128ms Bloom Filter
+
+  2 test(x) = 1 & 1 & 1 = 1      3 test(z) = 1 & 0 & 0 = 0        5 test(w) = 1 & 1 & 1 = 1
+                    (present)                   (not present)                      (present)          128-256ms Bloom Filter
+
+                                (a) Bloom filter operation                                                        (b) RAIDR components
+
+                                                            Figure 5: RAIDR implementation details
+
+restored into the memory controller without requiring further                         a highly storage-efficient set representation in situations where
+profiling, since retention time does not change significantly                         the possibility of false positives and the inability to remove
+over a DRAM cell’s lifetime [8].7                                                     elements are acceptable. We observe that the problem of
+3.3. Storing Retention Time Bins: Bloom Filters                                       storing retention time bins is such a situation. Furthermore,
+                                                                                      unlike the previously discussed table implementation, a Bloom
+The memory controller must store the set of rows in each bin.                         filter can contain any number of elements; the probability of a
+A naive approach to storing retention time bins would use a                           false positive gradually increases with the number of elements
+table of rows for each bin. However, the exact number of rows                         inserted into the Bloom filter, but false negatives will never
+in each bin will vary depending on the amount of DRAM in                              occur. In the context of our mechanism, this means that rows
+the system, as well as due to retention time variation between                        may be refreshed more frequently than necessary, but a row is
+DRAM chips (especially between chips from different man-                              never refreshed less frequently than necessary, so data integrity
+ufacturing processes). If a table’s capacity is inadequate to                         is guaranteed.
+store all of the rows that fall into a bin, this implementation
+                                                                                          The Bloom filter parameters m and k can be optimally cho-
+no longer provides correctness (because a row not in the ta-
+                                                                                      sen based on expected capacity and desired false positive
+ble could be refreshed less frequently than needed) and the
+                                                                                      probability [23]. The particular hash functions used to in-
+memory controller must fall back to refreshing all rows at
+                                                                                      dex the Bloom filter are an implementation choice. However,
+the maximum refresh rate. Therefore, tables must be sized
+                                                                                      the effectiveness of our mechanism is largely insensitive to
+conservatively (i.e. assuming a large number of rows with
+                                                                                      the choice of hash function, since weak cells are already dis-
+short retention times), leading to large hardware cost for table
+                                                                                      tributed randomly throughout DRAM [8]. The results pre-
+storage.
+                                                                                      sented in Section 6 use a hash function based on the xorshift
+    To overcome these difficulties, we propose the use of Bloom
+                                                                                      pseudo-random number generator [29], which in our evalua-
+filters [2] to implement retention time bins. A Bloom filter
+                                                                                      tion is comparable in effectiveness to H3 hash functions that
+is a structure that provides a compact way of representing
+                                                                                      can be easily implemented in hardware [3, 40].
+set membership and can be implemented efficiently in hard-
+ware [4, 28].                                                                         3.4. Performing Refresh Operations
+    A Bloom filter consists of a bit array of length m and k                          During operation, the memory controller periodically chooses
+distinct hash functions that map each element to positions in                         a candidate row to be considered for refreshing, decides if it
+the array. Figure 5a shows an example Bloom filter with a                             should be refreshed, and then issues the refresh operation if
+bit array of length m = 16 and k = 3 hash functions. All bits                         necessary. We discuss how to implement each of these in turn.
+in the bit array are initially set to 0. To insert an element                         Selecting A Refresh Candidate Row We choose all refresh
+into the Bloom filter, the element is hashed by all k hash                            intervals to be multiples of 64 ms, so that the problem of
+functions, and all of the bits in the corresponding positions                         choosing rows as refresh candidates simply requires that each
+are set to 1 ( 1 in Figure 5a). To test if an element is in the                       row is selected as a refresh candidate every 64 ms. This is
+Bloom filter, the element is hashed by all k hash functions.                          implemented with a row counter that counts through every
+If all of the bits at the corresponding bit positions are 1, the                      row address sequentially. The rate at which the row counter
+element is declared to be present in the set 2 . If any of the                        increments is chosen such that it rolls over every 64 ms.
+corresponding bits are 0, the element is declared to be not                              If the row counter were to select every row in a given bank
+present in the set 3 . An element can never be removed from                           consecutively as a refresh candidate, it would be possible
+a Bloom filter. Many different elements may map to the same                           for accesses to that bank to become starved, since refreshes
+bit, so inserting other elements 4 may lead to a false positive,                      are prioritized over accesses for correctness. To avoid this,
+where an element is incorrectly declared to be present in the                         consecutive refresh candidates from the row counter are striped
+set even though it was never inserted into the Bloom filter 5 .                       across banks. For example, if the system contains 8 banks,
+However, because bits are never reset to 0, an element can                            then every 8th refresh candidate is at the same bank.
+never be incorrectly declared to be not present in the set; that
+                                                                                      Determining Time Since Last Refresh Determining if a row
+is, a false negative can never occur. A Bloom filter is therefore
+                                                                                      needs to be refreshed requires determining how many 64 ms
+   7 Retention time is significantly affected by temperature. We will discuss         intervals have elapsed since its last refresh. To simplify this
+how temperature variation is handled in Section 3.5.                                  problem, we choose all refresh intervals to be power-of-2 mul-
+
+
+                                                                                 5
+
+
+===== Page 6 =====
+
+tiples of 64 ms. We then add a second counter, called the                 period is set such that the row counter rolls over every 64 ms.
+period counter, which increments whenever the row counter                 At higher temperatures, the memory controller decreases the
+resets. The period counter counts to the default refresh in-              rate scaler’s period such that the row counter increments and
+terval divided by 64 ms, and then rolls over. For example, if             rolls over more frequently. This increases the refresh rate for
+the default refresh interval is 256 ms = 4 × 64 ms, the period            all rows by a constant factor, maintaining correctness.
+counter is 2 bits and counts from 0 to 3.                                    The reference temperature and the bit length of the refresh
+   The least significant bit of the period counter is 0 with              rate scaler are implementation choices. In the simplest imple-
+period 128 ms, the 2 least significant bits of the period counter         mentation, TREF = 85 ◦ C and the refresh rate scaler is 1 bit,
+are 00 with period 256 ms, etc. Therefore, a straightforward              with the refresh rate doubling above 85 ◦ C. This is equivalent
+method of using the period counter in our two-bin example                 to how temperature variation is handled in existing systems, as
+would be to probe the 64 ms–128 ms bin regardless of the                  discussed in Section 2.2. However, a rate scaler with more than
+value of the period counter (at a period of 64 ms), only probe            1 bit allows more fine-grained control of the refresh interval
+the 128 ms–256 ms bin when the period counter’s LSB is 0                  than is normally available to the memory controller.
+(at a period of 128 ms), and refresh all rows when the period             3.6. Summary
+counter is 00 (at a period of 256 ms). While this results in
+correct operation, this may lead to an undesirable “bursting”             Figure 5b summarizes the major components that RAIDR
+pattern of refreshes, in which every row is refreshed in certain          adds to the memory controller. In total, RAIDR requires (1)
+64 ms periods while other periods have very few refreshes.                three counters, (2) bit arrays to store the Bloom filters, and
+This may have an adverse effect on performance. In order                  (3) hash functions to index the Bloom filters. The counters
+to distribute refreshes more evenly in time, the LSBs of the              are relatively short; the longest counter, the row counter, is
+row counter are compared to the LSBs of the period counter.               limited in length to the longest row address supported by the
+For example, a row with LSB 0 that must be refreshed every                memory controller, which in current systems is on the order
+128 ms is refreshed when the LSB of the period counter is 0,              of 24 bits. The majority of RAIDR’s hardware overhead is in
+while a row with LSB 1 with the same requirement is refreshed             the Bloom filters, which we discuss in Section 6.3. The logic
+when the LSB of the period counter is 1.                                  required by RAIDR lies off the critical path of execution, since
+Issuing Refreshes In order to refresh a specific row, the mem-            the frequency of refreshes is much smaller than a processor’s
+ory controller simply activates that row, essentially performing          clock frequency, and refreshes are generated in parallel with
+a RAS-only refresh (as described in Section 2.2). Although                the memory controller’s normal functionality.
+RAS-only refresh is deprecated due to the power consumed                  3.7. Applicability to eDRAM and 3D-Stacked DRAM
+by issuing row addresses over the DRAM address bus, we ac-
+                                                                          So far, we have discussed RAIDR only in the context of a
+count for this additional power consumption in our evaluations
+                                                                          memory controller for a conventional DRAM system. In this
+and show that the energy saved by RAIDR outweighs it.
+                                                                          section, we briefly discuss RAIDR’s applicability to two rela-
+3.5. Tolerating Temperature Variation: Refresh Rate                       tively new types of DRAM systems, 3D die-stacked DRAMs
+     Scaling                                                              and embedded DRAM (eDRAM).
+Increasing operational temperature causes DRAM retention                     In the context of DRAM, 3D die-stacking has been proposed
+time to decrease. For instance, the DDR3 specification re-                to improve memory latency and bandwidth by stacking DRAM
+quires a doubled refresh rate for DRAM being operated in the              dies on processor logic dies [1, 39], as well as to improve
+extended temperature range of 85 ◦ C to 95 ◦ C [15]. However,             DRAM performance and efficiency by stacking DRAM dies
+change in retention time as a function of temperature is pre-             onto a sophisticated controller die [9]. While 3D stacking may
+dictable and consistent across all affected cells [8]. We lever-          allow for increased throughput and bank-parallelism, this does
+age this property to implement a refresh rate scaling mecha-              not alleviate refresh overhead; as discussed in Section 2.2, the
+nism to compensate for changes in temperature, by allowing                rate at which refresh operations can be performed is limited
+the refresh rate for all cells to be adjusted by a multiplicative         by their power consumption, which 3D die stacking does not
+factor. This rate scaling mechanism resembles the temperature-            circumvent. Furthermore, DRAM integrated in a 3D stack
+compensated self-refresh feature available in some mobile                 will operate at temperatures over 90 ◦ C [1], leading to reduced
+DRAMs (e.g. [32]), but is applicable to any DRAM system.                  retention times (as discussed in Section 3.5) and exacerbating
+   The refresh rate scaling mechanism consists of two parts.              the problems caused by DRAM refresh. Therefore, refresh is
+First, when a row’s retention time is determined, the measured            likely to be of significant concern in a 3D die-stacked DRAM.
+time is converted to the retention time at some reference tem-               eDRAM is now increasingly integrated onto processor dies
+perature TREF based on the current device temperature. This               in order to implement on-chip caches that are much more
+temperature-compensated retention time is used to determine               dense than traditional SRAM arrays, e.g. [43]. Refresh power
+which bin the row belongs to. Second, the row counter is mod-             is the dominant power component in an eDRAM [51], because
+ified so that it only increments whenever a third counter, called         although eDRAM follows the same retention time distribution
+the refresh rate scaler, rolls over. The refresh rate scaler incre-       (featuring normal and leaky cells) described in Section 2.3,
+ments at a constant frequency, but has a programmable period              retention times are approximately three orders of magnitude
+chosen based on the temperature. At TREF , the rate scaler’s              smaller [24].
+
+
+                                                                      6
+
+
+===== Page 7 =====
+
+   RAIDR is applicable to both 3D die-stacked DRAM and                  tional (since charge only leaks off of a capacitor and not onto
+eDRAM systems, and is synergistic with several character-               it), and propose to deactivate refresh operations for clusters of
+istics of both. In a 3D die-stacked or eDRAM system, the                cells containing non-leaking values. These mechanisms are
+controller logic is permanently fused to the DRAM. Hence,               orthogonal to RAIDR.
+the attached DRAM can be retention-profiled once, and the
+                                                                        4.2. Modifications to Memory Controllers
+results stored permanently in the memory controller, since
+the DRAM system will never change. In such a design, the                Katayama et al. [17] propose to decrease refresh rate and
+Bloom filters could be implemented using laser- or electrically-        tolerate the resulting retention errors using ECC. Emma et
+programmable fuses or ROMs. Furthermore, if the logic die               al. [5] propose a similar idea in the context of eDRAM caches.
+and DRAM reside on the same chip, then the power overhead               Both schemes impose a storage overhead of 12.5%. Wilkerson
+of RAS-only refreshes decreases, improving RAIDR’s effi-                et al. [51] propose an ECC scheme for eDRAM caches with
+ciency and allowing it to reduce idle power more effectively.           2% storage overhead. However, their mechanism depends on
+Finally, in the context of 3D die-stacked DRAM, the large               having long (1 KB) ECC code words. This means that reading
+logic die area may allow more flexibility in choosing more ag-          any part of the code word (such as a single 64-byte cache
+gressive configurations for RAIDR that result in greater power          line) requires reading the entire 1 KB code word, which would
+savings, as discussed in Section 6.5. Therefore, we believe             introduce significant bandwidth overhead in a conventional
+that RAIDR’s potential applications to 3D die-stacked DRAM              DRAM context.
+and eDRAM systems are quite promising.                                     Ghosh and Lee [7] exploit the same observation as
+4. Related Work                                                         Song [45]. Their Smart Refresh proposal maintains a timeout
+                                                                        counter for each row that is reset when the row is accessed or
+To our knowledge, RAIDR is the first work to propose a low-             refreshed, and refreshes a row only when its counter expires.
+cost memory controller modification that reduces DRAM re-               Hence accesses to a row cause its refresh to be skipped. Smart
+fresh operations by exploiting variability in DRAM cell re-             Refresh is unable to reduce idle power, requires very high stor-
+tention times. In this section, we discuss prior work that has          age overhead (a 3-bit counter for every row in a 32 GB system
+aimed to reduce the negative effects of DRAM refresh.                   requires up to 1.5 MB of storage), and requires workloads
+4.1. Modifications to DRAM Devices                                      with large working sets to be effective (since its effectiveness
+Kim and Papaefthymiou [19, 20] propose to modify DRAM                   depends on a large number of rows being activated and there-
+devices to allow them to be refreshed on a finer block-based            fore not requiring refreshes). In addition, their mechanism is
+granularity with refresh intervals varying between blocks. In           orthogonal to ours.
+addition, their proposal adds redundancy within each block to              The DDR3 DRAM specification allows for some flexibility
+further decrease refresh intervals. Their modifications impose          in refresh scheduling by allowing up to 8 consecutive refresh
+a DRAM die area overhead on the order of 5%. Yanagi-                    commands to be postponed or issued in advance. Stuecheli et
+sawa [52] and Ohsawa et al. [37] propose storing the retention          al. [47] attempt to predict when the DRAM will remain idle
+time of each row in registers in DRAM devices and varying               for an extended period of time and schedule refresh operations
+refresh rates based on this stored data. Ohsawa et al. [37] esti-       during these idle periods, in order to reduce the interference
+mate that the required modifications impose a DRAM die area             caused by refresh operations and thus mitigate their perfor-
+overhead between 7% and 20%. [37] additionally proposes                 mance impact. However, refresh energy is not substantially
+modifications to DRAM, called Selective Refresh Architec-               affected, since the number of refresh operations is not de-
+ture (SRA), to allow software to mark DRAM rows as unused,              creased. In addition, their proposed idle period prediction
+preventing them from being refreshed. This latter mechanism             mechanism is orthogonal to our mechanism.
+carries a DRAM die area overhead of 5% and is orthogonal                4.3. Modifications to Software
+to RAIDR. All of these proposals are potentially unattractive
+since DRAM die area overhead results in an increase in the              Venkatesan et al. [50] propose to modify the operating sys-
+cost per DRAM bit. RAIDR avoids this cost since it does not             tem so that it preferentially allocates data to rows with higher
+modify DRAM.                                                            retention times, and refreshes the DRAM only at the lowest
+   Emma et al. [6] propose to suppress refreshes and mark               refresh interval of all allocated pages. Their mechanism’s ef-
+data in DRAM as invalid if the data is older than the refresh           fectiveness decreases as memory capacity utilization increases.
+interval. While this may be suitable in systems where DRAM              Furthermore, moving refresh management into the operating
+is used as a cache, allowing arbitrary data in DRAM to become           system can substantially complicate the OS, since it must
+invalid is not suitable for conventional DRAM systems.                  perform hard-deadline scheduling in order to guarantee that
+   Song [45] proposes to associate each DRAM row with a                 DRAM refresh is handled in a timely manner.
+referenced bit that is set whenever a row is accessed. When                Isen et al. [11] propose modifications to the ISA to enable
+a row becomes a refresh candidate, if its referenced bit is set,        memory allocation libraries to make use of Ohsawa et al.’s
+its referenced bit is cleared and the refresh is skipped. This          SRA proposal [37], discussed previously in Section 4.1. [11]
+exploits the fact that opening a row causes it to be refreshed.         builds directly on SRA, which is orthogonal to RAIDR, so [11]
+Patel et al. [38] note that DRAM retention errors are unidirec-         is orthogonal to RAIDR as well.
+
+
+                                                                    7
+
+
+===== Page 8 =====
+
+                                                     Table 1: Evaluated system configuration
+
+                          Component                Specifications
+                          Processor                8-core, 4 GHz, 3-wide issue, 128-entry instruction window, 16 MSHRs per core
+                          Per-core cache           512 KB, 16-way, 64 B cache line size
+                          Memory controller        FR-FCFS scheduling [41, 54], line-interleaved mapping, open-page policy
+                          DRAM organization        32 GB, 2 channels, 4 ranks/channel, 8 banks/rank, 64K rows/bank, 8 KB rows
+                          DRAM device              64x Micron MT41J512M8RA-15E (DDR3-1333) [33]
+
+                                                           Table 2: Bloom filter properties
+
+                    Retention range      Bloom filter size m    Number of hash functions k       Rows in bin     False positive probability
+                    64 ms – 128 ms              256 B                          10                    28                 1.16 · 10−9
+                    128 ms – 256 ms             1 KB                            6                    978                  0.0179
+
+  Liu et al. [26] propose Flikker, in which programmers des-                        ning alone on the same system on the baseline auto-refresh con-
+ignate data as non-critical, and non-critical data is refreshed at                  figuration at the same temperature, and the weighted speedup
+a much lower rate, allowing retention errors to occur. Flikker                      of a workload is the sum of normalized IPCs for all applica-
+requires substantial programmer effort to identify non-critical                     tions in the workload.
+data, and is complementary to RAIDR.                                                   We perform each simulation for a fixed number of cycles
+                                                                                    rather than a fixed number of instructions, since refresh timing
+5. Evaluation Methodology
+                                                                                    is based on wall time. However, higher-performing mecha-
+To evaluate our mechanism, we use an in-house x86 simulator                         nisms execute more instructions and therefore generate more
+with a cycle-accurate DRAM timing model validated against                           memory accesses, which causes their total DRAM energy con-
+DRAMsim2 [42], driven by a frontend based on Pin [27].                              sumption to be inflated. In order to achieve a fair comparison,
+Benchmarks are drawn from SPEC CPU2006 [46] and TPC-                                we report DRAM system power as energy per memory access
+C and TPC-H [49]. Each simulation is run for 1.024 bil-                             serviced.
+lion cycles, corresponding to 256 ms given our 4 GHz clock
+frequency.8 DRAM system power was calculated using the                              6. Results
+methodology described in [31]. DRAM device power pa-                                We compare RAIDR to the following mechanisms:
+rameters are taken from [33], while I/O termination power                           • The auto-refresh baseline discussed in Section 2.2, in which
+parameters are taken from [53].                                                        the memory controller periodically issues auto-refresh com-
+   Except where otherwise noted, our system configuration is                           mands, and each DRAM chip refreshes several rows per
+as shown in Table 1. DRAM retention distribution parameters                            command,9 as is implemented in existing systems [15].
+correspond to the 60 nm technology data provided in [21]. A                         • A “distributed” refresh scheme, in which the memory con-
+set of retention times was generated using these parameters,                           troller performs the same number of refreshes as in the
+from which Bloom filter parameters were chosen as shown                                baseline, but does so by refreshing one row at a time us-
+in Table 2, under the constraint that all Bloom filters were                           ing RAS-only refreshes. This improves performance by
+required to have power-of-2 size to simplify hash function                             allowing the memory controller to make use of bank-level
+implementation. We then generated a second set of retention                            parallelism while refresh operations are in progress, and
+times using the same parameters and performed all of our                               by decreasing the latency of each refresh operation. How-
+evaluations using this second data set.                                                ever, it potentially increases energy consumption due to
+   For our main evaluations, we classify each benchmark as                             the energy cost of sending row addresses with RAS-only
+memory-intensive or non-memory-intensive based on its last-                            refreshes, as explained in Section 2.2.
+level cache misses per 1000 instructions (MPKI). Benchmarks                         • Smart Refresh [7], as described in Section 4.2. Smart Re-
+with MPKI > 5 are memory-intensive, while benchmarks with                              fresh also uses RAS-only refreshes, since it also requires
+MPKI < 5 are non-memory-intensive. We construct 5 different                            control of refresh operations on a per-row granularity.
+categories of workloads based on the fraction of memory-                            • An ideal scheme that performs no refreshes. While this
+intensive benchmarks in each workload (0%, 25%, 50%, 75%,                              is infeasible in practice, some ECC-based schemes may
+100%). We randomly generate 32 multiprogrammed 8-core                                  decrease refresh rate sufficiently to approximate it, though
+workloads for each category.                                                           these come with significant overheads that may negate the
+   We report system performance using the commonly-used                                benefits of eliminating refreshes, as discussed in Section 4.2.
+weighted speedup metric [44], where each application’s in-                          For each refresh mechanism, we evaluate both the normal
+structions per cycle (IPC) is normalized to its IPC when run-                       temperature range (for which a 64 ms refresh interval is pre-
+                                                                                    scribed) and the extended temperature range (where all reten-
+   8 The pattern of refreshes repeats on a period of 32, 64, 128, or 256 ms,
+                                                                                    tion times and refresh intervals are halved).
+depending on refresh mechanism and temperature. Hence, 256 ms always
+corresponds to an integer number of “refresh cycles”, which is sufficient to            9 In our evaluated system, each auto-refresh command causes 64 rows to
+
+evaluate the impact of refresh.                                                     be refreshed.
+
+
+                                                                               8
+
+
+===== Page 9 =====
+
+                                    7
+                            4.0 ×10                                                                               8.5                                                                          8.5
+                                                         Auto                 Smart                                                        Auto            RAIDR                                                                          Auto             RAIDR
+                            3.5                          Distributed          RAIDR                               8.0 2.9%                 Distributed     No Refresh                          8.0 6.1%                                   Distributed      No Refresh
+ # of refreshes performed
+
+
+
+                                                                                                                                           Smart                                                                                8.4%      Smart
+                            3.0                                                                                   7.5                                                                          7.5
+                                                                                                                                3.8%
+
+
+
+
+                                                                                               Weighted speedup
+
+
+
+
+                                                                                                                                                                         Weighted speedup
+                            2.5                                                                                   7.0                                                                          7.0                                      9.3%
+                                                                                                                                        4.4%                                                                                                                     8.6%
+                                                                                                                  6.5                                                                          6.5
+                            2.0                                                                                                                                  4.1%
+                                                                               74.6%                              6.0                                                                          6.0                                              9.6%
+                            1.5
+                                                                                                                  5.5                            4.5%                                          5.5
+                            1.0                  74.6%                                                                                                                                                                                                   9.8%
+                                                                                                                  5.0                                                                          5.0
+                                                                                                                                                         4.8%
+                            0.5                                                                                   4.5                                                                          4.5
+                            0.0 Normal temperature       Extended temperature                                     4.0 0%      25%     50%     75% 100% Avg                                     4.0 0%                          25%     50%     75% 100% Avg
+                                                                                                                         Memory-intensive benchmarks in workload                                                          Memory-intensive benchmarks in workload
+
+                                                                                                                           (a) Normal temperature range                                                                   (b) Extended temperature range
+
+                                  Figure 6: Number of refreshes                          Figure 7: Effect of refresh mechanism on performance (RAIDR improvement over
+                                                                                                   auto-refresh in percent)
+                            100                                                                                  100                                                                                                  5
+
+
+
+
+                                                                                                                                                                                    Idle DRAM power consumption (W)
+                                                     Auto               RAIDR                                                              Auto            RAIDR                                                                          Auto              RAIDR
+                                                     Distributed        No Refresh                                      18.9%              Distributed     No Refresh                                                                     Self Refresh      No Refresh
+                             80 10.1%                Smart                                                        80                       Smart                                                                      4
+ Energy per access (nJ)
+
+
+
+
+                                                                                        Energy per access (nJ)
+
+
+
+
+                                                                                                                                                                                                                                                         19.6%
+                                                                                                                                17.3%                            16.1%
+                             60           9.0%                                                                    60                                                                                                  3
+                                                                                 8.3%                                                   15.4%                                                                                   12.2%
+                                                 7.9%                                                                                           13.7%    12.6%
+                                                            6.9%       6.4%
+                             40                                                                                   40                                                                                                  2
+
+                             20                                                                                   20                                                                                                  1
+
+                              0 0%      25%     50%     75% 100% Avg                                               0 0%       25%     50%     75% 100% Avg                                                            0 Normal temperature     Extended temperature
+                                   Memory-intensive benchmarks in workload                                               Memory-intensive benchmarks in workload
+
+                                      (a) Normal temperature range                                                        (b) Extended temperature range                                                                     (c) Idle power consumption
+
+                                   Figure 8: Effect of refresh mechanism on energy consumption (RAIDR improvement over auto-refresh in percent)
+
+6.1. Refresh Reduction                                                                                                                          sons described in Section 6. However, RAIDR averages 1.2%
+Figure 6 shows the number of refreshes performed by each                                                                                        (4.0%) performance improvement over distributed refresh,
+mechanism.10 A mechanism that refreshes each row every                                                                                          since reducing the number of refreshes reduces interference
+256 ms instead of every 64 ms would reduce refreshes by 75%                                                                                     beyond what is possible through distributing refreshes alone.
+compared to the auto-refresh baseline. RAIDR provides a                                                                                         RAIDR’s performance gains over auto-refresh increase with
+74.6% refresh reduction, indicating that the number of re-                                                                                      increasing memory intensity, to an average of 4.8% (9.8%)
+freshes performed more frequently than every 256 ms (includ-                                                                                    for workloads in the 100% memory intensity category. This is
+ing both rows requiring more frequent refreshes and rows that                                                                                   because increased memory intensity means there are a larger
+are refreshed more frequently due to false positives in the                                                                                     number of memory requests, so more requests encounter inter-
+Bloom filters) is very low. The distributed refresh mechanism                                                                                   ference from refreshes.
+performs the same number of refreshes as the auto-refresh                                                                                          Surprisingly, RAIDR outperforms the no-refresh system
+baseline. Smart Refresh does not substantially reduce the                                                                                       at low memory intensities. This unintuitive result occurs be-
+number of refreshes since the working sets of our workloads                                                                                     cause while the common FR-FCFS memory scheduling policy
+are small compared to the size of DRAM, and Smart Refresh                                                                                       maximizes memory throughput, it does not necessarily max-
+can only eliminate refreshes to accessed rows.                                                                                                  imize system performance; applications with high row hit
+                                                                                                                                                rates can starve applications with low row hit rates [34, 35].
+6.2. Performance Analysis
+                                                                                                                                                However, refresh operations force rows to be closed, disrupt-
+Figure 7 compares the system performance of each refresh                                                                                        ing sequences of row hits and guaranteeing that the oldest
+mechanism as memory intensity varies. RAIDR consistently                                                                                        memory request in the memory controller’s request queue will
+provides significant performance gains in both the normal                                                                                       be serviced. This alleviates starvation, thus providing better
+and extended temperature ranges, averaging a 4.1% (8.6%)                                                                                        fairness. At low memory intensities, this fairness improve-
+improvement over auto-refresh.11 Part of this performance                                                                                       ment outweighs the throughput and latency penalties caused
+improvement is a result of distributing refreshes, for the rea-                                                                                 by RAIDR’s relatively infrequent refreshes.
+   10 For these results, we do not categorize workloads by memory intensity                                                                     6.3. Energy Analysis
+because the number of refreshes is identical in all cases for all mechanisms
+                                                                                                                                                We model the Bloom filters as a 1.25 KB direct-mapped cache
+except for Smart Refresh, and very similar in all workloads for Smart Refresh.
+The no-refresh mechanism is omitted because it performs zero refreshes.                                                                         with 64-bit line size, for ease of analysis using CACTI [48].
+   11 This result, and further results, are given as “normal temperature (ex-                                                                   According to CACTI 5.3, for a 45 nm technology, such a cache
+tended temperature)”.                                                                                                                           requires 0.013 mm2 area, consumes 0.98 mW standby leakage
+
+
+                                                                                                                                            9
+
+
+===== Page 10 =====
+
+power, and requires 3.05 pJ energy per access. We include                          and the DRAM, saving I/O power. Second, in self-refresh, the
+this power consumption in our evaluations.                                         DRAM internal clocking logic is disabled, reducing power
+   Figure 8 compares the energy per access for each refresh                        consumption significantly. However, for the latter reason,
+mechanism as memory intensity varies. RAIDR decreases en-                          when a DRAM device is woken up from self-refresh, there is
+ergy per access by 8.3% (16.1%) on average compared to the                         a 512-cycle latency (768 ns in DDR3-1333) before any data
+auto-refresh baseline, and comes within 2.2% (4.6%) of the                         can be read [15]. In contrast, a DRAM device waking up
+energy per access for no-refresh ideal. Despite the additional                     from the lowest-power power-down mode only incurs a 24 ns
+energy consumed by transmitting row addresses on the bus                           latency before data can be read [15]. This significant latency
+for RAS-only refresh in all mechanisms except for the base-                        difference may make RAIDR the preferable refresh mecha-
+line, all refresh mechanisms result in a net energy per access                     nism during idle periods in many systems. In addition, as
+decrease compared to the auto-refresh baseline because the                         refresh overhead increases (due to increased DRAM density
+improvements in performance reduce the average static energy                       or temperature), the energy saved by RAIDR due to fewer re-
+per memory access. The relative improvement for all mecha-                         freshes begins to outweigh the energy saved by self-refresh, as
+nisms, including RAIDR, decreases asymptotically as memory                         shown by RAIDR’s lower power consumption in the extended
+intensity increases, since increased memory intensity results                      temperature range. This suggests that RAIDR may become
+in increased DRAM dynamic power consumption, reducing                              strictly better than self-refresh as DRAM devices increase in
+the fraction of DRAM energy consumed by refresh.12 Nev-                            density.
+ertheless, even for workloads in the 100% memory intensity                         6.5. Design Space Exploration
+category, RAIDR provides a 6.4% (12.6%) energy efficiency
+improvement over the baseline.                                                     The number of bins and the size of the Bloom filters used to
+                                                                                   represent them are an implementation choice. We examined a
+6.4. Idle Power Consumption                                                        variety of Bloom filter configurations, and found that in gen-
+We compare three refresh mechanisms for situations where                           eral RAIDR’s performance effects were not sensitive to the
+the memory system is idle (receives no requests).                                  configuration chosen. However, RAIDR’s energy savings are
+• In the auto-refresh mechanism employed while idle, the                           affected by the configuration, since the chosen configuration
+   DRAM is put in its lowest-power power-down mode [15],                           affects how many refreshes are performed. Figure 9a shows
+   where all banks are closed and the DRAM’s internal delay-                       how the number of refreshes RAIDR performs varies with
+   locked loop (DLL) is turned off. In order to perform re-                        the configurations shown in Table 3. The number of bins has
+   freshes, the DRAM is woken up, an auto-refresh command                          the greatest effect on refresh reduction, since this determines
+   is issued, and the DRAM is returned to the power-down                           the default refresh interval. The number of refreshes asymp-
+   mode when the refresh completes.                                                totically decreases as the number of bits used to store each
+• In the self-refresh mechanism, the DRAM is put in its self-                      bin increases, since this reduces the false positive rate of the
+   refresh mode [15], where the DRAM manages refreshes                             Bloom filters. As DRAM device capacities increase, it is likely
+   internally without any input from the memory controller.                        worth using a larger number of bins to keep performance and
+• In RAIDR, the DRAM is put in its lowest-power power-                             energy degradation under control.
+   down mode (as in the auto-refresh mechanism used while                          6.6. Scalability
+   idle), except that the DRAM is woken up for RAIDR row
+   refreshes rather than auto-refresh commands.                                    The impact of refreshes is expected to continue to increase as
+We do not examine an “idle distributed refresh” mechanism,                         DRAM device capacity increases. We evaluate how RAIDR
+since performance is not a concern during idle periods, and                        scales with DRAM device capacity. We assume throughout
+distributing refreshes would simply increase how frequently                        that the amount of space allocated to RAIDR’s Bloom filters
+the DRAM would be woken up and waste energy transmitting                           scales linearly with the size of DRAM.13 For these results we
+row addresses. We also do not examine Smart Refresh, as it                         only evaluated the 32 workloads with 50% memory-intensive
+does not reduce idle power, as discussed in Section 4.2.                           benchmarks, as this scenario of balanced memory-intensive
+   Figure 8c shows the system power consumption for each                           and non-memory-intensive benchmarks is likely to be com-
+mechanism, as well as the no-refresh case for reference. Using                     mon in future systems [22]. We also focus on the extended-
+RAIDR during long idle periods results in the lowest DRAM                          temperature range. Refresh times are assumed to scale approx-
+power usage in the extended temperature range (a 19.6% im-                         imately linearly with device density, as detailed in Section 2.2.
+provement over auto-refresh). The self-refresh mechanism has                          Figure 9b shows the effect of device capacity scaling on
+lower power consumption in the normal temperature range.                           performance. As device capacity increases from 4 Gb to
+This is for two reasons. First, in the self-refresh mechanism, no                  64 Gb, the auto-refresh system’s performance degrades by
+communication needs to occur between the memory controller                         63.7%, while RAIDR’s performance degrades by 30.8%. At
+                                                                                   the 64 Gb device capacity, RAIDR’s performance is 107.9%
+   12 However, note that although we only evaluate the energy efficiency of        higher than the auto-refresh baseline. Figure 9c shows a sim-
+the DRAM, the energy efficiency of the entire system also improves due
+to improved performance, and this energy efficiency gain increases with              13 This seems to be a reasonable assumption; at the 64 Gb density, this
+
+increased memory intensity since RAIDR’s performance gains increase with           would correspond to an overhead of only 20 KB to manage a 512 GB DRAM
+increased memory intensity, as shown in Section 6.2.                               system.
+
+
+                                                                              10
+
+
+===== Page 11 =====
+
+                                                                                  Table 3: Tested RAIDR configurations
+
+                                                 Key       Description                                                                                                          Storage Overhead
+                                                Auto       Auto-refresh                                                                                                                  N/A
+                                               RAIDR       Default RAIDR: 2 bins (64–128 ms, m = 2048; 128–256 ms, m = 8192)                                                           1.25 KB
+                                              1 bin (1)    1 bin (64–128 ms, m = 512)                                                                                                    64 B
+                                              1 bin (2)    1 bin (64–128 ms, m = 1024)                                                                                                  128 B
+                                              2 bins (1)   2 bins (64–128 ms, m = 2048; 128–256 ms, m = 2048)                                                                           512 B
+                                              2 bins (2)   2 bins (64–128 ms, m = 2048; 128–256 ms, m = 4096)                                                                           768 B
+                                              2 bins (3)   2 bins (64–128 ms, m = 2048; 128–256 ms, m = 16384)                                                                         2.25 KB
+                                              2 bins (4)   2 bins (64–128 ms, m = 2048; 128–256 ms, m = 32768)                                                                         4.25 KB
+                                              3 bins (1)   3 bins (64–128 ms, m = 2048; 128–256 ms, m = 8192; 256–512 ms, m = 32768)                                                   5.25 KB
+                                              3 bins (2)   3 bins (64–128 ms, m = 2048; 128–256 ms, m = 8192; 256–512 ms, m = 65536)                                                   9.25 KB
+                                              3 bins (3)   3 bins (64–128 ms, m = 2048; 128–256 ms, m = 8192; 256–512 ms, m = 131072)                                                  17.25 KB
+                                              3 bins (4)   3 bins (64–128 ms, m = 2048; 128–256 ms, m = 8192; 256–512 ms, m = 262144)                                                  33.25 KB
+                                              3 bins (5)   3 bins (64–128 ms, m = 2048; 128–256 ms, m = 8192; 256–512 ms, m = 524288)                                                  65.25 KB
+                                     7
+                           4.0 ×10                                                               8                                                                   160
+                                                                                                                                    Auto                                       Auto
+                           3.5                                                                   7                                                                   140
+# of refreshes performed
+
+
+
+
+                                                                                                                                    RAIDR                                      RAIDR
+
+
+
+
+                                                                                                                                            Energy per access (nJ)
+                                                                              Weighted speedup
+
+
+
+                           3.0                                                                   6                                                                   120
+                           2.5                                                                   5                                                                   100
+                           2.0                                                                   4                                                                   80
+                           1.5                                                                   3                                                                   60
+                           1.0                                                                   2                                                                   40
+                           0.5                                                                   1                                                                   20
+                           0.0              1 2 1 2 3 4 1 2 3 4 5                                0 4 Gb      8 Gb 16 Gb 32 Gb       64 Gb                             0 4 Gb     8 Gb 16 Gb 32 Gb      64 Gb
+                      RA uto
+                           R
+
+
+
+
+                                           1 Bin   2 Bins       3 Bins                                          Device capacity                                                      Device capacity
+                        ID
+                        A
+
+
+
+
+                                         (a) RAIDR configurations                                         (b) Performance scaling                                                (c) Energy scaling
+
+                                                                                           Figure 9: RAIDR sensitivity studies
+
+ilar trend for the effect of device capacity scaling on energy.                                                          6.8. Future Trends in Retention Time Distribution
+As device capacity scales from 4 Gb to 64 Gb, the auto-refresh
+                                                                                                                         Kim and Lee [21] show that as DRAM scales to smaller tech-
+system’s access energy increases by 187.6%, while RAIDR’s
+                                                                                                                         nology nodes, both the normal and leaky parts of the retention
+access energy increases by 71.0%. At the 64 Gb device ca-
+                                                                                                                         time distribution will narrow, as shown in Figure 10. Since
+pacity, RAIDR’s access energy savings over the auto-refresh
+                                                                                                                         this would lead to a decrease in the proportion of very weak
+baseline is 49.7%. These results indicate that RAIDR scales
+                                                                                                                         cells in an array, RAIDR should remain effective. To confirm
+well to future DRAM densities in terms of both energy and
+                                                                                                                         this, we generated a set of retention times corresponding to the
+performance.
+                                                                                                                         distribution in Figure 10b and confirmed that RAIDR’s perfor-
+   Although these densities may seem farfetched, these re-                                                               mance improvement and energy savings changed negligibly
+sults are potentially immediately relevant to 3D die-stacked                                                             (i.e. by less than 0.1%).
+DRAMs. As discussed in Section 3.7, a 3D die-stacked
+DRAM is likely to operate in the extended temperature range,                                                             7. Conclusion
+and its ability to parallelize refreshes to hide refresh overhead
+is limited by shared chip power. Therefore, a DRAM chip                                                                  We presented Retention-Aware Intelligent DRAM Refresh
+composed of multiple stacked dies is likely to suffer from the                                                           (RAIDR), a low-cost modification to the memory controller
+same throughput, latency, and energy problems caused by re-                                                              that reduces the energy and performance impact of DRAM
+fresh as a single DRAM die with the same capacity operating                                                              refresh. RAIDR groups rows into bins depending on their
+at high temperatures. As a result, RAIDR may be applicable                                                               required refresh rate, and applies a different refresh rate to each
+to 3D die-stacked DRAM devices in the near future.                                                                       bin, decreasing the refresh rate for most rows while ensuring
+                                                                                                                         that rows with low retention times do not lose data. To our
+6.7. Retention Error Sensitivity                                                                                         knowledge, RAIDR is the first work to propose a low-cost
+As mentioned in Section 2.3, a DRAM cell’s retention time is                                                             memory controller modification that reduces DRAM refresh
+largely dependent on whether it is normal or leaky. Variations                                                           operations by exploiting variability in DRAM cell retention
+between DRAM manufacturing processes may affect the num-                                                                 times.
+ber of leaky cells in a device. We swept the fraction of leaky                                                              Our experimental evaluations show that RAIDR is effective
+cells from 10−6 to 10−5 . Even with an order of magnitude                                                                in improving system performance and energy efficiency with
+increase in the number of leaky cells, RAIDR’s performance                                                               modest overhead in the memory controller. RAIDR’s flexible
+improvement decreases by only 0.1%, and energy savings                                                                   configurability makes it potentially applicable to a variety of
+decreases by only 0.7%.                                                                                                  systems, and its benefits increase as DRAM capacity increases.
+
+
+                                                                                                                    11
+
+
+===== Page 12 =====
+
+                       100                                                      100                                    [20] J. Kim and M. C. Papaefthymiou, “Block-based multiperiod dynamic
+                                                                                                                            memory design for low data-retention power,” IEEE Transactions on
+Probability density
+
+
+
+
+                                                         Probability density
+                                                                                                                            VLSI Systems, 2003.
+                      10−3                                                     10−3                                    [21] K. Kim and J. Lee, “A new investigation of data retention time in truly
+                                                                                                                            nanoscaled DRAMs,” IEEE Electron Device Letters, 2009.
+                      10−6                                                     10−6                                    [22] Y. Kim et al., “ATLAS: A scalable and high-performance scheduling
+                                                                                                                            algorithm for multiple memory controllers,” in HPCA-16, 2010.
+                                                                                                                       [23] D. E. Knuth, The Art of Computer Programming, 2nd ed. Addison-
+                      10−9 −2
+                        10 10−1 100 101 102        103
+                                                                               10−9 −2
+                                                                                 10 10−1 100 101 102        103             Wesley, 1998, vol. 3.
+                              Retention time (s)                                       Retention time (s)              [24] W. Kong et al., “Analysis of retention time distribution of embedded
+                                                                                                                            DRAM — a new method to characterize across-chip threshold voltage
+              (a) Current technology (60 nm)                                   (b) Future technologies ([21])               variation,” in ITC, 2008.
+                             Figure 10: Trend in retention time distribution                                           [25] Y. Li et al., “DRAM yield analysis and optimization by a statistical
+                                                                                                                            design approach,” IEEE Transactions on Circuits and Systems, 2011.
+We conclude that RAIDR can effectively mitigate the overhead                                                           [26] S. Liu et al., “Flikker: Saving DRAM refresh-power through critical
+                                                                                                                            data partitioning,” in ASPLOS-16, 2011.
+of refresh operations in current and future DRAM systems.                                                              [27] C.-K. Luk et al., “Pin: Building customized program analysis tools
+                                                                                                                            with dynamic instrumentation,” in PLDI, 2005.
+Acknowledgments                                                                                                        [28] M. J. Lyons and D. Brooks, “The design of a Bloom filter hardware
+We thank the anonymous reviewers and members of the                                                                         accelerator for ultra low power systems,” in ISLPED-14, 2009.
+SAFARI research group for their feedback. We grate-                                                                    [29] G. Marsaglia, “Xorshift RNGs,” Journal of Statistical Software, 2003.
+                                                                                                                       [30] Micron Technology, “Various methods of DRAM refresh,” 1999.
+fully acknowledge Uksong Kang, Hak-soo Yu, Churoo Park,
+                                                                                                                       [31] Micron Technology, “Calculating memory system power for DDR3,”
+Jung-Bae Lee, and Joo Sun Choi at Samsung for feedback.                                                                     2007.
+Jamie Liu is partially supported by the Benjamin Garver                                                                [32] Micron Technology, “Power-saving features of mobile LPDRAM,”
+                                                                                                                            2009.
+Lamme/Westinghouse Graduate Fellowship and an NSERC                                                                    [33] Micron Technology, “4Gb: x4, x8, x16 DDR3 SDRAM,” 2011.
+Postgraduate Scholarship. Ben Jaiyen is partially supported by                                                         [34] T. Moscibroda and O. Mutlu, “Memory performance attacks: Denial
+the Jack and Mildred Bowers Scholarship. We acknowledge                                                                     of memory service in multi-core systems,” in USENIX Security, 2007.
+the generous support of AMD, Intel, Oracle, and Samsung.                                                               [35] O. Mutlu and T. Moscibroda, “Stall-time fair memory access schedul-
+                                                                                                                            ing for chip multiprocessors,” in MICRO-40, 2007.
+This research was partially supported by grants from NSF (CA-                                                          [36] Y. Nakagome et al., “The impact of data-line interference noise on
+REER Award CCF-0953246), GSRC, and Intel ARO Memory                                                                         DRAM scaling,” IEEE Journal of Solid-State Circuits, 1988.
+Hierarchy Program.                                                                                                     [37] T. Ohsawa, K. Kai, and K. Murakami, “Optimizing the DRAM refresh
+                                                                                                                            count for merged DRAM/logic LSIs,” in ISLPED, 1998.
+References                                                                                                             [38] K. Patel et al., “Energy-efficient value based selective refresh for em-
+                                                                                                                            bedded DRAMs,” Journal of Low Power Electronics, 2006.
+   [1] B. Black et al., “Die stacking (3D) microarchitecture,” in MICRO-39,
+                                                                                                                       [39] L. A. Polka et al., “Package technology to address the memory band-
+       2006.
+   [2] B. H. Bloom, “Space/time trade-offs in hash coding with allowable                                                    width challenge for tera-scale computing,” Intel Technology Journal,
+       errors,” Communications of the ACM, 1970.                                                                            2007.
+                                                                                                                       [40] M. V. Ramakrishna, E. Fu, and E. Bahcekapili, “Efficient hardware
+   [3] J. L. Carter and M. N. Wegman, “Universal classes of hash functions,”                                                hashing functions for high performance computers,” IEEE Transactions
+       in STOC-9, 1977.                                                                                                     on Computers, 1997.
+   [4] Y. Chen, A. Kumar, and J. Xu, “A new design of Bloom filter for packet                                          [41] S. Rixner et al., “Memory access scheduling,” in ISCA-27, 2000.
+       inspection speedup,” in GLOBECOM, 2007.
+                                                                                                                       [42] P. Rosenfeld, E. Cooper-Balis, and B. Jacob, “DRAMsim2: A cycle
+   [5] P. G. Emma, W. R. Reohr, and M. Meterelliyoz, “Rethinking refresh:
+                                                                                                                            accurate memory system simulator,” IEEE Computer Architecture
+       Increasing availability and reducing power in DRAM for cache appli-
+                                                                                                                            Letters, 2011.
+       cations,” IEEE Micro, 2008.
+   [6] P. G. Emma, W. R. Reohr, and L.-K. Wang, “Restore tracking system                                               [43] B. Sinharoy et al., “IBM POWER7 multicore server processor,” IBM
+       for DRAM,” U.S. patent number 6389505, 2002.                                                                         Journal of Research and Development, 2011.
+   [7] M. Ghosh and H.-H. S. Lee, “Smart refresh: An enhanced memory                                                   [44] A. Snavely and D. M. Tullsen, “Symbiotic jobscheduling for a simulta-
+       controller design for reducing energy in conventional and 3D die-                                                    neous multithreaded processor,” in ASPLOS-9, 2000.
+       stacked DRAMs,” in MICRO-40, 2007.                                                                              [45] S. P. Song, “Method and system for selective DRAM refresh to reduce
+   [8] T. Hamamoto, S. Sugiura, and S. Sawada, “On the retention time dis-                                                  power consumption,” U.S. patent number 6094705, 2000.
+       tribution of dynamic random access memory (DRAM),” IEEE Trans-                                                  [46] Standard Performance Evaluation Corporation, “SPEC CPU2006,”
+       actions on Electron Devices, 1998.                                                                                   2006. Available: http://www.spec.org/cpu2006/
+   [9] Hybrid Memory Cube Consortium, “Hybrid Memory Cube,” 2011.                                                      [47] J. Stuecheli et al., “Elastic refresh: Techniques to mitigate refresh
+       Available: http://www.hybridmemorycube.org/                                                                          penalties in high density memory,” in MICRO-43, 2010.
+  [10] Influent Corp., “Reducing server power consumption by 20% with                                                  [48] S. Thoziyoor et al., “CACTI 5.1,” HP Laboratories, Tech. Rep., 2008.
+       pulsed air jet cooling,” White paper, 2009.                                                                     [49] Transaction Processing Performance Council, “TPC,” 2011. Available:
+  [11] C. Isen and L. K. John, “ESKIMO: Energy savings using semantic                                                       http://www.tpc.org/
+       knowledge of inconsequential memory occupancy for DRAM subsys-                                                  [50] R. K. Venkatesan, S. Herr, and E. Rotenberg, “Retention-aware place-
+       tem,” in MICRO-42, 2009.                                                                                             ment in DRAM (RAPID): Software methods for quasi-non-volatile
+  [12] ITRS, “International Technology Roadmap for Semiconductors,” 2010.                                                   DRAM,” in HPCA-12, 2006.
+  [13] JEDEC, “DDR SDRAM Specification,” 2008.                                                                         [51] C. Wilkerson et al., “Reducing cache power with low-cost, multi-bit
+  [14] JEDEC, “DDR2 SDRAM Specification,” 2009.                                                                             error-correcting codes,” in ISCA-37, 2010.
+  [15] JEDEC, “DDR3 SDRAM Specification,” 2010.                                                                        [52] K. Yanagisawa, “Semiconductor memory,” U.S. patent number
+  [16] JEDEC, “LPDDR2 SDRAM Specification,” 2010.                                                                           4736344, 1988.
+  [17] Y. Katayama et al., “Fault-tolerant refresh power reduction of DRAMs                                            [53] H. Zheng et al., “Mini-rank: Adaptive DRAM architecture for improv-
+       for quasi-nonvolatile data retention,” in DFT-14, 1999.                                                              ing memory power efficiency,” in MICRO-41, 2008.
+  [18] B. Keeth et al., DRAM Circuit Design: Fundamental and High-Speed                                                [54] W. K. Zuravleff and T. Robinson, “Controller for a synchronous DRAM
+       Topics. Wiley-Interscience, 2008.                                                                                    that maximizes throughput by allowing memory requests and com-
+  [19] J. Kim and M. C. Papaefthymiou, “Dynamic memory design for low                                                       mands to be issued out of order,” U.S. patent number 5630096, 1997.
+       data-retention power,” in PATMOS-10, 2000.
+
+
+                                                                                                                  12

@@ -1,0 +1,21 @@
+# Extraction Log
+
+- Input Type: GitHub repository PDF
+- Source: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/SMASH-sparse-matrix-software-hardware-acceleration_micro19.pdf
+- Access Status: 成功下载并读取本地 PDF
+- Full Text Retrieved: Yes
+- PDF Pages: 15
+- Sections Detected: Abstract; Introduction; Motivation; SMASH Key Components; BMU; ISA; Use Cases; Evaluation; Related Work; Conclusion
+- Figures Detected: Yes
+- Tables Detected: Yes
+- Equations Detected: No core numbered equations detected in this round
+- Appendix Detected: 未发现独立 appendix 或本轮未作为重点处理
+- Supplementary Material Detected: 未发现
+- OCR Used: No
+- Extracted Text File: paper reading/extracted_text/SMASH-sparse-matrix-software-hardware-acceleration_micro19.txt
+- Missing Content: 图中细小标注和双栏排版细节建议回到 PDF 人工核对
+- Parsing Problems: PDF 双栏文本存在局部换行错位；SISA 抽取文本版式较乱，已用图表编号与章节定位关键结论
+- Uncertain Parts: DOI/arXiv 如 metadata 标注“未找到”则表示未在 PDF 抽取文本中确认
+- Need User Action: 无；如需逐字全文翻译，请确认版权授权范围后再处理
+- Quality Check: 已覆盖摘要、引言、方法/系统设计、实验/结果、局限、图表、术语与复习 checklist
+- Batch Status: 第六轮深度阅读完成

@@ -1,0 +1,980 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/tesseract-pim-architecture-for-graph-processing_isca15.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/tesseract-pim-architecture-for-graph-processing_isca15.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+     A Scalable Processing-in-Memory Accelerator for Parallel Graph Processing
+                   Junwhan Ahn              Sungpack Hong§                Sungjoo Yoo          Onur Mutlu†      Kiyoung Choi
+          junwhan@snu.ac.kr, sungpack.hong@oracle.com, sungjoo.yoo@gmail.com, onur@cmu.edu, kchoi@snu.ac.kr
+                                                                       § Oracle Labs      †
+                              Seoul National University                                       Carnegie Mellon University
+
+
+                                Abstract                                          demand for more data and their analyses, the design of com-
+   The explosion of digital data and the ever-growing need for                    puter systems for efficiently processing large amounts of data
+fast data analysis have made in-memory big-data processing                        has drawn great attention. From the data storage perspective,
+in computer systems increasingly important. In particular,                        the current realization of big-data processing is based mostly
+large-scale graph processing is gaining attention due to its                      on secondary storage such as hard disk drives and solid-state
+broad applicability from social science to machine learning.                      drives. However, the continuous effort on improving cost and
+However, scalable hardware design that can efficiently process                    density of DRAM opens up the possibility of in-memory big-
+large graphs in main memory is still an open problem. Ideally,                    data processing. Storing data in main memory achieves orders
+cost-effective and scalable graph processing systems can be                       of magnitude speedup in accessing data compared to conven-
+realized by building a system whose performance increases                         tional disk-based systems, while providing up to terabytes of
+proportionally with the sizes of graphs that can be stored in                     memory capacity per server. The potential of such an approach
+the system, which is extremely challenging in conventional                        in data analytics has been confirmed by both academic and
+systems due to severe memory bandwidth limitations.                               industrial projects, including RAMCloud [46], Pregel [39],
+   In this work, we argue that the conventional concept of                        GraphLab [37], Oracle TimesTen [44], and SAP HANA [52].
+processing-in-memory (PIM) can be a viable solution to                                While the software stack for in-memory big-data processing
+achieve such an objective. The key modern enabler for PIM is                      has evolved, developing a hardware system that efficiently han-
+the recent advancement of the 3D integration technology that                      dles a large amount of data in main memory still remains as an
+facilitates stacking logic and memory dies in a single package,                   open question. There are two key challenges determining the
+which was not available when the PIM concept was originally                       performance of such systems: (1) how fast they can process
+examined. In order to take advantage of such a new tech-                          each item and request the next item from memory, and (2) how
+nology to enable memory-capacity-proportional performance,                        fast the massive amount of data can be delivered from memory
+we design a programmable PIM accelerator for large-scale                          to computation units. Unfortunately, traditional computer ar-
+graph processing called Tesseract. Tesseract is composed of                       chitectures composed of heavy-weight cores and large on-chip
+(1) a new hardware architecture that fully utilizes the available                 caches are tailored for neither of these two challenges, thereby
+memory bandwidth, (2) an efficient method of communication                        experiencing severe underutilization of existing hardware re-
+between different memory partitions, and (3) a programming                        sources [10].
+interface that reflects and exploits the unique hardware de-                          In order to tackle the first challenge, recent studies have
+sign. It also includes two hardware prefetchers specialized for                   proposed specialized on-chip accelerators for a limited set of
+memory access patterns of graph processing, which operate                         operations [13, 30, 34, 59]. Such accelerators mainly focus
+based on the hints provided by our programming model. Our                         on improving core efficiency, thereby achieving better per-
+comprehensive evaluations using five state-of-the-art graph                       formance and energy efficiency compared to general-purpose
+processing workloads with large real-world graphs show that                       cores, at the cost of generality. For example, Widx [30] is an
+the proposed architecture improves average system perfor-                         on-chip accelerator for hash index lookups in main memory
+mance by a factor of ten and achieves 87% average energy                          databases, which can be configured to accelerate either hash
+reduction over conventional systems.                                              computation, index traversal, or output generation. Multiple
+1. Introduction                                                                   Widx units can be used to exploit memory-level parallelism
+                                                                                  without the limitation of instruction window size, unlike con-
+With the advent of the big-data era, which consists of increas-
+                                                                                  ventional out-of-order processors [43].
+ingly data-intensive workloads and continuous supply and
+                                                                                      Although specialized on-chip accelerators provide the bene-
+Permission to make digital or hard copies of all or part of this work for         fit of computation efficiency, they impose a more fundamental
+personal or classroom use is granted without fee provided that copies are not     challenge: system performance does not scale well with the
+made or distributed for profit or commercial advantage and that copies bear
+this notice and the full citation on the first page. Copyrights for components
+                                                                                  increase in the amount of data per server (or main memory
+of this work owned by others than ACM must be honored. Abstracting with           capacity per server). This is because putting more acceler-
+credit is permitted. To copy otherwise, or republish, to post on servers or to    ators provides speedup as long as the memory bandwidth is
+redistribute to lists, requires prior specific permission and/or a fee. Request   sufficient to feed them all. Unfortunately, memory bandwidth
+permissions from Permissions@acm.org.
+ISCA’15, June 13–17, 2015, Portland, OR, USA                                      remains almost constant irrespective of memory capacity due
+ c 2015 ACM. ISBN 978-1-4503-3402-0/15/06$15.00                                   to the pin count limitation per chip. For instance, Kocberber et
+DOI: http://dx.doi.org/10.1145/2749469.2750386                                    al. [30] observe that using more than four index traversal units
+
+
+===== Page 2 =====
+
+in Widx may not provide additional speedup due to off-chip                 • We develop an efficient mechanism for communication be-
+bandwidth limitations. This implies that, in order to process                tween different Tesseract cores based on message passing.
+twice the amount of data with the same performance, one                      This mechanism (1) enables effective hiding of long re-
+needs to double the number of servers (which keeps memory                    mote access latencies via the use of non-blocking message
+bandwidth per unit data constant by limiting the amount of                   passing and (2) guarantees atomic memory updates without
+data in a server), rather than simply adding more memory                     requiring software synchronization primitives.
+modules to store data. Consequently, such approaches limit                 • We introduce two new types of specialized hardware
+the memory capacity per server (or the amount of data han-                   prefetchers that can fully utilize the available memory band-
+dled by a single server) to achieve target performance, thereby              width with simple cores. These new designs take advantage
+leading to a relatively cost-ineffective and likely less scalable            of (1) the hints given by our new programming interface
+design as opposed to one that can enable increasing of memory                and (2) memory access characteristics of graph processing.
+bandwidth in a node along with more data in a node.                        • We provide case studies of how five graph processing work-
+   This scalability problem caused by the memory bandwidth                   loads can be mapped to our architecture and how they
+bottleneck is expected to be greatly aggravated with the emer-               can benefit from it. Our evaluations show that Tesseract
+gence of increasingly memory-intensive big-data workloads.                   achieves 10x average performance improvement and 87%
+One of the representative examples of this is large-scale graph              average reduction in energy consumption over a conven-
+analysis [12, 16, 17, 37, 39, 51, 58], which has recently been               tional high-performance baseline (a four-socket system with
+studied as an alternative to relational database based analysis              32 out-of-order cores, having 640 GB/s of memory band-
+for applications in, for example, social science, computational              width), across five different graph processing workloads, in-
+biology, and machine learning. Graph analysis workloads are                  cluding average teenage follower [20], conductance [17,20],
+known to put more pressure on memory bandwidth due to                        PageRank [5,17,20,39], single-source shortest path [20,39],
+(1) large amounts of random memory accesses across large                     and vertex cover [17]. Our evaluations use three large in-
+memory regions (leading to very limited cache efficiency) and                put graphs having four to seven million vertices, which
+(2) very small amounts of computation per item (leading to                   are collected from real-world social networks and internet
+very limited ability to hide long memory latencies). These                   domains.
+two characteristics make it very challenging to scale up such
+workloads despite their inherent parallelism, especially with              2. Background and Motivation
+conventional architectures based on large on-chip caches and
+                                                                           2.1. Large-Scale Graph Processing
+scarce off-chip memory bandwidth.
+   In this paper, we show that the processing-in-memory (PIM)              A graph is a fundamental representation of relationship be-
+can be a key enabler to realize memory-capacity-proportional               tween objects. Examples of representative real-world graphs
+performance in large-scale graph processing under the current              include social graphs, web graphs, transportation graphs, and
+pin count limitation. By putting computation units inside main             citation graphs. These graphs often have millions to billions
+memory, total memory bandwidth for the computation units                   of vertices with even larger numbers of edges, thereby making
+scales well with the increase in memory capacity (and so does              them difficult to be analyzed at high performance.
+the computational power). Importantly, latency and energy                     In order to tackle this problem, there exist several frame-
+overheads of moving data between computation units and main                works for large-scale graph processing by exploiting data par-
+memory can be reduced as well. And, fortunately, such bene-                allelism [12, 16, 17, 37, 39, 51, 58]. Most of these frameworks
+fits can be realized in a cost-effective manner today through              focus on executing computation for different vertices in par-
+the 3D integration technology, which effectively combines                  allel while hiding synchronization from programmers to ease
+logic and memory dies, as opposed to the PIM architectures                 programmability. For example, the PageRank computation
+in 1990s, which suffered from the lack of an appropriate tech-             shown in Figure 1 can be accelerated by parallelizing the ver-
+nology that could tightly couple logic and memory.                         tex loops [17] (lines 1–4, 8–13, and 14–18) since computation
+   The key contributions of this paper are as follows:                     for each vertex is almost independent of each other. In this
+• We study an important domain of in-memory big-data pro-                  style of parallelization, synchronization is necessary to guar-
+   cessing workloads, large-scale graph processing, from the               antee atomic updates of shared data (w.next_pagerank and
+   computer architecture perspective and show that memory                  diff) and no overlap between different vertex loops, which
+   bandwidth is the main bottleneck of such workloads.                     are automatically handled by the graph processing frameworks.
+• We provide the design and the programming interface of a                 Such an approach exhibits a high degree of parallelism, which
+   new programmable accelerator for in-memory graph pro-                   is effective in processing graphs with billions of vertices.
+   cessing that can effectively utilize PIM using 3D-stacked                  Although graph processing algorithms can be parallelized
+   memory technologies. Our new design is called Tesseract.1               through such frameworks, there are several issues that make
+                                                                           efficient graph processing very challenging. First, graph pro-
+     1 Tesseract means a four-dimensional hypercube. We named our archi-   cessing incurs a large number of random memory accesses
+tecture Tesseract because in-memory computation adds a new dimension to    during neighbor traversal (e.g., line 11 of Figure 1). Second,
+3D-stacked memory technologies.                                            graph algorithms show poor locality of memory access since
+
+
+===== Page 3 =====
+
+ 1   for (v: graph.vertices) {                                                                                  32 Cores + DDR3       128 Cores + DDR3
+ 2     v.pagerank = 1 / graph.num_vertices;                                                                     128 Cores + HMC       128 Cores + HMC Internal Bandwidth
+ 3     v.next_pagerank = 0.15 / graph.num_vertices;                                                     6
+ 4   }                                                                                                  5
+ 5   count = 0;
+     do {                                                                                               4
+
+
+
+
+                                                                               Speedup
+ 6
+ 7     diff = 0;                                                                                        3
+ 8     for (v: graph.vertices) {
+ 9       value = 0.85 * v.pagerank / v.out_degree;                                                      2
+10       for (w: v.successors) {                                                                        1
+11         w.next_pagerank += value;
+12       }                                                                                              0
+                                                                                                                AT.LJ      CT.LJ       PR.LJ       SP.LJ        VC.LJ
+13     }
+14     for (v: graph.vertices) {                                                                                (a) Speedup (normalized to ‘32 Cores + DDR3’)
+15       diff += abs(v.next_pagerank - v.pagerank);
+                                                                                                        600
+16       v.pagerank = v.next_pagerank;
+
+
+
+
+                                                                               Bandwidth Usage (GB/s)
+17       v.next_pagerank = 0.15 / graph.num_vertices;                                                   500
+18     }                                                                                                400
+19   } while (diff > e && ++count < max_iteration);
+                                                                                                        300
+       Figure 1: Pseudocode of PageRank computation.                                                    200
+
+many of them access the entire set of vertices in a graph for                                           100
+each iteration. Third, memory access latency cannot be easily                                               0
+overlapped with computation because of the small amount of                                                        AT.LJ      CT.LJ      PR.LJ       SP.LJ       VC.LJ
+
+computation per vertex [39]. These aspects should be care-                                                      (b) Memory bandwidth usage (absolute values)
+fully considered when designing a system that can efficiently                 Figure 2: Performance of large-scale graph processing in con-
+perform large-scale graph processing.                                         ventional systems versus with ideal use of the HMC internal
+2.2. Graph Processing on Conventional Systems                                 memory bandwidth.
+Despite its importance, graph processing is a challenging task
+for conventional systems, especially when scaling to larger                   Section 2.1, which cannot be efficiently handled by the cur-
+amounts of data (i.e., larger graphs). Figure 2 shows a scenario              rent memory hierarchies that are based on and optimized for
+where one intends to improve graph processing performance                     data locality (i.e., large on-chip caches). This leads to the key
+of a server node equipped with out-of-order cores and DDR3-                   question that we intend to answer in this paper: how can we
+based main memory by adding more cores. We evaluate the                       provide such large amounts of memory bandwidth and utilize
+performance of five workloads with 32 or 128 cores and with                   it for scalable and efficient graph processing in memory?
+different memory interfaces (see Section 4 for our detailed                   2.3. Processing-in-Memory
+evaluation methodology and the description of our systems).
+As the figure shows, simply increasing the number of cores is                 To satisfy the high bandwidth requirement of large-scale graph
+ineffective in improving performance significantly. Adopting                  processing workloads, we consider moving computation inside
+a high-bandwidth alternative to DDR3-based main memory                        the memory, or processing-in-memory. The key objective of
+based on 3D-stacked DRAM, called Hybrid Memory Cube                           adopting PIM is not solely to provide high memory bandwidth,
+(HMC) [22], helps this situation to some extent, however, the                 but especially to achieve memory-capacity-proportional band-
+speedups provided by using HMCs are far below the expected                    width. Let us take the Hybrid Memory Cube [24] as a viable
+speedup from quadrupling the number of cores.                                 baseline platform for PIM. According to the HMC 1.0 specifi-
+   However, if we assume that cores can use the internal mem-                 cation [22], a single HMC provides up to 320 GB/s of external
+ory bandwidth of HMCs2 ideally, i.e., without traversing the                  memory bandwidth through eight high-speed serial links. On
+off-chip links, we can provide much higher performance by                     the other hand, a 64-bit vertical interface for each DRAM par-
+taking advantage of the larger number of cores. This is shown                 tition (or vault, see Section 3.1 for details), 32 vaults per cube,
+in the rightmost bars of Figure 3. The problem is that such                   and 2 Gb/s of TSV signaling rate [24] together achieve an
+high performance requires a massive amount of memory band-                    internal memory bandwidth of 512 GB/s per cube. Moreover,
+width (near 500 GB/s) as shown in Figure 2b. This is beyond                   this gap between external and internal memory bandwidth
+the level of what conventional systems can provide under the                  becomes much wider as the memory capacity increases with
+current pin count limitations. What is worse, such a high                     the use of more HMCs. Considering a system composed of 16
+amount of memory bandwidth is mainly consumed by random                       8 GB HMCs as an example, conventional processors are still
+memory accesses over a large memory region, as explained in                   limited to 320 GB/s of memory bandwidth assuming that the
+     2 The term internal memory bandwidth indicates aggregate memory band-
+                                                                              CPU chip has the same number of off-chip links as that of an
+                                                                              HMC. In contrast, PIM exposes 8 TB/s (= 16 × 512 GB/s) of
+width provided by 3D-stacked DRAM. In our system composed of 16 HMCs,
+the internal memory bandwidth is 12.8 times higher than the off-chip memory   aggregate internal bandwidth to the in-memory computation
+bandwidth (see Section 4 for details).                                        units. This memory-capacity-proportional bandwidth facili-
+
+
+===== Page 4 =====
+
+                                                                                                              In-Order Core
+
+
+
+
+                                                                                                                                      DRAM Controller
+                                        u                                                                       List      Prefetch
+                            v                                                                                Prefetcher    Buffer
+                                                                      Crossbar Network
+
+                                                                                                                  Message-triggered
+                                                                                                                     Prefetcher
+
+
+                                                                                                             Message Queue             NI
+
+
+                       (a) Network of cubes                          (b) Cube (HMC)                                  (c) Vault
+
+                                            Figure 3: Tesseract architecture (the figure is not to scale).
+
+tates scaling the system performance with increasing amount                     memory (along with the non-trivial performance overhead of
+of data in a cost-effective way, which is a key concern in graph                supporting virtual memory) [3], Tesseract does not support
+processing systems.                                                             virtual memory to avoid the need for address translation inside
+   However, introducing a new processing paradigm brings a                      memory. Nevertheless, host processors can still use virtual ad-
+set of new challenges in designing a whole system. Through-                     dressing in their main memory since they use separate DRAM
+out this paper, we will answer three critical questions in design-              devices (apart from the DRAM of Tesseract) as their own main
+ing a PIM system for graph processing: (1) How to design an                     memory.4
+architecture that can fully utilize internal memory bandwidth                      Since host processors have access to the entire memory
+in an energy-efficient way, (2) how to communicate between                      space of Tesseract, it is up to the host processors to distribute
+different memory partitions (i.e., vaults) with a minimal im-                   input graphs across HMC vaults. For this purpose, the host
+pact on performance, and (3) how to design an expressive                        processors use a customized malloc call, which allocates an
+programming interface that reflects the hardware design.                        object (in this case, a vertex or a list of edges) to a specific
+                                                                                vault. For example, numa_alloc_onnode in Linux (which
+3. Tesseract Architecture
+                                                                                allocates memory on a given NUMA node) can be extended
+3.1. Overview                                                                   to allocate memory on a designated vault. This information
+Organization. Figure 3 shows a conceptual diagram of the                        is exposed to applications since they use a single physical
+proposed architecture. Although Tesseract does not rely on a                    address space over all HMCs. An example of distributing an
+particular memory organization, we choose the hybrid mem-                       input graph to vaults is shown in Figure 3a. Algorithms to
+ory cube having eight 8 Gb DRAM layers (the largest device                      achieve a balanced distribution of vertices and edges to vaults
+available in the current HMC specification [22]) as our base-                   are beyond the scope of this paper. However, we analyze
+line. An HMC, shown conceptually in Figure 3b is composed                       the impact of better graph distribution on the performance of
+of 32 vertical slices (called vaults), eight 40 GB/s high-speed                 Tesseract in Section 5.7.
+serial links as the off-chip interface, and a crossbar network                  Message Passing (Section 3.2). Unlike host processors that
+that connects them. Each vault, shown in Figure 3c, is com-                     have access to the entire address space of the HMCs, each
+posed of a 16-bank DRAM partition and a dedicated memory                        Tesseract core is restricted to access its own local DRAM
+controller.3 In order to perform computation inside memory,                     partition only. Thus, a low-cost message passing mechanism
+a single-issue in-order core is placed at the logic die of each                 is employed for communication between Tesseract cores. For
+vault (32 cores per cube). In terms of area, a Tesseract core fits              example, vertex v in Figure 3a can remotely update a property
+well into a vault due to the small size of an in-order core. For                of vertex u by sending a message that contains the target vertex
+example, the area of 32 ARM Cortex-A5 processors including                      id and the computation that will be done in the remote core
+an FPU (0.68 mm2 for each core [1]) corresponds to only 9.6%                    (dotted line in Figure 3a). We choose message passing to com-
+of the area of an 8 Gb DRAM die area (e.g., 226 mm2 [54]).                      municate between Tesseract cores in order to: (1) avoid cache
+Host-Tesseract Interface. In the proposed system, host pro-                     coherence issues among L1 data caches of Tesseract cores,
+cessors have their own main memory (without PIM capability)                     (2) eliminate the need for locks to guarantee atomic updates
+and Tesseract acts like an accelerator that is memory-mapped                    of shared data, and (3) facilitate the hiding of remote access
+to part of a noncacheable memory region of the host proces-                     latencies through asynchronous message communication.
+sors. This eliminates the need for managing cache coherence                     Prefetching (Section 3.3). Although putting a core beneath
+between caches of the host processors and the 3D-stacked                        memory exposes unprecedented memory bandwidth to the
+memory of Tesseract. Also, since in-memory big-data work-
+loads usually do not require many features provided by virtual                       4 For this purpose, Tesseract may adopt the direct segment approach [3]
+                                                                                and interface its memory as a primary region. Supporting direct segment
+     3 Due to the existence of built-in DRAM controllers, HMCs use a packet-    translation inside memory can be done simply by adding a small direct seg-
+based protocol for communication through the inter-/intra-HMC network           ment hardware for each Tesseract core and broadcasting the base, limit, and
+instead of low-level DRAM commands as in DDRx protocols.                        offset values from the host at the beginning of Tesseract execution.
+
+
+===== Page 5 =====
+
+core, a single-issue in-order core design is far from the best                    emits an interrupt, incurring the latency overhead of context
+way of utilizing this ample memory bandwidth. This is be-                         switching. This motivates the need for another mechanism for
+cause such a core has to stall on each L1 cache miss. To enable                   remote data access, a non-blocking remote function call.
+better exploitation of the large amount of memory bandwidth
+                                                                                  Non-Blocking Remote Function Call. A non-blocking re-
+while keeping the core simple, we design two types of simple
+                                                                                  mote function call is semantically similar to its blocking coun-
+hardware prefetchers: a list prefetcher and a message-triggered
+                                                                                  terpart, except that it cannot have return values. This simple
+prefetcher. These are carefully tailored to the memory access
+                                                                                  restriction greatly helps to optimize the performance of remote
+patterns of graph processing workloads.
+                                                                                  function calls in two ways.
+Programming Interface (Section 3.4). Importantly, we de-                             First, a local core can continue its execution after invoking a
+fine a new programming interface that enables the use of our                      non-blocking remote function call since the core does not have
+system. Our programming interface is easy to use, yet general                     to wait for the termination of the function. In other words, it
+enough to express many different graph algorithms.                                allows hiding remote access latency because sender cores can
+3.2. Remote Function Call via Message Passing                                     perform their own work while messages are being transferred
+Tesseract moves computation to the target core that contains                      and processed. However, this makes it impossible to figure
+the data to be processed, instead of allowing remote mem-                         out whether or not the remote function call is finished. To
+ory accesses. For simplicity and generality, we implement                         simplify this problem, we ensure that all non-blocking remote
+computation movement as a remote function call [4, 57]. In                        function calls do not cross synchronization barriers. In other
+this section, we propose two different message passing mech-                      words, results of remote function calls are guaranteed to be
+anisms, both of which are supported by Tesseract: blocking                        visible after the execution of a barrier. Similar consistency
+remote function call and non-blocking remote function call.                       models can be found in other parallelization frameworks such
+                                                                                  as OpenMP [8].
+Blocking Remote Function Call. A blocking remote func-                               Second, since the execution of non-blocking remote func-
+tion call is the most intuitive way of accessing remote data. In                  tion calls can be delayed, batch execution of such functions
+this mechanism, a local core requests a remote core to (1) exe-                   is possible by buffering them and executing all of them with
+cute a specific function remotely and (2) send the return value                   a single interrupt. For this purpose, we add a message queue
+back to the local core. The exact sequence of performing a                        to each vault that stores messages for non-blocking remote
+blocking remote function call is as follows:                                      function calls. Functions in this queue are executed once either
+1. The local core sends a packet containing the function ad-                      the queue is full or a barrier is reached. Batching the execution
+    dress5 and function arguments6 to the remote core and                         of remote function calls helps to avoid the latency overhead of
+   waits for its response.                                                        context switching incurred by frequent interrupts.
+2. Once the packet arrives at the remote vault, the network                          Non-blocking remote function calls are mainly used for up-
+    interface stores function arguments to the special registers                  dating remote data. For example, updating PageRank values
+   visible from the core and emits an interrupt for the core.                     of remote vertices in line 11 of Figure 1 can be implemented
+3. The remote core executes the function in interrupt mode,                       using this mechanism. Note that, unlike the original implemen-
+   writes the return value to a special register, and switches                    tation where locks are required to guarantee atomic updates
+    back to the normal execution mode.                                            of w.next_pagerank, our mechanism eliminates the need for
+4. The remote core sends the return value back to the local                       locks or other synchronization primitives since it guarantees
+    core.                                                                         that (1) only the local core of vertex w can access and mod-
+   Note that the execution of a remote function call is not pre-                  ify its property and (2) remote function call execution is not
+empted by another remote function call in order to guarantee                      preempted by other remote function calls.
+atomicity. Also, cores may temporarily disable interrupt ex-                      3.3. Prefetching
+ecution to modify data that might be accessed by blocking
+                                                                                  We develop two prefetching mechanisms to enable each Tesser-
+remote function calls.
+                                                                                  act core to exploit the high available memory bandwidth.
+   This style of remote data access is useful for global state
+checks. For example, checking the condition ‘diff > e’ in                         List Prefetching. One of the most common memory access
+line 19 of Figure 1 can be done using this mechanism. How-                        patterns is sequential accesses with a constant stride. Such
+ever, it may not be the performance-optimal way of accessing                      access patterns are found in graph processing as well. For
+remote data because (1) local cores are blocked until responses                   example, most graph algorithms frequently traverse the list
+arrive from remote cores and (2) each remote function call                        of vertices and the list of edges for each vertex (e.g., the for
+                                                                                  loops in Figure 1), resulting in strided access patterns.
+     5 We assume that all Tesseract cores store the same code into the same          Memory access latency of such a simple access pattern can
+location of their local memory so that function addresses are compatible          be easily hidden by employing a stride prefetcher. In this paper,
+across different Tesseract cores.
+     6 In this paper, we restrict the maximum size of arguments to be 32 bytes,   we use a stride prefetcher based on a reference prediction
+which should be sufficient for general use. We also provide an API to transfer    table (RPT) [6] that prefetches multiple cache blocks ahead to
+data larger than 32 bytes in Section 3.4.                                         utilize the high memory bandwidth. In addition, we modify
+
+
+===== Page 6 =====
+
+                                                                                      a non-blocking remote function call for line 11 of Figure 1
+                              In-Order Core                                           can provide the address of w.next_pagerank as a prefetch
+
+
+
+
+                                                     DRAM Controller
+                                                                                      hint, which is exact information on the address instead of a
+                                         Prefetch                                     prediction that can be incorrect.
+                                          Buffer
+           5 Process multiple ready
+             messages at once                                                         Prefetch Buffer. The two prefetch mechanisms store
+                                 Message-triggered
+                                    Prefetcher
+                                                                                      prefetched blocks into prefetch buffers [25] instead of L1
+                                                                                      caches. This is to prevent the situation where prefetched
+                  3 Request a prefetch   4 Mark M1 as ready when the
+                                                       prefetch is serviced
+                                                                                      blocks are evicted from the L1 cache before they are refer-
+                             Message Queue       NI                                   enced due to the long interval between prefetch requests and
+                                                                       1 Message M1   their demand accesses. For instance, a cache block loaded by
+                                      2 Enqueue M1                       received     message-triggered prefetching has to wait to be accessed until
+     Figure 4: Message-triggered prefetching mechanism.                               at least Mth messages are ready. Meanwhile, other loads inside
+                                                                                      the normal execution mode may evict the block according
+the prefetcher to accept information about the start address, the                     to the replacement policy of the L1 cache. A similar effect
+size, and the stride of each list from the application software.                      can be observed when loop execution with list prefetching is
+Such information is recorded in the four-entry list table at the                      preempted by a series of remote function call executions.
+beginning of a loop and is removed from it at the end of the                          3.4. Programming Interface
+loop. Inside the loop, the prefetcher keeps track of only the
+memory regions registered in the list table and installs an RPT                       In order to utilize the new Tesseract design, we provide
+entry if the observed stride conforms to the hint. An RPT entry                       the following primitives for programming in Tesseract. We
+is removed once it reaches the end of the memory region.                              introduce several major API calls for Tesseract: get, put,
+                                                                                      disable_interrupt, enable_interrupt, copy, list_begin,
+Message-triggered Prefetching. Although stride prefetch-                              list_end, and barrier. Hereafter, we use A and S to indicate
+ers can cover frequent sequential accesses, graph processing                          the memory address type (e.g., void* in C) and the size type
+often involves a large amount of random access patterns. This                         (e.g., size_t in C), respectively.
+is because, in graph processing, information flows through
+                                                                                        get(id, A func, A arg, S arg_size, A ret, S ret_size)
+the edges, which requires pointer chasing over edges toward                             put(id, A func, A arg, S arg_size, A prefetch_addr)
+randomly-located target vertices. Such memory access pat-
+terns cannot be easily predicted by stride prefetchers.                               get and put calls represent blocking and non-blocking remote
+   Interestingly, most of the random memory accesses in graph                         function calls, respectively. The id of the target remote core
+processing happen on remote accesses (i.e., neighbor traver-                          is specified by the id argument.8 The start address and the
+sal). This motivates the second type of prefetching we devise,                        size of the function argument is given by arg and arg_size,
+called message-triggered prefetching, shown in Figure 4. The                          respectively, and the return value (in the case of get) is writ-
+key idea is to prefetch data that will be accessed during a                           ten to the address ret. In the case of put, an optional argu-
+non-blocking remote function call before the execution of the                         ment prefetch_addr can be used to specify the address to be
+function call. For this purpose, we add an optional field for                         prefetched by the message-triggered prefetcher.
+each non-blocking remote function call packet, indicating a                             disable_interrupt()
+memory address to be prefetched. As soon as a request con-                              enable_interrupt()
+taining the prefetch hint is inserted into the message queue, the                     disable_interrupt and enable_interrupt calls guarantee
+message-triggered prefetcher issues a prefetch request based                          that the execution of instructions enclosed by them are not
+on the hint and marks the message as ready when the prefetch                          preempted by interrupts from remote function calls. This pre-
+is serviced. When more than a predetermined number (Mth ) of                          vents data races between normal execution mode and interrupt
+messages in the message queue are ready, the message queue                            mode as explained in Section 3.2.
+issues an interrupt to the core to process the ready messages.7                         copy(id, A local, A remote, S size)
+   Message-triggered prefetching is unique in two aspects.
+                                                                                      The copy call implements copying a local memory region to
+First, it can eliminate processor stalls due to memory accesses
+                                                                                      a remote memory region. It is used instead of get or put
+inside remote function call execution by processing only ready
+                                                                                      commands if the size of transfer exceeds the maximum size of
+messages. This is achieved by exploiting the time slack be-
+                                                                                      arguments. This command is guaranteed to take effect before
+tween the arrival of a non-blocking remote function call mes-
+                                                                                      the nearest barrier synchronization (similar to the put call).
+sage and the time when the core starts servicing the mes-
+sage. Second, it can be exact, unlike many other prefetching                            list_begin(A address, S size, S stride)
+                                                                                        list_end(A address, S size, S stride)
+techniques, since graph algorithms use non-blocking remote
+function calls to send updates over edges, which contain the                               8 If a core issues a put command with its own id, it can either be replaced
+exact memory addresses of the target vertices. For example,                           by a simple function call or use the same message queue mechanism as in
+                                                                                      remote messages. In this paper, we insert local messages to the message
+    7 If the message queue becomes full or a barrier is reached before M              queue only if message-triggered prefetching (Section 3.3) is available so that
+                                                                           th
+messages are ready, all messages are processed regardless of their readiness.         the prefetching can be applied to local messages as well.
+
+
+===== Page 7 =====
+
+list_begin and list_end calls are used to update the list                  ister/structural dependencies, multi-bank caches with limited
+table, which contains hints for list prefetching. Programmers              numbers of MSHRs, MESI cache coherence, DDR3 con-
+can specify the start address of a list, the size of the list, and the     trollers, and HMC links. Our simulator runs multithreaded
+size of an item in the list (i.e., stride) to initiate list prefetching.   applications by inspecting pthread APIs for threads and syn-
+     barrier()                                                             chronization primitives. For Tesseract, it also models remote
+                                                                           function calls by intercepting get/put commands (manually
+The barrier call implements a synchronization barrier across
+                                                                           inserted into software) and injecting messages into the tim-
+all Tesseract cores. One of the cores in the system (prede-
+                                                                           ing model accordingly. The rest of this subsection briefly
+termined by designers or by the system software) works as a
+                                                                           describes the system configuration used for our evaluations.
+master core to collect the synchronization status of each core.
+3.5. Application Mapping                                                   DDR3-Based System. We model a high-performance con-
+                                                                           ventional DDR3-based system with 32 4 GHz four-wide out-
+Figure 5 shows the PageRank computation using our program-
+                                                                           of-order cores, each with a 128-entry instruction window and
+ming interface (recall that the original version was shown in
+                                                                           a 64-entry load-store queue (denoted as DDR3-OoO). Each
+Figure 1). We only show the transformation for lines 8–13 of
+                                                                           socket contains eight cores and all four sockets are fully con-
+Figure 1, which contain the main computation. list_for
+                                                                           nected with each other by high-speed serial links, provid-
+is used as an abbreviation of a for loop surrounded by
+                                                                           ing 40 GB/s of bandwidth per link. Each core has 32 KB L1
+list_begin and list_end calls.
+                                                                           instruction/data caches and a 256 KB L2 cache, and eight
+ 1    ...                                                                  cores in a socket share an 8 MB L3 cache. All three levels of
+ 2    count = 0;                                                           caches are non-blocking, having 16 (L1), 16 (L2), and 64 (L3)
+ 3    do {                                                                 MSHRs [32]. Each L3 cache is equipped with a feedback-
+ 4      ...
+ 5      list_for (v: graph.vertices) {
+                                                                           directed prefetcher with 32 streams [56]. The main memory
+ 6        value = 0.85 * v.pagerank / v.out_degree;                        has 128 GB of memory capacity and is organized as two chan-
+ 7        list_for (w: v.successors) {                                     nels per CPU socket, four ranks per channel, eight banks per
+ 8          arg = (w, value);                                              rank, and 8 KB rows with timing parameters of DDR3-1600
+ 9          put(w.id, function(w, value) {
+10            w.next_pagerank += value;
+                                                                           11-11-11 devices [41], yielding 102.4 GB/s of memory band-
+11          }, &arg, sizeof(arg), &w.next_pagerank);                       width exploitable by cores.
+12        }                                                                   DDR3-OoO resembles modern commodity servers com-
+13      }                                                                  posed of multi-socket, high-end CPUs backed by DDR3 main
+14      barrier();
+15      ...                                                                memory. Thus, we choose it as the baseline of our evaluations.
+16    } while (diff > e && ++count < max_iteration);
+                                                                           HMC-Based System. We use two different types of cores
+Figure 5: PageRank computation in Tesseract (corresponding                 for the HMC-based system: HMC-OoO, which consists of
+to lines 8–13 in Figure 1).                                                the same cores used in DDR3-OoO, and HMC-MC, which is
+                                                                           comprised of 512 2 GHz single-issue in-order cores (128 cores
+     Most notably, remote memory accesses for updating the
+                                                                           per socket), each with 32 KB L1 instruction/data caches and
+next_pagerank field are transformed into put calls. Conse-
+                                                                           no L2 cache. For the main memory, we use 16 8 GB HMCs
+quently, unlike the original implementation where every L1
+                                                                           (128 GB in total, 32 vaults per cube, 16 banks per vault [22],
+cache miss or lock contention for w.next_pagerank stalls
+                                                                           and 256 B pages) connected with the processor-centric topol-
+the core, our implementation facilitates cores to (1) continu-
+                                                                           ogy proposed by Kim et al. [29]. The total memory bandwidth
+ously issue put commands without being blocked by cache
+                                                                           exploitable by the cores is 640 GB/s.
+misses or lock acquisition and (2) promptly update PageRank
+values without stalls due to L1 cache misses through message-                 HMC-OoO and HMC-MC represent future server designs
+triggered prefetching. List prefetching also helps to achieve              based on emerging memory technologies. They come with
+the former objective by prefetching pointers to the successor              two flavors, one with few high-performance cores and the
+vertices (i.e., the list of outgoing edges).                               other with many low-power cores, in order to reflect recent
+   We believe that such transformation is simple enough to                 trends in commercial server design.
+be easily integrated into existing graph processing frame-                 Tesseract System. Our evaluated version of the Tesseract
+works [12, 16, 37, 39, 51, 58] or DSL compilers for graph                  paradigm consists of 512 2 GHz single-issue in-order cores,
+processing [17, 20]. This is a part of our future work.                    each with 32 KB L1 instruction/data caches and a 32-entry
+4. Evaluation Methodology                                                  message queue (1.5 KB), one for each vault of the HMCs. We
+                                                                           conservatively assume that entering or exiting the interrupt
+4.1. Simulation Configuration                                              mode takes 50 processor cycles (or 25 ns). We use the same
+We evaluate our architecture using an in-house cycle-accurate              number of HMCs (128 GB of main memory capacity) as that
+x86-64 simulator whose frontend is Pin [38]. The simulator                 of the HMC-based system and connect the HMCs with the
+has a cycle-level model of many microarchitectural compo-                  Dragonfly topology as suggested by previous work [29]. Each
+nents, including in-order/out-of-order cores considering reg-              vault provides 16 GB/s of internal memory bandwidth to the
+
+
+===== Page 8 =====
+
+Tesseract core, thereby reaching 8 TB/s of total memory band-               5. Evaluation Results
+width exploitable by Tesseract cores. We do not model the
+                                                                            5.1. Performance
+host processors as computation is done entirely inside HMCs
+without intervention from host processors.                                  Figure 6 compares the performance of the proposed Tesser-
+   For our prefetching schemes, we use a 4 KB 16-way set-                   act system against that of conventional systems (DDR3-OoO,
+associative prefetch buffer for each vault. The message-                    HMC-OoO, and HMC-MC). In this figure, LP and MTP indi-
+triggered prefetcher handles up to 16 prefetches and triggers               cate the use of list prefetching and message-triggered prefetch-
+the message queue to start processing messages when more                    ing, respectively. The last set of bars, labeled as GM, indicates
+than 16 (= Mth ) messages are ready. The list prefetcher is com-            geometric mean across all workloads.
+posed of a four-entry list table and a 16-entry reference predic-              Our evaluation results show that Tesseract outperforms the
+tion table (0.48 KB) and is set to prefetch up to 16 cache blocks           DDR3-based conventional architecture (DDR3-OoO) by 9x
+ahead. Mth and the prefetch distance of the list prefetcher are             even without prefetching techniques. Replacing the DDR3-
+determined based on our experiments on a limited set of con-                based main memory with HMCs (HMC-OoO) and using many
+figurations. Note that comparison of our schemes against other              in-order cores instead of out-of-order cores (HMC-MC) bring
+software prefetching approaches is hard to achieve because                  only marginal performance improvements over the conven-
+Tesseract is a message-passing architecture (i.e., each core                tional systems.
+can access its local DRAM partition only), and thus, existing                  Our prefetching mechanisms, when employed together, en-
+mechanisms require significant modifications to be applied to               able Tesseract to achieve a 14x average performance improve-
+Tesseract to prefetch data stored in remote memory.                         ment over the DDR3-based conventional system, while min-
+                                                                            imizing the storage overhead to less than 5 KB per core (see
+4.2. Workloads
+                                                                            Section 4.1). Message-triggered prefetching is particularly
+We implemented five graph algorithms in C++. Average                        effective in graph algorithms with large numbers of neighbor
+Teenager Follower (AT) computes the average number of                       accesses (e.g., CT, PR, and SP), which are difficult to handle
+teenage followers of users over k years old [20]. Conductance               efficiently in conventional architectures.
+(CT) counts the number of edges crossing a given partition X                   The reason why conventional systems fall behind Tesseract
+and its complement X c [17, 20]. PageRank (PR) is an algo-                  is that they are limited by the low off-chip link bandwidth
+rithm that evaluates the importance of web pages [5,17,20,39].              (102.4 GB/s in DDR3-OoO or 640 GB/s in HMC-OoO/-MC)
+Single-Source Shortest Path (SP) finds the shortest path from               whereas our system utilizes the large internal memory band-
+the given source to each vertex [20, 39]. Vertex Cover (VC)                 width of HMCs (8 TB/s).10 Perhaps more importantly, such
+is an approximation algorithm for the minimum vertex cover                  bandwidth discrepancy becomes even more pronounced as the
+problem [17]. Due to the long simulation times, we simulate                 main memory capacity per server gets larger. For example,
+only one iteration of PR, four iterations of SP, and one iteration          doubling the memory capacity linearly increases the memory
+of VC. Other algorithms are simulated to the end.                           bandwidth in our system, while the memory bandwidth of the
+   Since runtime characteristics of graph processing algo-                  conventional systems remains the same.
+rithms could depend on the shapes of input graphs, we use                      To provide more insight into the performance improvement
+three real-world graphs as inputs of each algorithm: ljournal-              of Tesseract, Figure 7 shows memory bandwidth usage and
+2008 from the LiveJournal social site (LJ, |V | = 5.3 M, |E| =              average memory access latency of each system (we omit re-
+79 M), enwiki-2013 from the English Wikipedia (WK, |V | =                   sults for workloads with WK and IC datasets for brevity).
+4.2 M, |E| = 101 M), and indochina-2004 from the country                    As the figure shows, the amount of memory bandwidth uti-
+domains of Indochina (IC, |V | = 7.4 M, |E| = 194 M) [33].                  lized by Tesseract is in the order of several TB/s, which is
+These inputs yield 3–5 GB of memory footprint, which is                     clearly beyond the level of what conventional architectures
+much larger than the total cache capacity of any system in our              can reach even with advanced memory technologies. This, in
+evaluations. Although larger datasets cannot be used due to the             turn, greatly affects the average memory access latency, lead-
+long simulation times, our evaluation with relatively smaller               ing to a 96% lower memory access latency in our architecture
+memory footprints is conservative as it penalizes Tesseract                 compared to the DDR3-based system. This explains the main
+because conventional systems in our evaluations have much                   source of the large speedup achieved by our system.
+larger caches (41 MB in HMC-OoO) than the Tesseract system                     Figure 7a also provides support for our decision to have
+(16 MB). The input graphs used in this paper are known to                   one-to-one mapping between cores and vaults. Since the total
+share similar characteristics with large real-world graphs in               memory bandwidth usage does not reach its limit (8 TB/s),
+terms of their small diameters and power-law degree distribu-
+tions [42].9                                                                    10 Although Tesseract also uses off-chip links for remote accesses, moving
+                                                                            computation to where data reside (i.e., using the remote function calls in
+                                                                            Tesseract) consumes much less bandwidth than fetching data to computation
+                                                                            units. For example, the minimum memory access granularity of conventional
+     9 We conducted a limited set of experiments with even larger graphs    systems is one cache block (typically 64 bytes), whereas each message in
+(it-2004, arabic-2005, and uk-2002 [33], |V | = 41 M/23 M/19 M, |E| =       Tesseract consists of a function pointer and small-sized arguments (up to 32
+1151 M/640 M/298 M, 32 GB/18 GB/10 GB of memory footprints, respec-         bytes). Sections 5.5 and 5.6 discuss the impact of off-chip link bandwidth on
+tively) and observed similar trends in performance and energy efficiency.   Tesseract performance.
+
+
+===== Page 9 =====
+
+                                                DDR3-OoO      HMC-OoO            HMC-MC          Tesseract (No Prefetching)                         Tesseract + LP           Tesseract + LP + MTP
+                          25
+                                                                                                                                       37.1      43.7        33.9     40.1
+
+                          20
+
+                          15
+ Speedup
+
+
+
+
+                          10
+
+                           5
+
+                           0
+                                    AT.WK   AT.IC    AT.LJ   CT.WK     CT.IC     CT.LJ   PR.WK     PR.IC             PR.LJ             SP.WK       SP.IC      SP.LJ    VC.WK      VC.IC      VC.LJ     GM
+
+                               Figure 6: Performance comparison between conventional architectures and Tesseract (normalized to DDR3-OoO).
+                          4,000                                                                                                    4
+ Bandwidth Usage (GB/s)
+
+
+
+
+                                                                                                             Normalized Latency
+                          3,000                                                                                                    3
+
+                          2,000                                                                                                    2
+
+                          1,000                                                                                                    1
+
+
+                               0                                                                                                   0
+                                        AT.LJ       CT.LJ      PR.LJ           SP.LJ      VC.LJ                                          AT.LJ             CT.LJ       PR.LJ             SP.LJ       VC.LJ
+                                                (a) Memory bandwidth usage                                                        (b) Average memory access latency (normalized to DDR3-OoO)
+                                   Figure 7: Memory characteristics of graph processing workloads in conventional architectures and Tesseract.
+
+allocating multiple vaults to a single core could cause further                                            even without prefetching. Considering that HMC-MC has the
+imbalance between computation power and memory band-                                                       same number of cores and the same cache capacity as those
+width. Also, putting more than one core per vault complicates                                              of Tesseract, we found that this improvement comes from our
+the system design in terms of higher thermal density, degraded                                             programming model that can overlap long memory access
+quality of service due to sharing of one memory controller                                                 latency with computation through non-blocking remote func-
+between multiple cores, and potentially more sensitivity to                                                tion calls. The performance benefit of our new programming
+placement of data. For these reasons, we choose to employ                                                  model is also confirmed when we compare the performance
+one core per vault.                                                                                        of Tesseract + Conventional BW with that of HMC-MC. We
+                                                                                                           observed that, under the conventional bandwidth limitation,
+5.2. Iso-Bandwidth Comparison of Tesseract and Conven-                                                     Tesseract provides 2.3x the performance of HMC-MC, which
+     tional Architectures                                                                                  is 2.8x less speedup compared to its PIM40.3 version.
+                                                                                                                                                              45.7 This im-
+
+In order to dissect the performance impact of increased mem-                                               plies that the use of PIM and our new programming model are
+ory bandwidth and our architecture design, we perform ideal-                                               roughly of equal importance in achieving the performance of
+ized limit studies of two new configurations: (1) HMC-MC                                                   Tesseract.
+utilizing the internal memory bandwidth of HMCs without                                                                                       HMC-MC                         Tesseract + Conventional BW
+off-chip bandwidth limitations (called HMC-MC + PIM BW)                                                                                       HMC-MC + PIM BW                Tesseract
+and (2) Tesseract, implemented on the host side, leading to                                                                       20
+
+severely constrained by off-chip link bandwidth (called Tesser-
+                                                                                                                                  15
+act + Conventional BW). The first configuration shows the
+                                                                                                            Speedup
+
+
+
+
+ideal performance of conventional architectures without any                                                                       10
+limitation due to off-chip bandwidth. The second configura-
+tion shows the performance of Tesseract if it were limited by                                                                      5
+conventional off-chip bandwidth. Note that HMC-MC has
+the same core and cache configuration as that of Tesseract.                                                                        0
+                                                                                                                                          AT.LJ            CT.LJ        PR.LJ            SP.LJ       VC.LJ
+For fair comparison, prefetching mechanisms of Tesseract are
+disabled. We also show the performance of regular HMC-MC                                                   Figure 8: HMC-MC and Tesseract under the same bandwidth.
+and Tesseract (the leftmost and the rightmost bars in Figure 8).
+   As shown in Figure 8, simply increasing the memory band-                                                5.3. Execution Time Breakdown
+width of conventional architectures is not sufficient for them                                             Figure 9 shows execution time broken down into each oper-
+to reach the performance of Tesseract. Even if the memory                                                  ation in Tesseract (with prefetching mechanisms), averaged
+bandwidth of HMC-MC is artificially provisioned to the level                                               over all cores in the system. In many workloads, execution
+of Tesseract, Tesseract still outperforms HMC-MC by 2.2x                                                   in normal execution mode and interrupt mode dominates the
+
+
+===== Page 10 =====
+
+                  Normal Mode        Interrupt Mode          Interrupt Switching           Our experimental results indicate that, on average, each mes-
+                  Network            Barrier                                               sage stays in the message queue for 1400 Tesseract core cycles
+  100 %                                                                                    (i.e., 700 ns) before they get processed (not shown), which is
+                                                                                           much longer than the DRAM access latency in most cases.
+     75 %                                                                                     Figure 10 also shows that our prefetching schemes cover
+                                                                                           87% of L1 cache misses, on average. The coverage is high
+     50 %
+                                                                                           because our prefetchers tackle two major sources of memory
+     25 %                                                                                  accesses in graph processing, namely vertex/edge list traversal
+                                                                                           and neighbor traversal, with exact information from domain-
+           0%
+                  AT.LJ      CT.LJ        PR.LJ            SP.LJ        VC.LJ
+                                                                                           specific knowledge provided as software hints.
+                                                                                              We conclude that the new prefetching mechanisms can be
+      Figure 9: Execution time breakdown of our architecture.
+                                                                                           very effective in our Tesseract design for graph processing
+total execution time. However, in some applications, up to                                 workloads.
+26% of execution time is spent on waiting for network due                                  5.5. Scalability
+to a significant amount of off-chip communication caused by                                Figure 11 evaluates the scalability of Tesseract by measuring
+neighbor traversal. Since neighbor traversal uses non-blocking                             the performance of 32/128/512-core systems (i.e., systems
+remote function calls, the time spent is essentially due to the                            with 8/32/128 GB of main memory in total), normalized to
+network backpressure incurred as a result of limited network                               the performance of the 32-core Tesseract system. Tesseract
+bandwidth. In Sections 5.6 and 5.7, we show how this problem                               provides nearly ideal scaling of performance when the main
+can be mitigated by either increased off-chip bandwidth or                                 memory capacity is increased from 8 GB to 32 GB. On the
+better graph distribution schemes.                                                         contrary, further quadrupling the main memory capacity to
+   In addition, some workloads spend notable execution time                                128 GB shows less optimal performance compared to ideal
+waiting for barrier synchronization. This is due to workload                               scaling. The cause of this is that, as more cubes are added into
+imbalance across cores in the system. This problem can be                                  our architecture, off-chip communication overhead becomes
+alleviated by employing better data mapping (e.g., graph parti-                            more dominant due to remote function calls. For example,
+tioning based vertex distribution, etc.), which is orthogonal to                           as the number of Tesseract cores increases from 128 to 512,
+our proposed system.                                                                       the average bandwidth consumption of the busiest off-chip
+5.4. Prefetch Efficiency                                                                   link in Tesseract increases from 8.5 GB/s to 17.2 GB/s (i.e.,
+                                                                                           bandwidth utilization of the busiest link increases from 43%
+Figure 10 shows two metrics to evaluate the efficiency of our
+                                                                                           to 86%) in the case of AT.LJ. However, it should be noticed
+prefetching mechanisms. First, to evaluate prefetch timeli-
+                                                                                           that, despite this sublinear performance scaling, increasing the
+ness, it compares our scheme against an ideal one where all
+                                                                                           main memory capacity widens the performance gap between
+prefetches are serviced instantly (in zero cycles) without incur-
+                                                                                           conventional architectures and ours even beyond 128 GB since
+ring DRAM contention. Second, it depicts prefetch coverage,
+                                                                                           conventional architectures do not scale well with the increasing
+i.e., ratio of prefetch buffer hits over all L1 cache misses.
+                                                                                           memory capacity. We believe that optimizing the off-chip
+                  Tesseract + LP + MTP         Ideal         Coverage                      network and data mapping will further improve scalability of
+                                                                                           our architecture. We discuss these in the next two sections.
+           1.00                                                         100 %
+                                                                                                             32 Cores (8 GB)      128 Cores (32 GB)     512 Cores (128 GB)
+                                                                                                      16
+           0.75                                                         75 %
+                                                                                Coverage
+ Speedup
+
+
+
+
+           0.50                                                         50 %                          12
+                                                                                            Speedup
+
+
+
+
+           0.25                                                         25 %                          8
+
+           0.00                                                         0%
+                  AT.LJ     CT.LJ    PR.LJ         SP.LJ      VC.LJ                                   4
+
+           Figure 10: Efficiency of our prefetching mechanisms.                                       0
+                                                                                                               AT.LJ      CT.LJ         PR.LJ         SP.LJ      VC.LJ
+   We observed that our prefetching schemes perform within
+1.8% of their ideal implementation with perfect timeliness and                                             Figure 11: Performance scalability of Tesseract.
+no bandwidth contention. This is very promising, especially
+considering that pointer chasing in graph processing is not a                              5.6. Effect of Higher Off-Chip Network Bandwidth
+prefetch-friendly access pattern. The reason why our message-                              The recent HMC 2.0 specification boosts the off-chip memory
+triggered prefetching shows such good timeliness is that it                                bandwidth from 320 GB/s to 480 GB/s [23]. In order to evalu-
+utilizes the slack between message arrival time and message                                ate the impact of such an increased off-chip bandwidth on both
+processing time. Thus, as long as there is enough slack, our                               conventional systems and Tesseract, we evaluate HMC-OoO
+proposed schemes can fully hide the DRAM access latency.                                   and Tesseract with 50% higher off-chip bandwidth. As shown
+
+
+===== Page 11 =====
+
+in Figure 12, such improvement in off-chip bandwidth widens               tioning in LJ), and thus, reduces off-chip network traffic for
+the gap between HMC-OoO and Tesseract in graph process-                   remote function calls. For example, in AT.LJ, the partitioning
+ing workloads which intensively use the off-chip network for              scheme eliminates 53% of non-blocking remote function calls
+neighbor traversal. This is because the 1.5x off-chip link band-          compared to random partitioning (which is our baseline).
+width is still far below the memory bandwidth required by                    However, in some workloads, graph partitioning shows only
+large-scale graph processing workloads in conventional archi-             small performance improvement (CT.LJ) or even degrades per-
+tectures (see Figure 7a). However, 1.5x off-chip bandwidth                formance (SP.LJ) over random partitioning. This is because
+greatly helps to reduce network-induced stalls in Tesseract,              graph partitioning algorithms are unaware of the amount of
+enabling even more efficient utilization of internal memory               work per vertex, especially when it changes over time. As a re-
+bandwidth. We observed that, with this increase in off-chip               sult, they can exacerbate the workload imbalance across vaults.
+link bandwidth, graph processing in Tesseract scales better to            A representative example of this is the shortest path algorithm
+512 cores (not shown: 14.9x speedup resulting from 16x more               (SP.LJ), which skips computation for vertices whose distances
+cores, going from 32 to 512 cores).                                       did not change during the last iteration. This algorithm experi-
+                                                                          ences severe imbalance at the beginning of execution, where
+                HMC-OoO                  HMC-OoO (HMC 2.0)
+                Tesseract + LP + MTP     Tesseract + LP + MTP (HMC 2.0)
+                                                                          vertex updates happen mostly within a single partition. This
+           40                                                             is confirmed by the observation that Tesseract with METIS
+                                                40.1          45.5
+                                                                          spends 59% of execution time waiting for synchronization
+           30                                                             barriers. This problem can be alleviated with migration-based
+ Speedup
+
+
+
+
+                                                                          schemes, which will be explored in our future work.
+           20
+                                                                          5.8. Energy/Power Consumption and Thermal Analysis
+           10                                                             Figure 14 shows the normalized energy consumption of HMCs
+                                                                          in HMC-based systems including Tesseract. We model the
+            0
+                AT.LJ       CT.LJ      PR.LJ      SP.LJ          VC.LJ    power consumption of logic/memory layers and Tesseract
+                                                                          cores by leveraging previous work [48], which is based on Mi-
+Figure 12: System performance under HMC 2.0 specification.
+                                                                          cron’s disclosure, and scaling the numbers as appropriate for
+                                                                          our configuration. Tesseract consumes 87% less average en-
+5.7. Effect of Better Graph Distribution
+                                                                          ergy compared to conventional HMC-based systems with out-
+Another way to improve off-chip transfer efficiency is to em-             of-order cores, mainly due to its shorter execution time. The
+ploy better data partitioning schemes that can minimize com-              dominant portion of the total energy consumption is from the
+munication between different vaults. In order to analyze the              SerDes circuits for off-chip links in both HMC-based systems
+effect of data partitioning on system performance, Figure 13              and Tesseract (62% and 45%, respectively), while Tesseract
+shows the performance improvement of Tesseract when the                   cores contribute 15% of the total energy consumption.
+input graphs are distributed across vaults based on graph parti-                                                                   Memory Layers         Logic Layers     Cores
+tioning algorithms. For this purpose, we use METIS [27] to                                     2.0
+perform 512-way multi-constraint partitioning to balance the
+                                                                                                     HMC-OoO
+                                                                           Normalized Energy
+
+
+
+
+                                                                                                                        Tesseract + LP + MTP
+
+
+
+
+                                                                                               1.5
+                                                                                                               HMC-MC
+
+
+
+
+number of vertices, outgoing edges, and incoming edges of
+each partition, as done in a recent previous work [51]. The
+                                                                                               1.0
+evaluation results do not include the execution time of the
+partitioning algorithm to clearly show the impact of graph                                     0.5
+distribution on graph analysis performance.
+   Employing better graph distribution can further improve the                                 0.0
+performance of Tesseract. This is because graph partitioning                                               AT.LJ                               CT.LJ   PR.LJ      SP.LJ      VC.LJ
+
+minimizes the number of edges crossing between different                                       Figure 14: Normalized energy consumption of HMCs.
+partitions (53% fewer edge cuts compared to random parti-
+                                                                             Tesseract increases the average power consumption (not
+                Tesseract + LP + MTP    Tesseract + LP + MTP with METIS   shown) by 40% compared to HMC-OoO mainly due to the
+           40                                                             in-order cores inside it and the higher DRAM utilization. Al-
+                                                       40.1
+                                                                          though the increased power consumption may have a nega-
+           30
+                                                                          tive impact on device temperature, the power consumption is
+ Speedup
+
+
+
+
+           20                                                             expected to be still within the power budget according to a
+                                                                          recent industrial research on thermal feasibility of 3D-stacked
+           10                                                             PIM [9]. Specifically, assuming that a logic die of the HMC
+                                                                          has the same area as an 8 Gb DRAM die (e.g., 226 mm2 [54]),
+            0                                                             the highest power density of the logic die across all work-
+                AT.LJ       CT.LJ      PR.LJ      SP.LJ          VC.LJ
+                                                                          loads in our experiments is 94 mW/mm2 in Tesseract, which
+Figure 13: Performance improvement after graph partitioning.              remains below the maximum power density that does not re-
+
+
+===== Page 12 =====
+
+quire faster DRAM refresh using a passive heat sink (i.e.,         PIM devices, which is important for graph processing, as we
+133 mW/mm2 [9]).                                                   showed in Section 5. Moreover, specialized in-order cores are
+  We conclude that Tesseract is thermally feasible and leads to    more desirable in designing a PIM architecture for large-scale
+greatly reduced energy consumption on state-of-the-art graph       graph processing over high-end processors or GPGPUs. This
+processing workloads.                                              is because such workloads require stacked DRAM capacity
+                                                                   to be maximized under a stringent chip thermal constraint for
+6. Related Work                                                    cost-effectiveness, which in turn necessitates minimizing the
+To our knowledge, this paper provides the first comprehensive      power consumption of in-memory computation units.
+accelerator proposal for large-scale graph processing using the       Zhu et al. [62, 63] developed a 3D-stacked logic-in-memory
+concept of processing-in-memory. We provide a new program-         architecture for data-intensive workloads. In particular, they
+ming model, system design, and prefetching mechanisms for          accelerated sparse matrix multiplication and mapped graph
+graph processing workloads, along with extensive evaluations       processing onto their architecture by formulating several graph
+of our proposed techniques. This section briefly discusses         algorithms using matrix operations. Apart from the fact that
+related work in PIM, 3D stacking, and architectures for data-      sparse matrix operations may not be the most efficient way of
+intensive workloads.                                               expressing graph algorithms, we believe that our architecture
+Processing-in-Memory. Back in the 1990s, several re-               can also employ a programming model like theirs, if needed,
+searchers proposed to put computation units inside memory to       due to the generality of our programming interface.
+overcome the memory wall [11, 14, 26, 31, 45, 47]. At the time,    Architectures for Big-Data Processing. Specialized accel-
+the industry moved toward increasing the off-chip memory           erators for database systems [7, 30, 59], key-value stores [34],
+bandwidth instead of adopting the PIM concept due to costly        and stream processing [49] have also been developed. Several
+integration of computation units inside memory dies. Our           studies have proposed 3D-stacked system designs targeting
+architecture takes advantage of a much more realizable and         memory-intensive server workloads [13, 28, 35, 50]. Tesseract,
+cost-effective integration of processing and memory based on       in contrast, targets large-scale graph processing. We develop
+3D stacking (e.g., the hybrid memory cube).                        an efficient programming model for scalable graph processing
+   No prior work on processing-in-memory examined large-           and design two prefetchers specialized for graph processing
+scale graph processing, which is not only commercially impor-      by leveraging our programming interface.
+tant but also extremely desirable for processing-in-memory as         Some works use GPGPUs to accelerate graph process-
+we have shown throughout this paper.                               ing [15, 18, 19, 40]. While a GPU implementation provides a
+   Other than performing computation inside memory, a few          performance advantage over CPU-based systems, the memory
+prior works examined the possibility of placing prefetchers        capacity of a commodity GPGPU may not be enough to store
+near memory [21, 55, 60]. Our two prefetching mechanisms,          real-world graphs with billions of vertices. Although the use
+which are completely in memory, are different from such            of multiple GPGPUs alleviates this problem to some extent,
+approaches in that (1) prior works are still limited by the off-   relatively low bandwidth and high latency of PCIe-based in-
+chip memory bandwidth, especially when prefetched data             terconnect may not be sufficient for fast graph processing,
+are sent to host processors and (2) our message-triggered          which generates a massive amount of random memory ac-
+prefetching enables exact prefetching through tight integration    cesses across the entire graph [40].
+with our programming interface.
+PIM based on 3D Stacking. With the advancement of 3D               7. Conclusion and Future Work
+integration technologies, the PIM concept is regaining atten-      In this paper, we revisit the processing-in-memory concept in
+tion as it becomes more realizable [2, 36]. In this context, it    the completely new context of (1) cost-effective integration
+is critical to examine specialized PIM systems for important       of logic and memory through 3D stacking and (2) emerging
+domains of applications [2, 48, 53, 62, 63].                       large-scale graph processing workloads that require an un-
+   Pugsley et al. [48] evaluated the PIM concept with MapRe-       precedented amount of memory bandwidth. To this end, we
+duce workloads. Since their architecture does not support          introduce a programmable PIM accelerator for large-scale
+communication between PIM cores, only the map phase is             graph processing, called Tesseract. Our new system features
+handled inside memory while the reduce phase is executed           (1) many in-order cores inside a memory chip, (2) a new mes-
+on host processors. Due to this reason, it is not possible to      sage passing mechanism that can hide remote access latency
+execute graph processing workloads, which involve a signif-        within our PIM design, (3) new hardware prefetchers special-
+icant amount of communication between PIM cores, with              ized for graph processing, and (4) a programming interface
+their architecture. On the contrary, Tesseract is able to han-     that exploits our new hardware design. We showed that Tesser-
+dle MapReduce workloads since our programming interface            act greatly outperforms conventional high-performance sys-
+provides sufficient flexibility for describing them.               tems in terms of both performance and energy efficiency. Per-
+   Zhang et al. [61] proposed to integrate GPGPUs with 3D-         haps more importantly, Tesseract achieves memory-capacity-
+stacked DRAM for in-memory computing. However, their               proportional performance, which is the key to handling in-
+approach lacks a communication mechanism between multiple          creasing amounts of data in a cost-effective manner. We con-
+
+
+===== Page 13 =====
+
+clude that our new design can be an efficient and scalable                       [26] Y. Kang et al., “FlexRAM: Toward an advanced intelligent memory
+substrate to execute emerging data-intensive applications with                        system,” in Proc. ICCD, 1999.
+                                                                                 [27] G. Karypis and V. Kumar, “A fast and high quality multilevel scheme
+intense memory bandwidth demands.                                                     for partitioning irregular graphs,” SIAM J. Sci. Comput., vol. 20, no. 1,
+                                                                                      pp. 359–392, 1998.
+Acknowledgments                                                                  [28] T. Kgil et al., “PicoServer: Using 3D stacking technology to enable a
+                                                                                      compact energy efficient chip multiprocessor,” in Proc. ASPLOS, 2006.
+We thank the anonymous reviewers for their valuable feed-                        [29] G. Kim et al., “Memory-centric system interconnect design with hybrid
+back. This work was supported in large part by the National                           memory cubes,” in Proc. PACT, 2013.
+                                                                                 [30] O. Kocberber et al., “Meet the walkers: Accelerating index traversals
+Research Foundation of Korea (NRF) grants funded by the                               for in-memory databases,” in Proc. MICRO, 2013.
+Korean government (MEST) (No. 2012R1A2A2A0604729                                 [31] P. M. Kogge, “EXECUBE-a new architecture for scaleable MPPs,” in
+7) and the IT R&D program of MKE/KEIT (No. 10041608,                                  Proc. ICPP, 1994.
+                                                                                 [32] D. Kroft, “Lockup-free instruction fetch/prefetch cache organization,”
+Embedded System Software for New Memory-based Smart                                   in Proc. ISCA, 1981.
+Devices). Onur Mutlu also acknowledges support from the                          [33] Laboratory for Web Algorithmics. Available: http://law.di.unimi.it/
+                                                                                      datasets.php
+Intel Science and Technology Center for Cloud Computing,                         [34] K. Lim et al., “Thin servers with smart pipes: Designing SoC accelera-
+Samsung, Intel, and NSF grants 0953246, 1065112, 1212962,                             tors for memcached,” in Proc. ISCA, 2013.
+                                                                                 [35] G. H. Loh, “3D-stacked memory architectures for multi-core proces-
+and 1320531.                                                                          sors,” in Proc. ISCA, 2008.
+                                                                                 [36] G. H. Loh et al., “A processing-in-memory taxonomy and a case for
+References                                                                            studying fixed-function PIM,” in WoNDP, 2013.
+ [1] ARM Cortex-A5 Processor. Available: http://www.arm.com/products/            [37] Y. Low et al., “Distributed GraphLab: A framework for machine
+     processors/cortex-a/cortex-a5.php                                                learning and data mining in the cloud,” Proc. VLDB Endow., vol. 5,
+ [2] R. Balasubramonian et al., “Near-data processing: Insights from a                no. 8, pp. 716–727, 2012.
+     MICRO-46 workshop,” IEEE Micro, vol. 34, no. 4, pp. 36–42, 2014.            [38] C.-K. Luk et al., “Pin: Building customized program analysis tools
+ [3] A. Basu et al., “Efficient virtual memory for big memory servers,” in            with dynamic instrumentation,” in Proc. PLDI, 2005.
+     Proc. ISCA, 2013.                                                           [39] G. Malewicz et al., “Pregel: A system for large-scale graph processing,”
+ [4] A. D. Birrell and B. J. Nelson, “Implementing remote procedure calls,”           in Proc. SIGMOD, 2010.
+     ACM Trans. Comput. Syst., vol. 2, no. 1, pp. 39–59, 1984.                   [40] D. Merrill et al., “Scalable GPU graph traversal,” in Proc. PPoPP,
+                                                                                      2012.
+ [5] S. Brin and L. Page, “The anatomy of a large-scale hypertextual Web         [41] 2Gb: x4, x8, x16 DDR3 SDRAM, Micron Technology, 2006.
+     search engine,” in Proc. WWW, 1998.                                         [42] A. Mislove et al., “Measurement and analysis of online social net-
+ [6] T.-F. Chen and J.-L. Baer, “Effective hardware-based data prefetching            works,” in Proc. IMC, 2007.
+     for high-performance processors,” IEEE Trans. Comput., vol. 44, no. 5,      [43] O. Mutlu et al., “Runahead execution: An alternative to very large in-
+     pp. 609–623, 1995.                                                               struction windows for out-of-order processors,” in Proc. HPCA, 2003.
+ [7] E. S. Chung et al., “LINQits: Big data on little clients,” in Proc. ISCA,   [44] Oracle TimesTen in-memory database. Available: http://www.oracle.
+     2013.                                                                            com/technetwork/database/timesten/
+ [8] L. Dagum and R. Menon, “OpenMP: An industry-standard API for                [45] M. Oskin et al., “Active pages: A computation model for intelligent
+     shared-memory programming,” IEEE Comput. Sci. & Eng., vol. 5,                    memory,” in Proc. ISCA, 1998.
+     no. 1, pp. 46–55, 1998.                                                     [46] J. Ousterhout et al., “The case for RAMClouds: Scalable high-
+ [9] Y. Eckert et al., “Thermal feasibility of die-stacked processing in              performance storage entirely in DRAM,” ACM SIGOPS Oper. Syst.
+     memory,” in WoNDP, 2014.                                                         Rev., vol. 43, no. 4, pp. 92–105, 2010.
+[10] M. Ferdman et al., “Clearing the clouds: A study of emerging scale-out      [47] D. Patterson et al., “Intelligent RAM (IRAM): Chips that remember
+     workloads on modern hardware,” in Proc. ASPLOS, 2012.                            and compute,” in ISSCC Dig. Tech. Pap., 1997.
+[11] M. Gokhale et al., “Processing in memory: The Terasys massively             [48] S. Pugsley et al., “NDC: Analyzing the impact of 3D-stacked mem-
+     parallel PIM array,” IEEE Comput., vol. 28, no. 4, pp. 23–31, 1995.              ory+logic devices on MapReduce workloads,” in Proc. ISPASS, 2014.
+[12] J. E. Gonzalez et al., “PowerGraph: Distributed graph-parallel compu-       [49] W. Qadeer et al., “Convolution engine: Balancing efficiency & flexibil-
+     tation on natural graphs,” in Proc. OSDI, 2012.                                  ity in specialized computing,” in Proc. ISCA, 2013.
+[13] A. Gutierrez et al., “Integrated 3D-stacked server designs for increasing   [50] P. Ranganathan, “From microprocessors to Nanostores: Rethinking
+     physical density of key-value stores,” in Proc. ASPLOS, 2014.                    data-centric systems,” IEEE Comput., vol. 44, no. 1, pp. 39–48, 2011.
+[14] M. Hall et al., “Mapping irregular applications to DIVA, a PIM-based        [51] S. Salihoglu and J. Widom, “GPS: A graph processing system,” in
+     data-intensive architecture,” in Proc. SC, 1999.                                 Proc. SSDBM, 2013.
+[15] P. Harish and P. J. Narayanan, “Accelerating large graph algorithms on      [52] SAP HANA. Available: http://www.saphana.com/
+     the GPU using CUDA,” in Proc. HiPC, 2007.                                   [53] V. Seshadri et al., “RowClone: Fast and energy-efficient in-DRAM
+[16] Harshvardhan et al., “KLA: A new algorithmic paradigm for parallel               bulk data copy and initialization,” in Proc. MICRO, 2013.
+     graph computations,” in Proc. PACT, 2014.                                   [54] M. Shevgoor et al., “Quantifying the relationship between the power
+                                                                                      delivery network and architectural policies in a 3D-stacked memory
+[17] S. Hong et al., “Green-Marl: A DSL for easy and efficient graph                  device,” in Proc. MICRO, 2013.
+     analysis,” in Proc. ASPLOS, 2012.                                           [55] Y. Solihin et al., “Using a user-level memory thread for correlation
+[18] S. Hong et al., “Accelerating CUDA graph algorithms at maximum                   prefetching,” in Proc. ISCA, 2002.
+     warp,” in Proc. PPoPP, 2011.                                                [56] S. Srinath et al., “Feedback directed prefetching: Improving the per-
+[19] S. Hong et al., “Efficient parallel graph exploration on multi-core CPU          formance and bandwidth-efficiency of hardware prefetchers,” in Proc.
+     and GPU,” in Proc. PACT, 2011.                                                   HPCA, 2007.
+[20] S. Hong et al., “Simplifying scalable graph processing with a domain-       [57] M. A. Suleman et al., “Accelerating critical section execution with
+     specific language,” in Proc. CGO, 2014.                                          asymmetric multi-core architectures,” in Proc. ASPLOS, 2009.
+[21] C. J. Hughes and S. V. Adve, “Memory-side prefetching for linked            [58] Y. Tian et al., “From “think like a vertex” to “think like a graph”,” Proc.
+     data structures for processor-in-memory systems,” J. Parallel Distrib.           VLDB Endow., vol. 7, no. 3, pp. 193–204, 2013.
+     Comput., vol. 65, no. 4, pp. 448–463, 2005.                                 [59] L. Wu et al., “Navigating big data with high-throughput, energy-
+[22] “Hybrid memory cube specification 1.0,” Hybrid Memory Cube Con-                  efficient data partitioning,” in Proc. ISCA, 2013.
+     sortium, Tech. Rep., Jan. 2013.                                             [60] C.-L. Yang and A. R. Lebeck, “Push vs. pull: Data movement for
+[23] “Hybrid memory cube specification 2.0,” Hybrid Memory Cube Con-                  linked data structures,” in Proc. ICS, 2000.
+     sortium, Tech. Rep., Nov. 2014.                                             [61] D. P. Zhang et al., “TOP-PIM: Throughput-oriented programmable
+[24] J. Jeddeloh and B. Keeth, “Hybrid memory cube new DRAM architec-                 processing in memory,” in Proc. HPDC, 2014.
+     ture increases density and performance,” in Proc. VLSIT, 2012.              [62] Q. Zhu et al., “A 3D-stacked logic-in-memory accelerator for
+[25] N. P. Jouppi, “Improving direct-mapped cache performance by the                  application-specific data intensive computing,” in Proc. 3DIC, 2013.
+     addition of a small fully-associative cache and prefetch buffers,” in       [63] Q. Zhu et al., “Accelerating sparse matrix-matrix multiplication with
+     Proc. ISCA, 1990.                                                                3D-stacked logic-in-memory hardware,” in Proc. HPEC, 2013.

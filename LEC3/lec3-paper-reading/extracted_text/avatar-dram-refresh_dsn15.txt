@@ -1,0 +1,970 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/avatar-dram-refresh_dsn15.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/avatar-dram-refresh_dsn15.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+ AVATAR: A Variable-Retention-Time (VRT) Aware
+          Refresh for DRAM Systems
+Moinuddin K. Qureshi†          Dae-Hyun Kim†                          Samira Khan‡                                           Prashant J. Nair†       Onur Mutlu‡
+       †                                                                                                                    ‡
+         Georgia Institute of Technology                                                                                    Carnegie Mellon University
+    {moin, dhkim, pnair6}@ece.gatech.edu                                                                                  {samirakhan, onur}@cmu.edu
+    Abstract—Multirate refresh techniques exploit the non-                 and refresh power grows. In fact, at the 32Gb-64Gb densities,
+uniformity in retention times of DRAM cells to reduce the DRAM             the overheads of performance and power reach up to 25-50%
+refresh overheads. Such techniques rely on accurate profiling of           and 30-50% respectively. Such overheads represent a Refresh
+retention times of cells, and perform faster refresh only for a few        Wall, and we need scalable mechanisms to overcome them.
+rows which have cells with low retention times. Unfortunately,
+
+
+
+
+                                                                           Memory Throughput Loss (%)
+                                                                                                        100                                                  350
+retention times of some cells can change at runtime due to                                                                                                   300
+                                                                                                                                                                        Non Refresh Power
+                                                                                                                                                                        Refresh Power       Future
+Variable Retention Time (VRT), which makes it impractical to                                             80
+
+
+
+
+                                                                                                                                             Power Consumption
+                                                                                                                                              per device (mW)
+                                                                                                                 DDR3           Future                       250
+reliably deploy multirate refresh.
+                                                                                                         60                                                      200       DDR3
+    Based on experimental data from 24 DRAM chips, we develop
+                                                                                                         40                                                      150
+architecture-level models for analyzing the impact of VRT. We
+show that simply relying on ECC DIMMs to correct VRT failures                                                                                                    100
+                                                                                                         20
+is unusable as it causes a data error once every few months. We                                                                                                  50
+propose AVATAR, a VRT-aware multirate refresh scheme that                                                 0                                                       0
+adaptively changes the refresh rate for different rows at runtime                                             2Gb 4Gb   8Gb 16Gb 32Gb 64Gb                             2Gb 4Gb   8Gb 16Gb 32Gb 64Gb
+                                                                                                                   Device Capacity                                           Device Capacity
+based on current VRT failures. AVATAR provides a time to failure
+in the regime of several tens of years while reducing refresh              Fig. 1.   Refresh Wall for scaling DRAM memory systems. (a) Memory
+operations by 62%-72%.                                                     throughput loss and (b) Power overheads of refresh (source [28]). The refresh
+                                                                           overheads are significant and unmanageable for high-density chips.
+   Keywords—Dynamic Random Access Memory, Refresh Rate,
+Variable Retention Time, Error Correcting Codes, Performance,                  To ensure that DRAM cells retain data reliably, DRAM
+Memory Scrubbing                                                           conservatively employs the refresh interval of 64ms based on
+                                                                           the DRAM cell with the shortest retention time. In fact, the vast
+                                                                           majority of DRAM cells in a typical DRAM device can operate
+                      I.   I NTRODUCTION
+                                                                           reliably with much longer refresh intervals [19, 29]. Multirate
+    Dynamic Random Access Memory (DRAM) has been the                       refresh mechanisms (e.g., [4, 21, 28, 36, 38, 41, 44]) exploit
+basic building block of computer memory systems. A DRAM                    this discrepancy by identifying the few cells that require high
+cell stores data as charge in a capacitor. Since this capacitor            refresh rates and refreshing only those portions of memory
+leaks over time, DRAM cells must be periodically refreshed to              at the nominal refresh rate of 64ms. The rest of memory has
+ensure data integrity. The Retention Time of a single DRAM                 a much lower refresh rate (4-8x less than the nominal rate).
+cell refers to the amount time during which it can reliably                Multirate refresh schemes rely on an accurate retention time
+hold data. Similarly, the retention time of a DRAM device                  profile of DRAM cells. However, accurately identifying cells
+(consisting of many cells) refers to the time that it can reliably         with short retention times remains a critical obstacle due to
+hold data in all of its constituent cells. To guarantee that all           Variable Retention Time (VRT). VRT refers to the tendency of
+cells retain their contents, DRAM uses the worst-case refresh              some DRAM cells to shift between a low (leaky) and a high
+rate determined by the cell with the minimum retention time as             (less leaky) retention state, which is shown to be ubiquitous
+a whole. JEDEC standards specify that DRAM manufacturers                   in modern DRAMs [29]. Since the retention time of a DRAM
+ensure that all cells in a DRAM have a retention time of at                cell may change due to VRT, DRAM cells may have long
+least 64ms, which means each cell should be refreshed every                retention times during testing but shift to short retention times
+64ms for reliable operation.                                               at runtime, introducing failures1 during system operation. A
+                                                                           recent paper [18] from Samsung and Intel identifies VRT as
+    Despite ensuring reliable operation, using such high refresh           one of the biggest impediments in scaling DRAM to smaller
+rates introduce two problems: 1) refresh operations block                  technology nodes.
+memory, preventing it from performing read and write re-
+quests. 2) refresh operations consume significant energy [6,28,                This paper has two goals: 1) To analyze the impact of
+35]. In fact, as technology continues to scale and the capacity            VRT on multirate refresh by developing experiment-driven
+of DRAM chips increases, the number of refresh operations                  models. 2) To develop a practical scheme to enable multirate
+also increases. While the refresh overheads have been quite                refresh in the presence of VRT. To understand how VRT
+small (less than a few percent) in previous generations of                 impacts multirate refresh, we use an FPGA-based testing
+DRAM chips, these overheads have become significant for                    framework [19, 24, 25, 29] to evaluate the impact of a reduced
+current generation (8Gb) DRAM chips, and they are projected                refresh rate on DRAMs in a temperature-controlled environ-
+to increase substantially for future DRAM technologies [18,28,             ment.
+34, 35]. Figure 1 illustrates the trend, showing the throughput               Prior works indicate that even after several rounds of test-
+loss (the percentage of time for which the DRAM chip is                    ing performed for several days, new (previously unidentified)
+unavailable due to refresh) for different generations of DRAM.
+As the memory capacity increases, memory throughput reduces                                             1 We use terms of failure and error interchangeably in this paper.
+
+
+
+
+                                                                       1
+
+
+===== Page 2 =====
+
+bit errors continue to occur [19,29]. However, we observe two                     II. BACKGROUND AND M OTIVATION
+important properties that provide us insights for developing an           A. DRAM Organization and DRAM Refresh
+effective solution. First, after the initial testing, the number of
+active (failing) VRT cells during a given time period stabilizes              A DRAM cell consists of one transistor and one capacitor
+close to an average value and follows a lognormal distribution.           (1T-1C), as shown in Figure 2. DRAM cells are organized
+We refer to this constantly changing pool of active VRT cells             as banks, a two-dimensional array consisting of rows and
+as the Active-VRT Pool (AVP). Second, although new bit errors,            columns. The charge stored in the capacitor tends to leak over
+previously unseen, continue to surface even after several hours,          time. To maintain data integrity, DRAM systems periodically
+the rate at which these new bit errors emerge stabilizes at a             perform a refresh operation, which simply brings the data from
+relatively low rate that we refer to as the Active-VRT Injection          a given row into the sense amplifiers and restores it back to
+(AVI) rate. In our studies of 24 modern DRAM chips, we                    the cells in the row. Thus, refresh operations are performed at
+find that 1) 2GB memory has an Active-VRT pool of 350                     the granularity of a DRAM row.2
+to 500 cells on average within a 15-minute period; 2) AVI rate                                                                  Wordline
+stabilizes at approximately one new cell within a 15-minute
+period.
+
+
+
+
+                                                                                                                                                      Row Decoder
+                                                                                     Cell Transistor
+
+
+
+
+                                                                                                                Bitline
+    The AVP and AVI metrics motivate much of the remaining                                                                      Cell Array
+analysis in this paper. The continual discovery of new bit errors
+even after hours of tests precludes the possibility of relying
+solely on memory tests to identify and eliminate bit errors.                          Cell Capacitor
+We can potentially use error correction code (ECC) DIMMs
+to correct VRT-related data errors: for example, we can use
+either in-DRAM ECC or SECDED DIMMs to correct VRT-                                                                        Bitline Sense Amplifier   Bank
+related errors, as suggested by a recent study [18]. We refer
+to the approach of using SECDED for treating VRT-related                  Fig. 2.   DRAM Organization (source [14]).
+errors the same way as soft errors as a VRT-Agnostic multirate
+refresh scheme. Our analysis shows that simply relying on                 B. Refresh Wall for Scaling DRAM
+ECC DIMMs still causes an uncorrectable error once every                      As the capacity of DRAM increases, the time spent in
+six to eight months (even in the absence of any soft errors).             performing refresh also increases. The performance and power
+Such a high rate of data loss is unacceptable in practice,                of future high-density DRAMs are expected to be severely
+making multirate refresh impractical to reliably deploy even              constrained by overheads of refresh operations (Figure 1).
+for a memory system employing DIMMs with ECC capability.                  As the increased variability of DRAM cells with smaller
+                                                                          geometries might reduce the DRAM refresh period from 64ms
+    This paper introduces the first practical, effective, and             to 32ms even for operation at normal temperature [16, 17],
+reliable multirate refresh scheme called AVATAR (A Variable-              the refresh problem is likely to become worse for future
+Retention-Time Aware multirate Refresh), which is a system-               DRAMs [18, 28, 34, 35]. Thus, techniques that can eliminate
+level approach that combines ECC and multirate refresh to                 or reduce refresh operations can be greatly effective in over-
+compensate for VRT bit errors. The key insight in AVATAR                  coming the Refresh Wall.
+is to adaptively change the refresh rate for rows that have
+encountered VRT failures at runtime. AVATAR uses ECC and                  C. Multirate Refresh
+scrubbing to detect and correct VRT failures and upgrade rows
+with such failures for faster refresh. This protects such rows                The retention time of different DRAM cells is known to
+from further vulnerability to retention failures. We show that            vary, due to the variation in cell capacitance and leakage
+the pool of upgraded rows increases very slowly (depending                current of different cells. The distribution of the retention time
+on AVI), which enables us to retain the benefits of reduced               tends to follow a log-normal distribution [10, 22], with typical
+refresh rate (i.e. slower refresh) for most of the rows. AVATAR           DRAM cells having a retention time that is several times
+performs infrequent (yearly) testing of the upgraded rows so              higher than the minimum specified retention time. Multirate
+that rows not exhibiting VRT anymore can be downgraded to                 refresh techniques exploit this non-uniformity in retention time
+slower refresh.                                                           of DRAM cells to reduce the frequency of DRAM refresh.
+                                                                          Multirate refresh schemes (e.g., [21, 28, 36, 38, 41, 44]) group
+    We show that AVATAR improves the reliability of a tra-                rows into different bins based on the retention time profiling
+ditional multirate refresh scheme by 100 times, increasing the            and apply a higher refresh rate only for rows belonging to the
+time to failure from a few months to several tens of years                lower retention time bin.
+(even in the presence of high soft-error rates, as discussed in               1) Implementation: Figure 3(a) shows a generic implemen-
+Section VI-C). AVATAR provides this high resilience while re-             tation of multirate refresh scheme using two rates: a Fast
+taining most of the refresh savings of VRT-Agnostic multirate             Refresh that operates at the nominal rate (64ms) and a Slow
+refresh and incurring no additional storage compared to VRT-              Refresh that is several times slower than the nominal rate.
+Agnostic multirate refresh. AVATAR is especially beneficial               Multirate refresh relies on retention testing to identify rows
+for future high-density chips that will be severely limited by            that must be refreshed using Fast Refresh, and populates the
+refresh. For example, our evaluations show that for a 64Gb
+DRAM chip, AVATAR improves performance by 35% and                           2 For more detail on DRAM operation and refresh, we refer the reader to [6,
+reduces the Energy Delay Product (EDP) by 55%.                            23, 25, 26, 28, 29, 35].
+
+
+                                                                      2
+
+
+===== Page 3 =====
+
+Refresh Rate Table (RRT) with this information. At runtime,                                                       III.    VARIABLE R ETENTION T IME
+RRT is used to determine the refresh rate for different rows.
+                                                                                                      VRT causes a DRAM cell to change its retention charac-
+For an 8GB DIMM with an 8KB row buffer, the size of RRT is
+                                                                                                  teristics. A cell with VRT exhibits multiple retention states
+128KB.3 For our studies, we assume that the RRT information
+                                                                                                  and transitions to these states at different points of time in an
+is available at the memory controller, similar to RAIDR [28].
+                                                                                                  unpredictable fashion [29, 45]. As a result, the same cell can
+                                                                                                  fail or pass at a given refresh rate, depending on its current
+      0: SlowRefresh      Reduction In Refresh (%)                                                retention time. Although VRT only affects a very small fraction
+                                                     100
+      1: FastRefresh
+                                                                     Slow Refresh Rate=1/8x       of cells at any given time, the retention time change of even a
+                                                     80                                           single cell can be sufficient to cause data errors in a memory
+                  1
+                                                     60                                           system that employs multirate refresh. We explain the reasons
+                  0                                                                               behind VRT and then characterize the behavior of VRT cells.
+       RowID      0                                  40
+                                                               Slow Refresh Rate=1/4x
+                  0                                  20                                           A. Causes of VRT
+                  0
+                                                                                                      VRT phenomenon in DRAM was reported in 1987 [45].
+                  0                                    0      10   20     30    40     50
+      (a)                (b)                               Num Rows Using Fast Refresh (%)
+                                                                                                  The physical phenomenon behind the VRT cells is attributed
+                                                                                                  to the fluctuations in the gate induced drain leakage (GIDL)
+                                                                                                  current in the DRAM cells. Prior works suggest that presence
+Fig. 3. Multirate Refresh (a) Implementation with an RRT (b) Effectiveness
+at reducing refresh.
+                                                                                                  of traps near the gate region causes these fluctuations. A trap
+                                                                                                  can get occupied randomly, causing an increase in the leakage
+                                                                                                  current. As a result, the cell leaks faster and exhibits lower
+    2) Effectiveness: The effectiveness of multirate refresh at                                   retention time. However, when the trap becomes empty again,
+saving refresh operations depends on the rate of Fast and                                         the leakage current reduces, resulting in a higher retention
+Slow Refresh. For a slow refresh rate that is 4x-8x lower                                         time [7, 20]. Depending on the amount of the leakage current,
+than a fast refresh rate, only a small fraction of DRAM                                           VRT cells exhibit different retention times. VRT can also occur
+rows end up using fast refresh rates. For example, for our                                        due to external influences such as high temperature during
+studies with 8GB DIMMs and a slow refresh rate that is five                                       the packaging process or mechanical or electrical stress. It
+times slower than a fast refresh rate, 10% of the rows get                                        is hard for manufacturers to profile or screen such bits since
+classified to use Fast Refresh. Figure 3(b) shows the reduction                                   VRT can occur beyond post-packaging testing process [7, 33].
+in refresh operations compared to always using Fast Refresh,                                      Recent experimental studies [19, 29] showed that the VRT
+when a given percentage of memory rows use Fast Refresh. We                                       phenomenon is ubiquitous in modern DRAM cells. Future
+analyze two different rates of Slow Refresh, 4X and 8X lower                                      memory systems are expected to suffer even more severe VRT
+than that of Fast Refresh. Even with 10% of the rows using Fast                                   problems [18]. They are likely to apply higher electrical field
+Refresh, the total refresh savings with multirate refresh range                                   intensity between the gate and the drain, which increases the
+from 67% to 78%. Thus, multirate refresh is highly effective                                      possibility of charge traps that may cause VRT bits. A recent
+at reducing refresh operations.                                                                   paper [18] from Samsung and Intel identifies VRT as one of
+                                                                                                  the biggest challenge in scaling DRAM to smaller technology
+D. The Problem: Retention Time Varies Dynamically                                                 nodes.
+    The key assumption in multirate refresh is that the retention                                 B. Not All VRT is Harmful
+time profile of DRAM cells does not change at runtime.
+Therefore, a row classified to use Slow Refresh continue to                                           Not all changes in retention time due to VRT cause a
+have all the cells at higher retention time than the period of                                    data error under multirate refresh. For example, VRT can also
+the Fast Refresh. Unfortunately, the retention time of DRAM                                       cause the retention time of a cell to increase, which makes the
+cells can change randomly at runtime due to a phenomenon                                          cell more robust against retention failures. Figure 4 shows the
+called Variable Retention Time (VRT) [45]. VRT can cause                                          relationship between the refresh interval and variable retention
+a cell to randomly flip from a high retention state to a low                                      times.
+retention state, thus causing data errors with multirate refresh.
+The existence of VRT makes it challenging to use multirate                                                                           a                     b
+refresh schemes reliably. The next section provides insights                                                                           c
+into how VRT impacts multirate refresh.
+                                                                                                                                                       d
+  3 The storage for tracking the refresh rate can be reduced if the number of
+rows that need Fast Refresh is very small. For example, RAIDR [28] employs                                     Region A         Region B        Region C
+Bloom filters for tracking 1000 weak rows for a memory with one million
+                                                                                                              0             64               320
+rows (i.e., 0.1% of total rows). It can be shown that Bloom filters become
+ineffective at reducing storage when the number of weak rows become a                                                    Retention time (ms)
+few percent of total rows. For our target refresh rate, 10% or more rows get                      Fig. 4. VRT can cause a data error only when a cell moves from a high-
+classified for using Fast Refresh, therefore we use an RRT with one bit per                       retention region to a low-retention region.
+row. The SRAM overhead of RRT can be avoided by storing the RRT in
+a reserved area of DRAM (128KB for 8GB is 0.0015% of memory space).                                   We assume that the system performs refresh at two rates:
+While refresh decisions for the current RRT line (512 rows) get used, the next                    64ms (Fast Refresh) and 320ms (Slow Refresh). The vertical
+RRT line can be prefetched from DRAM to hide latency of RRT lookup. The                           lines at 64ms and 320ms divide the figure into three regions.
+RRT in DRAM can be replicated three times (while incurring a total storage
+overhead of only 0.005%) for tolerating VRT related errors in the RRT.
+                                                                                                  Transitions within a region (exemplified by cells a and b),
+
+                                                                                              3
+
+
+===== Page 4 =====
+
+and transitions from region B to region C (exemplified by cell           cells are randomly scattered throughout the memory4 [39].
+c) cause no data failure. A multirate refresh mechanism is               This observation can help us assume a random distribution for
+vulnerable to random VRT failures only when a cell moves                 VRT cells and develop models for analyzing their behavior
+from region C to region B (exemplified by cell d). In our                on longer time scales than possible with experiments. The
+studies, we identify only such cells as exhibiting VRT.                  third implication is that initial testing (or testing alone) is not
+                                                                         sufficient to identify all weak cells [19]. Even after several
+                                                                         days, VRT causes new bits to have retention failures. For
+C. Experimental Setup                                                    example, for module A, the number of weak cells increases
+                                                                         from 27841 in the first time period to 31798 in the last time
+    To understand the impact of VRT, we test the effect of               period. The consistency of our results with prior works [19,39]
+the extended refresh interval on cells in commercial DRAM                attests to the soundness of our infrastructure, validating the
+chips. We use an FPGA-based infrastructure [19, 24, 25, 29],             new observations we make in our studies.
+consisting of an ML605 FPGA development board and modify
+the RTL to increase the refresh interval at a temperature                                                           A-WeakBits          B-WeakBits        C-WeakBits
+controlled environment. Our experiments are done at a refresh                                                       A-WeakRows          B-WeakRows        C-WeakRows
+
+
+
+
+                                                                            Num. Unique Weak Bits or Rows
+                                                                                                            32000
+interval of 4 seconds at 45 ◦ C, which corresponds to 328ms
+                                                                                                            31000
+at 85 ◦ C (similar assumptions on temperature based scaling of
+                                                                                                            30000
+retention time were made in prior DRAM studies [19,29]). Our                                                29000
+experimental temperature closely matches to typical operating                                               28000
+temperature as prior works show that even with 100% utiliza-                                                27000
+tion, temperature in server and desktop systems remain in the                                               26000
+range of 40−60 ◦ C [9,25]. We study a multirate refresh scheme                                              25000
+that employs a Slow Refresh at a refresh period of 320ms                                                    24000
+which is very close to our tested retention time of 328ms.                                                  23000
+                                                                                                                           Initial Testing
+                                                                                                            22000
+    We conduct our experiments with three 2GB DIMMs (A,                                                     21000
+B, and C), each from a different DRAM vendor. Each module                                                           0    100     200         300   400   500   600     700
+consists of 8 DRAM chips. To locate the VRT failures, we                                                                Num Time Periods (15 min each, 7 days total)
+write specific test patterns in the entire module, increase the          Fig. 5. The cumulative number of unique weak cells and weak rows for the
+refresh interval, and read the contents after all rows have been         three modules (A, B, and C). Even after several hours of testing, VRT causes
+refreshed at the extended interval. Any mismatch in the content          new (previously unidentified) bits to cause retention failures.
+implies a retention error at that location during the given time
+                                                                         E. Observation 2: VRT Cells Can Switch Randomly
+period. We log the statistics of retention failures once every one
+minute and perform the experiment for a period of 7 days. To                 The fact that a cell enters a low retention state due to
+keep the analysis tractable, we present statistics for an interval       VRT does not mean that the cell continues to be in the low
+of every 15 minutes (a total of 4 x 24 hours x 7 days = 672              retention state indefinitely. Figure 6 shows the behavior of two
+periods, of 15 minutes each).                                            typical VRT cells for every tested time period. We deem the
+                                                                         cell to pass if it has a retention time greater than 328ms and
+                                                                         to fail otherwise. Cell X transitions randomly and frequently
+D. Observation 1: Population of Weak Cells Increases                     between high and low retention states. However, some other
+                                                                         cell affected by VRT (say cell Y) may continue to stay in the
+    We first study the impact of VRT on multirate refresh.               same retention state for several hours or days, before moving
+In our studies, a cell that has never caused failure with                to another retention state. In general, any cell in the DRAM
+the Slow Refresh rate is deemed as a strong cell, whereas
+a cell that encountered at least one failure due to VRT is
+deemed as a weak cell. Figure 5 shows the number of unique
+weak cells and weak rows. A row is classified as a weak
+row if it contains at least one weak cell. There are three
+important implications derived from Figure 5, consistent with
+prior studies [19,39]. The first is that the number of weak cells
+in the first time period is quite large (27841 for A, 24503 for
+B, and 22414 for C) [19]. Thus, fortunately the initial testing
+that multirate refresh deploys identifies a majority of the weak
+cells. Multirate refresh enforces the rows containing these
+weak cells to always use Fast Refresh. The 2GB DIMMs in                  Fig. 6. A VRT cell can randomly and frequently transition between high and
+our experiments have 256K rows (each 8KB). Thus, multirate               low retention states.
+refresh assigns approximately 9%-10% of the total memory
+rows to Fast Refresh. For the remainder of our studies, we               array can experience VRT. However, in practice, only a very
+assume that the weak rows identified during the initial testing          small fraction of DRAM cells change their retention time at
+are always refreshed with Fast Refresh. So, we exclude these                4 Multiple weak cells may still map to the same row, albeit with a small
+rows from the rest of our analysis. The second implication               probability. The number of weak rows obtained experimentally closely follows
+of Figure 5 is that the number of weak rows is very close                that of a statistical random mapping of weak bits to rows, indicating VRT cells
+to the number of weak cells, which implies that the weak                 are randomly scattered in memory.
+
+
+                                                                     4
+
+
+===== Page 5 =====
+
+                              2400                                                                        2400                                                                                                                                                                               2400
+                                                 Module A                                                                    Module B                                                                                                                                                                                  Module C
+    Size of Active-VRT Pool
+
+
+
+
+                                                                                Size of Active-VRT Pool
+
+
+
+
+                                                                                                                                                                                                                                                                  Size of Active-VRT Pool
+                              1800                                                                        1800                                                                                                                                                                               1800
+
+                              1200                                                                        1200                                                                                                                                                                               1200
+
+                               600                                                                         600                                                                                                                                                                                   600
+
+                                0                                                                            0                                                                                                                                                                                     0
+                                     0   100 200 300 400 500 600 700                                             0   100 200 300 400 500 600 700                                                                                                                                                       0    100 200 300 400 500 600 700
+                                 Num Time Periods (15 min each, 7 days total)                                Num Time Periods (15 min each, 7 days total)                                                                                                                                          Num Time Periods (15 min each, 7 days total)
+Fig. 7.                        The size of the Active-VRT Pool for each time period for each of the three modules.
+
+
+
+
+                                                                                                                                                                Frequency of Occurance Frequency of Occurance Frequency of Occurance
+any given time period. We define the cell that causes an error in                                                                                                                                                                      180
+                                                                                                                                                                                                                                       160
+a given time period as an Active-VRT cell. If a cell has caused                                                                                                                                                                        140       Module A
+                                                                                                                                                                                                                                       120
+a VRT-related error in any of the previous time periods but not                                                                                                                                                                        100
+                                                                                                                                                                                                                                        80
+the current time period, it is deemed to be a Dormant-VRT cell.                                                                                                                                                                         60
+                                                                                                                                                                                                                                        40
+                                                                                                                                                                                                                                        20
+                                                                                                                                                                                                                                         0
+                                                                                                                                                                                                                                             0      1         2                              3         4         5     6     7     8     9     10
+F. Observation 3: Size of the Active-VRT Pool Varies                                                                                                                                                                                                                                         LogN (Size of Active-VRT Pool)
+                                                                                                                                                                                                                                       180
+    Given that a cell affected by VRT can switch between being                                                                                                                                                                         160
+                                                                                                                                                                                                                                       140       Module B
+an Active-VRT cell and being a Dormant-VRT cell, we would                                                                                                                                                                              120
+                                                                                                                                                                                                                                       100
+expect that the total number of Active-VRT cells within a given                                                                                                                                                                         80
+                                                                                                                                                                                                                                        60
+time period to be smaller than the number of unique weak                                                                                                                                                                                40
+                                                                                                                                                                                                                                        20
+cells encountered since initial testing. We call the group of all                                                                                                                                                                        0
+                                                                                                                                                                                                                                             0      1         2                              3         4         5     6     7     8     9     10
+cells that are Active-VRT cells within a given time period as                                                                                                                                                                                                                                LogN (Size of Active-VRT Pool)
+forming an Active-VRT Pool (AVP). Figure 7 shows the size                                                                                                                                                                              180
+                                                                                                                                                                                                                                       160
+of the AVP for each of the 15-minute time periods in our                                                                                                                                                                               140       Module C
+                                                                                                                                                                                                                                       120
+experiments.                                                                                                                                                                                                                           100
+                                                                                                                                                                                                                                        80
+                                                                                                                                                                                                                                        60
+    The size of the AVP varies dynamically for all modules                                                                                                                                                                              40
+                                                                                                                                                                                                                                        20
+across the time periods. The average size of the AVP for                                                                                                                                                                                 0
+                                                                                                                                                                                                                                             0      1         2                              3         4         5     6     7     8     9     10
+module A is 347 (standard deviation, or σ, of 288), for module                                                                                                                                                                                                                               LogN (Size of Active-VRT Pool)
+
+B is 492 (σ of 433), and for module C is 388 (σ of 287).
+                                                                                                                                    Fig. 8.     The size of the Active-VRT Pool closely follows a lognormal
+Since predicting the exact size of the AVP is difficult, our                                                                        distribution (the bars represent histogram from experimental data and the line
+experimental data can help us develop models for capturing                                                                          represents a lognormal fit based on the mean and the standard deviation of
+the size of the AVP as a means of analyzing the behavior of                                                                         the Active-VRT Pool).
+VRT cells.                                                                                                                          Injection (AVI) Rate. Figure 9 shows the AVI rate (moving
+                                                                                                                                    average, measured over a six-hour window) for each time
+G. Modeling the Dynamic Size of Active-VRT Pool                                                                                     period in our experiments. After the initial few hours of
+    We observe that the size of the AVP tends to follow a                                                                           observation, the AVI rate tends to become steady and stabilizes
+lognormal distribution. Figure 8, obtained experimentally from                                                                      at a small value. The average AVI rate measured in the second
+the three modules, shows the histogram of the log of the size                                                                       half of the experiments is close to 1 for all modules. For our
+of the AVP across the 672 time periods. It also shows the                                                                           studies, we use a default AVI rate of 1 (for 2GB module) and
+lognormal fit (the thick line) for the AVP size based simply                                                                        perform a sensitivity analysis.
+on the mean and the standard deviation obtained from the
+                                                                                                                                   Num. New VRT Cells Added
+
+
+
+
+measurements. We observe that the frequencies of occurrence                                                                                                   128.00
+                                                                                                                                                               64.00
+                                                                                                                                                                                                                                                         Module A                                                    Module B          Module C
+under the lognormal fit and the experimental data match well.
+                                                                                                                                                               32.00
+Therefore, we can model the size of the AVP at any time period
+                                                                                                                                                               16.00
+as a random variable originating from a lognormal distribution
+                                                                                                                                                                8.00
+whose parameters are derived from the experimental data. We
+                                                                                                                                                                4.00
+use such a model for the AVP size in our analysis.                                                                                                              2.00
+                                                                                                                                                                1.00
+H. Observation 4: Rate of New VRT Cells Steadies                                                                                                                0.50
+                                                                                                                                                                0.25
+    Another important parameter for analyzing the impact of                                                                                                                                                                              0              100                                 200            300         400       500     600        700
+VRT is the rate at which new (previously undiscovered) cells                                                                                                                                                                                         Num Time Periods (15 min each, 7 days total)
+become Active-VRT cells. Any scheme for mitigating VRT-                                                                             Fig. 9.                                                                                              The rate of new cells becoming Active-VRT cells.
+related errors is likely to be influenced by this rate, given
+                                                                                                                                                               IV.                                                                               A RCHITECTURE M ODEL FOR A NALYZING VRT
+that these newly-vulnerable cells can appear anywhere in the
+memory array and cause VRT-related errors. We call the rate at                                                                          If the system is not provisioned to tolerate VRT-related
+which new cells become Active-VRT cells as the Active-VRT                                                                           errors, then the first cell affected by VRT will cause data
+
+                                                                                                                               5
+
+
+===== Page 6 =====
+
+loss. However, a system provisioned with some means of                           containing four ECC DIMMs, each with data capacity of
+mitigating a VRT-related data error may suffer data loss over                    8GB. Each 8GB ECC-DIMM has 4.5x more bits (8GB data
+many months or years. Conducting experimental studies over                       + 1GB ECC) compared to the 2GB non-ECC DIMM we
+such a long period of time can be prohibitive. We use the key                    experimentally analyzed. To accommodate this, we scale our
+observations made in the previous section to develop a simple                    measured AVP sizes by 4.5x and use the natural logarithm of
+and practical analytical model for analyzing long-term impact                    these scaled values to determine the mean and the standard
+of VRT. We first present the cell-level model before presenting                  deviation for the lognormal fit for AVP. We also scale the AVI
+the architecture-level model.                                                    rate by 4.5x, and use AVI=4.5 for an 8GB ECC-DIMM instead
+                                                                                 of a default value of AVI=1 for a 2GB module. This means
+A. Cell Model under VRT                                                          that each of the four DIMMs in our 32GB system encounters
+                                                                                 4.5 new VRT cells every 15 minutes.
+    We classify each cell as either a strong cell or a weak
+cell. A weak cell that causes a failure in the current time                        V.    I MPACT OF VRT IN THE P RESENCE OF ECC DIMM
+period is deemed an Active-VRT cell. Otherwise, the cell is
+deemed as a Dormant-VRT cell. The AVI determines the rate                            Given the prevalence of VRT, a system employing multirate
+at which strong cells get converted into weak cells, and the                     refresh can be expected to encounter a data error within a
+AVP determines the number of weak cells that are currently in                    few minutes after the initial testing. Therefore, even though
+the Active-VRT state. Figure 10 captures our cell-level model.                   multirate refresh is quite effective at reducing the number of
+                                            Weak Cell
+                                                                                 refresh operations, it cannot operate reliably.
+
+                     AVI                                                         A. Agnos: A VRT-Agnostic Approach
+                                Active−VRT              Dormant
+       Strong Cell                  Cell                VRT Cell                      We can tolerate the VRT-related errors by using ECC [18].
+                                                                                 Conventional DRAM DIMMs are also available in ECC ver-
+                                    AVP                                          sions, and such DIMMs support a SECDED code at an eight-
+                                                                                 byte granularity. While these ECC DIMMs are typically used
+Fig. 10. In our cell model, AVI controls the conversion of strong cells to       to tolerate soft errors, we can also use ECC to correct the
+weak cells and AVP regulates the population of Active-VRT cells.
+                                                                                 errors that happen due to VRT.5 We call such an approach,
+B. Architecture Model for VRT                                                    i.e., treating VRT-related errors similarly to soft errors, as VRT-
+                                                                                 Agnostic (Agnos) multirate refresh.
+    Our architecture-level model is driven by two parameters:
+The size of the Active-VRT Pool (AVP size, determined by                         B. Failure Rate Analysis of Agnos
+the lognormal fit based on experimental parameters of mean,
+                                                                                     We assume that Agnos performs initial testing to profile the
+M u, and standard deviation, Sdev) and the rate of discovering
+                                                                                 weak cells and ensures the rows containing weak cells always
+new cells that become Active-VRT cells (AVI rate, denoted
+                                                                                 use Fast Refresh. Agnos corrects any error that happens after
+by K). For each time quantum, the number of cells that are
+                                                                                 initial testing using ECC. As long as no eight-byte word has
+Active-VRT cells are obtained from a random variable seeded
+                                                                                 two-bit errors, Agnos will be able to correct an error. A two-bit
+with the lognormal fit, and these cells are chosen from random
+                                                                                 error in a word gets detected but results in data loss.
+locations in memory. Then, K new VRT cells join the Active-
+VRT pool, selected again from random locations in memory,                            We use the analytical model for VRT to estimate the time
+and an equal number of random cells leave the Active-VRT                         to failure for a system with Agnos. We first perform the failure
+pool. In each time period, we compute the probability that                       analysis for a single DIMM and then use the assumption that
+the system encounters an uncorrectable failure and repeat this                   DIMM failures are independent to estimate the system failure
+process until the desired duration of simulation. As the size                    rate. We also assume that the weak cells identified during initial
+of the pool is determined by statistical methods, we repeat                      testing always use Fast Refresh and have no VRT-related errors
+the model-based simulation a large number of times (100K                         so we ignore such cells in our analysis.
+times) and report the average system failure probability. Our
+analytical model is shown in Figure 11.                                              Let there be W words in an ECC DIMM and each word be
+                                                                                 protected by SECDED (W excludes the words corresponding
+       Input: Mu,Sdev, for the logn of Active−VRT pool                           to the rows identified by initial testing as weak rows). At
+       Input: K, rate of discovering new VRT cells
+                                                                                 steady state, a pool of Active-VRT cells, the size of which
+       While(TimePeriod < MAX_TIME_PERIOD)                                       is deemed to follow a lognormal distribution, is formed. Let
+           PoolSize = Rand (LogNormDist[Mu,Sdev])                                the size of the AVP be P = Random(LnN (M u, Sdev)).
+           Insert K new elements in Pool
+                                                                                 We assume that the Active VRT cells are randomly selected
+           Remove K elements from Pool
+           P[TimePeriod] = System Failure Probability                            from the memory. Given that P is much smaller than W , we
+           TimePeriod++                                                          assume that P words in memory have a one-bit error, each of
+                                                                                    5 The soft-error rate (SER) is reported to be between 200-5000 FIT per
+Fig. 11.   Architecture model for VRT based on AVP and AVI.
+                                                                                 Mbit [1, 5, 27], which corresponds to one soft error every 3 hours to 75 hours
+                                                                                 for an 8GB DIMM. For our study, we assume 4.5 errors every 15 minutes
+C. Parameter Scaling for Larger Systems                                          due to VRT. Thus soft errors happen at a 54x-2700x lower rate than VRT
+                                                                                 and have a negligible effect on our reliability calculations. We ignore SER
+   To study larger systems, we scale the values of AVP and                       for the analysis of Agnos and pessimistically assume the highest SER while
+AVI derived from our experiments in proportion to the DIMM                       analyzing our proposal in the next section. Note that if the rate of SER is
+capacity. For example, we will analyze a 32GB memory system                      even lower (or zero), it will only enhance the efficacy of our scheme.
+
+
+                                                                             6
+
+
+===== Page 7 =====
+
+ which can be corrected with ECC. However, the system will                                                D. Conclusion from Agnos
+ face an uncorrectable error if there is one more error in any
+ of these P words. We divide time into equal-length periods.                                                  The failure analysis of Agnos shows that simply relying
+ In each time period, let K unique errors enter the pool and                                              on SECDED alone is not enough to mitigate VRT-related
+ K errors leave the pool. We assume that the new errors come                                              errors for a system with multirate refresh. One can potentially
+ from random locations in memory. In each time period, the                                                consider using higher levels of ECC to mitigate VRT-related
+ module will have no uncorrectable error if all K errors come                                             errors, however this would increase cost significantly since
+ from locations other than the ones which are in the Active-                                              ECC DIMMs of higher strength are not typically available as
+ VRT pool (P). The probability of no uncorrectable error at                                               commodity parts. The next section shows how a “VRT-Aware”
+ each time period is given by Equation (1).                                                               approach can effectively mitigate VRT-related errors.
+
+                                                                                                             VI.     AVATAR: A VRT-AWARE M ULTIRATE R EFRESH
+                                                                           P K
+                                P (DIMM has no uncorrectable error) = (1 −   )                  (1)           The problem with Agnos is that it uses ECC to correct
+                                                                           W                              VRT-related errors in a way similar to how ECC is used
+     After T time periods, there will be K·T new errors entering                                          to correct soft errors. Unfortunately, while a soft error goes
+ the VRT pool. So, the probability that the DIMM does not have                                            away once it is corrected, a VRT-cell can continue to remain
+ an uncorrectable error is given by Equation (2).                                                         vulnerable for several hours. At any time, several hundreds of
+                                                                                                          cells can exhibit VRT, so using ECC to continuously correct
+                                                                                    P K·T                 these persisting errors means that the ECC for the word can no
+                                P (DIMM has no uncorrectable error) = (1 −            )         (2)
+                                                                                    W                     longer correct any new error in those words. Therefore, instead
+                                                                                                          of the VRT-agnostic approach of treating VRT similarly to soft
+     For a system with D DIMMs, the probability that the                                                  errors, we propose AVATAR, a Variable-Retention-Time Aware
+ system does not have an uncorrectable error after T time                                                 multirate Refresh.
+ periods is given by Equation (3).
+                                                                                   P K·T ·D               A. Design
+                     P (System has no uncorrectable error) = (1−                     )      (3)
+                                                                                   W                          Figure 13 shows the design of AVATAR. Similar to mul-
+ C. Failure Rate Results for Agnos                                                                        tirate refresh, AVATAR performs an initial retention time
+                                                                                                          testing to populate the Row Refresh Table (RRT) leveraging
+     We use Equation (3) to assess the failure rate for our                                               the profiling mechanisms described in [19, 29]. Like Agnos,
+ system with 32GB memory consisting of four ECC DIMMs,                                                    AVATAR also employs ECC DIMMs to detect and correct
+ each of 8GB. For each DIMM, the AVP size is determined by                                                errors due to VRT. Detection and correction happens only
+ the scaled parameters (mean and standard deviation of log of                                             when the line in memory gets accessed (either due to a read
+ AVP values) of our modules A, B, and C. The rate of new                                                  or a write operation). The key insight of AVATAR is to break
+ VRT cells (AVI) per 15-minute period is 4.5 per DIMM. We                                                 the formation of a large pool of Active-VRT cells. AVATAR
+ repeat the experiments 100K times and report the average value                                           does so by upgrading a row to use Fast Refresh, as soon as any
+ of system failure probability (the spread around the average                                             word within the row encounters an ECC error ( 2 ). This means
+ value is extremely narrow). Figure 12 shows the probability                                              the vulnerable row gets protected from any further retention
+ that the system with Agnos does not have an uncorrectable                                                failures and no longer participates in the Active-VRT pool.6
+ error for systems based on the AVP parameters derived from
+ Module A (Sys-A), Module B (Sys-B), and Module C (Sys-C).                                                    Typically ECC check happens only when the data item
+ The Agnos system is expected to encounter an uncorrectable                                               is accessed from memory, which means parts of the memory
+ error once every few months. For example, there is a 50%                                                 region that have low activity can still be vulnerable due to
+ probability that an error will happen within 6 months for Sys-                                           accumulation of VRT-related errors. AVATAR addresses this
+ B and 8 months for Sys-A. Such a high rate of data loss is                                               problem by proactively applying a memory scrub ( 3 ), which
+ unacceptable in practice.                                                                                periodically checks all the memory for potential data errors.
+                                                                                                          We employ a scrub once every time period (15 minutes in our
+                                1.00                                                                      studies). We assume that the scrub operation identifies all the
+Prob (No Uncorrectable Error)
+
+
+
+
+                                                                                                          VRT-related data errors that happen during the scrub interval.
+                                0.75                                                                          AVATAR upgrades the row to use Fast Refresh on every
+                                                                                   8 months               ECC correction, regardless of whether such correction happens
+                                0.50                                                                      due to a regular data access or due to a scrub operation. Thus,
+                                                       6 months                                           the total number of rows using Fast Refresh tends to grow over
+                                         Sys-A                                                            time, albeit very slowly. The effectiveness of AVATAR can be
+                                0.25
+                                         Sys-B                                                               6 ECC correction can also get invoked due to a soft error strike. However,
+                                         Sys-C                                                            the frequency of soft errors is very small compared to that of VRT errors
+                                0.00
+                                   0.1              1.0                10.0                   100.0       (e.g., the soft error rate is 54-2700x lower than the VRT error rate for an 8GB
+                                                 Number of Months (log 10 scale)                          DIMM). Thus, we can conservatively assume that an error happens mainly
+                                                                                                          due to VRT, and the row containing the error is upgraded to use Fast Refresh
+ Fig. 12. Failure rate of Agnos, VRT-Agnostic multirate refresh. Even with                                although less than 0.05%-2% of the total upgrades may still occur due to
+ ECC, Agnos encounters an uncorrectable error once every few months.                                      a soft error. Note that an even lower rate of soft errors would improve the
+                                                                                                          efficacy of our mechanism.
+
+
+                                                                                                      7
+
+
+===== Page 8 =====
+
+      Multirate Refresh
+                                                                                  C. Incorporating Failures Due to Soft Errors
+                          0                1 Retention Testing
+                                                                                      Thus far, we have assumed that the failure in memory
+                                              (Once a year)
+           RowID          1                                                       happens only due to a VRT-related retention error. However,
+                                                                                  failures can also happen due to a soft error. We note that
+                          0                     Memory
+                                                                                  the rate of soft errors is much lower than the rate of VRT-
+                                             Data        ECC
+                          0                                                       related errors we consider, so the relative contribution of soft
+    0: SlowRefresh
+                          1                                        3 Scrub        errors to the overall failure rate is negligible. For example,
+    1: FastRefresh                                                                the reported soft-error rate from prior studies [1, 5, 27] ranges
+                          0                                                       from 200 to 5000 FIT per Mbit, which is equivalent to one
+                          0                                                       failure every 3-75 hours for an 8GB DIMM. In our analysis, we
+                               2 Upgrade Row on ECC error                         assume that the error rate related to VRT is 4.5 per 15 minutes,
+                          1
+                                                                                  which is equivalently 54-2700x higher than the error rate of
+                      RRT                                                         soft errors. Nonetheless, our model can simply be extended to
+                                                                                  accommodate for soft errors by modulating the rate at which
+Fig. 13.   Design of AVATAR.                                                      new errors are encountered in memory (i.e., the AVI rate).
+                                                                                  For example, to accommodate a soft error rate of 5000 FIT
+                                                                                  per Mbit, we would increase the AVI from 4.5 to 4.6 per 15
+improved by infrequent retention testing ( 1 ) (e.g., once a year;                minutes.
+see analysis in Section VI-E).
+                                                                                  D. Failure Rate Results
+B. Failure Rate Analysis
+    As AVATAR instantly upgrades any row with an ECC error                            We use Equation (7) to assess the failure rate of AVATAR
+to use Fast Refresh, the number of Active-VRT cells in any                        for our system with 32GB memory consisting of four 8GB
+time period is equal to (or less than) the number of newly                        ECC DIMMs. The reliability of AVATAR is dependent only
+injected errors since the last scrub operation. Thus, the pool of                 on the rate of discovering new VRT cells (the AVI rate).
+Active-VRT cells is equal to the rate at which new (previously                    Figure 14 shows the probability that a system with AVATAR
+undiscovered) cells become VRT cells. To avoid data errors,                       has no uncorrectable error for three rates of AVI, a nominal
+we want all the newly injected cells to map to different words.                   rate derived from our experiments (4.6 errors per 15 minutes
+                                                                                  per DIMM, including 0.1 errors per 15 minutes for soft errors),
+    Let there be W words in an ECC DIMM, where each word                          a doubled AVI rate, and a quadrupled AVI rate.7
+is protected by SECDED (we ignore the words belonging to
+                                                                                 Prob (No Uncorrectable Error)
+
+
+
+
+the rows identified as weak rows during the initial testing of                                                   1.00
+multirate refresh). In each time period, let K unique cells
+in memory become Active-VRT cells. We assume that the                                                                      AVI=4.6(1x+SE)
+                                                                                                                 0.75
+new errors come from random locations in memory. In each                                                                   AVI=9.1(2x+SE)
+time period, the probability that all K errors map to different                                                            AVI=18.1(4x+SE)
+locations in memory is given by Equation (4).                                                                    0.50
+                                                                                                                                          32 Years
+   P rob(DIMM has no uncorrectable error) =                                                                                              128 Years
+                                                                                                                 0.25
+                 1          2                  K −1                                                                                      500 Years
+            (1 −   ) × (1 −   ) × . . . × (1 −      )                  (4)
+                 W          W                   W                                                                0.00
+                                                                                                                     0.1         1.0         10.0       100.0     1000.0
+    Given that K is very small compared to the number of                                                                         Number of Years (log 10 scale)
+words in the DIMM (few tens versus millions), we simplify
+the above equation using the approximation e−x ≈ (1 − x),                         Fig. 14. The time to uncorrectable error with AVATAR is 500 years with
+                                                                                  nominal AVI, and 32 years with a 4x higher AVI Rate. We include a 0.1 AVI
+which degenerates Equation (4) into Equation (5).                                 for soft error (SE).
+                                                            −K 2
+     P rob(DIMM has no uncorrectable error) = e 2W                     (5)            For the nominal rate, even in the presence of a high soft-
+                                                                                  error rate, the time to failure with AVATAR is 500 years. When
+   After T time intervals, the probability that the DIMM does                     the AVI rate is doubled, the time to failure is more than 128
+not have any uncorrectable error is given by Equation (6).                        years. Even for a quadrupled AVI rate, the time to failure is
+                                                                                  32 years. Thus, AVATAR enhances the reliability of multirate
+                                                                                  refresh by approximately a thousand times compared to Agnos,
+                                                          −T K 2                  making it feasible to deploy multirate refresh reliably. Except
+    P rob(DIMM has no uncorrectable error) = e 2W                      (6)
+                                                                                  for the negligible hardware for scrubbing, AVATAR requires
+                                                                                  no extra hardware than what is required for multirate refresh
+    For a system with D DIMMs, the probability that the                           (Section II-C) and ECC DIMM.
+system does not have an uncorrectable error after T time
+periods is given by Equation (7).                                                    7 We analyze doubled and quadrupled AVI rates to account for potential
+                                                         −DT K 2                  increases in AVI rate, e.g., due to changes in environmental conditions during
+   P rob(System has no uncorrectable error) = e           2W           (7)        system operation.
+
+
+                                                                             8
+
+
+===== Page 9 =====
+
+                                                                                          TABLE I.     P ERFORMANCE AND E NERGY OVERHEAD OF S CRUB
+ E. Effective Refresh Savings
+                                                                                            Scrub Interval    Mem Throughput         Scrub Energy
+     AVATAR conservatively upgrades any row that encounters                                   (minutes)            Loss             Refresh Energy
+ an ECC error so that the number of rows refreshed with Fast                                      4              0.130%                 4.00%
+ Refresh grows over time. Figure 15 compares the reduction in                                     8              0.065%                 2.00%
+ refresh operations of AVATAR with that of an ideal multirate                                    15              0.035%                 1.06%
+ refresh scheme that does not suffer from VRT (Agnos, without                                    30              0.018%                 0.53%
+ VRT errors). For AVATAR, we assume an AVI rate of 4.6.                                          60              0.009%                 0.27%
+ AVATAR saves 72% of refreshes on a day after testing for
+ the retention time profile. This is similar to other multirate
+                                                                                           2) Energy Overhead of Scrubbing: Scrubbing is more
+ refresh schemes such as RAIDR [28]. However, the prior
+                                                                                       expensive in terms of energy than refresh as it needs to stream
+ multirate refresh schemes provide this refresh savings while
+                                                                                       the data on the memory bus. However, scrubbing is performed
+ compromising data integrity. Even after 12 months of con-
+                                                                                       much less frequently than refresh, so its overall contribution
+ tinuous operation, the refresh savings with AVATAR are still
+                                                                                       to the system energy is quite small. The total energy to refresh
+ high (62.4%). Thus, AVATAR improves reliability of multirate
+                                                                                       an 8GB DIMM once is approximately 1.1mJ, whereas the
+ refresh while maintaining most of the refresh savings. To make
+                                                                                       energy for one scrub operation is approximately 161mJ (150x
+ AVATAR even more effective, we recommend that the system
+                                                                                       more). However, the scrub energy is spent four orders of
+ invoke retention testing once a year, which retains the refresh
+                                                                                       magnitude less frequently (15 minutes vs. 64ms) than the
+ savings of AVATAR back at 72%.8
+                                                                                       refresh energy. Table I shows the total energy consumed by
+                                                                                       scrubbing compared to that consumed by refresh, as the scrub
+                           100
+Reduction in Refresh (%)
+
+
+
+
+                                                                                       interval is varied from four minutes to one hour. Scrubbing
+                            90                                                         with a 15-minute interval, as we assumed in our evaluations,
+                            80
+                                                                                       causes only a 1% increase in energy compared to refresh
+                            70
+                            60                                                         energy.
+                            50
+                            40                                                                VII.   P ERFORMANCE AND E NERGY A NALYSIS
+                            30               Agnos (No-VRT)
+                                             AVATAR                                        We use a detailed memory system simulator, USIMM [8].
+                            20
+                            10
+                                                                                       We model a quad-core system operating at 3.2GHz connected
+                             0                                                         to a DDR3-1600 (800MHz) memory system. As refresh over-
+                                 0   1   2    3 4 5 6 7 8 9 10 11 12                   heads increase with technology scaling, we analyze DRAM
+                                             Number of Months Since Testing            chips with density varying from 8Gb to 64Gb. The memory
+ Fig. 15. Refresh savings of Agnos and AVATAR. AVATAR maintains most                   system consists of four DIMMs, so the total size of the memory
+ of the refresh savings of a VRT-Agnostic scheme while avoiding data errors.           system ranges from 32GB (for 8Gb chips) to 256GB (for 64Gb
+                                                                                       chips). The baseline system employs JEDEC-specified 64ms
+                                                                                       refresh. We increase the refresh cycle time linearly with density
+ F. Overheads of Scrubbing                                                             (TRF C varies from 350ns to 2800ns).
+     We assume a default scrub interval of 15 minutes. Frequent                            We evaluate all the workloads provided by USIMM for
+ scrubbing enhances the reliability of AVATAR as it allows                             the Memory Scheduling Championship [2]. These workloads
+ fewer undetected Active-VRT cells to stay in memory. If                               are memory intensive and exercise a large number of trans-
+ a system desires even higher reliability than we report, the                          actions between the memory system and the core [35]. These
+ system can perform scrubbing at a shorter interval. However,                          18 workloads come from various suites, including SPEC(2),
+ scrubbing has the overheads of performance (as memory                                 PARSEC(9), BioBench(2), and Commercial(5). We report an
+ becomes unavailable) and energy (to perform memory reads).                            average over all the 18 workloads.
+
+     1) Performance Overhead of Scrubbing: To estimate the                                 As the effectiveness of refresh savings with AVATAR de-
+ performance overhead, we assume that scrubbing is done at a                           pends on time elapsed after retention time testing is performed,
+ row granularity. The time to scrub one row would be equal                             we evaluate three designs: AVATAR-1, AVATAR-120, and
+ to the sum of the time to open a row (tRCD, 14ns), the                                AVATAR-360 representing one day, 120 days, and 360 days
+ time to stream out the row buffer (256ns for 8KB), and the                            after a retention time test, respectively. We also show results
+ time to close the row (tRP, 14ns), a total time of 284ns [15].                        of a theoretical scheme that does not perform refresh.
+ We estimate the total time required to scrub the 8GB DIMM
+ (284ns ×220 rows) to be 298ms. This time is spread over                               A. Speedup
+ several minutes. Hence, the memory unavailability due to scrub                            Figure 16 shows the speedup for AVATAR-1, AVATAR-
+ is negligible. Table I shows the memory throughput loss as the                        120, AVATAR-360, and No Refresh over the JEDEC specified
+ scrub interval varies. For the 15-minute scrub interval we use,                       refresh scheme. The performance benefit of eliminating re-
+ the memory throughput loss is negligible (0.03%).                                     freshes increases with chip density, going from 4% at the 8Gb
+                                                                                       node to 54% at the 64Gb node (as denoted by the No Refresh
+    8 Periodic testing once every few days or months does not have a significant
+                                                                                       bars). AVATAR provides about two-thirds of the performance
+ effect on the reliability of the Agnos scheme. Shortly after testing, a pool
+ of Active-VRT cells would get formed, reverting the system to the same
+                                                                                       benefit of No Refresh. Even after a year of continuous op-
+ vulnerable state. Similarly, periodic scrubbing does not have a significant           eration, AVATAR maintains most of the performance benefits
+ impact on the reliability of Agnos as the VRT cells fail again soon.                  close to that of the first day after retention testing. For instance,
+
+                                                                                   9
+
+
+===== Page 10 =====
+
+AVATAR improves performance by 35%, even a year after                                                     A. Lowering Refresh Rate
+retention time testing.
+                                                                                                              Prior works on minimizing refresh overhead by extending
+                                  1.6
+                                                                                                          the refresh interval can be categorized into three classes:
+                                  1.5                                                                     Profiling Based: Profiling based-multirate refresh works ex-
+                                                        AVATAR−1
+                                  1.4                   AVATAR−120                                        ploit the non-uniformity in retention time of DRAM cells to
+                                                        AVATAR−360                                        mitigate the problem of DRAM refresh (e.g., [4, 21, 28, 36,
+                                                        No Refresh
+Speedup
+
+
+
+
+                                  1.3                                                                     38, 41, 44]). These multirate refresh schemes group rows into
+                                  1.2                                                                     different bins based on an initial retention time profiling and
+                                  1.1                                                                     apply a higher refresh rate only for rows belonging to the
+                                                                                                          lower retention time bin. They depend on a simple profiling
+                                  1.0
+                                                                                                          mechanism at the initial stage to detect the rows with retention
+                                  0.9                                                                     failures and place them into the lower retention time bin.
+                                           32GB           64GB           128GB          256GB
+                                        (8Gb Devices) (16Gb Devices) (32Gb Devices) (64Gb Devices)        Their key assumption is that the retention time profile of
+                                                                                                          DRAM cells does not change at runtime. However, all these
+Fig. 16.   Speedup from refresh savings. The performance of AVATAR                                        mechanisms will result in unacceptable data loss because of
+improves with technology node.                                                                            the VRT failures [29]. These mechanisms can potentially use
+                                                                                                          ECC to mitigate the VRT failures. However, we show that
+B. Energy-Delay Product                                                                                   simply relying on SECDED ECC cannot provide an acceptable
+                                                                                                          reliability guarantee. To mitigate the VRT failures with ECC,
+   Refresh operations not only cost performance but also                                                  we may need stronger ECC codes, which significantly increase
+consume energy. Figure 17 shows the Energy Delay Product                                                  system cost.
+(EDP) of AVATAR-1, AVATAR-120, AVATAR-360, and No
+Refresh compared to the JEDEC specified refresh scheme. The                                               ECC Based: Prior work proposed to minimize the refresh
+energy benefits of eliminating refreshes also increase with high                                          overhead by extending the refresh interval and using higher
+density. No Refresh potentially reduces the EDP by 68% at the                                             strength ECC (5EC6ED) to correct the retention failures [42].
+64Gb node. AVATAR-1 reduces EDP by 8%, 16%, 31%, and                                                      However, to reduce the cost of ECC, this work proposes to
+55% for the 8Gb, 16Gb, 32Gb, and 64Gb nodes, respectively.                                                amortize the ECC cost by protecting larger chunks of data
+AVATAR-360 has EDP savings close to those of AVATAR-1.                                                    (1KB). Thus, this mechanism has significant bandwidth and
+                                                                                                          performance overheads as it reads the entire 1KB chunk of
+                                                                                                          data at every access to verify/update ECC.
+Normalized Energy−Delay Product
+
+
+
+
+                                  1.0
+                                                                                      AVATAR−1
+                                                                                                          Software Hint Based: Software-hint based refresh mecha-
+                                  0.8                                                 AVATAR−120          nisms rely on software/OS hints on the criticality or error-
+                                                                                      AVATAR−360
+                                                                                      No Refresh          vulnerability of program data. They lower the refresh rate or
+                                  0.6                                                                     reliability of DRAM for non-critical or invalid regions [11,30,
+                                                                                                          31]. These mechanisms cannot fully exploit the non-uniformity
+                                  0.4
+                                                                                                          of the retention time across the chip as only a restricted fraction
+                                  0.2                                                                     of memory can benefit from reduced refreshes.
+
+                                  0.0                                                                     B. Refresh Scheduling
+                                            32GB          64GB           128GB          256GB
+                                        (8Gb Devices) (16Gb Devices) (32Gb Devices) (64Gb Devices)            Prior works proposed to reduce performance overhead of
+                                                                                                          refreshes by scheduling refresh operations in a flexible way
+Fig. 17.    Energy Delay Product. The savings in Energy Delay Product
+increases with technology node.
+                                                                                                          that reduces their interference with program accesses [6, 12,
+                                                                                                          35, 40]. Our work is complementary to these works as these
+                                                                                                          mechanisms propose to minimize refresh overhead at the
+    Overall, our analysis shows that AVATAR is not only
+                                                                                                          nominal refresh rate. All these techniques are applicable to
+effective at improving reliability by orders of magnitude, but
+                                                                                                          our mechanism that reduces refresh overhead by extending the
+it also obtains most of the performance and energy benefits of
+                                                                                                          refresh interval for most memory rows.
+an otherwise-unreliable multirate refresh scheme.
+                                                                                                          C. Profiling for VRT
+                                                   VIII.    R ELATED W ORK
+                                                                                                              Although the VRT phenomenon has been widely studied
+    To the best of our knowledge, this is the first work to                                               in the literature [7, 10, 13, 20, 32, 33, 37, 43, 45], only recent
+comprehensively study and model the effect of VRT cells on                                                works discuss issues in retention time profiling in the presence
+multirate refresh mechanisms. We provide a new analytical                                                 of VRT cells [19, 29]. Khan et al. studied the effectiveness of
+model showing that relying only on ECC to correct VRT                                                     multi-round testing, guard-banding and different-strength ECC
+failures can result in an unacceptable rate of data loss. Our                                             codes at tolerating VRT failures [19]. Their work does not pro-
+VRT-aware multirate refresh mechanism can guarantee reliable                                              pose any analytical models or mechanisms to enable realistic
+operations in the presence of VRT failures. In this section, we                                           multirate refresh in the presence of VRT. Another prior work
+discuss prior works that have proposed different mechanisms                                               uses profiling to detect retention failures whenever the module
+to mitigate the negative effects of DRAM refresh operations.                                              enters the self-refresh mode [3]. This work cannot guarantee
+We also discuss prior works on profiling VRT failures.                                                    data integrity as VRT failures can occur after testing [19, 29].
+
+                                                                                                     10
+
+
+===== Page 11 =====
+
+                         IX.    C ONCLUSIONS                                        [10] T. Hamamoto et al., “On the retention time distribution of dynamic
+                                                                                         random access memory (DRAM),” IEEE TED, 1998.
+    Multirate refresh schemes exploit the non-uniformity in                         [11] C. Isen and L. John, “ESKIMO - Energy savings using semantic knowl-
+retention times of DRAM cells to reduce refresh operations.                              edge of inconsequential memory occupancy for DRAM subsystem,” in
+                                                                                         ISCA, 2009.
+While multirate refresh schemes are highly effective at reduc-
+                                                                                    [12] Y. Ishii et al., “High performance memory access scheduling using
+ing refresh operations, they are plagued by the fact that the                            compute-phase prediction and writeback-refresh overlap,” in JILP Work-
+retention time of a DRAM cell tends to vary at runtime due to                            shop on Memory Scheduling Championship, 2012.
+the Variable Retention Time (VRT) phenomenon. VRT causes                            [13] Y. Ito and H. Iwai, “Data storing method of dynamic ram and semi-
+                                                                                         conductor memory device,” US Patent No. 6697992 B2, 2004.
+multirate refresh to suffer from data errors, even with the use of
+                                                                                    [14] B. Jacob et al., Memory Systems: Cache, DRAM, Disk.              Morgan
+ECC DIMMs, which makes it a challenge to deploy multirate                                Kaufmann Publishers Inc., 2007.
+refresh mechanisms reliably in practice. This paper introduces                      [15] JEDEC, DDR3 SDRAM Specification, 2012.
+AVATAR, the first practical, effective, and reliable multirate                      [16] ——, High Bandwidth Memory (HBM) DRAM Specification, 2013.
+refresh scheme. This paper makes the following contributions:                       [17] ——, WIDE-IO DRAM Specification, 2013.
+                                                                                    [18] U. Kang et al., “Co-architecting controllers and DRAM to enhance
+1) We characterize the behavior of VRT cells and develop                                 DRAM process scaling,” in The Memory Forum, ISCA, 2014.
+an architecture-level model to analyze multirate refresh in the                     [19] S. Khan et al., “The efficacy of error mitigation techniques for DRAM
+presence of VRT.                                                                         retention failures: A comparative experimental study,” in SIGMETRICS,
+                                                                                         2014.
+2) Using our model, we show that a VRT-agnostic approach                            [20] H. Kim et al., “Characterization of the variable retention time in
+that relies on the use of ECC DIMMs to correct VRT failures                              dynamic random access memory,” IEEE TED, 2011.
+leads to an unacceptable rate of a data loss.                                       [21] J. Kim and M. Papaefthymiou, “Block-based multi-period refresh for
+                                                                                         energy efficient dynamic memory,” in ASIC, 2001.
+3) We propose AVATAR, a VRT-aware multirate refresh mech-                           [22] K. Kim and J. Lee, “A new investigation of data retention time in truly
+anism that adaptively changes the refresh rate to handle VRT                             nanoscaled DRAMs,” IEEE EDL, 2009.
+failures at runtime. It improves reliability of multirate refresh                   [23] Y. Kim et al., “A case for exploiting subarray-level parallelism (SALP)
+                                                                                         in DRAM,” in ISCA, 2012.
+to tens of years while maintaining most of the refresh savings
+                                                                                    [24] ——, “Flipping bits in memory without accessing them: An experimen-
+and performance and energy benefits of multirate refresh.                                tal study of DRAM disturbance errors,” in ISCA, 2014.
+   We show that AVATAR reduces refresh operations by 62%-                           [25] D. Lee et al., “Adaptive-latency DRAM: Optimizing DRAM timing for
+                                                                                         the common-case.”
+72% for a DRAM system without incurring any additional                              [26] ——, “Tiered-latency DRAM: A low latency and low cost DRAM
+hardware changes than what is required for multirate refresh                             architecture,” in HPCA, 2013.
+and ECC modules. This refresh reduction leads to an approxi-                        [27] X. Li et al., “A memory soft error measurement on production systems,”
+mately 35% performance improvement and 55% energy-delay                                  in USENIX ATC, 2007.
+                                                                                    [28] J. Liu et al., “RAIDR: Retention-Aware Intelligent DRAM Refresh,” in
+product reduction with 64Gb DRAM chips. We conclude that                                 ISCA, 2012.
+AVATAR is a highly-effective and simple multirate refresh                           [29] ——, “An experimental study of data retention behavior in modern
+mechanism that provides correct DRAM operation even in the                               DRAM devices: Implications for retention time profiling mechanisms,”
+presence of VRT failures.                                                                in ISCA, 2013.
+                                                                                    [30] S. Liu et al., “Flikker: Saving DRAM refresh-power through critical
+                                                                                         data partitioning,” in ASPLOS, 2011.
+                        ACKNOWLEDGMENTS                                             [31] Y. Luo et al., “Characterizing application memory error vulnerability
+                                                                                         to optimize datacenter cost via heterogeneous-reliability memory,” in
+   Chris Wilkerson contributed substantially to this work. We                            DSN, 2014.
+thank him for his insightful feedback and discussions that                          [32] R. L. Meyer and R. Beffa, “Method of reducing variable retention
+have helped shape this work significantly. We also thank the                             characteristics in DRAM cells,” US Patent No. 6898138 B2, 2005.
+anonymous reviewers for providing useful feedback on our                            [33] Y. Mori et al., “The origin of variable retention time in DRAM,” in
+                                                                                         IEDM, 2005.
+work. This work was supported in part by NSF grants 1319587,                        [34] O. Mutlu et al., “The main memory system: Challenges and opportu-
+1212962, 0953246, 1320531, 1065112, the Intel Science and                                nities,” KIISE, 2015.
+Technology Center on Cloud Computing, and the Center for                            [35] P. Nair et al., “A case for refresh pausing in DRAM memory systems,”
+Future Architecture Research (C-FAR), one of the six SRC                                 in HPCA, 2013.
+STARnet Centers, sponsored by MARCO and DARPA.                                      [36] P. J. Nair et al., “ArchShield: Architectural framework for assisting
+                                                                                         DRAM scaling by tolerating high error rates,” in ISCA, 2013.
+                                                                                    [37] P. J. Restle et al., “DRAM variable retention time,” in IEDM, 1992.
+                               R EFERENCES                                          [38] D.-Y. Shen et al., “SECRET: Selective error correction for refresh
+ [1]   “Soft-errors in electronic memory - A white paper,” Tezzaron Semicon-             energy reduction in DRAMs,” in ICCD, 2012.
+       ductor, 2004.                                                                [39] C. Shirley and W. Daasch, “Copula models of correlation: A DRAM
+ [2]   “Memory scheduling championship (MSC),” 2012.                                     case study,” IEEE TC, 2013.
+ [3]   J.-H. Ahn et al., “Adaptive self refresh scheme for battery operated         [40] J. Stuecheli et al., “Elastic refresh: Techniques to mitigate refresh
+       high-density mobile DRAM applications,” in ASSCC, 2006.                           penalties in high density memory,” in ISCA, 2010.
+ [4]   S. Baek et al., “Refresh now and then,” IEEE TC, 2013.                       [41] R. K. Venkatesan et al., “Retention-aware placement in DRAM
+ [5]   L. Borucki et al., “Comparison of accelerated DRAM soft error rates               (RAPID): Software methods for quasi-non-volatile DRAM,” in HPCA,
+       measured at component and system level,” in IRPS, 2008.                           2006.
+                                                                                    [42] C. Wilkerson et al., “Reducing cache power with low-cost, multi-bit
+ [6]   K. K.-W. Chang et al., “Improving DRAM performance by parallelizing               error-correcting codes,” in ISCA, 2010.
+       refreshes with accesses,” in HPCA, 2014.
+                                                                                    [43] R. Yamada et al., “Dynamic random access memories and method for
+ [7]   M. Chang et al., “Si-H bond breaking induced retention degradation                testing performance of the same,” US Patent No. 7450458 B2, 2008.
+       during packaging process of 256 Mbit DRAMs with negative wordline
+       bias,” IEEE TED, 2005.                                                       [44] K. Yanagisawa, “Semiconductor memory,” US Patent No. 4736344 A,
+                                                                                         1988.
+ [8]   N. Chatterjee et al., “USIMM: the Utah SImulated Memory Module,”
+       Tech. Rep., 2012.                                                            [45] D. Yaney, et al., “A meta-stable leakage phenomenon in DRAM charge
+                                                                                         storage-variable hold time,” in IEDM, 1987.
+ [9]   N. El-Sayed et al., “Temperature management in data centers: Why
+       some (might) like it hot,” in SIGMETRICS, 2012.
+
+
+                                                                               11

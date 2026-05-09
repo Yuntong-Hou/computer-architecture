@@ -1,0 +1,824 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/AcceleratingGenomeAnalysis_ieeemicro20.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/AcceleratingGenomeAnalysis_ieeemicro20.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+               This is an extended and updated version of a paper published in
+                    IEEE Micro, vol. 40, no. 5, pp. 65-75, 1 Sept.-Oct. 2020
+                          https:// doi.or g/ 10.1109/ MM.2020.3013728
+
+
+
+
+    Accelerating Genome Analysis:
+   A Primer on an Ongoing Journey
+     Mohammed Alser             Zülal BingölO          Damla Senol Calio
+                                                                          n          Jeremie Kimo
+                                                                                                 n
+
+                    Saugata Ghose?o
+                                  n            Can AlkanO                 Onur Mutluo
+                                                                                     nO
+                  ETH Zürich    O Bilkent University           n
+                                                                 oCarnegie Mellon University
+                              ? University of Illinois at Urbana–Champaign
+
+
+
+
+Abstract—Genome analysis fundamentally starts with a process known as read mapping, where
+sequenced fragments of an organism’s genome are compared against a reference genome. Read
+mapping is currently a major bottleneck in the entire genome analysis pipeline, because state-
+of-the-art genome sequencing technologies are able to sequence a genome much faster than the
+computational techniques employed to analyze the genome. We describe the ongoing journey
+in significantly improving the performance of read mapping. We explain state-of-the-art algorith-
+mic methods and hardware-based acceleration approaches. Algorithmic approaches exploit the
+structure of the genome as well as the structure of the underlying hardware. Hardware-based
+acceleration approaches exploit specialized microarchitectures or various execution paradigms
+(e.g., processing inside or near memory). We conclude with the challenges of adopting these
+hardware-accelerated read mappers.
+
+
+
+    G ENOME ANALYSIS is the foundation of                   currently the bottleneck to quickly and accurately
+many scientific and medical discoveries, and                determining an individual’s entire genome, due to
+serves as a key enabler of personalized medicine.           the complex algorithms and large datasets used
+This analysis is currently limited by the inability         for assembly.
+of modern genome sequencing technologies to
+read an organism’s complete genome. Instead, se-                A widely-used approach for genome assembly
+quencing machines extract smaller random frag-              is to perform sequence alignment, which com-
+ments of an organism’s DNA sequence, known                  pares read fragments against a known reference
+as reads. While the human genome contains over              genome (i.e., a complete representative DNA se-
+three billion bases (i.e., A, C, G, T in DNA), the          quence for a particular species). A process known
+length of a read is orders of magnitude smaller,            as read mapping matches each read generated
+ranging from a few hundred bases (for short                 from sequencing to one or more possible lo-
+reads) to a few million bases (for long reads).             cations within the reference genome, based on
+Computers are used to perform genome assembly,              the similarity between the read and the reference
+which reassembles read fragments back into an               sequence segment at that location. Unfortunately,
+entire genome sequence. Genome assembly is                  the bases in a read may not be identical to the
+                                                            bases in the reference genome at the location that
+
+
+IEEE MICRO                             Published by the IEEE Computer Society                        c 2020 IEEE
+                                                                                                                   1
+
+
+===== Page 2 =====
+
+    Mohammed Alser et al.
+
+
+    the read actually comes from. These differences             man genome requires over 32 CPU hours on
+    may be due to (1) sequencing errors (up to 0.1%             a 48-core Intel Xeon processor, 23 of which
+    in short reads [1] and up to 20% in long reads [2],         are spent on read mapping [11].
+    [3]) during extraction, and (2) genetic mutations       3) The first two challenges worsen when a
+    that are specific to the individual organism’s DNA          metagenomic sample is profiled, where the
+    and may not exist in the reference genome. Due              sample donor is unknown. This requires
+    to these potential differences, the similarity be-          matching the extracted reads to thousands
+    tween a read and a reference sequence segment               of reference genomes [12].
+    must be identified using an approximate string          4) There is also an urgent need for rapidly
+    matching (ASM) algorithm. The possible genetic              incorporating clinical DNA sequencing and
+    differences between the reference genome and                analysis into clinical practice for rapid
+    the sequenced genome are then identified using              surveillance of disease outbreaks (e.g.,
+    genomic variant calling algorithms [4].                     COVID-19 [13]) and early diagnosis of ge-
+        The ASM performed during read mapping                   netic disorders in critically ill infants [14].
+    typically uses a computationally-expensive dy-            Increasing the number of CPUs used for
+    namic programming (DP) algorithm. This time-          genome analysis decreases the overall analysis
+    consuming algorithm has long been a major bot-        time, but significantly increases energy consump-
+    tleneck in the entire genome analysis pipeline,       tion and hardware costs. Cloud computing plat-
+    accounting for over 70% of the execution time         forms are a potential alternative to distribute the
+    of read mapping [5]. The vast majority of read        workload at a reasonable cost, but are disallowed
+    mappers, such as the widely-used minimap2 [6],        due to data protection guidelines in many coun-
+    are implemented as software running on CPUs.          tries [15].
+    We refer readers to a comprehensive survey [7]            As a result, there is a dire need for new com-
+    for a discussion of state-of-the-art CPU-based        putational techniques that can quickly process and
+    read mappers. Accelerating ASM can help bridge        analyze a tremendous number of extracted reads
+    the wide performance gap between sequencing           in order to drive cutting-edge advances in the ge-
+    machines and CPU-based read mapping algo-             netic applications space [16]. Many works boost
+    rithms, but faces four key challenges:                the performance of existing and new read map-
+                                                          pers using new algorithms, hardware/software co-
+     1) Due to the large datasets that a read mapper      design, and hardware accelerators. Our goal in
+        operates on, it generates a large amount of       this work is to survey a prominent set of these
+        data movement between the CPU and main            three types of acceleration efforts for guiding
+        memory. The CPU accesses off-chip main            the design of new highly-efficient read mappers.
+        memory through a pin-limited bus known as         To this end, we (1) discuss various state-of-the-
+        the memory channel, and a high amount of          art mechanisms and techniques that improve the
+        data movement across the memory channel           execution time of read mapping using different
+        is extremely costly in terms of both execu-       modern high-performance computing architec-
+        tion time and energy [8], [9].                    tures, and (2) highlight the challenges, in the last
+     2) Modern sequencing machines generate read          section, that system architects and programmers
+        fragments at an exponentially higher rate         must address to enable the widespread adoption
+        than prior sequencing technologies, with          of hardware-accelerated read mappers.
+        their growth far outpacing the growth in
+        computational power in recent years [10].         Read Mapping
+        For example, the Illumina NovaSeq 6000                The main goal of read mapping is to locate
+        system can sequence about 48 human whole          possible subsequences of the reference genome
+        genomes at 30× genome coverage (the av-           sequence that are similar to the read sequence
+        erage number of times a genomic base is           while allowing at most E edits, where E is the
+        sequenced) in about two days. However,            edit distance threshold. Commonly allowed edits
+        analyzing (performing mapping and variant         include deletion, insertion, and substitution of
+        calling) the sequencing data of a single hu-      characters in one or both sequences.
+
+
+
+2                                                                                                   IEEE MICRO
+
+
+===== Page 3 =====
+
+     Edits can be as short as a single base pair                 ment (using ASM) to check whether or not the
+(bp) alteration [17] or a much longer alteration                 remaining sequence pairs that are identified by
+(e.g., an insertion of about 600,000-base long                   filtering to be similar are actually similar. The
+region [18]). Mapping billions of reads to the ref-              alignment step examines all possible prefixes of
+erence genome is computationally expensive [16],                 two sequences and tracks the prefixes that pro-
+[5], [19]. Therefore, most read mapping algo-                    vide the highest possible alignment score (known
+rithms apply two key heuristic steps, indexing                   as optimal alignment). The alignment score is
+and filtering, to reduce the number of reference                 a quantitative representation of the quality of
+genome segments that need to be compared with                    an alignment for a given user-defined scoring
+each read. The three steps of read mapping are                   function (computed based on the number of edits
+shown in Figure 1a. First, a read mapper indexes                 and/or matches).
+the reference genome by using substrings (called                      Alignment algorithms typically use DP-based
+seeds) from each read to quickly identify all                    approaches to avoid re-examining the same pre-
+potential mapping locations of each read in the                  fixes many times. These DP-based algorithms
+reference genome. Second, the mapper uses filter-                provide the most accurate alignment results com-
+ing heuristics to examine the similarity for every               pared to other non-DP algorithms (such as the
+sequence pair (a read sequence and one potential                 algorithm used in HISAT2 [20]), but they have
+matching segment in the reference genome iden-                   quadratic time and space complexity (i.e., O(m2 )
+tified during indexing). These filtering heuristics              for a sequence length of m). Sequence alignment
+aim to eliminate most of the dissimilar sequence                 calculates information about the alignment such
+pairs. Third, the mapper performs sequence align-                as the alignment score, edit distance, and the
+
+      Genome Analysis Pipeline
+
+                                                                                         ReadRead
+                                                                                              Mapping
+                                                                                           Mapping
+       Genomic Sample           Sequencing Machine         Reads                                                                 Genomic Variants
+
+        1 Indexing                               2 Pre-alignment Filtering                                3 Sequence Alignment
+                                                                                                                          Read
+                                                                            r 2 ... r N
+              Reference Genome
+                                    ...                             1
+                                                                 ter ilte           te
+                                                                                             Reference subsequence
+
+
+
+
+                                      Read                   Fil     F          Fil
+(a)                                                                                                                                     Dynamic
+       k-mers       ...                                                                                                               Programming
+      Index                      k-mers                                                                                                (DP) Matrix
+          k-mer k-mer
+         content locations         Locating
+                     1, 4, 6                                                                                                               Output
+                     3, 5, 12   common k-mers
+                     50, 52         1, 4, 6
+                     2, 100         3, 5, 12
+                     17, 19         17, 19
+                     23, 90                     Reference subsequences extracted                     SAM file (alignment score, edit
+                                      ...
+              ...
+
+
+                          ...
+
+
+
+
+                                                 at each common k-mer location                  distance, type and location of each edit)
+
+
+                                                         Accelerating
+              Accelerating Indexing                 Pre-alignment Filtering                                          Accelerating Alignment
+
+                                                         q-gram filtering
+                    Reducing                                                                                                Accurate
+               the number of seeds                    Pigeonhole principle                                            alignment accelerators
+(b)
+             Reducing data movement                      Base counting                                                    Heuristic-based
+                 during indexing                                                                                      alignment accelerators
+                                                           Sparse DP
+
+
+Figure 1. (a) The three steps of read mapping in genome analysis: (1) indexing, (2) pre-alignment filtering, and
+(3) sequence alignment. (b) Overview of the existing approaches to accelerating each step of read mapping.
+
+
+
+March 2020
+                                                                                                                                                     3
+
+
+===== Page 4 =====
+
+    Mohammed Alser et al.
+
+
+    type of each edit. Edit distance is defined as the     threshold value [6]. Various data structures have
+    minimum number of changes needed to convert            been proposed and implemented to both reduce
+    a sequence into the other sequence [21]. Such          the storage cost of the indexing data structure and
+    information is typically output by read mapping        improve the algorithmic runtime of identifying
+    into a sequence alignment/map (SAM) file. Given        the mapping locations within the indexing data
+    the time spent on read mapping, all three steps        structure. One example of such data structures is
+    have been targeted for acceleration. Figure 1b         FM-index (implemented by Langarita et al. [22]),
+    summarizes the different acceleration approaches,      which provides a compressed representation of
+    and we discuss a set of such works in the follow-      the full-text index, while allowing for querying
+    ing sections.                                          the index without the need for decompression.
+                                                           This approach has two main advantages. 1) We
+    Accelerating Indexing                                  can query seeds of arbitrary lengths, which helps
+         The indexing operation generates a table that     to reduce the number of queried seeds. 2) It
+    is indexed by the contents of a seed, and identifies   typically has less (by 1.5 – 2×) memory foot-
+    all locations where the seed exists in the reference   print compared to that of the indexing step of
+    genome. Indexing needs to be done only once for        minimap2 [6]. However, one major bottleneck of
+    a reference genome, and eliminates the need to         FM-indexes is that locating the exact matches
+    perform ASM across the entire genome. During           by querying the FM-index is significantly slower
+    read mapping, a seed from a read is looked up          than that of classical indexes [23], [22]. BWA-
+    in the table, and only the corresponding locations     MEM2 [23] proposes an uncompressed version of
+    are used for ASM (as only they can match the           the FM-index that is at least 10× larger than the
+    entire read). The major challenge with indexing        compressed FM-index to speed up the querying
+    is choosing the appropriate length and number          step by 2×.
+    of to-be-indexed seeds, as they can significantly
+    impact the memory footprint and overall perfor-        Reducing Data Movement During Indexing
+    mance of read mapping [6]. Querying short seeds           RADAR [24] observes that the indexing step
+    potentially leads to a large number of mapping         is memory intensive, because the large number
+    locations that need to be checked for a string         of random memory accesses dominates com-
+    match. The use of long reads requires extracting       putation. The authors propose a processing-in-
+    from each read a large number of seeds, as the         memory (PIM) architecture that stores the entire
+    sequencing error rate is much higher in long           index inside the memory and enables querying the
+    reads. This affects (1) the number of times we         same index concurrently using a large number of
+    query the index structure and (2) the number of        ASIC compute units. The amount of data move-
+    retrieved mapping locations. Thus, there are two       ment is reduced from tens of gigabytes to a few
+    key approaches used for accelerating the indexing      bytes for a single query task, allowing RADAR to
+    step (Figure 1b).                                      balance memory accesses with computation, and
+                                                           thus provide speedups and energy savings.
+    Reducing the Number of Seeds
+        Read mapping algorithms (e.g., minimap2 [6])       Accelerating Pre-Alignment Filtering
+    typically reduce the number of seeds that are              After finding one or more potential mapping
+    stored in the index structure by finding the min-      locations of the read in the reference genome,
+    imum representative set of seeds (called mini-         the read mapper checks the similarity between
+    mizers) from a group of adjacent seeds within          each read and each segment extracted at these
+    a genomic region. The representative set can be        mapping locations in the reference genome. These
+    calculated by imposing an ordering (e.g. lexi-         segments can be similar or dissimilar to the read,
+    cographically or by hash value) on a group of          though they share common seeds. To avoid exam-
+    adjacent seeds and storing only the seed with the      ining dissimilar sequences using computationally-
+    smallest order. Read mappers also apply heuris-        expensive sequence alignment algorithms, read
+    tics to avoid examining the mapping locations of       mappers typically use filtering heuristics that are
+    a seed that occur more times than a user-defined       called pre-alignment filters.
+
+
+
+4                                                                                                   IEEE MICRO
+
+
+===== Page 5 =====
+
+    The key idea of pre-alignment filtering is to      Sidebar: Related Works on Pre-Alignment Filtering
+quickly estimate the number of edits between two       Using the Pigeonhole Principle
+given sequences and use this estimation to decide
+whether or not the computationally-expensive           Pigeonhole-filtering-based pre-alignment filtering can ac-
+DP-based alignment calculation is needed — if          celerate read mappers even without specialized hardware.
+not, a significant amount of time is saved by          For example, the Adjacency Filter [1] accelerates sequence
+avoiding DP-based alignment. If two genomic            alignment by up to 19×. The accuracy and speed of pre-
+sequences differ by more than the edit distance        alignment filtering with the pigeonhole principle have been
+threshold, then the two sequences are identified       rapidly improved over the last seven years. Shifted Hamming
+as dissimilar sequences and hence DP calculation       Distance (SHD) [2] uses SIMD-capable CPUs to provide
+is not needed. In practice, only genomic sequence      high filtering speed, but supports a sequence length up to
+pairs with an edit distance less than or equal to      only 128 base pairs due to the SIMD register widths. Gate-
+a user-defined threshold (i.e., E) provide useful      Keeper [3] utilizes the large amounts of parallelism offered
+data for most genomic studies [25], [5], [7]. Pre-     by FPGA architectures to accelerate SHD and overcome
+alignment filters use one of four major approaches     such sequence length limitations. MAGNET [4] provides a
+to quickly filter out the dissimilar sequence pairs:   comprehensive analysis of all sources of filtering inaccuracy
+(1) the pigeonhole principle, (2) base counting,       of GateKeeper and SHD. Shouji [5] leverages this analysis
+(3) q-gram filtering, or (4) sparse DP. Long read      to improve the accuracy of pre-alignment filtering by up to
+mappers typically use q-gram filtering or sparse       two orders of magnitude compared to both GateKeeper and
+DP, as their performance scales linearly with read     SHD, using a new algorithm and a new FPGA architecture.
+length and independently of the edit distance.         SneakySnake [6] achieves up to four orders of magnitude
+                                                       higher filtering accuracy compared to GateKeeper and SHD
+Pigeonhole Principle                                   by mapping the pre-alignment filtering problem to the single
+    The pigeonhole principle states that if E          net routing (SNR) problem in VLSI chip layout. SNR finds
+items are put into E+1 boxes, then one or more         the shortest routing path that interconnects two terminals
+boxes would be empty. This principle can be            on the boundaries of a VLSI chip layout in the presence
+applied to detect dissimilar sequences and discard     of obstacles. SneakySnake is the only pre-alignment filter
+them from the candidate sequence pairs used for        that works on CPUs, GPUs, and FPGAs. GenCache [7]
+ASM. If two sequences differ by E edits, then          proposes to perform highly-parallel pre-alignment filtering
+they should share at least a single subsequence        inside the CPU cache to reduce data movement and improve
+(free of edits) among E+1 non-overlapping sub-         energy efficiency, with about 20% cache area overhead.
+sequences [5], where E is the edit distance thresh-    GenCache shows that using different existing pre-alignment
+old. For a read of length m, if there are no more      filters together (similar approach to [26]), each of which
+than E edits between the read and the reference        operates only for a given edit distance threshold (e.g., using
+segment, then the read and reference segment are       SHD only when E is between 1 and 5), provides a 2.5×
+considered similar if they share at most E+1 non-      speedup over GenCache with a single pre-alignment filter.
+overlapping subsequences, with a total length of        REFERENCES
+at least m – E.                                        1. Hongyi Xin et al. Accelerating Read Mapping with FastHASH. BMC
+    The problem of identifying these E+1 non-             Genomics, 2013.
+                                                       2. Hongyi Xin et al. Shifted Hamming Distance: A Fast and Accurate
+overlapping subsequences is highly parallelizable,        SIMD-Friendly Filter to Accelerate Alignment Verification in Read
+as these subsequences are independent of each             Mapping. Bioinformatics, 2015.
+                                                       3. Mohammed Alser et al. GateKeeper: A New Hardware Architecture
+other. Shouji [5] exploits the pigeonhole principle       for Accelerating Pre-Alignment in DNA Short Read Mapping. Bioin-
+to reduce the search space and provide a scalable         formatics, 2017.
+architecture that can be implemented for any           4. Mohammed Alser et al. MAGNET: Understanding and Improving
+                                                          the Accuracy of Genome Pre-Alignment Filtering. Transactions on
+values of m and E, by examining common subse-             Internet Research, 2017.
+quences independently and rapidly with high par-       5. Mohammed Alser et al. Shouji: A Fast and Efficient Pre-Alignment
+                                                          Filter for Sequence Alignment. Bioinformatics, 2019.
+allelism. Shouji accelerates sequence alignment        6. Mohammed Alser et al. SneakySnake: A Fast and Accurate Uni-
+by 4.2-18.8× without affecting the alignment              versal Genome Pre-Alignment Filter for CPUs, GPUs, and FPGAs.
+                                                          arXiv:1910.09020 [q-bio.GN], 2019.
+accuracy. We refer the reader to the sidebar for a     7. Anirban Nag et al. GenCache: Leveraging In-Cache Operators for
+brief discussion of several other related works.          Efficient Sequence Alignment. In MICRO, 2019.
+
+
+
+
+March 2020
+                                                                                                                 5
+
+
+===== Page 6 =====
+
+    Mohammed Alser et al.
+
+
+    Base Counting                                          of these seeds from estimating the number of
+         The base counting filter compares the num-        edits between the two sequences, as they were
+    bers of bases (A, C, G, T) in the read with the cor-   already detected as exact matches during index-
+    responding base counts in the reference segment.       ing. Sparse DP filtering techniques apply DP-
+    If one sequence has, for example, three more Ts        based alignment algorithms only between every
+    than another sequence, then their alignment has        two non-overlapping seeds to quickly estimate
+    at least three edits. If the difference in count       the total number of edits. This approach is also
+    is greater than E, then the two sequences are          known as chaining, and is used in minimap2 [6]
+    dissimilar and the reference segment is discarded.     and rHAT [29]. The recent work in [30] presents
+    The base counting filter is used in mrsFAST-           GPU and FPGA accelerators that achieve 7×
+    Ultra [27] and GASSST [26]. Such a simple              and 28× acceleration, respectively, compared to
+    filtering approach rejects a significant fraction      the sequential implementation (executed with 14
+    of dissimilar sequences (e.g., 49.8%–80.4% of          CPU threads) of the chaining algorithm used in
+    sequences, as shown in GASSST [26]) and thus           minimap2.
+    avoids a large fraction of expensive verification
+    computations required by sequence alignment al-
+    gorithms.
+                                                           Accelerating Sequence Alignment
+                                                               After filtering out most of the mapping lo-
+    q-gram Filtering Approach                              cations that lead to dissimilar sequence pairs,
+        The q-gram filtering approach considers all of     read mapping calculates the sequence alignment
+    the sequence’s possible overlapping substrings of      information for every read and reference segment
+    length q (known as q-grams). Given a sequence of       extracted at each mapping location. Sequence
+    length m, there are m – q + 1 overlapping q-grams      alignment calculation is typically accelerated us-
+    that are obtained by sliding a window of length        ing one of two approaches: (1) accelerating the
+    q over the sequence. A single difference in one        DP-based algorithms using hardware accelerators
+    of the sequences can affect at most q overlapping      without altering algorithmic behavior, and (2) de-
+    q-grams. Thus, E differences can affect no more        veloping heuristics that sacrifice the optimality of
+    than q · E q-grams, where E is the edit distance       the alignment score solution in order to reduce
+    threshold. The minimum number of shared q-             alignment time.
+    grams between two similar sequences is therefore           Despite more than three decades of attempts
+    (m–q+1)–(q · E). This filtering approach requires      to accelerate sequence alignment, the fastest
+    very simple operations (e.g., sums and compar-         known edit distance algorithm [31] has a nearly
+    isons), which makes it attractive for hardware         quadratic running time, O(m2 /log2 m) for a se-
+    acceleration, such as in GRIM-Filter [25]. GRIM-       quence length of m, which is proven to be a tight
+    Filter exploits the high memory bandwidth and          bound [32]. With maintaining the algorithmic
+    computation capability in the logic layer of 3D-       behavior as in the first approach, it is challenging
+    stacked memory to accelerate q-gram filtering in       to rapidly calculate sequence alignment of long
+    the DRAM chip itself, using a new representation       reads with high parallelism. As long reads have
+    of reference genome that is friendly to in-memory      high sequencing error rates (up to 20% of the
+    processing. q-gram filtering is generally robust       read length), the edit distance threshold for long
+    in handling only a small number of edits, as           reads is typically higher than that for short reads,
+    the presence of edits in any q-gram is signifi-        which results in calculating more entries in the
+    cantly underestimated (e.g., counted as a single       DP matrix compared to that of short reads. The
+    edit) [28].                                            use of heuristics (i.e., the second approach) helps
+                                                           to reduce the number of calculated entries in the
+    Sparse Dynamic Programming                             DP matrix and hence allows both the execution
+       Sparse DP algorithms exploit the exact              time and memory footprint to grow only linearly
+    matches (seeds) shared between a read and a ref-       with read length (as opposed to quadratically
+    erence segment to reduce execution time. These         with classical DP). Next, we describe the two
+    algorithms exclude the corresponding locations         approaches in detail.
+
+
+
+6                                                                                                   IEEE MICRO
+
+
+===== Page 7 =====
+
+Accurate Alignment Accelerators                      Each execution unit in the systolic array is re-
+    From a hardware perspective, sequence align-     sponsible for computing the value of a single
+ment acceleration has five directions: (1) us-       entry of the DP matrix. The systolic array com-
+ing SIMD-capable CPUs, (2) using multicore           putes a single vector of the matrix at a time. The
+CPUs and GPUs, (3) using FPGAs, (4) using            data dependency between the entries restricts the
+ASICs, and (5) using processing-in-memory ar-        systolic array to computing the vectors sequen-
+chitectures. Traditional DP-based algorithms are     tially (e.g., top-to-bottom, left-to-right, or in an
+typically accelerated by computing only the nec-     anti-diagonal manner). FPGASW has a similar
+essary regions (i.e., diagonal vectors) of the DP    execution time as its GPU implementation, but
+matrix rather than the entire matrix, as proposed    is 4× more power efficient.
+in Ukkonen’s banded algorithm [33]. This re-              Specialized hardware accelerators (i.e., ASIC
+duces the search space of the DP-based algorithm     designs) provide application-specific, power- and
+and reduces computation time. The number of          area-efficient solutions to accelerate sequence
+diagonal bands required for computing the DP         alignment. For example, GenAx [39] is composed
+matrix is 2E+1, where E is the edit distance         of SillaX, a sequence alignment accelerator, and
+threshold. For example, the number of entries in     a second accelerator for finding seeds. SillaX
+the banded DP matrix for a 2 Mb long read can        supports both a configurable scoring function and
+be 1.2 trillion. Parasail [34] and KSW2 (used        traceback operations. SillaX is more efficient for
+in minimap2 [6]) exploit both Ukkonen’s banded       short reads than for long reads, as it consists
+algorithm and SIMD-capable CPUs to compute           of an automata processor whose performance
+banded alignment for a sequence pair with a          scales quadratically with the edit distance. GenAx
+configurable scoring function. SIMD instructions     is 31.7× faster than the predecessor of BWA-
+offer significant parallelism to the matrix compu-   MEM2 (i.e., BWA-MEM [36]) for short reads.
+tation by executing the same vector operation on          Recent processing-in-memory architectures
+multiple operands at once. KSW2 is nearly as fast    such as RAPID [40] exploit the ability to perform
+as Parasail when KSW2 does not use heuristics        computation inside or near the memory chip
+(explained in the next subsection).                  to enable efficient sequence alignment. RAPID
+    The multicore architecture of CPUs and           modifies the DP-based alignment algorithm to
+GPUs provides the ability to compute align-          make it friendly to in-memory parallel compu-
+ments of many independent sequence pairs con-        tation by calculating two DP matrices: one for
+currently. GASAL2 [35] exploits the multi-           calculating substitutions and exact matches and
+core architecture of both CPUs and GPUs for          another for calculating insertions and deletions.
+highly-parallel computation of sequence align-       RAPID claims that this approach efficiently en-
+ment with a user-defined scoring function. Unlike    ables higher levels of parallelism compared to
+other GPU-accelerated tools, GASAL2 transfers        traditional DP algorithms. The main two ben-
+the bases to the GPU, without encoding them          efits of RAPID and such PIM-based architec-
+into binary format, and hides the data trans-        tures are higher performance and higher energy
+fer time by overlapping GPU and CPU execu-           efficiency [8], [9], as they alleviate the need
+tion. GASAL2 is up to 20× faster than Parasail       to transfer data between the main memory and
+(when executed with 56 CPU threads). BWA-            the CPU cores through slow and energy hungry
+MEM2 [23] accelerates the banded sequence            buses, while providing high degree of parallelism
+alignment of its predecessor (BWA-MEM [36])          with the help of PIM. RAPID is on average 11.8×
+by up to 11.6×, by leveraging multicore              faster and 212.7× more power efficient than 384-
+and SIMD parallelism. However, to achieve            GPU cluster of GPU implementation of sequence
+such levels of acceleration, BWA-MEM2 builds         alignment, known as CUDAlign [41].
+an index structure that is 6× larger than that of
+minimap2.                                            Heuristic-Based Alignment Accelerators
+    Other designs, such as FPGASW [37], exploit          The second direction is to limit the func-
+the very large number of hardware execution units    tionality of the alignment algorithm or sacrifice
+in FPGAs to form a linear systolic array [38].       the optimality of the alignment solution in order
+
+
+March 2020
+                                                                                                            7
+
+
+===== Page 8 =====
+
+    Mohammed Alser et al.
+
+
+    to reduce execution time. The use of restrictive       suffer from providing suboptimal alignment cal-
+    functionality and heuristics limits the possible       culation [47], [48]. The first approach uses the
+    applications of the algorithms that utilize this       same sparse DP algorithm used for pre-alignment
+    direction. Examples of limiting functionality in-      filtering but as an alignment step, as done in
+    clude limiting the scoring function, or only taking    the exonerate tool [47]. The second approach
+    into account accelerating the computation of the       is employed in X-drop [48], which (1) avoids
+    DP matrix without performing the backtrack-            calculating entries (and their neighbors) whose
+    ing step [42]. There are several existing algo-        alignment scores are more than X below the
+    rithms and corresponding hardware accelerators         highest score seen so far (where X is a user-
+    that limit scoring function flexibility. Levenshtein   specified parameter), and (2) stops early when
+    distance [21] and Myers’s bit-vector algorithm         a high alignment score is not possible. The X-
+    [43] are examples of algorithms whose scoring          drop algorithm is guaranteed to find the optimal
+    functions are fixed, such that they penalize all       alignment between relatively-similar sequences
+    types of edits equally when calculating the to-        for only some scoring functions [48]. A similar
+    tal alignment score. Restrictive scoring functions     algorithm (known as Z-drop) makes KSW2 at
+    reduce the total execution time of the alignment       least 2.6× faster than Parasail. A recent GPU
+    algorithm and reduce the bit-width requirement of      implementation [49] of the X-Drop algorithm is
+    the register that accommodates the value of each       3.1–120.4× faster than KSW2.
+    entry in the DP matrix. ASAP [44] accelerates               There are also a large number of edit dis-
+    Levenshtein distance calculation by up to 63.3×        tance approximation algorithms that provide a
+    using FPGAs compared to its CPU implementa-            reduction in time complexity (e.g., O(m1.647 )
+    tion. The use of a fixed scoring function as in        instead of O(m2 )), but they suffer from providing
+    Edlib [45], which is the state-of-the-art imple-       overestimated edit distance [50], [51], [52], [53].
+    mentation of Myers’s bit-vector algorithm, helps
+    to outperform Parasail (which uses a flexible          Discussion and Future Opportunities
+    scoring function) by 12–1000×. One downside of             Despite more than two decades of attempts,
+    fixed function scoring is that it may lead to the      bridging the performance gap between sequenc-
+    selection of a suboptimal sequence alignment.          ing machines and read mapping is still challeng-
+        There are other algorithms and hardware ar-        ing. We summarize four main challenges below.
+    chitectures that provide low alignment time by             First, we need to accelerate the entire read
+    trading off accuracy. Darwin [16] builds a cus-        mapping process rather than its individual steps.
+    tomized hardware architecture to speed up the          Accelerating only a single step of read map-
+    alignment process, by dividing the DP matrix into      ping limits the overall achieved speedup accord-
+    overlapping submatrices and processing each sub-       ing to Amdahl’s Law. Illumina and NVIDIA
+    matrix independently using systolic arrays. Dar-       have recently started following a more holistic
+    win provides three orders of magnitude speedup         approach, and they claim to accelerate genome
+    compared to Edlib [45]. Dividing the DP ma-            analysis by more than 48×, mainly by using spe-
+    trix (known as the Four-Russians Method [46])          cialization and hardware/software co-design. Illu-
+    enables significant parallelism during DP matrix       mina has built an FPGA-based platform, called
+    computation, but it leads to suboptimal alignment      DRAGEN (https://www.illumina.com/produ
+    calculation [26]. Darwin claims that choosing a        cts/by- type/informatics- products/dragen- bi
+    large submatrix size (≥ 320 × 320) and ensuring        o- it- platform.html), that accelerates all steps
+    sufficient overlap (≥128 entries) between adja-        of genome analysis, including read mapping and
+    cent submatrices may provide optimal alignment         variant calling. DRAGEN reduces the overall
+    calculation for some datasets.                         analysis time from 32 CPU hours to only 37
+        There are other proposals that limit the num-      minutes [11]. NVIDIA has built Parabricks, a
+    ber of calculated entries of the DP matrix based       software suite accelerated using the company’s
+    on one of two approaches: (1) using sparse             latest GPUs. Parabricks (https://developer.nvidia
+    DP or (2) using a greedy approach to main-             .com/clara-parabricks) can analyze whole human
+    tain a high alignment score. Both approaches           genomes at 30× coverage in about 45 minutes.
+
+
+
+8                                                                                                   IEEE MICRO
+
+
+===== Page 9 =====
+
+    Second, we need to reduce the high amount        user defined and can be very high (15-20% of the
+of data movement that takes place during genome      read length) for recent long reads. A configurable
+analysis. Moving data (1) between compute units      scoring function is another example, as it deter-
+and main memory, (2) between multiple hard-          mines the number of bits needed to store each
+ware accelerators, and (3) between the sequenc-      entry of the DP matrix (e.g., DRAGEN imposes
+ing machine and the computer performing the          a restriction on the maximum frequency of seed
+analysis incurs high costs in terms of execution     occurrence). Due to rapid changes in sequencing
+time and energy. These costs are a significant       technologies (e.g., high sequencing error rate and
+barrier to enabling efficient analysis that can      longer read lengths) [55], [56], these design re-
+keep up with sequencing technologies, and some       strictions can quickly make specialized hardware
+recent works try to tackle this problem [25],        obsolete. Thus, read mappers need to adapt their
+[8], [9]. GenASM [19] is a framework that uses       algorithms and their hardware architectures to be
+bitvector-based ASM to accelerate multiple steps     modular and scalable so that they can be imple-
+of the genome analysis pipeline, and is designed     mented for any sequence length and edit distance
+to be implemented inside 3D-stacked memory.          threshold based on the sequencing technology.
+Through a combination of hardware–software co-
+                                                         Fourth, we need to adapt existing genomic
+design to unlock parallelism, and processing-
+                                                     data formats for hardware accelerators or develop
+in-memory to reduce data movement, GenASM
+                                                     more efficient file formats. Most sequencing
+can perform (1) pre-alignment filtering for short
+                                                     data is stored in the FASTQ/FASTA format,
+reads, (2) sequence alignment for both short and
+                                                     where each base takes a single byte (8 bits)
+long reads, and (3) whole genome alignment,
+                                                     of memory. This encoding is inefficient, as
+among other use cases. For short/long read align-
+                                                     only 2 bits (3 bits when the ambiguous base,
+ment, GenASM achieves 111×/116× speedup
+                                                     N, is included) are needed to encode each
+over state-of-the-art software read mappers while
+                                                     DNA base. The sequencing machine converts
+reducing power consumption by 33×/37×. DRA-
+                                                     sequenced bases into FASTQ/FASTA format,
+GEN reduces data movement between the se-
+                                                     and hardware accelerators convert the file
+quencing machine and the computer performing
+                                                     contents into unique (for each accelerator)
+analysis by adding specialized hardware support
+                                                     compact binary representations for efficient
+inside the sequencing machine for data compres-
+                                                     processing. This process that requires multiple
+sion. However, this still requires movement of
+                                                     format conversions wastes time. For example,
+compressed data. Performing read mapping inside
+                                                     only 43% of the sequence alignment time
+the sequencing machine itself can significantly
+                                                     in BWA-MEM2 [23] is spent on calculating
+improve efficiency by eliminating sequencer-to-
+                                                     the DP matrix, while 33% of the sequence
+computer movement, and embedding a single spe-
+                                                     alignment time is spent on pre-processing the
+cialized chip for read mapping within a portable
+                                                     input sequences for loading into SIMD registers,
+sequencing device can potentially enable new
+                                                     as provided in [23]. To address this inefficiency,
+applications of genome sequencing (e.g., rapid
+                                                     we need to widely adopt efficient hardware-
+surveillance of diseases such as Ebola [54] and
+                                                     friendly formats, such as UCSC’s 2bit format
+COVID-19 [13], near-patient testing, bringing
+                                                     (https://genome.ucsc.edu/goldenPath/help/twoBit),
+precision medicine to remote locations). Unfor-
+                                                     to maximize the benefits of hardware accelerators
+tunately, efforts in this direction remain very
+                                                     and reduce resource utilization. We are not aware
+limited.
+                                                     of any recent read mapper that uses such formats.
+   Third, we need to develop flexible hardware          The acceleration efforts we highlight in this
+architectures that do not conservatively limit the   work represent state-of-the-art efforts to re-
+range of supported parameter values at design        duce current bottlenecks in the genome analysis
+time. Commonly-used read mappers (e.g., min-         pipeline. We hope that these efforts and the chal-
+imap2) have different input parameters, each of      lenges we discuss provide a foundation for future
+which has a wide range of input values. For          work in accelerating read mappers and developing
+example, the edit distance threshold is typically    other genome sequence analysis tools.
+
+
+March 2020
+                                                                                                          9
+
+
+===== Page 10 =====
+
+     Mohammed Alser et al.
+
+
+     Acknowledgments                                                  Lee, and Min Seob Lee.        Ultra-Fast Next Generation
+        The work of Onur Mutlu’s SAFARI Research                      Human Genome Sequencing Data Processing Using
+     Group was supported by funding from Intel, the                   DRAGEN R Bio-IT Processor for Precision Medicine.
+     Semiconductor Research Corporation, VMware,                      Open Journal of Genetics, 2017.
+     and the National Institutes of Health (NIH).                  12. Nathan LaPierre, Mohammed Alser, Eleazar Eskin,
+                                                                      David Koslicki, and Serghei Mangul. Metalign: Efficient
+        REFERENCES                                                    alignment-based metagenomic profiling via containment
+     1. Travis C Glenn. Field Guide to Next-Generation DNA            min hash. BioRxiv, 2020.
+        Sequencers. Molecular Ecology Resources, 2011.             13. Joshua S Bloom, Eric M Jones, Molly Gasperini,
+     2. Simon Ardui, Adam Ameur, Joris R Vermeesch, and               Nathan B Lubock, Laila Sathe, Chetan Munugala,
+        Matthew S Hestand. Single Molecule Real-Time (SMRT)           A Sina Booeshaghi, Oliver F Brandenberg, Longhua
+        Sequencing Comes of Age: Applications and Utilities for       Guo, James Boocock, et al.           Swab-seq: A high-
+        Medical Diagnostics. Nucleic Acids Research, 2018.            throughput platform for massively scaled up sars-cov-2
+     3. Miten Jain, Sergey Koren, Karen H Miga, Josh Quick,           testing. medRxiv, 2020.
+        Arthur C Rand, Thomas A Sasani, John R Tyson,              14. Jan M Friedman, Yvonne Bombard, Martina C Cornel,
+        Andrew D Beggs, Alexander T Dilthey, Ian T Fiddes,            Conrad V Fernandez, Anne K Junker, Sharon E Plon,
+        et al. Nanopore sequencing and assembly of a human            Zornitza Stark, and Bartha Maria Knoppers. Genome-
+        genome with ultra-long reads.    Nature biotechnology,        wide sequencing in acutely ill infants: genomic medicine’s
+        2018.                                                         critical application? Genetics in Medicine, 21(2):498–
+     4. Steve S Ho, Alexander E Urban, and Ryan E Mills. Struc-       504, 2019.
+        tural variation in the sequencing era. Nature Reviews      15. Ben Langmead and Abhinav Nellore. Cloud Computing
+        Genetics, pages 1–19, 2019.                                   for Genomic Data Analysis and Collaboration. Nature
+     5. Mohammed Alser, Hasan Hassan, Akash Kumar, Onur               Reviews Genetics, 2018.
+        Mutlu, and Can Alkan. Shouji: A Fast and Efficient Pre-    16. Yatish Turakhia, Gill Bejerano, and William J. Dally. Dar-
+        Alignment Filter for Sequence Alignment. Bioinformatics,      win: A Genomics Co-Processor Provides Up to 15,000X
+        2019.                                                         Acceleration on Long Read Assembly. In ASPLOS, 2018.
+     6. Heng Li. minimap2: Pairwise Alignment for Nucleotide       17. Rasmus Nielsen, Joshua S Paul, Anders Albrechtsen,
+        Sequences. Bioinformatics, 2018.                              and Yun S Song. Genotype and SNP calling from next-
+     7. Mohammed Alser, Jeremy Rotman, Kodi Taraszka,                 generation sequencing data. Nature Reviews Genetics,
+        Huwenbo Shi, Pelin Icer Baykal, Harry Taegyun Yang,           12(6):443–451, 2011.
+        Victor Xue, Sergey Knyazev, Benjamin D. Singer,            18. Sébastien Jacquemont, Alexandre Reymond, Flore Zuf-
+        Brunilda Balliu, David Koslicki, Pavel Skums, Alex Ze-        ferey, Louise Harewood, Robin G Walters, Zoltán Ku-
+        likovsky, Can Alkan, Onur Mutlu, and Serghei Mangul.          talik, Danielle Martinet, Yiping Shen, Armand Valsesia,
+        Technology Dictates Algorithms: Recent Developments           Noam D Beckmann, et al. Mirror extreme BMI pheno-
+        in Read Alignment. arXiv:2003.00110 [q-bio.GN], 2020.         types associated with gene dosage at the chromosome
+     8. Onur Mutlu, Saugata Ghose, Juan Gómez-Luna, and              16p11. 2 locus. Nature, 478(7367):97–102, 2011.
+        Rachata Ausavarungnirun.      Processing data where it     19. Damla Senol Cali, Gurpreet S. Kalsi, Zülal Bingöl,
+        makes sense: Enabling in-memory computation. Micro-           Lavanya Subramanian, Can Firtina, Jeremie S. Kim,
+        processors and Microsystems, 67:28–41, 2019.                  Rachata Ausavarungnirun, Mohammed Alser, Anant
+     9. Saugata Ghose, Amirali Boroumand, Jeremie S Kim,              Nori, Juan Gómez Luna, Amirali Boroumand, Allison
+        Juan Gómez-Luna, and Onur Mutlu.        Processing-in-       Scibisz, Sreenivas Subramoney, Can Alkan, Saugata
+        memory: A workload-driven perspective. IBM Journal of         Ghose, and Onur Mutlu.         GenASM: A Low-Power,
+        Research and Development, 63(6):3–1, 2019.                    Memory-Efficient Approximate String Matching Accelera-
+     10. Zachary D. Stephens, Skylar Y. Lee, Faraz Faghri,            tion Framework for Genome Sequence Analysis. In Proc.
+        Roy H. Campbell, Chengxiang Zhai, Miles J. Efron, Rav-        53rd Int. Symp. Microarchitecture (MICRO), 2020.
+        ishankar Iyer, Michael C. Schatz, Saurabh Sinha, and       20. Daehwan Kim, Joseph M Paggi, Chanhee Park,
+        Gene E. Robinson. Big Data: Astronomical or Genom-            Christopher Bennett, and Steven L Salzberg. Graph-
+        ical? PLoS Biology, 2015.                                     based genome alignment and genotyping with HISAT2
+     11. Amit Goyal, Hyuk Jung Kwon, Kichan Lee, Reena                and HISAT-genotype. Nature biotechnology, 37(8):907–
+        Garg, Seon Young Yun, Yoon Hee Kim, Sunghoon                  915, 2019.
+
+
+
+
+10                                                                                                                  IEEE MICRO
+
+
+===== Page 11 =====
+
+21. Vladimir I Levenshtein. Binary codes capable of cor-           matching.     Information and control, 64(1-3):100–118,
+   recting deletions, insertions, and reversals.    In Soviet      1985.
+   Physics-Doklady, volume 10, pages 707–710, 1966.             34. Jeff Daily. Parasail: SIMD C Library for Global, Semi-
+22. Ruben Langarita, Adria Armejach, Javier Setoain,               Global, and Local Pairwise Sequence Alignments. BMC
+   Pablo Enrique Ibanez Marin, Jesús Alastruey-Benedé,           Bioinformatics, 2016.
+   and Miquel Moreto Planas. Compressed Sparse FM-              35. Nauman Ahmed, Jonathan Lévy, Shanshan Ren,
+   Index: Fast Sequence Alignment Using Large K-Steps.             Hamid Mushtaq, Koen Bertels, and Zaid Al-Ars.
+   IEEE/ACM Transactions on Computational Biology and              GASAL2: A GPU Accelerated Sequence Alignment lLi-
+   Bioinformatics, 2020.                                           brary for High-Throughput NGS Data. BMC Bioinformat-
+23. Md Vasimuddin, Sanchit Misra, Heng Li, and Srinivas            ics, 2019.
+   Aluru. Efficient Architecture-Aware Acceleration of BWA-     36. Heng Li. Aligning sequence reads, clone sequences
+   MEM for Multicore Systems. In IPDPS, 2019.                      and assembly contigs with bwa-mem.        arXiv preprint
+24. Wenqin Huangfu, Shuangchen Li, Xing Hu, and Yuan               arXiv:1303.3997, 2013.
+   Xie.    RADAR: A 3D-ReRAM Based DNA Alignment
+                                                                37. Xia Fei, Zou Dan, Lu Lina, Man Xin, and Zhang Chunlei.
+   Accelerator Architecture. In DAC, 2018.
+                                                                   FPGASW: Accelerating Large-Scale Smith–Waterman
+25. Jeremie S. Kim, Damla Senol Cali, Hongyi Xin,
+                                                                   Sequence Alignment Application with Backtracking on
+   Donghyuk Lee, Saugata Ghose, Mohammed Alser,
+                                                                   FPGA Linear Systolic Array. Interdisciplinary Sciences:
+   Hasan Hassan, Oguz Ergin, Can Alkan, and Onur
+                                                                   Computational Life Sciences, 2018.
+   Mutlu. GRIM-Filter: Fast Seed Location Filtering in DNA
+                                                                38. HT Kung. Why Systolic Architectures? IEEE Computer,
+   Read Mapping Using Processing-in-Memory Technolo-
+                                                                   (1):37–46, 1982.
+   gies. BMC Genomics, 2018.
+                                                                39. Daichi Fujiki, Arun Subramaniyan, Tianjun Zhang,
+26. Guillaume Rizk and Dominique Lavenier.         GASSST:
+                                                                   Yu Zeng, Reetuparna Das, David Blaauw, and Satish
+   Global Alignment Short Sequence Search Tool. Bioin-
+                                                                   Narayanasamy. GenAx: A Genome Sequencing Accel-
+   formatics, 2010.
+                                                                   erator. In ISCA, 2018.
+27. Faraz Hach, Iman Sarrafi, Farhad Hormozdiari, Can
+                                                                40. Saransh Gupta, Mohsen Imani, Behnam Khaleghi,
+   Alkan, Evan E Eichler, and S Cenk Sahinalp. mrsFAST-
+                                                                   Venkatesh Kumar, and Tajana Rosing. RAPID: A ReRAM
+   Ultra: a compact, SNP-aware mapper for high perfor-
+                                                                   Processing in-Memory Architecture for DNA Sequence
+   mance sequencing applications. Nucleic acids research,
+                                                                   Alignment. In 2019 IEEE/ACM International Symposium
+   42(W1):W494–W500, 2014.
+                                                                   on Low Power Electronics and Design (ISLPED), pages
+28. David Weese, Manuel Holtgrewe, and Knut Reinert.
+                                                                   1–6. IEEE, 2019.
+   RazerS 3: faster, fully sensitive read mapping. Bioinfor-
+                                                                41. Edans Flavius de Oliveira Sandes, Guillermo Miranda,
+   matics, 28(20):2592–2599, 2012.
+                                                                   Xavier Martorell, Eduard Ayguade, George Teodoro, and
+29. Bo Liu, Dengfeng Guan, Mingxiang Teng, and Yadong
+                                                                   Alba Cristina Magalhaes Melo. CUDAlign 4.0: Incremen-
+   Wang. rHAT: fast alignment of noisy long reads with re-
+                                                                   tal speculative traceback for exact chromosome-wide
+   gional hashing. Bioinformatics, 32(11):1625–1631, 2016.
+                                                                   alignment in GPU clusters. IEEE Transactions on Parallel
+30. Licheng Guo, Jason Lau, Zhenyuan Ruan, Peng Wei,
+                                                                   and Distributed Systems, 27(10):2838–2850, 2016.
+   and Jason Cong. Hardware acceleration of long read
+   pairwise overlapping in genome sequencing: A race be-        42. Peng Chen, Chao Wang, Xi Li, and Xuehai Zhou. Ac-
+
+   tween FPGA and GPU. In 2019 IEEE 27th Annual In-                celerating the Next Generation Long Read Mapping with
+
+   ternational Symposium on Field-Programmable Custom              the FPGA-Based System. IEEE/ACM Transactions on
+
+   Computing Machines (FCCM), pages 127–135. IEEE,                 Computational Biology and Bioinformatics, 2014.
+
+   2019.                                                        43. Gene Myers. A fast bit-vector algorithm for approximate
+31. William J Masek and Michael S Paterson.          A faster      string matching based on dynamic programming. Journal
+   algorithm computing string edit distances.      Journal of      of the ACM (JACM), 46(3):395–415, 1999.
+   Computer and System sciences, 20(1):18–31, 1980.             44. Subho       Sankar   Banerjee,   Mohamed    El-Hadedy,
+32. Arturs Backurs and Piotr Indyk. Edit distance cannot be        Jong Bin Lim, Zbigniew T. Kalbarczyk, Deming Chen,
+   computed in strongly subquadratic time (unless SETH is          Steven S. Lumetta, and Ravishankar K. Iyer.       ASAP:
+   false). SIAM Journal on Computing, 47(3):1087–1097,             Accelerated Short-Read Alignment on Programmable
+   2018.                                                           Hardware. IEEE Transactions on Computers, 2019.
+33. Esko Ukkonen.      Algorithms for approximate string        45. Martin Šošić and Mile Šikić. Edlib: A C/C++ Library
+
+
+
+
+March 2020
+                                                                                                                               11
+
+
+===== Page 12 =====
+
+     Mohammed Alser et al.
+
+
+        for Fast, Exact Sequence Alignment Using Edit Distance.           directions. Briefings in Bioinformatics, 20(4):1542–1559,
+        Bioinformatics, 2017.                                             2019.
+     46. Vladimir L’vovich Arlazarov, Yefim A Dinitz, MA Kronrod,      56. Can Firtina, Jeremie S Kim, Mohammed Alser, Damla
+        and IgorAleksandrovich Faradzhev. On economical con-              Senol Cali, A Ercument Cicek, Can Alkan, and Onur
+        struction of the transitive closure of an oriented graph. In      Mutlu.   Apollo: a sequencing-technology-independent,
+        Doklady Akademii Nauk, volume 194, pages 487–488.                 scalable and accurate assembly polishing algorithm.
+        Russian Academy of Sciences, 1970.                                Bioinformatics, 36(12):3669–3679, 2020.
+
+     47. Guy St. C. Slater and Ewan Birney. Automated Gener-
+        ation of Heuristics for Biological Sequence Comparison.        Mohammed Alser is with ETH Zürich, Switzerland.
+        BMC Bioinformatics, 2005.
+                                                                       Contact him at alserm@inf.ethz.ch
+
+     48. Zheng Zhang, Scott Schwartz, Lukas Wagner, and
+                                                                       Zülal Bingöl is with Bilkent University, Turkey. Con-
+        Webb Miller.     A Greedy Algorithm for Aligning DNA
+                                                                       tact her at zulal.bingol@bilkent.edu.tr
+        Sequences. Journal of Computational Biology, 2000.
+     49. Alberto Zeni, Giulia Guidi, Marquita Ellis, Nan Ding,         Damla Senol Cali is with Carnegie Mellon University,
+        Marco D. Santambrogio, Steven Hofmeyr, Aydın Buluç,           USA. Contact her at dsenol@andrew.cmu.edu
+        Leonid Oliker, and Katherine Yelick.       LOGAN: High-
+        Performance GPU-Based X-Drop Long-Read Alignment.              Jeremie Kim is with ETH Zürich, Switzerland, and
+        arXiv:2002.05200 [q-bio.GN], 2020.                             Carnegie Mellon University, USA. Contact him at
+                                                                       jeremie.kim@inf.ethz.ch
+     50. Tuğkan Batu, Funda Ergun, and Cenk Sahinalp. Oblivi-
+        ous string embeddings and edit distance approximations.
+                                                                       Saugata Ghose is with the University of Illinois at
+        In Proceedings of the seventeenth annual ACM-SIAM              Urbana–Champaign and Carnegie Mellon University,
+        Symposium on Discrete Algorithms (SODA), pages 792–            USA. Contact him at ghose@illinois.edu
+        801. Society for Industrial and Applied Mathematics,
+        2006.                                                          Can Alkan is with Bilkent University, Turkey. Contact
+     51. Alexandr Andoni and Krzysztof Onak. Approximating             him at calkan@cs.bilkent.edu.tr
+        edit distance in near-linear time. SIAM Journal on Com-
+        puting, 41(6):1635–1648, 2012.                                 Onur Mutlu is with ETH Zürich, Switzerland,
+                                                                       Carnegie Mellon University, USA, and Bilkent Univer-
+     52. Diptarka Chakraborty, Debarati Das, Elazar Golden-
+                                                                       sity, Turkey. Contact him at omutlu@gmail.com
+        berg, Michal Koucky, and Michael Saks. Approximating
+        edit distance within constant factor in truly sub-quadratic
+        time. In 2018 IEEE 59th Annual Symposium on Foun-
+        dations of Computer Science (FOCS), pages 979–990.
+        IEEE, 2018.
+     53. Moses Charikar, Ofir Geri, Michael P Kim, and William
+        Kuszmaul.      On Estimating Edit Distance: Alignment,
+        Dimension Reduction, and Embeddings.           In 45th In-
+        ternational Colloquium on Automata, Languages, and
+        Programming (ICALP 2018). Schloss Dagstuhl-Leibniz-
+        Zentrum fuer Informatik, 2018.
+     54. Joshua Quick, Nicholas J Loman, Sophie Duraf-
+        four, Jared T Simpson, Ettore Severi, Lauren Cowley,
+        Joseph Akoi Bore, Raymond Koundouno, Gytis Dudas,
+        Amy Mikhail, et al. Real-time, portable genome sequenc-
+        ing for Ebola surveillance. Nature, 530(7589):228–232,
+        2016.
+     55. Damla Senol Cali, Jeremie S Kim, Saugata Ghose,
+        Can Alkan, and Onur Mutlu.         Nanopore sequencing
+        technology and tools for genome assembly: Computa-
+        tional analysis of the current state, bottlenecks and future
+
+
+
+
+12                                                                                                                     IEEE MICRO

@@ -1,0 +1,779 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/2211.07613v2.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/2211.07613v2.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+                                                  Fundamentally Understanding and Solving RowHammer
+                                                         Onur Mutlu                                   Ataberk Olgun                                   A. Giray Yağlıkcı
+                                                  onur.mutlu@safari.ethz.ch                     ataberk.olgun@safari.ethz.ch                     giray.yaglikci@safari.ethz.ch
+                                                        ETH Zürich                                      ETH Zürich                                       ETH Zürich
+                                                     Zürich, Switzerland                            Zürich, Switzerland                               Zürich, Switzerland
+                                        ABSTRACT                                                                      rows. Due to this interference, cells in victim rows lose the ability
+                                        We provide an overview of recent developments and future direc-               to correctly retain their data, which leads to data corruption (i.e.,
+                                        tions in the RowHammer vulnerability that plagues modern DRAM                 bitflips). These bitflips are repeatable: if hammering an aggressor
+                                        (Dynamic Random Memory Access) chips, which are used in almost                row causes a particular cell to experience a bitflip, doing so again
+                                        all computing systems as main memory.                                         will lead to the same bitflip with high probability [72].
+arXiv:2211.07613v2 [cs.CR] 3 Feb 2023
+
+
+
+
+                                            RowHammer is the phenomenon in which repeatedly accessing                    Unfortunately, DRAM becomes increasingly more susceptible to
+                                        a row in a real DRAM chip causes bitflips (i.e., data corruption) in          RowHammer bitflips as its storage density increases (i.e., DRAM cell
+                                        physically nearby rows. This phenomenon leads to a serious and                size and cell-to-cell spacing reduce). Our recent work [70] across
+                                        widespread system security vulnerability, as many works since the             1580 real DRAM chips of six different types shows that, in the last
+                                        original RowHammer paper in 2014 have shown. Recent analysis of               decade, the minimum number of aggressor row activations needed
+                                        the RowHammer phenomenon reveals that the problem is getting                  to cause a RowHammer bitflip (i.e., the RowHammer threshold)
+                                        much worse as DRAM technology scaling continues: newer DRAM                   has reduced by more than 10x and the number of bitflips caused
+                                        chips are fundamentally more vulnerable to RowHammer at the                   by the same number of row activations has increased by 500x. A
+                                        device and circuit levels. Deeper analysis of RowHammer shows                 recent work [88] shows that commodity workloads on state-of-the-
+                                        that there are many dimensions to the problem as the vulnerability            art servers might already activate individual DRAM rows at rates
+                                        is sensitive to many variables, including environmental conditions            exceeding the RowHammer threshold.
+                                        (temperature & voltage), process variation, stored data patterns,                On the one hand, such RowHammer bitflips can lead to system
+                                        as well as memory access patterns and memory control policies.                reliability and safety problems, when caused by non-malicious
+                                        As such, it has proven difficult to devise fully-secure and very              applications. On the other hand, malicious applications can be
+                                        efficient (i.e., low-overhead in performance, energy, area) protection        written to induce RowHammer bitflips in a targeted manner, so as to
+                                        mechanisms against RowHammer and attempts made by DRAM                        specifically degrade system security, privacy, safety and availability.
+                                        manufacturers have been shown to lack security guarantees.                    For example, by carefully selecting rows to hammer, an attacker can
+                                            After reviewing various recent developments in exploiting, un-            induce bitflips in sensitive data stored in DRAM. Many prior works,
+                                        derstanding, and mitigating RowHammer, we discuss future di-                  some of which are reviewed in [98], show that RowHammer can be
+                                        rections that we believe are critical for solving the RowHammer               exploited in many ways to compromise system security (integrity,
+                                        problem. We argue for two major directions to amplify research                confidentiality, availability) in real systems, since it breaks memory
+                                        and development efforts in: 1) building a much deeper understand-             isolation on top of which modern system security principles are built.
+                                        ing of the problem and its many dimensions, in both cutting-edge              As such, RowHammer greatly threatens many aspects of computing
+                                        DRAM chips and computing systems deployed in the field, and 2)                system robustness (which include system reliability, safety, security,
+                                        the design and development of extremely efficient and fully-secure            privacy, and availability) in a widespread and profound manner due
+                                        solutions via system-memory cooperation.                                      to the prevalent usage of DRAM in modern computing systems.
+                                                                                                                         RowHammer-like disturbance issues have also been shown to be
+                                        CCS CONCEPTS                                                                  present in emerging NVM (non-volatile memory) technologies [2,
+                                                                                                                      39, 68, 83, 101]. For these technologies to be viable, dependable, and
+                                        • Hardware → Dynamic memory; Hardware reliability; • Se-                      secure, anticipation and solution of such issues are critical.
+                                        curity and privacy → Systems security.                                           In this paper, we provide an overview of the state-of-the-art re-
+                                                                                                                      search and development focusing on the RowHammer vulnerability.
+                                        KEYWORDS                                                                      To this end, we first provide a very brief review of RowHammer re-
+                                        DRAM, Security, Vulnerability, Technology Scaling, Reliability, Safety,       search until circa 2020 (Section 2), building on a recent overview pa-
+                                        Errors, Memory Systems, Fault Attacks, RowHammer                              per [98] that in more detail covers much of the RowHammer devel-
+                                                                                                                      opments until its publication. Then, we describe two major develop-
+                                                                                                                      ments in 2020 (Section 3), TRRespass [38] and Revisiting RowHam-
+                                        1   INTRODUCTION
+                                                                                                                      mer [70], which experimentally show that RowHammer is an open
+                                        DRAM is the dominant technology used for main memory in almost                and increasingly worsening problem, which motivated a large body
+                                        all computing systems due to its low latency and low cost per bit.            of follow-on work in both industry and academia. Afterwards, we
+                                        Modern DRAM chips suffer from a vulnerability commonly known                  provide a broad overview of other recent developments in RowHam-
+                                        as RowHammer [72, 95, 96, 98]. RowHammer is caused by repeat-                 mer (Section 4). We consider three major types of RowHammer
+                                        edly accessing (i.e., hammering) one or more (aggressor) memory               developments: 1) works directed toward exploiting RowHammer,
+                                        rows. Hammering a row creates electromagnetic interference be-                2) works that aim to understand and model RowHammer, and 3)
+                                        tween the aggressor row and its physically-neighboring (victim)
+
+
+
+
+                                                                                                                  1
+
+
+===== Page 2 =====
+
+ASPDAC ’23, January 16–19, 2023, Tokyo, Japan                                                                                                      Mutlu et al.
+
+
+works that propose techniques to mitigate/solve the RowHammer                        DRAM chips. Building on these, many other academic and indus-
+problem. Finally, we discuss future directions in RowHammer re-                      trial works in the 2014-2019 timeframe proposed various solutions
+search (Section 5). We argue for two major broad directions to                       to RowHammer in both hardware and software. These works in-
+focus more in future research and development efforts: 1) build-                     clude [4–9, 18, 19, 36, 40, 41, 49, 51, 52, 69, 76, 78, 79, 82, 102, 136,
+ing a much deeper understanding of the problem and its many                          140, 141, 147, 151]. A detailed overview of these solutions can be
+dimensions/sensitivities, in both cutting-edge DRAM chips and                        found in Section III-B of [98]. The BlockHammer paper in HPCA
+computing systems deployed in the field, and 2) the design and                       2021 [156] provides a more up-to-date overview of major solutions
+development of extremely efficient and fully-secure architectural                    proposed until that time, with a detailed analysis of 14 solutions
+solutions, which we believe can be achieved via much better system-                  across four different desirable properties and a rigorous evaluation
+memory cooperation (as discussed in [94, 99]).                                       of six state-of-the-art solutions, along with an open-source release
+                                                                                     of their source codes [127].
+2    A BRIEF OVERVIEW OF ROWHAMMER                                                   2.1    RowHammer Mitigations in Industry
+     UNTIL 2020                                                                      After the public introduction of RowHammer in 2014, both system
+Since its first public introduction and scientific analysis in 2014 [72],            and DRAM manufacturers took action to mitigate the problem in
+RowHammer has led to significant follow-on work in both academia                     the field and in future DRAM chips. As described in the original
+and industry, spanning multiple different communities, including                     RowHammer work [72], the solutions that can be deployed in the
+computer architecture, security, dependability, circuits, devices,                   field are limited due to the limited programmability support pro-
+and systems. We briefly review works that appeared within the                        vided by modern memory controllers. As such, a major solution
+timeframe 2014-2019. A more comprehensive overview of such                           deployed in the field has been to increase the refresh rate of DRAM,
+works, as well as others in popular technical media, can be found                    as described in a security release by Apple [4]. Unfortunately, in-
+in [98], and we refer the reader to that overview for more detail.                   creasing the refresh rate is not an effective or desirable solution [72]
+   The ISCA 2014 work that introduced RowHammer [72] demon-                          due to its high performance and energy overheads [85].
+strated that more than 80% of the real commodity DDR3 DRAM                              On the system side, memory controller manufacturers like Intel
+modules tested, from all three major DRAM manufacturers, are vul-                    introduced mechanisms (e.g., [89], inspired by PARA, probabilistic
+nerable to RowHammer. That is, real bitflips are possible to induce                  adjacent row activation [72]), broadly called pTRR (pseudo Target
+using real user-level programs [125] on commonly-used CPU-based                      Row Refresh) [38, 63], to mitigate RowHammer in future systems.
+systems. The work argued that RowHammer is a DRAM technology                         Unfortunately, such memory controller based victim row refresh
+scaling problem and since device- and circuit-level solutions are dif-               mechanisms are not aware of physical adjacency of aggressor and
+ficult and costly, RowHammer should be solved via system-memory                      victim rows in a DRAM chip and, as such, they might not provide
+cooperation [72, 94]. This work also suggested that one can exploit                  complete protection against RowHammer.
+RowHammer bitflips to construct various types of disturbance at-                        On the DRAM side, DRAM manufacturers introduced TRR (tar-
+tacks that inject errors into other programs, crash the system, or                   get row refresh) [38] mechanisms and claimed that their new DDR4
+hijack control of the system.                                                        chips are RowHammer-free [38, 47, 81, 92] with the protection pro-
+   Many future works building on Kim et al. [72] did exactly that, i.e.,             vided by these mechanisms. TRR is an umbrella term used for mech-
+they developed various types of attacks that exploit RowHammer                       anisms that refresh target rows which are somehow determined to
+on real computing systems. These works include techniques that                       be accessed frequently. Unfortunately, DRAM manufacturers did
+compromise system integrity as well as confidentiality on various                    not (and still do not) describe how their implementations securely
+types of systems, including mobile and server systems [1, 10, 12, 13,                prevent RowHammer or reveal how their implementations work.
+16, 18, 20, 21, 26, 35, 37, 42, 43, 50, 53, 59, 77, 84, 95, 96, 113, 114, 117,          As such, circa 2019-2020, it was unclear whether or not RowHam-
+121, 135, 136, 142, 143, 146, 147, 152, 161]. A more detailed overview               mer bitflips were possible in real DDR4 DRAM chips. As we will
+of these works can be found in Section III-A of [98].                                see next, two major works in 2020 showed that they were.
+   Multiple works at the device and circuit levels aimed to develop
+a low-level understanding of the causes and effects of RowHammer
+via low-level modeling and simulation of devices and circuits, and in                3     MAJOR DEVELOPMENTS IN 2020
+limited cases via experiments on DDR3 DRAM chips. These works                        We first describe two major works, TRRespass [38] and Revisiting
+include [109, 110, 123, 157, 160]. A more recent work in 2021 [148]                  RowHammer [70], which clearly demonstrate that RowHammer is
+complements this understanding with some newer device level                          an open and worsening problem, state-of-the-art DRAM chips are
+observations. Similarly, RowHammer-like behavior has been ana-                       vulnerable, and proposed mitigations are not scalable/effective into
+lyzed in NVM (non-volatile memory) devices via device and circuit                    the future.
+level simulation studies [2, 39, 68, 83, 101]. We refer the reader to                   TRRespass [38] is the first work to show that TRR-protected DDR4
+Sections III-C and III-H of [98] for a more detailed overview of such                DRAM chips that are advertised as Rowhammer-free are actually
+device/circuit level works that aim to develop a better low-level                    vulnerable to RowHammer in the field. This work partially reverse
+understanding of the causes and effects of RowHammer.                                engineers the TRR and pTRR mechanisms employed in modern
+   The original RowHammer paper in ISCA 2014 [72] proposed                           DRAM chips and memory controllers. To overcome such protection
+seven different solution directions to RowHammer, several of which                   mechanisms, TRRespass introduces the many-sided RowHammer at-
+were later implemented in variations in memory controllers and                       tack, whose key idea is to hammer many (i.e., more than two) rows
+
+
+
+
+                                                                                 2
+
+
+===== Page 3 =====
+
+Fundamentally Understanding and Solving RowHammer                                                                                              ASPDAC ’23, January 16–19, 2023, Tokyo, Japan
+
+
+to bypass TRR mitigations, e.g., by overflowing proprietary TRR ta-                                                  end, a major RowHammer task group was (re)organized in JEDEC
+bles that detect aggressor rows. Using this many-sided RowHammer                                                     (Joint Electron Device Engineering Council [58]). This task group
+attack, the work demonstrated bitflips in real DDR4 DRAM chips                                                       produced whitepapers describing how to proceed to solve RowHam-
+as well as LPDDR4(X) DRAM chips and showed that RowHammer                                                            mer [56, 57], which argue for limited system-DRAM cooperation.
+attacks are possible on systems that employ such chips. As such,                                                     The mission of this task group continues.
+it was clear that the solutions implemented in industry were not                                                        JEDEC and DRAM manufacturers also added a new RFM (Refresh
+secure. TRRespass also argued that security by obscurity, as em-                                                     Management) feature to the DDR5 standard [55] to aid the in-DRAM
+ployed by DRAM manufacturers, is not a good solution approach.                                                       mitigation mechanisms. The key idea of RFM is to provide in-DRAM
+Later follow-on work, called Uncovering TRR (U-TRR) [47], showed                                                     TRR mechanisms with extra time (as needed) to securely refresh
+in 2021 that one can almost completely reverse engineer the en-                                                      all potential victim rows. RFM requires the memory controller to
+tire TRR mechanism employed in any DRAM chip, by using an                                                            count the number of activations at DRAM bank granularity and
+FPGA-based DRAM testing infrastructure (i.e., SoftMC [48, 126]                                                       issue an RFM refresh command when the activation count reaches
+and DRAM Bender [103]) and a methodology that uses retention                                                         a threshold value (based on the RowHammer threshold and the
+errors as side channels to discover when the DRAM-internal TRR                                                       strength of the in-DRAM TRR mechanism of a DRAM chip), such
+mechanism refreshes a victim row. U-TRR demonstrates that, by                                                        that a RowHammer defense mechanism implemented inside the
+doing so, one can craft specialized hammering/access patterns that                                                   DRAM chip can refresh the victim rows. However, because the
+essentially induce large numbers of bitflips on any examined chip.                                                   memory controller tracks row activation counts at DRAM bank
+   Revisiting RowHammer [70] takes a device/circuit-level approach                                                   granularity, the activation count can frequently reach the threshold
+to understand the scaling properties of RowHammer by measuring                                                       even when there is no RowHammer attack in the system. As a
+the fundamental vulnerability (i.e., with TRR mechanisms turned                                                      result, the memory controller can issue many unnecessary RFM
+off) of three different types of DRAM chips across at least two                                                      commands, each of which makes a DRAM bank unavailable for
+different generations. This work tested 1580 DRAM chips and ex-                                                      hundreds of nanoseconds, causing performance overhead.
+perimentally demonstrated that RowHammer is indisputably getting
+worse in newer generation DRAM chips: when hammered, newer
+DRAM chips experience the first bitflip much earlier (e.g., some                                                     4     RECENT ROWHAMMER DEVELOPMENTS
+after only 4800 double-sided hammers) and they experience much                                                       TRRespass [38] and Revisiting RowHammer [70], by demonstrating
+higher numbers of bitflips than older DRAM chips (as demonstrated                                                    the importance and openness of the problem, catalyzed the ongoing
+in Figure 11 ). In other words, the number of activations to induce a                                                RowHammer research and development efforts. We briefly review
+RowHammer bitflip (i.e., the RowHammer threshold) reduced from                                                       such efforts from 2019-2020 until now.
+139K single-sided in 2014 [72] to 4.8K double-sided in 2020 [70].
+             Sweeping Number of Hammers
+Revisiting RowHammer also showed that if the scaling trend contin-
+ues as such, all known solutions at the time would either not work                                                   4.1    Exploiting RowHammer
+               DDR3       DDR4-old       DDR4-new        LPDDR4-1x   LPDDR4-1y
+in future    DRAM chips that are even more vulnerable (e.g., with a                                                  Many works since 2019-2020 developed new and different ways to
+                  0
+    10
+                 -1
+    10           -2
+    10
+RowHammer          threshold of 256 or 128) or have prohibitively large                                              exploit the RowHammer vulnerability (e.g., [24, 25, 28, 31, 38, 47,
+RowHammer
+Bit Flip Rate
+
+
+
+
+                 -3
+    10
+                 -4
+                                                        4- ew
+
+
+
+
+    10
+                            ew
+
+
+
+
+performance      overheads.
+                 -5
+                             To our knowledge, this work is the largest                                              54, 75, 77, 86, 106, 120, 144, 145, 150, 158, 163, 165, 166]). Among
+                                                             d
+                                                             n
+
+
+
+
+    10
+                                      d
+                             n
+
+
+
+
+                                                          ol
+                                                          4-
+
+
+
+
+                                                                                                     ew
+                                     ol
+                          4-
+
+
+
+
+                 -6
+                                                                                                     ld
+
+
+
+
+    10
+                                                        R
+                                     4-
+                      R
+
+
+
+
+                                                                                                  -n
+
+                                                                                                  -o
+                                                        D
+
+                                                              R
+                      D
+
+
+
+
+                 -7
+                                 R
+
+
+
+
+scaling
+    10
+           study of  RowHammer      to date, covering many different types                                           these, we briefly describe RAMBleed [77] and RowHammer-driven
+                                                        D
+
+                                                             D
+                      D
+
+
+
+                                 D
+
+
+
+
+                                                                                               R4
+
+                                                                                               R4
+
+
+
+
+                 -8
+                                                            D
+                                 D
+
+
+
+
+    10
+                           A                          B                        C
+                                                                                          DD
+
+                                                                                                 DD
+
+
+
+
+                 -9
+    10
+and10 10
+      generations
+         4
+                -10
+
+                  105
+                      of DRAM
+                           106 104
+                                   chips and
+                                          105
+                                                its results
+                                                       106 104
+                                                               demonstrate
+                                                                   105
+                                                                             the106                                  fault attacks on neural networks [50, 86, 120, 145, 158] since they
+criticality and difficulty of the RowHammer
+                                     Hammer Count (HC)
+                                                       problem as technology                                         demonstrate different uses of RowHammer from taking over a
+node size shrinks in DRAM manufacturing.                                                                             system. We also briefly describe new attacks that build on many-
+                                                                                                                     sided hammering, including SMASH [28], Blacksmith [54], and
+           100
+                                 DDR3-new    DDR4-old             DDR4-new         LPDDR4-1x       LPDDR4-1y         Half-Double [75], as they provide new insights into how vulnerable
+           10-1  Mfr. A                             Mfr. B                            Mfr. C
+           10-2                                                                                                      existing DDR4 DRAM chips are to RowHammer.
+RowHammer
+Bit Flip Rate
+
+
+
+
+           10-3
+                                                                          w
+           10-4
+           10-5
+                        R4
+                           -n
+                             ew ld
+                               4-
+                                  o                                 R4
+                                                                       -ne ld
+                                                                           -o
+                                                                                                                        RAMBleed [77] shows that RowHammer bitflips can be used to
+           10-6                                                   DD     R4
+                      DD DDR
+           10-7
+           10-8
+                                                                     DD                         DDR4-new             break confidentiality in an existing DRAM-based system: RowHam-
+           10-9
+          10-10
+          10-11 4
+                                                                                                      DDR4-old       mer bitflips can be used as a side channel to determine the data
+                                            105   104                        105    104                    105
+                10
+                                                            Hammer Count (HC)                                        values stored in a location a user-level program does not have read
+                                                                                                                     access to. This work demonstrates an attack against OpenSSH [105]
+Figure 1: Hammer count (HC) vs. RowHammer bitflip rate
+                                                                                                                     where RAMBleed is used to leak an encryption key.
+across 1580 DRAM chips from five different type-node con-
+                                                                                                                        Several works [50, 86, 145, 158] demonstrate that targeted
+figurations. Reproduced from [70].
+                                                                                                                     RowHammer bitflips can be used to greatly degrade the inference
+   Alarmed by the key experimental results and takeaways demon-                                                      accuracy of a neural network. These works highlight potential
+strated by these two works [38, 70], industry took action to gather                                                  safety and security issues that may be caused by RowHammer in
+forces to more seriously mitigate the RowHammer problem. To this                                                     systems that rely on neural networks for decision making (e.g., au-
+                                                                                                                     tonomous vehicles). A recent work in 2022 [120] demonstrates that
+1 Figure 1 (reproduced from Revisiting RowHammer [70]) illustrates a quantitative
+                                                                                                                     RowHammer bitflips can be used as a side channel to recover the
+summary of both the reduction in double-sided hammer count (x-axis) and the increase
+in RowHammer bitflip rate (y-axis) with newer DRAM generations (e.g., DDR4-old in                                    weights stored in a neural network, which breaks confidentiality
+blue to DDR4-new in yellow) across three major DRAM manufacturers (A, B, C).                                         and violates privacy.
+
+
+
+
+                                                                                                                 3
+
+
+===== Page 4 =====
+
+ASPDAC ’23, January 16–19, 2023, Tokyo, Japan                                                                                                           Mutlu et al.
+
+
+   Some works that build on TRRespass demonstrate new RowHam-                   RowHammer under Reduced Wordline Voltage [154] presents an
+mer attacks that are relatively easy to perform on DDR4 DRAM                 experimental characterization using 272 real DDR4 DRAM chips
+chips. SMASH (Synchronized MAny-Sided Hammering) [28] suc-                   from three major manufacturers to demonstrate how reducing the
+cessfully triggers RowHammer bitflips from JavaScript code by                wordline voltage affects both RowHammer vulnerability and DRAM
+exploiting many-sided hammering and synchronizing access pat-                operation. The authors show that reducing wordline voltage pro-
+terns with DRAM refresh operations to bypass TRR mitigations.                vides a significant reduction in the number of RowHammer bitflips
+This work demonstrates an end-to-end JavaScript exploit to fully             and increase in the minimum number of aggressor row activations
+compromise the Firefox web browser in 15 minutes. Blacksmith [54]            needed to cause a RowHammer bitflip, without significantly affect-
+uses automated fuzzing in the frequency domain to discover non-              ing reliable DRAM operation. This work highlights how deeply
+uniform access patterns that can bypass TRR mechanisms more                  understanding low-level effects on RowHammer can aid in devel-
+effectively than uniform many-sided hammering. By doing so, it               oping more RowHammer-resilient DRAM systems.
+generates access patterns that hammer aggressor rows with differ-               Several other works from 2020-2022 (e.g., [24, 44, 106, 108, 148])
+ent phases, frequencies, and amplitudes, finding complex patterns            present various other simulation and real experiment-based analy-
+that trigger Rowhammer bitflips on all 40 tested DDR4 modules.               ses to gain insights into RowHammer and its effects, furthering our
+   Building on the concept of many-sided RowHammer attacks,                  fundamental understanding of the RowHammer phenomenon. We
+Google introduced the Half Double hammering pattern in 2021 [75,             refer the reader to the individual papers for more detail. We believe
+115, 116]. Half Double shows that hammering a "far" neighbor row             that it is critical to continue to develop a broader and deeper un-
+that is physically one row away from the victim row many times               derstanding of RowHammer to improve both RowHammer attacks
+and then hammering the immediately-adjacent "near" neighbor                  and defenses, on the path to designing systems that can effectively
+row of the victim row a much smaller number of times leads to                and efficiently guard against RowHammer.
+bitflips in some DDR4 DRAM chips. This is concerning because,
+when TRR-based RowHammer mitigations are employed, hammers                   4.3     Mitigating RowHammer
+performed on the far neighbor row can lead to refreshes performed            Revisiting RowHammer from ISCA 2020 [70] clearly demonstrated
+by TRR on the near neighbor row, which in turn can lead to bitflips          that, as RowHammer continues to worsen in real DRAM chips,
+in the victim row. This work highlights the intricacies in bitflip           it is critical to develop fully-secure, low-overhead, and scalable
+mechanisms in modern DRAM chips and alerts that defenses should              mitigation techniques. As such, 2020 and later years saw a surge in
+be carefully designed to work in the presence of such intricacies.           new RowHammer solutions. We briefly cover major recent ideas
+   Many other works from 2020-2022 (e.g., [24, 25, 31, 106, 144, 150,        and directions in RowHammer mitigation.
+163, 165, 166]) demonstrate various other RowHammer exploits,                    Graphene [111] uses the Misra-Gries algorithm [93] for online
+advancing our understanding of how RowHammer bitflips can                    frequent item counting [17, 33, 34, 67] to track and identify fre-
+be used to degrade system security. We refer the reader to the               quently activated rows. Graphene then refreshes the rows neighbor-
+individual papers for more detail. We believe that it is critical to         ing those with activation counts that are close to the RowHammer
+push the boundaries of system security research by understanding             threshold. This work, while effective, secure, and low-performance-
+the different ways in which RowHammer bitflips can cause security            overhead, requires large area overhead when scaled to address the
+issues and making RowHammer exploits more powerful, especially               worsening RowHammer vulnerability, as it uses area-expensive
+in the presence of stronger mitigation mechanisms.                           content addressable memory for storing metadata [156].
+                                                                                 BlockHammer [127, 156] uses counting Bloom Filters to iden-
+4.2    Understanding RowHammer
+                                                                             tify frequently-activated rows and throttles accesses to those rows
+Recent works since 2020 (e.g., [2, 24, 39, 68, 70, 101, 106, 107, 148,       whose activation counts are close to the RowHammer threshold.
+154]) study RowHammer from different aspects to develop a better             BlockHammer thus does not require any proprietary information
+understanding. Among these, we briefly describe two major works:             about DRAM chips (e.g., physical row adjacency information) and
+A Deeper Look into RowHammer [107] and RowHammer under Re-                   therefore can be implemented completely and securely in the mem-
+duced Wordline Voltage [154] because these two works analyze new             ory controller. This work experimentally demonstrates that Block-
+aspects of RowHammer by rigorously testing real DRAM chips.                  Hammer’s performance overheads are low (similar to other best
+   A Deeper Look into RowHammer [107] presents an experimen-                 prior mechanisms) when there is no RowHammer attack. When
+tal characterization using 248 DDR4 and 24 DDR3 modern DRAM                  there is a RowHammer attack, BlockHammer improves both system
+chips from four major DRAM manufacturers to reveal how the                   performance and energy consumption by throttling the attacker
+RowHammer vulnerability is affected by three fundamental prop-               thread. This work also introduces a metric called RowHammer Like-
+erties: 1) DRAM chip temperature, 2) aggressor row active time,              lihood Index (RHLI), and shows that this metric can be accurately
+and 3) victim DRAM cell’s physical location. The results clearly             computed to identify RowHammer attacks and report them to the
+indicate that a RowHammer bitflip is more likely to occur 1) in a            system software. As such, BlockHammer provides an example of a
+bounded range of temperature, 2) if the aggressor row is active for          system-level approach to mitigate RowHammer attacks’ impact.2
+longer time, and 3) in certain physical regions of the DRAM module           This work deeply analyzes 14 major RowHammer defense mecha-
+under attack. This work also shows how its findings can be used              nisms, with many quantitative and qualitative comparisons, and
+to improve both RowHammer attacks and RowHammer defenses,
+highlighting the importance of such deeper understanding from                2 BlockHammer is freely and openly available [127], along with six other RowHammer
+the perspective of both attackers and defenders.                             mitigation mechanisms [72, 78, 111, 139, 141, 159], implemented in Ramulator [73, 124].
+
+
+
+
+                                                                         4
+
+
+===== Page 5 =====
+
+Fundamentally Understanding and Solving RowHammer                                                                       ASPDAC ’23, January 16–19, 2023, Tokyo, Japan
+
+
+forms a basis for methodically comparing different RowHammer                                 and large potential to solve RowHammer at very low cost and very
+defenses.3                                                                                   high efficiency, as we discuss in Section 5.2.
+   More recently, Self-Managing DRAM (SMD) [46, 130] takes a
+very different approach to RowHammer mitigation: SMD modifies
+the DRAM interface such that the DRAM chip can reject an activa-                             5     FUTURE DIRECTIONS
+tion command issued by the memory controller and thus gain time                              Aside from continuing the path of prior research, including discov-
+to perform internal maintenance operations, such as RowHammer                                ering and developing new RowHammer attacks and access patterns,
+mitigation. SMD observes that RowHammer mitigation is essen-                                 we believe there are two major directions that are critical for future
+tially a DRAM maintenance operation that can be best implemented                             research to investigate and amplify efforts in.
+within the DRAM chip based on device-level information avail-
+able to DRAM manufacturers. SMD essentially provides “breathing
+room” (i.e., extra time) to the DRAM chip to autonomously im-                                5.1    Building a Fundamental & Comprehensive
+plement such maintenance operations completely and securely                                         Understanding of RowHammer
+within the DRAM chip, at low overheads. The results are promising:                           Even though there are various detailed characterization studies
+by carefully scheduling RowHammer mitigation actions at a fine                               performed to understand various properties of RowHammer [24,
+enough granularity across different regions of a DRAM chip, in-                              70, 72, 106, 107, 109, 154], there is still a lot we do not know about
+DRAM RowHammer mitigation mechanisms inspired by PARA [72]                                   RowHammer, its properties/sensitivities, and the manifestations of
+and BlockHammer [156] (i.e., SMD-PRP and SMD-PRP+) can lead                                  such properties in cutting-edge and future DRAM chips. It is critical
+to low performance and energy overheads [46].                                                to fundamentally understand the various properties of RowHammer
+   Randomized Row Swap (RRS) [131] and AQUA [134] propose to                                 under different conditions and access patterns, in order to develop
+relocate aggressor rows whose activation counts are close to the                             fully-secure and efficient solutions (as we argue for in Section 5.2).
+RowHammer threshold. These works adopt Graphene’s approach                                      We believe that at least several properties of RowHammer are
+to frequently-activated row detection. When such an aggressor row                            critical to fundamentally understand going forward: sensitivity to 1)
+is detected, RRS swaps it with another randomly chosen row in the                            aging of DRAM chips, 2) environmental conditions (e.g., operating
+same bank, while AQUA moves the aggressor row into a dedicated                               temperature, supply voltage), and 3) memory access patterns. There
+quarantine region that stores the most frequently accessed rows.                             is no detailed characterization study that evaluates if and how the
+By doing so, both RRS and AQUA prevent a DRAM row from being                                 aging of a DRAM chip affects its RowHammer vulnerability. While
+activated enough times to induce a RowHammer bitflip. RRS and                                some environmental conditions and memory access patterns are ex-
+AQUA do not need to know the physical layout of DRAM rows or                                 perimentally demonstrated to significantly affect the RowHammer
+make modifications to DRAM chips and thus they are compatible                                vulnerability of a DRAM chip [70, 75, 107, 154], further research is
+with commodity DRAM chips. On the downside, RRS and AQUA                                     needed to develop a more detailed understanding on the relation-
+both perform data relocation over the memory bus, which requires                             ship between such properties and the RowHammer vulnerability
+off-chip data movement and exacerbates the already pressing data                             of a DRAM chip. This understanding is necessary and critical to
+movement overhead in modern systems [14, 15, 27, 64, 94, 97, 138].                           develop given that all existing RowHammer defense mechanisms
+Row-relocation based RowHammer defenses can be accelerated                                   rely on and future RowHammer defense mechanisms will likely rely
+with in-DRAM data copy support [23, 45, 104, 122, 129, 137, 149].                            on the measured RowHammer vulnerability of DRAM chips (e.g.,
+   Two recent works in 2022 aim to broadly reduce the overheads                              the RowHammer threshold value) to securely prevent bitflips. Un-
+of RowHammer mitigations. HiRA [155] shows that the perfor-                                  derstanding the individual and combined effects of RowHammer’s
+mance overheads of refresh-based in-DRAM RowHammer mitiga-                                   sensitivities to aging of DRAM chips, environmental conditions,
+tion mechanisms can be reduced by performing refreshes in parallel                           and memory access patterns could yield accurate methodologies
+with accesses and other refreshes [22, 74], and this can be done, to                         and infrastructures that can efficiently evaluate the RowHammer
+an extent, in real DRAM chips. Hydra [119] shows that the hard-                              vulnerability of a given DRAM chip and facilitate the development
+ware cost of counters used to track row activations can be reduced                           of holistic solutions that completely prevent RowHammer across
+by storing such counters in DRAM and caching them in small struc-                            the entire computing system. We believe FPGA-based infrastruc-
+tures on chip. These two works highlight the various overheads of                            tures for testing DRAM chips, such as SoftMC [48, 126] and DRAM
+RowHammer mitigation and take a step in improving efficiency of                              Bender [103, 128], are critical to enabling such studies, as they have
+broad classes of mitigation techniques.                                                      been in the past.
+   Many other works from 2020-2023 (e.g., [3, 11, 29, 30, 32, 38, 44,                           We also believe that it is important to more profoundly under-
+47, 60–62, 65, 71, 80, 87, 88, 90, 91, 100, 108, 118, 119, 132, 133, 153,                    stand the effects of RowHammer on real systems and real applica-
+155, 162, 164, 167]) propose various other RowHammer mitigation                              tions, both malicious and non-malicious. To this end, it is critical
+mechanisms. We refer the reader to the individual papers for more                            to do research that pushes the boundaries of generating RowHam-
+detail. As RowHammer is greatly worsening with DRAM technol-                                 mer bitflips on many different types of systems, including mobile
+ogy scaling, we strongly believe that there is still a critical need                         and server CPUs, GPUs, accelerators, FPGAs, as well as different
+3 The BlockHammer paper [156] identifies four major desirable properties of a
+                                                                                             DRAM and memory types, including HBM and emerging NVM
+RowHammer defense, and demonstrates that BlockHammer is the only mechanism
+                                                                                             technologies. Such research can not only discover new problems
+that satisfies all four properties. We refer the reader to Section 9 in [156] for more       and sensitivities but also pave the way to generalized solutions that
+detail.                                                                                      are applicable to many systems.
+
+
+
+
+                                                                                         5
+
+
+===== Page 6 =====
+
+ASPDAC ’23, January 16–19, 2023, Tokyo, Japan                                                                                                                         Mutlu et al.
+
+
+5.2     Designing Extremely Efficient Solutions to                                           6    CONCLUSION
+        RowHammer                                                                            We provided a brief overview of the history and current state of
+As the RowHammer vulnerability worsens with DRAM tech-                                       research and development on the RowHammer vulnerability. We
+nology scaling, developing extremely efficient and fully-secure                              described major future research directions which we believe are
+RowHammer solutions becomes increasingly important. Even                                     critical to fundamentally understanding and solving RowHammer.
+though many prior works develop various software- and hardware-                              We conclude that even though much research and development is
+level RowHammer solutions, these solutions incur non-negligible                              done on the topic, a lot more needs to be done going forward, since
+and increasingly more significant system performance, energy, and                            RowHammer is a fundamental DRAM technology scaling problem
+hardware area overheads as RowHammer vulnerability worsens.                                  that is getting worse in newer DRAM chips that will continue to
+    We believe that developing new low-cost (in terms of perfor-                             be employed across almost all computing systems. We hope the
+mance, energy, area) and provably-secure RowHammer solutions                                 discussion and ideas provided in this paper provide a useful path
+is critical to efficiently preventing RowHammer bitflips going for-                          for the community to find ways of fundamentally understanding
+ward. As DRAM continues to scale, RowHammer bitflips can occur                               and efficiently solving the RowHammer problem.
+at smaller activation counts and thus a benign workload’s DRAM
+row activation rates can approach or even exceed the RowHammer                               ACKNOWLEDGMENTS
+threshold [88, 119, 131, 134, 156]. Thus, a system may experience                            We thank the organizers of the ASP-DAC 2023 conference for the
+bitflips or frequently trigger RowHammer defense mechanisms                                  invitation to contribute this invited paper and deliver an associ-
+even without a malicious party performing a RowHammer attack                                 ated invited talk. We acknowledge many SAFARI Research Group
+in the system, leading to data corruption or significant performance                         Members who have contributed to some of the works described in
+degradation. To avoid such problems, we advocate co-architecting                             this paper, especially Jeremie Kim and Hasan Hassan. We thank all
+of the system and the memory together. A holistic solution that                              members of the SAFARI Research Group for the stimulating and
+takes a system-memory co-design approach (as advocated earlier                               scholarly intellectual environment they provide. We acknowledge
+by [66, 72, 94, 99, 112]) can both prevent RowHammer bitflips and                            the generous gift funding provided by our industrial partners (es-
+detect RowHammer attacks while at the same time avoiding po-                                 pecially by Google, Huawei, Intel, Microsoft, VMware), which has
+tential performance and denial-of-service problems due to both                               been instrumental in enabling the decade+ long research we have
+RowHammer attacks and RowHammer mitigation mechanisms.                                       been conducting on RowHammer. This work was in part supported
+For example, such a system can efficiently relocate/isolate data                             by the Microsoft Swiss Joint Research Center.
+or throttle/relocate/isolate threads such that the performance of
+non-malicious applications is unaffected by RowHammer attacks
+                                                                                             REFERENCES
+or mitigations.4 With worsening RowHammer vulnerability, such                                  [1] M. T. Aga et al., “When Good Protections Go Bad: Exploiting Anti-DoS Measures
+holistic solutions could pave the way to extremely efficient and                                   to Accelerate Rowhammer Attacks,” in HOST, 2017.
+fully-secure defenses against RowHammer.                                                       [2] S. Agarwal et al., “Rowhammer for Spin Torque based Memory: Problem or
+                                                                                                   not?” in INTERMAG, 2018.
+    We also believe that more flexible and efficient RowHammer                                 [3] S. M. Ajorpaz et al., “EVAX: Towards a Practical, Pro-active & Adaptive Archi-
+solutions can take advantage of the wide variation in RowHammer                                    tecture for High Performance & Security,” in MICRO, 2022.
+vulnerability (as shown by [47, 70, 107, 154]) across 1) cells in a                            [4] Apple Inc., “About the Security Content of Mac EFI Security Update 2015-001,”
+                                                                                                   https://support.apple.com/en-us/HT204934, 2015.
+DRAM chip, 2) DRAM chips, 3) manufacturers, 4) DRAM types and                                  [5] Z. B. Aweke et al., “ANVIL: Software-Based Protection Against Next-Generation
+generations, 5) environmental conditions, and 6) data patterns, to                                 Rowhammer Attacks,” in ASPLOS, 2016.
+                                                                                               [6] K. Bains et al., “Row Hammer Refresh Command,” US Patents: 9,117,544 9,236,110
+statically and dynamically adapt to system and workload character-                                 10,210,925, 2015.
+istics. In current practice, RowHammer solutions need to be config-                            [7] K. Bains et al., “Method, Apparatus and System for Providing a Memory Refresh,”
+ured for the DRAM chip with the smallest RowHammer threshold.                                      US Patent: 9,030,903, 2015.
+                                                                                               [8] K. S. Bains and J. B. Halbert, “Distributed Row Hammer Tracking,” US Patent:
+Such solutions are overly aggressive, as they try to cover the worst                               9,299,400, 2016.
+possible case, i.e., the most RowHammer-vulnerable DRAM chip                                   [9] K. S. Bains and J. B. Halbert, “Row Hammer Monitoring Based on Stored Row
+that is acceptable to be sold, and can therefore induce large sys-                                 Hammer Threshold Value,” US Patent: 10,083,737, 2016.
+                                                                                              [10] A. Barenghi et al., “Software-only Reverse Engineering of Physical DRAM
+tem performance and energy overheads that are unnecessary in                                       Mappings for Rowhammer Attacks,” in IVSW, 2018.
+the common case. We believe future RowHammer solutions need                                   [11] T. Bennett et al., “Panopticon: A Complete In-DRAM Rowhammer Mitigation,”
+                                                                                                   in DRAMSec, 2021.
+to be easily (re)configurable or programmable, such that they can                             [12] S. Bhattacharya and D. Mukhopadhyay, “Curious Case of RowHammer: Flipping
+statically and dynamically adapt to system and workload charac-                                    Secret Exponent Bits using Timing Analysis,” in CHES, 2016.
+teristics, and there is significant research needed towards enabling                          [13] S. Bhattacharya and D. Mukhopadhyay, “Advanced Fault Attacks in Software:
+                                                                                                   Exploiting the Rowhammer Bug,” in Fault Tolerant Architectures for Cryptography
+such flexible and efficient solutions.5                                                            and Hardware Security, 2018.
+                                                                                              [14] A. Boroumand et al., “Google Neural Network Models for Edge Devices: Ana-
+4 BlockHammer [127, 156] takes a step towards this direction by throttling the threads
+                                                                                                   lyzing and Mitigating Machine Learning Inference Bottlenecks,” in PACT, 2021.
+that are identified as RowHammer attacks. We believe that there is more to be done            [15] A. Boroumand et al., “Google Workloads for Consumer Devices: Mitigating Data
+to further reduce the performance problems due to both Rowhammer attacks and                       Movement Bottlenecks,” in ASPLOS, 2018.
+RowHammer mitigations.                                                                        [16] E. Bosman et al., “Dedup Est Machina: Memory Deduplication as An Advanced
+5 We believe the PARA defense mechanism [72] could be a suitable starting point for                Exploitation Vector,” in S&P, 2016.
+exploring such (re)configurable yet low-cost solutions due to its 1) fixed hardware           [17] R. Boyer and J. S. Moore, “A Fast Majority Vote Algorithm,” Technical Report
+cost that does not increase with worsening RowHammer vulnerability and 2) easily                   35, Institute for Computer Science, UT Austin, 1982.
+reconfigurable nature where updating the probability threshold directly tunes its             [18] F. Brasser et al., “Can’t Touch This: Software-Only Mitigation Against Rowham-
+aggressiveness, as described in our recent HiRA work at MICRO 2022 [155].                          mer Attacks Targeting Kernel Memory,” in USENIX Security, 2017.
+
+
+
+
+                                                                                         6
+
+
+===== Page 7 =====
+
+Fundamentally Understanding and Solving RowHammer                                                                              ASPDAC ’23, January 16–19, 2023, Tokyo, Japan
+
+
+[19] L. Bu et al., “SRASA: a Generalized Theoretical Framework for Security and               [56] JEDEC, JEP300-1: Near-Term DRAM Level RowHammer Mitigation, 2021.
+     Reliability Analysis in Computing Systems,” Journal of Hardware and Systems              [57] JEDEC, JEP301-1: System Level RowHammer Mitigation, 2021.
+     Security, 2018.                                                                          [58] JEDEC, “JEDEC Global Standards for the Microelectronics Industry,” https:
+[20] W. Burleson et al., “Invited: Who is the Major Threat to Tomorrow’s Security?                 //www.jedec.org/, 2022.
+     You, the Hardware Designer,” in DAC, 2016.                                               [59] S. Ji et al., “Pinpoint Rowhammer: Suppressing Unwanted Bit Flips on Rowham-
+[21] S. Carre et al., “OpenSSL Bellcore’s Protection Helps Fault Attack,” in DSD, 2018.            mer Attacks,” in ASIACCS, 2019.
+[22] K. K. Chang et al., “Improving DRAM Performance by Parallelizing Refreshes               [60] B. K. Joardar et al., “Learning to Mitigate RowHammer Attacks,” in DATE, 2022.
+     with Accesses,” in HPCA, 2014.                                                           [61] B. K. Joardar et al., “Machine Learning-based Rowhammer Mitigation,” TCAD,
+[23] K. K. Chang et al., “Low-Cost Inter-Linked Subarrays (LISA): Enabling Fast                    2022.
+     Inter-Subarray Data Movement in DRAM,” in HPCA, 2016.                                    [62] J. Juffinger et al., “CSI: Rowhammer–Cryptographic Security and Integrity
+[24] Y. Cohen et al., “HammerScope: Observing DRAM Power Consumption Using                         against Rowhammer (to appear),” in S&P, 2023.
+     Rowhammer,” in CCS, 2022.                                                                [63] M. Kaczmarski, “Thoughts on Intel Xeon E5-2600 v2 Product Family Performance
+[25] L. Cojocar et al., “Are We Susceptible to Rowhammer? An End-to-End Method-                    Optimisation – Component Selection Guidelines,” http://infobazy.gda.pl/2014/
+     ology for Cloud Providers,” in S&P, 2020.                                                     pliki/prezentacje/d2s2e4-Kaczmarski-Optymalna.pdf, page 13, 2014.
+[26] L. Cojocar et al., “Exploiting Correcting Codes: On the Effectiveness of ECC             [64] S. Kanev et al., “Profiling a Warehouse-Scale Computer,” in ISCA, 2015.
+     Memory Against Rowhammer Attacks,” in S&P, 2019.                                         [65] I. Kang et al., “CAT-TWO: Counter-Based Adaptive Tree, Time Window Opti-
+[27] G. F. de Oliveira et al., “DAMOV: A New Methodology and Benchmark Suite                       mized for DRAM Row-Hammer Prevention,” IEEE Access, 2020.
+     for Evaluating Data Movement Bottlenecks ,” IEEE Access, 2021.                           [66] U. Kang et al., “Co-Architecting Controllers and DRAM to Enhance DRAM
+[28] F. de Ridder et al., “SMASH: Synchronized Many-Sided Rowhammer Attacks                        Process Scaling,” in The Memory Forum, 2014.
+     from JavaScript,” in USENIX Security, 2021.                                              [67] R. M. Karp et al., “A Simple Algorithm for Finding Frequent Elements in Streams
+[29] F. Devaux and R. Ayrignac, “Method and Circuit for Protecting a DRAM Memory                   and Bags,” Transactions on Database Systems, 2003.
+     Device from the Row Hammer Effect,” US Patent: 10,885,966, 2021.                         [68] M. N. I. Khan and S. Ghosh, “Analysis of Row Hammer Attack on STTRAM,” in
+[30] S. Enomoto et al., “Efficient Protection Mechanism for CPU Cache Flush Instruc-               ICCD, 2018.
+     tion Based Attacks,” IEICE Transactions on Information and Systems, 2022.                [69] D.-H. Kim et al., “Architectural Support for Mitigating Row Hammering in
+[31] M. Fahr Jr et al., “When Frodo Flips: End-to-End Key Recovery on FrodoKEM                     DRAM Memories,” IEEE CAL, 2014.
+     via Rowhammer,” CCS, 2022.                                                               [70] J. S. Kim et al., “Revisiting RowHammer: An Experimental Analysis of Modern
+[32] A. Fakhrzadehgan et al., “SafeGuard: Reducing the Security Risk from Row-                     Devices and Mitigation Techniques,” in ISCA, 2020.
+     Hammer via Low-Cost Integrity Protection,” in HPCA, 2022.                                [71] M. J. Kim et al., “Mithril: Cooperative Row Hammer Protection on Commodity
+[33] M. Fang et al., “Computing Iceberg Queries Efficiently,” VLDB, 1998.                          DRAM Leveraging Managed Refresh,” in HPCA, 2022.
+[34] M. Fischer and S. Salzberg, “Finding a Majority Among N Votes: Solution to               [72] Y. Kim et al., “Flipping Bits in Memory Without Accessing Them: An Experi-
+     Problem 81-5,” Journal of Algorithms, 1982.                                                   mental Study of DRAM Disturbance Errors,” in ISCA, 2014.
+[35] A. P. Fournaris et al., “Exploiting Hardware Vulnerabilities to Attack Embedded          [73] Y. Kim et al., “Ramulator: A Fast and Extensible DRAM Simulator,” CAL, 2015.
+     System Devices: A Survey of Potent Microarchitectural Attacks,” Electronics,             [74] Y. Kim et al., “A Case for Exploiting Subarray-Level Parallelism (SALP) in DRAM,”
+     2017.                                                                                         in ISCA, 2012.
+[36] T. Fridley and O. Santos, “Mitigations Available for the DRAM Row Hammer                 [75] A. Kogler et al., “Half-Double: Hammering From the Next Row Over,” in USENIX
+     Vulnerability,” http://blogs.cisco.com/security/mitigations-available-for-the-                Security, 2022.
+     dram-row-hammer-vulnerability, March 2015.                                               [76] R. K. Konoth et al., “ZebRAM: Comprehensive and Compatible Software Protec-
+[37] P. Frigo et al., “Grand Pwning Unit: Accelerating Microarchitectural Attacks                  tion Against Rowhammer Attacks,” in OSDI, 2018.
+     with the GPU,” in S&P, 2018.                                                             [77] A. Kwong et al., “RAMBleed: Reading Bits in Memory Without Accessing Them,”
+[38] P. Frigo et al., “TRRespass: Exploiting the Many Sides of Target Row Refresh,”                in S&P, 2020.
+     in S&P, 2020.                                                                            [78] E. Lee et al., “TWiCe: Preventing Row-Hammering by Exploiting Time Window
+[39] P. R. Genssler et al., “On the Reliability of FeFET On-Chip Memory,” TC, 2022.                Counters,” in ISCA, 2019.
+[40] H. Gomez et al., “DRAM Row-hammer Attack Reduction using Dummy Cells,”                   [79] E. Lee et al., “TWiCe: Time Window Counter Based Row Refresh to Prevent
+     in NORCAS, 2016.                                                                              Row-Hammering,” IEEE CAL, 2018.
+[41] Z. Greenfield et al., “Row Hammer Condition Monitoring,” US Patent: 8,938,573,           [80] G.-H. Lee et al., “CryoGuard: A Near Refresh-Free Robust DRAM Design for
+     2015.                                                                                         Cryogenic Computing,” in ISCA, 2021.
+[42] D. Gruss et al., “Another Flip in the Wall of Rowhammer Defenses,” in S&P,               [81] J. Lee, “Green Memory Solution,” Samsung Electronics, Investor’s Forum, 2014.
+     2018.                                                                                    [82] Lenovo, “Row Hammer Privilege Escalation,” https://support.lenovo.com/us/en/
+[43] D. Gruss et al., “Rowhammer.js: A Remote Software-Induced Fault Attack in                     product_security/row_hammer, 2015.
+     Javascript,” in DIMVA, 2016.                                                             [83] H. Li et al., “Write Disturb Analyses on Half-Selected Cells of Cross-Point RRAM
+[44] J.-W. Han et al., “Surround Gate Transistor With Epitaxially Grown Si Pillar and              Arrays,” in IRPS, 2014.
+     Simulation Study on Soft Error and Rowhammer Tolerance for DRAM,” IEEE                   [84] M. Lipp et al., “Nethammer: Inducing Rowhammer Faults Through Network
+     TED, 2021.                                                                                    Requests,” arXiv:1805.04956, 2018.
+[45] H. Hassan et al., “CROW: A Low-Cost Substrate for Improving DRAM Perfor-                 [85] J. Liu et al., “RAIDR: Retention-Aware Intelligent DRAM Refresh,” in ISCA, 2012.
+     mance, Energy Efficiency, and Reliability,” in ISCA, 2019.                               [86] L. Liu et al., “Generating Robust DNN with Resistance to Bit-Flip based Adver-
+[46] H. Hassan et al., “A Case for Self-Managing DRAM Chips: Improving Perfor-                     sarial Weight Attack,” IEEE TC, 2022.
+     mance, Efficiency, Reliability, and Security via Autonomous in-DRAM Mainte-              [87] K. Loughlin et al., “Stop! Hammer Time: Rethinking Our Approach to Rowham-
+     nance Operations,” arXiv:2207.13358, 2022.                                                    mer Mitigations,” in HotOS, 2021.
+[47] H. Hassan et al., “Uncovering In-DRAM RowHammer Protection Mechanisms: A                 [88] K. Loughlin et al., “MOESI-Prime: Preventing Coherence-Induced Hammering
+     New Methodology, Custom RowHammer Patterns, and Implications,” in MICRO,                      in Commodity Workloads,” in ISCA, 2022.
+     2021.                                                                                    [89] I. A. Lovecruft, “Tweet about RowHammer Mitigation on x210,” https://twitter.
+[48] H. Hassan et al., “SoftMC: A Flexible and Practical Open-Source Infrastructure                com/isislovecruft/status/1021939922754723841, 2018.
+     for Enabling Experimental DRAM Studies,” in HPCA, 2017.                                  [90] E. Manzhosov et al., “Revisiting Residue Codes for Modern Memories,” in MICRO,
+[49] Hewlett-Packard Enterprise, “HP Moonshot Component Pack Version 2015.05.0,”                   2022.
+     http://h17007.www1.hp.com/us/en/enterprise/servers/products/moonshot/                    [91] M. Marazzi et al., “ProTRR: Principled yet Optimal In-DRAM Target Row Refresh,”
+     component-pack/index.aspx, 2015.                                                              in S&P, 2022.
+[50] S. Hong et al., “Terminal Brain Damage: Exposing the Graceless Degradation               [92] Micron Inc., SDRAM, 4Gb: x4, x8, x16 DDR4 SDRAM Features, 2014.
+     in Deep Neural Networks Under Hardware Fault Attacks,” in USENIX Security,               [93] J. Misra and D. Gries, “Finding Repeated Elements,” Science of Computer Pro-
+     2019.                                                                                         gramming, 1982.
+[51] G. Irazoqui et al., “MASCAT: Stopping Microarchitectural Attacks Before Exe-             [94] O. Mutlu, “Memory Scaling: A Systems Architecture Perspective,” in IMW, 2013.
+     cution,” IACR Cryptology, 2016.                                                          [95] O. Mutlu, “The RowHammer Problem and Other Issues We May Face as Memory
+[52] N. Izzo, “Reliably Achieving and Efficiently Preventing Rowhammer Attacks,”                   Becomes Denser,” in DATE, 2017.
+     Ph.D. dissertation, Politecnico Milano, 2017.                                            [96] O. Mutlu, “RowHammer and Beyond,” in COSADE, 2019.
+[53] Y. Jang et al., “SGX-Bomb: Locking Down the Processor via Rowhammer Attack,”             [97] O. Mutlu et al., “A Modern Primer on Processing in Memory,” in Emerging
+     in SysTEX, 2017.                                                                              Computing: From Devices to Systems — Looking Beyond Moore and Von Neumann.
+[54] P. Jattke et al., “Blacksmith: Scalable Rowhammering in the Frequency Domain,”                Springer, 2021. [Online]. Available: https://arxiv.org/abs/2012.03112
+     in S&P, 2022.                                                                            [98] O. Mutlu and J. Kim, “RowHammer: A Retrospective,” IEEE TCAD Special Issue
+[55] JEDEC, JESD79-5: DDR5 SDRAM Standard, 2020.                                                   on Top Picks in Hardware and Embedded Security, 2019.
+
+
+
+
+                                                                                          7
+
+
+===== Page 8 =====
+
+ASPDAC ’23, January 16–19, 2023, Tokyo, Japan                                                                                                                             Mutlu et al.
+
+
+ [99] O. Mutlu and L. Subramanian, “Research Problems and Opportunities in Memory               [132] S. Saroiu and A. Wolman, “How to Configure Row-Sampling-Based Rowhammer
+      Systems,” SUPERFRI, 2014.                                                                       Defenses,” DRAMSec, 2022.
+[100] A. Naseredini et al., “ALARM: Active LeArning of Rowhammer Mitigations,”                  [133] S. Saroiu et al., “The Price of Secrecy: How Hiding Internal DRAM Topologies
+      https://users.sussex.ac.uk/~mfb21/rh-draft.pdf, 2022.                                           Hurts Rowhammer Defenses,” in IRPS, 2022.
+[101] K. Ni et al., “Write Disturb in Ferroelectric FETs and Its Implication for 1T-FeFET       [134] A. Saxena et al., “AQUA: Scalable Rowhammer Mitigation by Quarantining
+      AND Memory Arrays,” IEEE EDL, 2018.                                                             Aggressor Rows at Runtime,” in MICRO, 2022.
+[102] S. Oh and J. Kim, “Reliable Rowhammer Attack and Mitigation Based on Reverse              [135] M. Seaborn and T. Dullien, “Exploiting the DRAM Rowhammer Bug to Gain
+      Engineering Memory Address Mapping Algorithms,” in WISA, 2018.                                  Kernel Privileges,” Black Hat, 2015.
+[103] A. Olgun et al., “DRAM Bender: An Extensible and Versatile FPGA-based Infras-             [136] M. Seaborn and T. Dullien, “Exploiting the DRAM Rowhammer Bug to Gain
+      tructure to Easily Test State-of-the-art DRAM Chips,” arXiv:2211.05838 [cs.AR],                 Kernel Privileges,” http://googleprojectzero.blogspot.com.tr/2015/03/exploiting-
+      2022.                                                                                           dram-rowhammer-bug-to-gain.html, 2015.
+[104] A. Olgun et al., “PiDRAM: A Holistic End-to-end FPGA-based Framework for                  [137] V. Seshadri et al., “RowClone: Fast and Energy-Efficient In-DRAM Bulk Data
+      Processing-in-DRAM,” TACO, 2022.                                                                Copy and Initialization,” in MICRO, 2013.
+[105] OpenSSH, “OpenSSH: Keeping Your Communiqués Secret,” https://www.                         [138] V. Seshadri et al., “Ambit: In-memory Accelerator for Bulk Bitwise Operations
+      openssh.com/, 2017.                                                                             using Commodity DRAM Technology,” in MICRO, 2017.
+[106] L. Orosa et al., “SpyHammer: Using RowHammer to Remotely Spy on Tempera-                  [139] S. M. Seyedzadeh et al., “Mitigating Wordline Crosstalk Using Adaptive Trees
+      ture,” arXiv:2210.04084, 2022.                                                                  of Counters,” in ISCA, 2018.
+[107] L. Orosa et al., “A Deeper Look into RowHammer’s Sensitivities: Experimental              [140] S. M. Seyedzadeh et al., “Counter-based Tree Structure for Row Hammering
+      Analysis of Real DRAM Chips and Implications on Future Attacks and Defenses,”                   Mitigation in DRAM,” IEEE CAL, 2017.
+      in MICRO, 2021.                                                                           [141] M. Son et al., “Making DRAM Stronger Against Row Hammering,” in DAC, 2017.
+[108] J. H. Park et al., “Row Hammer Reduction Using a Buried Insulator in a Buried             [142] A. Tatar et al., “Defeating Software Mitigations Against Rowhammer: A Surgical
+      Channel Array Transistor,” IEEE TED, 2022.                                                      Precision Hammer,” in RAID, 2018.
+[109] K. Park et al., “Experiments and Root Cause Analysis for Active-precharge                 [143] A. Tatar et al., “Throwhammer: Rowhammer Attacks Over the Network and
+      Hammering Fault in DDR3 SDRAM under 3× nm Technology,” Microelectronics                         Defenses,” in USENIX ATC, 2018.
+      Reliability, 2016.                                                                        [144] Y. Tobah et al., “SpecHammer: Combining Spectre and Rowhammer for New
+[110] K. Park et al., “Statistical Distributions of Row-hammering Induced Failures in                 Speculative Attacks,” in S&P, 2022.
+      DDR3 Components,” Microelectronics Reliability, 2016.                                     [145] M. C. Tol et al., “Toward Realistic Backdoor Injection Attacks on DNNs using
+[111] Y. Park et al., “Graphene: Strong yet Lightweight Row Hammer Protection,” in                    RowHammer,” arXiv:2110.07683, 2022.
+      MICRO, 2020.                                                                              [146] V. van der Veen et al., “Drammer: Deterministic Rowhammer Attacks on Mobile
+[112] M. Patel et al., “A Case for Transparent Reliability in DRAM Systems,”                          Platforms,” in CCS, 2016.
+      arXiv:2204.10378, 2022. [Online]. Available: https://arxiv.org/abs/2204.10378             [147] V. van der Veen et al., “GuardION: Practical Mitigation of DMA-Based Rowham-
+[113] P. Pessl et al., “DRAMA: Exploiting DRAM Addressing for Cross-CPU Attacks,”                     mer Attacks on ARM,” in DIMVA, 2018.
+      in USENIX Security, 2016.                                                                 [148] A. J. Walker et al., “On DRAM RowHammer and the Physics on Insecurity,” IEEE
+[114] D. Poddebniak et al., “Attacking Deterministic Signature Schemes using Fault                    TED, 2021.
+      Attacks,” in EuroS&P, 2018.                                                               [149] Y. Wang et al., “FIGARO: Improving System Performance via Fine-Grained
+[115] S. Qazi et al., “Half-Double: Next-Row-Over Assisted RowHammer,” https://                       In-DRAM Data Relocation and Caching,” in MICRO, 2020.
+      github.com/google/hammer-kit/blob/main/20210525_half_double.pdf, 2021.                    [150] Z. Weissman et al., “JackHammer: Efficient Rowhammer on Heterogeneous
+[116] S. Qazi et al., “Introducing Half-Double New Hammering Technique for DRAM                       FPGA–CPU Platforms,” arXiv:1912.11523, 2020.
+      RowHammer Bug,” https://security.googleblog.com/2021/05/introducing-half-                 [151] X.-C. Wu et al., “Protecting Page Tables from RowHammer Attacks using Mono-
+      double-new-hammering.html, 2021.                                                                tonic Pointers in DRAM True-Cells,” ASPLOS, 2019.
+[117] R. Qiao et al., “A New Approach for RowHammer Attacks,” in HOST, 2016.                    [152] Y. Xiao et al., “One Bit Flips, One Cloud Flops: Cross-VM Row Hammer Attacks
+[118] M. Qureshi, “Rethinking ECC in the Era of Row-Hammer,” DRAMSec, 2021.                           and Privilege Escalation,” in USENIX Security, 2016.
+[119] M. Qureshi et al., “Hydra: Enabling Low-Overhead Mitigation of Row-Hammer                 [153] A. G. Yağlıkcı et al., “Security Analysis of the Silver Bullet Technique for
+      at Ultra-Low Thresholds via Hybrid Tracking,” in ISCA, 2022.                                    RowHammer Prevention,” arXiv:2106.07084, 2021.
+[120] A. S. Rakin et al., “DeepSteal: Advanced Model Extractions Leveraging Efficient           [154] A. G. Yağlıkcı et al., “Understanding RowHammer Under Reduced Wordline
+      Weight Stealing in Memories,” in S&P, 2022.                                                     Voltage: An Experimental Study Using Real DRAM Devices,” in DSN, 2022.
+[121] K. Razavi et al., “Flip Feng Shui: Hammering a Needle in the Software Stack,” in          [155] A. G. Yağlikci et al., “HiRA: Hidden Row Activation for Reducing Refresh Latency
+      USENIX Security, 2016.                                                                          of Off-the-Shelf DRAM Chips,” in MICRO, 2022.
+[122] S. H. S. Rezaei et al., “NoM: Network-on-Memory for Inter-Bank Data Transfer              [156] A. G. Yağlıkcı et al., “BlockHammer: Preventing RowHammer at Low Cost by
+      in Highly-Banked Memories,” IEEE CAL, 2020.                                                     Blacklisting Rapidly-Accessed DRAM Rows,” in HPCA, 2021.
+[123] S.-W. Ryu et al., “Overcoming the Reliability Limitation in the Ultimately Scaled         [157] T. Yang and X.-W. Lin, “Trap-Assisted DRAM Row Hammer Effect,” EDL, 2019.
+      DRAM using Silicon Migration Technique by Hydrogen Annealing,” in IEDM,                   [158] F. Yao et al., “Deephammer: Depleting the Intelligence of Deep Neural Networks
+      2017.                                                                                           Through Targeted Chain of Bit Flips,” in USENIX Security, 2020.
+[124] SAFARI Research Group, “Ramulator — GitHub Repository,” https://github.com/               [159] J. M. You and J.-S. Yang, “MRLoc: Mitigating Row-Hammering Based on Memory
+      CMU-SAFARI/ramulator.                                                                           Locality,” in DAC, 2019.
+[125] SAFARI Research Group, “RowHammer — GitHub Repository,” https://github.                   [160] D. Yun et al., “Study of TID Effects on One Row Hammering using Gamma in
+      com/CMU-SAFARI/rowhammer, 2014.                                                                 DDR4 SDRAMs,” in IRPS, 2018.
+[126] SAFARI Research Group, “SoftMC — GitHub Repository,” https://github.com/                  [161] Z. Zhang et al., “Triggering Rowhammer Hardware Faults on ARM: A Revisit,”
+      CMU-SAFARI/softmc, 2017.                                                                        in ASHES, 2018.
+[127] SAFARI Research Group, “BlockHammer — GitHub Repository,” https://github.                 [162] Z. Zhang et al., “Leveraging EM Side-Channel Information to Detect Rowham-
+      com/CMU-SAFARI/blockhammer, 2021.                                                               mer Attacks,” in S&P, 2020.
+[128] SAFARI Research Group, “DRAM Bender — GitHub Repository,” https://github.                 [163] Z. Zhang et al., “PTHammer: Cross-User-Kernel-Boundary Rowhammer
+      com/CMU-SAFARI/DRAM-Bender, 2022.                                                               Through Implicit Accesses,” in MICRO, 2020.
+[129] SAFARI Research Group, “PiDRAM Source Code,” https://github.com/CMU-                      [164] Z. Zhang et al., “SoftTRR: Protect Page Tables against Rowhammer Attacks
+      SAFARI/PiDRAM, 2022.                                                                            using Software-only Target Row Refresh,” in USENIX ATC, 2022.
+[130] SAFARI Research Group, “Self-Managing DRAM (SMD) Source Code,” https:                     [165] Z. Zhang et al., “Implicit Hammer: Cross-Privilege-Boundary Rowhammer
+      //github.com/CMU-SAFARI/SelfManagingDRAM, 2022.                                                 through Implicit Accesses,” IEEE TDSC, 2022.
+[131] G. Saileshwar et al., “Randomized Row-Swap: Mitigating Row Hammer by                      [166] M. Zheng et al., “TrojViT: Trojan Insertion in Vision Transformers,”
+      Breaking Spatial Correlation Between Aggressor and Victim Rows,” in ASPLOS,                     arXiv:2208.13049, 2022.
+      2022.                                                                                     [167] R. Zhou et al., “LT-PIM: An LUT-based Processing-in-DRAM Architecture with
+                                                                                                      RowHammer Self-Tracking,” IEEE CAL, 2022.
+
+
+
+
+                                                                                            8

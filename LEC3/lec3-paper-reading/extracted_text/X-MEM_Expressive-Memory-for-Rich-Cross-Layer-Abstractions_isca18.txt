@@ -1,0 +1,1281 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/X-MEM_Expressive-Memory-for-Rich-Cross-Layer-Abstractions_isca18.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/X-MEM_Expressive-Memory-for-Rich-Cross-Layer-Abstractions_isca18.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+                 A Case for Richer Cross-layer Abstractions:
+            Bridging the Semantic Gap with Expressive Memory
+ Nandita Vijaykumar†§ Abhilasha Jain† Diptesh Majumdar† Kevin Hsieh† Gennady Pekhimenko‡
+             Eiman Ebrahimiℵ Nastaran Hajinazaru Phillip B. Gibbons† Onur Mutlu§†
+               † Carnegie Mellon University                          ‡ University of Toronto                 ℵ NVIDIA
+                                    u Simon Fraser University                      § ETH Zürich
+
+
+
+                          Abstract                                       There is, in other words, a disconnect or semantic gap be-
+   This paper makes a case for a new cross-layer interface, Ex-       tween the levels of the computing stack when it comes to
+pressive Memory (XMem), to communicate higher-level pro-              conveying higher-level program semantics from the appli-
+gram semantics from the application to the system software            cation to the wide range of system-level and architectural
+and hardware architecture. XMem provides (i) a flexible and           components that aim to improve performance. While the
+extensible abstraction, called an Atom, enabling the application      implications of the disconnect are far-reaching, in this work,
+to express key program semantics in terms of how the program          we narrow the focus to a critical component in determining
+accesses data and the attributes of the data itself, and (ii) new     the overall system efficiency, the memory subsystem. Modern
+cross-layer interfaces to make the expressed higher-level infor-      systems employ a large variety of components to optimize
+mation available to the underlying OS and architecture. By            memory performance (e.g., prefetchers, caches, memory con-
+providing key information that is otherwise unavailable, XMem         trollers). The semantic gap has two important implications:
+exposes a new, rich view of the program data to the OS and               Implication 1. The OS and hardware memory subsystem
+the different architectural components that optimize memory           components are forced to predict or infer program behavior
+system performance (e.g., caches, memory controllers).                when optimizing for performance. This is challenging be-
+   By bridging the semantic gap between the application and           cause: (i) each component (e.g., L1 cache, memory controller)
+the underlying memory resources, XMem provides two key ben-           sees only a localized view of the data accesses made by the
+efits. First, it enables architectural/system-level techniques to     application and misses the bigger picture, (ii) specialized hard-
+leverage key program semantics that are challenging to pre-           ware may be required for each component optimizing for
+dict or infer. Second, it improves the efficacy and portability of    memory, and (iii) the optimizations are typically only reactive
+software optimizations by alleviating the need to tune code for       as the program behavior is not known a priori.
+specific hardware resources (e.g., cache space). While XMem              Implication 2. Software is forced to optimize code to the
+is designed to enhance and enable a wide range of memory              specifics of the underlying architecture (e.g., by tuning tile
+optimizations, we demonstrate the benefits of XMem using two          size to fit a specific cache size). Memory resource availability,
+use cases: (i) improving the performance portability of software-     however, can change or be unknown (e.g., in virtualized envi-
+based cache optimization by expressing the semantics of data          ronments or in the presence of co-running applications). As
+locality in the optimization and (ii) improving the performance       a result, software optimizations are often unable to make ac-
+of OS-based page placement in DRAM by leveraging the seman-           curate assumptions regarding memory resource availability,
+tics of data structures and their access properties.                  leading to significant challenges in performance portability.
+                                                                         The challenges of predicting program behavior and hence
+1. Introduction                                                       the benefits of knowledge from software in memory system
+                                                                      optimization are well known [1–22]. There have been numer-
+   Traditionally, the key interfaces between the software stack
+                                                                      ous hardware-software cooperative techniques proposed in
+and the architecture (the ISA and virtual memory) have been
+                                                                      the form of fine-grain hints implemented as new ISA instruc-
+primarily designed to convey program functionality to en-
+                                                                      tions (to aid cache replacement, prefetching, etc.) [1–13], pro-
+sure the program is executed as required by software. An
+                                                                      gram annotations or directives to convey program semantics
+application is converted into ISA instructions and a series of
+                                                                      and programmer intent [3, 14–17], or hardware-software co-
+accesses to virtual memory for execution in hardware. The
+                                                                      designs for specific optimizations [18–22]. These approaches,
+application is, hence, stripped down to the basics of what is
+                                                                      however, have two significant shortcomings. First, they are
+necessary to execute the program correctly, and the higher-
+                                                                      designed for a specific memory optimization and are limited
+level semantics of the program are lost. For example, even
+                                                                      in their implementation to address only challenges specific
+the simple higher-level notion of different data structures in a
+                                                                      to that optimization. As a result, they require changes across
+program is not available to the OS or hardware architecture,
+                                                                      the stack for a single optimization (e.g., cache replacement,
+which deal only with virtual/physical pages and addresses.
+                                                                      prefetching, or data placement). Second, they are often very
+While the higher-level semantics of data structures may be
+                                                                      specific directives to instruct a particular component to be-
+irrelevant for correct execution, these semantics could prove
+                                                                      have in a certain manner (e.g., instructions to prefetch spe-
+very useful to the system for performance optimization.
+                                                                      cific data or prioritize certain cache lines). These specific
+
+
+===== Page 2 =====
+
+directives create portability and programmability concerns                 we first demonstrate the benefits of XMem in enhancing the
+because these optimizations may not apply across different                 portability of software-based cache optimizations (§5). The
+architectures and they require significant effort to understand            effectiveness of such optimizations (e.g., cache tiling [60–66])
+the hardware architecture to ensure the directives are useful.             is highly susceptible to changes in cache space availability:
+    Our Goal. In this work, we ask the question: can we design             If the available cache space at runtime is less than what the
+a unifying general abstraction and a cohesive set of interfaces            program was optimized for, cache thrashing often ensues.
+between the levels of the system stack to communicate key pro-             We demonstrate that by leveraging data locality semantics
+gram semantics from the application to all the system-level                (working set size and data reuse), we can enhance and coordi-
+and architectural components? In response, we present Ex-                  nate the cache management and prefetching policies to avoid
+pressive Memory (XMem), a rich cross-layer interface that                  cache thrashing and ensure high hit rates are retained, thereby
+provides a new view of the program data to the entire system.              improving the portability of the optimization. We demon-
+Designing XMem in a low-overhead, extensible, and general                  strate that when software optimizations inaccurately assume
+manner requires addressing several non-trivial challenges                  available cache space, XMem reduces the loss in performance
+involving conflicting tradeoffs between generality and over-               from 55% in the baseline system to 6% on average. Second, we
+head, programmability and effectiveness (§2.2). In this paper,             demonstrate the performance benefits of intelligent OS-based
+we provide a first attempt at designing a new end-to-end                   page placement in DRAM by leveraging knowledge of data
+system to achieve our goal while addressing these challenges.              structures and their access semantics (§6). XMem improves
+    Expressive Memory comprises two key components:                        performance by (i) isolating regular data structures with high
+    (1) The Atom. We introduce a new hardware-software                     row buffer locality in separate banks and (ii) spreading out
+abstraction, the atom, which is a region of virtual memory                 irregular data structures across many banks/channels to max-
+with a set of well-defined properties (§3.1). Each atom maps               imize parallelism. Our experimental evaluation demonstrates
+to data that is semantically similar, e.g., a data structure, a tile       an 8.5% average performance improvement (up to 31.9%) over
+in an array, or any pool of data with similar properties. Pro-             state-of-the-art techniques.
+grams explicitly specify atoms that are communicated to the                   More generally, Table 1 presents nine example memory
+OS and hardware. Atoms carry program information such as:                  optimizations and the benefits XMem can provide over prior
+(i) data properties (e.g., data type, sparsity, approximability),          works that propose these optimizations in a specialized man-
+(ii) access properties (e.g., access pattern, read-write charac-           ner. XMem’s benefits arise in three ways. First, it provides a
+teristics), and (iii) data locality (e.g., data reuse, working set).       unifying, central interface for a wide range of optimizations
+The atom can also track properties of data that change during              that use many of the same semantics. Second, it partitions
+program execution.                                                         data into pools of semantically-similar data. This enables
+    (2) System and Cross-layer Interfaces. Figure 1                        using different policies (e.g., cache policies, compression al-
+presents an overview of this component: (i) The interface to               gorithms) for different pools of data. Third, it enhances op-
+the application enables software to explicitly express atoms               timizations by providing higher-level semantics that (i) are
+via program annotation, static compiler analysis, or dynamic               unavailable locally to each component at runtime (e.g., dis-
+profiling ¶; (ii) The XMem system enables summarizing,                     tinguishing between data structures, data properties), (ii) are
+conveying, and storing the expressed atoms ·; (iii) The in-                challenging to accurately infer (e.g., working set size, data
+terface to the OS and architectural components (e.g., caches,              reuse) or (iii) require profiling/monitoring to determine (e.g.,
+prefetchers) provides key supplemental information to aid                  read-only/read-write, private/shared data characteristics).
+optimization ¸. This interface enables any system/architec-                   This paper makes the following contributions:
+tural component to simply query the XMem system for the                    • This work is the first attempt to design a holistic and general
+higher-level semantics attached to a memory address ¹.                        cross-layer interface to communicate higher-level program
+             Application Expression                                           semantics to the different system and architectural compo-
+                                                                              nents in order to enable more effective memory optimiza-
+    (Annotation/Profiling/Static Analysis)
+                                                                              tions in modern CPUs.
+                          Interface to                                     • To this end, we introduce XMem, which comprises a new
+                  1       Application                                         software-hardware abstraction—the Atom—and a full end-
+                                                      Expressive
+   2    Summarize + Convey + Save                                             to-end system design. XMem (i) is general and flexible
+                                                      Memory
+                                                                              enough to cover a wide range of program semantics and
+                                                      (XMem)
+       4 Query
+                         Interface to 3                                       use cases, (ii) is completely decoupled from system function-
+                         System/Architecture                                  ality and affects only performance not correctness, (iii) can
+                                                                              react to phase changes in data properties during execution,
+        OS        Optimization                                                and (iv) has a low-overhead implementation.
+                                Memory        DRAM                         • We quantitatively demonstrate the benefits of using XMem
+    Prefetcher     Caches
+                               Controller     Cache     ...
+                                                                              to (i) improve the portability of software-based cache opti-
+                                                                              mizations by leveraging data locality semantics and (ii) en-
+       Figure 1: XMem: the system and interfaces.
+                                                                              hance OS-based DRAM placement by leveraging semantics
+   Use Cases. XMem is designed to be a general interface                      of data structures and their access properties. We highlight
+to aid a wide range of memory optimizations. In this paper,                   seven other use cases (Table 1).
+
+
+                                                                       2
+
+
+===== Page 3 =====
+
+                            Table 1: Summary of the example memory optimizations that XMem aids.
+Memory               Example semantics provided by                 Example Benefits of XMem
+optimization         XMem (described in §3.3)
+Cache                (i) Distinguishing between data               Enables: (i) applying different caching policies to different data structures or pools of data;
+management           structures or pools of similar data;          (ii) avoiding cache thrashing by knowing the active working set size; (iii) bypassing/prioritizing
+                     (ii) Working set size; (iii) Data reuse       data that has no/high reuse. (§5)
+Page placement       (i) Distinguishing between data               Enables page placement at the data structure granularity to (i) isolate data structures that have
+in DRAM              structures; (ii) Access pattern;              high row buffer locality and (ii) spread out concurrently-accessed irregular data structures
+e.g., [23, 24]       (iii) Access intensity                        across banks and channels to improve parallelism. (§6)
+Cache/memory         (i) Data type: integer, float, char;          Enables using a different compression algorithm for each data structure based on data type and
+compression          (ii) Data properties: sparse, pointer,        data properties, e.g., sparse data encodings, FP-specific compression, delta-based compression
+e.g., [25–32]        data index                                    for pointers [27].
+Data                 (i) Access pattern: strided, irregular,       Enables (i) highly accurate software-driven prefetching while leveraging the benefits of hard-
+prefetching          irregular but repeated (e.g., graphs),        ware prefetching (e.g., by being memory bandwidth-aware, avoiding cache thrashing); (ii) using
+e.g., [33–36]        access stride; (ii) Data type: index,         different prefetcher types for different data structures: e.g., stride [33], tile-based [20], pattern-
+                     pointer                                       based [34–37], data-based for indices/pointers [38, 39], etc.
+DRAM cache           (i) Access intensity; (ii) Data reuse;        (i) Helps avoid cache thrashing by knowing working set size [44]; (ii) Better DRAM cache
+management           (iii) Working set size                        management via reuse behavior and access intensity information.
+e.g., [40–46]
+Approximation        (i) Distinguishing between pools of           Enables (i) each memory component to track how approximable data is (at a fine granularity)
+in memory            similar data; (ii) Data properties:           to inform approximation techniques; (ii) data placement in heterogeneous reliability memo-
+e.g., [47–53]        tolerance towards approximation               ries [54].
+Data placement:      (i) Data partitioning across threads (i.e.,   Reduces the need for profiling or data migration (i) to co-locate data with threads that access it
+NUMA systems         relating data to threads that access it);     and (ii) to identify Read-Only data, thereby enabling techniques such as replication.
+e.g., [55, 56]       (ii) Read-Write properties
+Data placement:      (i) Read-Write properties                     Avoids the need for profiling/migration of data in hybrid memories to (i) effectively manage the
+hybrid               (Read-Only/Read-Write); (ii) Access           asymmetric read-write properties in NVM (e.g., placing Read-Only data in the NVM) [16, 57];
+memories             intensity; (iii) Data structure size;         (ii) make tradeoffs between data structure "hotness" and size to allocate fast/high bandwidth
+e.g., [16, 57, 58]   (iv) Access pattern                           memory [14]; and (iii) leverage row-buffer locality in placement based on access pattern [45].
+Managing             (i) Distinguishing pools of similar data;     (i) Enables using different cache policies for different data pools (similar to [15]); (ii) Reduces
+NUCA systems         (ii) Access intensity; (iii) Read-Write or    the need for reactive mechanisms that detect sharing and read-write characteristics to inform
+e.g., [15, 59]       Private-Shared properties                     cache policies.
+
+2. Goals and Challenges                                                               implementation with low storage area and performance over-
+                                                                                      heads, while preserving the semantics of existing interfaces.
+2.1. Key Requirements
+   There are several key requirements and invariants that                             2.2. Challenges
+drive the design of the proposed system:                                                 Current system and architectural components see only a
+   (i) Supplemental and hint-based. The new interface                                 description of the program’s data in terms of virtual/physical
+should not affect functionality or correctness of the program                         addresses. To provide higher-level program-related semantics,
+in any way—it provides only supplemental information to help                          we need to associate each address with much more informa-
+improve performance. This reduces the necessity of obtaining                          tion than is available to the entire system today, addressing
+precise or detailed hints, and system implementation can be                           the following three challenges:
+simpler as information can be conveyed/stored imprecisely.                               Challenge 1: Granularity of expression. The granular-
+   (ii) Architecture agnosticism. The abstraction for ex-                             ity of associating program semantics with program data is
+pressing semantics must be based on the application charac-                           challenging because the best granularity for expressing pro-
+teristics rather than the specifics of the system, e.g., cache                        gram semantics is program dependent. Semantics could be
+size, memory banks available. This means that the program-                            available at the granularity of an entire data structure, or
+mer/software need not be aware of the precise workings of                             at much smaller granularities, such as a tile in an array. We
+the memory system resources, and it significantly alleviates                          cannot simply map program semantics to every individual vir-
+the portability challenges when the programmer/software                               tual address as that would incur too much overhead, and the
+optimizes for performance.                                                            fixed granularity of a virtual page may be too coarse-grained,
+   (iii) Generality and extensibility. The interface should                           inflexible and challenging for programmers to reason about.
+be general enough to flexibly express a wide range of pro-                               Challenge 2: Generality vs. specialization. Our archi-
+gram semantics that could be used to aid many system-level                            tecture-agnosticism requirement implies that we express
+and architectural (memory) optimizations, and extensible to                           higher-level information from the application’s or the pro-
+support more semantics and optimizations.                                             grammer’s point of view—without any knowledge/assump-
+   (iv) Low overhead. The interface must be amenable to an                            tions of the memory resources or specific directives to a hard-
+
+
+                                                                                  3
+
+
+===== Page 4 =====
+
+ware component. As a consequence, much of the conveyed                  ciated with a VA and thereby obtain any attributes associated
+information may be either irrelevant, too costly to manage ef-          with the VA, at any given time.
+fectively, or too complex for different hardware components to          • Immutable Attributes: While atoms are dynamically cre-
+easily use. For example, hardware components like prefetch-             ated, the attributes of an atom cannot be changed once created.
+ers are operated by simple hardware structures and need only            To express different attributes for the same data, a new atom
+know prefetchable access patterns. Hence, the abstraction               should be created. Atom attributes can, hence, be specified
+must be (i) high-level and architecture-agnostic, so it can be          statically in the program code. Because any atom’s attributes
+easily expressed by the programmer and (ii) general, in order           cannot be updated during execution, these attributes can be
+to express a range of information useful to many components.            summarized and conveyed to the system/architecture at com-
+At the same time, it should be still amenable to translation            pile/load time before execution. This minimizes expensive
+into simple directives for each component.                              communication at runtime (Challenge 3).
+   Challenge 3: Changing data semantics. As the pro-                    • Flexible mapping to data: Any atom can be flexibly and
+gram executes, the semantics of the data structures and the             dynamically mapped/unmapped to any set of data of any
+way they are accessed can change. Hence, we need to be                  size. By selectively mapping and/or unmapping data to the
+able to express dynamic data attributes in static code, and             same atom, an atom can be mapped to non-contiguous data
+these changing attributes need to be conveyed to the run-               (Challenge 1).
+ning system at the appropriate time. This ensures that the              • Activation/Deactivation: While the attributes of an atom
+data attributes seen by the memory components are accu-                 are immutable and statically specified, an atom itself can
+rate any time during execution. Continual updates to data               be dynamically activated and deactivated in the program.
+attributes at runtime can impose significant overhead that              The attributes of an atom are recognized by the system only
+must be properly managed to make the approach practical.                when the atom is currently active. This enables updating
+                                                                        the attributes of any data region as the program executes:
+3. Our Approach: Expressive Memory                                      when the atom no longer accurately describes the data, it
+   We design Expressive Memory (XMem), a new rich cross-                is deactivated and a new atom is mapped to the data. This
+layer interface that enables explicit expression and availabil-         ensures that the system always sees the correct data attributes
+ity of key program semantics. XMem comprises two key                    during runtime, even though the attributes themselves are
+components: (i) a new hardware-software abstraction with a              communicated earlier at load time (Challenge 3).
+well-defined set of properties to convey program semantics                 To manipulate the three components (Attributes, Mapping,
+(§3.1-§3.3) and (ii) a rich set of interfaces to convey and store       and State), there are three corresponding operations that
+that information at different system/memory components                  can be performed on an atom via a corresponding library
+(§3.4-§3.5). We describe how our key design choices for both            call (§4.1.1): (i) CREATE an atom, providing it with immutable
+components address the above challenges in §3.2 and §3.4.               statically-specified attributes; (ii) MAP/UNMAP an atom to/from
+3.1. The Atom Abstraction                                               a range of data; and (iii) ACTIVATE/DEACTIVATE an atom to
+                                                                        dynamically tell the memory system that the attributes of the
+   We define a new hardware-software abstraction, called an             atom are now (in)valid for the data the atom is mapped to.
+Atom, that serves as the basic unit of expressing and convey-              Figure 2 depicts an overview of the atom operators. Atoms
+ing program semantics to the system and architecture. An                are first created in the program with statically-specified at-
+atom forms both an abstraction for information expressed as             tributes ¶. During memory allocation (e.g., malloc), data
+well as a handle for communicating, storing, and retrieving             structures are allocated ranges of virtual memory. After allo-
+the conveyed information across different levels of the stack.          cation, atoms with the appropriate attributes can be flexibly
+Application programs can dynamically create atoms in the                mapped to the corresponding VA range that each atom de-
+program code, each of which describes a specific range of               scribes ·. Once the mapped atom is activated, all the system
+program data at any given time during execution. The OS                 components recognize the attributes as valid ¸. Data can be
+and hardware architecture can then interpret atoms specified            easily remapped to a different atom that describes it better as
+in the program when the program is executed.                            the program moves into a different phase of execution (using
+   There are three key components to an atom: (i) Attributes:           the MAP operator ·), or just unmapped ­ when the atom no
+higher-level data semantics that it conveys; (ii) Mapping: the          longer accurately describes the data. The MAP/UNMAP opera-
+virtual address range that it describes; and (iii) State: whether       tor can be flexibly called to selectively map/unmap multiple
+the atom is currently active or inactive.
+                                                                                                                    3           3
+3.2. Semantics and Invariants of an Atom                                       1
+                                                                                                       Memory
+                                                                                       Structure
+
+
+
+
+                                                                                                                  Atom 1  2 Atom 3
+                                                                                                       Virtual
+
+
+
+
+  We define the invariants of the atom abstraction and then                  Atom 1
+                                                                                         Data
+
+
+
+
+                                                                                                             2
+describe the operators that realize the semantics of the atom.               Atom 2                               Atom 2      2
+• Homogeneity: All the data that maps to the same atom
+                                                                            Atom 3
+has the same set of attributes.                                                                                     Time
+                                                                                                                   Time     Time
+• Many-to-One VA-Atom Mapping: At any given time,                         1 CREATE                 2 MAP     2 UNMAP       3 ACTIVATE
+any virtual address (VA) can map to at most one atom. Hence,                  Static                             Dynamic
+the system/architecture can query for the atom (if any) asso-              Figure 2: Overview of the three atom operators.
+
+
+                                                                    4
+
+
+===== Page 5 =====
+
+data ranges to/from the same atom at any granularity. The               head of tracking and retrieving semantics at a fine gran-
+ACTIVATE/DEACTIVATE operator dynamically validates/inval-               ularity (even semantics that change as the program exe-
+idates the atom attributes relating to all data the atom is             cutes). We hence leverage support in hardware to effi-
+mapped to. §3.5.2 describes XMem’s low-overhead imple-                  ciently perform several key functionalities of the XMem sys-
+mentation of these operators.                                           tem—mapping/unmapping of semantics to atoms and activat-
+                                                                        ing/deactivating atoms at runtime. This avoids the high over-
+3.3. Attributes of an Atom and Use Cases                                head of frequent system calls, memory updates, etc. Second,
+    Each atom contains an extensible set of attributes that             we aim to enable the many hardware-managed components
+convey the key program semantics to the rest of the system.             in the memory hierarchy to leverage XMem. To this end, we
+Table 1 lists example use cases for these attributes. The three         use hardware support to efficiently transmit key semantics
+classes of attributes (to date) are:                                    to the different hardware components.
+    (1) Data Value Properties: An expression of the at-                 • Software Summarization and Hardware Tracking:
+tributes of the data values contained in the data pool mapped           Because the potential atoms and their attributes are known
+to an atom. It is implemented as an extensible list using a             statically (by examining the application program’s CREATE
+single bit for each attribute. These attributes include data            calls), the compiler can summarize them at compile time,
+type (e.g., INT32, FLOAT32, CHAR8) and data properties (e.g.,           and the OS can load them into kernel memory at load time.
+SPARSE, APPROXIMABLE, POINTER, INDEX).                                  The program directly communicates an atom’s active status
+    (2) Access Properties: This describes three key charac-             and address mapping(s) at runtime (via MAP and ACTIVATE
+teristics of the data the atom is mapped to:                            calls) with the help of new instructions in the ISA (§4) and
+• AccessPattern: This attribute defines the PatternType,                hardware support. This minimizes expensive software in-
+currently either REGULAR (with a specific stride that is also           tervention/overhead at runtime. In other words, the static
+specified), IRREGULAR (when the access pattern is repeat-               CREATE operator is handled in software before program ex-
+able within the data range, but with no repeated stride, e.g.,          ecution and the dynamic MAP and ACTIVATE operators are
+graphs), or NON_DET (when there is no repeated pattern).                handled by hardware at runtime.
+• RWChar: This attribute describes the read-write character-            • Centralized Global Tracking and Management: All
+istics of data at any given time, currently either READ_ONLY,           the statically-defined atoms in the program are assigned a
+READ_WRITE, or WRITE_ONLY. It could also be extended to in-             global Atom ID (within a process) that the entire system rec-
+clude varying degrees of read-write intensity, and include              ognizes. Tracking which atoms are active at runtime and
+shared/private information.                                             the inverse mapping between a VA and atom ID is also cen-
+• AccessIntensity: This attribute conveys the access fre-               tralized at a global hardware table, to minimize storage and
+quency or “hotness” of the data relative to other data at any           communication cost (i.e., all architectural components access
+given time. This attribute can be provided by the program-              the same table to identify the active atom for a VA).
+mer, compiler, or profiler. It is represented using an 8-bit            • Private Attributes and Attribute Translation: The
+integer, with 0 representing the lowest frequency. Higher               atom attributes provided by the application may be too com-
+values imply an increasing amount of intensity relative to              plex and excessive for easy interpretation by components
+other data. Hence, this attribute conveys an access intensity           like the cache or prefetcher. To address this challenge (Chal-
+ranking between different data mapped to different atoms.               lenge 2), when the program is loaded for execution or after a
+    (3) Data Locality: This attribute serves to express soft-           context switch, the OS invokes a hardware translator that con-
+ware optimizations for cache locality explicitly (e.g., cache           verts the higher-level attributes to sets of specific primitives
+tiling, stream buffers, partitions, etc.). The key attributes in-       relevant to each hardware component and the optimization
+clude working set size (which is inferred from the size of data         the component performs. Such specific primitives are then
+the atom is mapped to) and reuse, for which we use a simple             saved privately at each component, e.g., the prefetcher saves
+8-bit integer (0 implying no reuse and higher values implying           only the access pattern for each atom.
+a higher amount of reuse relative to other data).
+    Note that the atom abstraction and its interface do not a           3.5. XMem: Interfaces and Mechanisms
+priori limit the program attributes that an atom can express.              Figure 3 depicts an overview of the system components to
+This makes the interface flexible and forward-compatible                implement the semantics of XMem.
+in terms of extending and changing the expressed program                3.5.1. Programmer/Application Interface. The applica-
+semantics. The above attributes have been selected for their            tion interface to XMem is via a library, XMemLib (¶). An
+memory optimization benefits (Table 1) and ready translation            atom is defined by a class data structure (§4.1.1) that de-
+into simple directives for the OS and hardware components.              fines the attributes of the atom and the operator functions
+                                                                        (CREATE, MAP/UNMAP, and ACTIVATE/DEACTIVATE). An atom
+3.4. The XMem System: Key Design Choices                                and its static attributes can be instantiated in the program
+  Before we describe XMem’s system implementation, we                   code (CREATE) by the programmer, autotuner, or compiler.
+explain the rationale behind the key design choices.                    3.5.2. System/Architecture Interface. XMemLib communi-
+• Leveraging Hardware Support: For the XMem design,                     cates with the OS and architecture in the following two ways.
+we leverage hardware support for two major reasons. First, a               First, at compile time, the compiler summarizes all the
+key design goal for XMem is to minimize the runtime over-               atoms in the program statically and creates a table for atom
+
+
+                                                                    5
+
+
+===== Page 6 =====
+
+      1.CREATE                           1     Application Interface (XMemLib)                              2.MAP/UNMAP              3.ACTIVATE/DEACTIVATE
+                                                                                                                     6                                        8
+               2                3                    4                    5                                                ISA                                ISA
+Atom 0 Attributes         Atom ID Attributes     Attribute         Atom ID Attributes
+                                                                                                    7     Physical Address Atom ID            9     Atom ID   Status
+Atom 1                                           Translator
+                                                                                           Atom Address                               Atom Status
+Atom ..                                                                                     Map (AAM)                                 Table (AST)
+       Atom Segment     Global Attribute Table                Private Attribute Table(s)
+       in object file       OS Managed                              HW Managed                              10 AMU: Atom Management Unit
+  Compile Time                               Load Time                                                                   Run Time
+                                               Figure 3: XMem: Overview of the components.
+attributes, indexed by atom ID. During run time, the same                               4. XMem: Detailed Design
+static atom can have many instances (e.g., within a for loop                               We now detail the design and implementation of the inter-
+or across multiple function calls). All of the calls to create the                      faces and components in XMem. We describe the application,
+same atom will, however, be mapped to the same static atom                              OS, and architecture interfaces (§4.1), the key components of
+(and Atom ID). This is possible because atom attributes are                             XMem (§4.2), the use of XMem in virtualized environments
+immutable. However, the address mapping of each atom is                                 (§4.3), and the overheads of our design (§4.4).
+typically not known at compile time because virtual address
+ranges are only resolved at runtime. The compiler creates                               4.1. The Interfaces
+a table of all the atoms in the program along with the atom                             4.1.1. Application Interface. The primary interface be-
+attributes. This table is placed in the atom segment of the                             tween XMem and the application is XMemLib, a library
+program object file (·). When the program is loaded into                                that provides type definitions and function calls for atoms.
+memory for execution by the OS, the OS also reads the atom                              XMemLib includes an atom class definition with the attributes
+segment and saves the attributes for each atom in the GLOBAL                            described in §3.3. XMemLib provides three types of XMem
+ATTRIBUTE TABLE (GAT ¸), which is managed by the OS                                     operations on atoms in the form of function calls. These oper-
+in kernel space. The OS also invokes a hardware translator                              ations are the interface to manipulate the attributes, mappings
+(¹) that converts the higher-level attributes saved in the                              and state of an atom. Table 2 summarizes the definition of all
+GAT to sets of specific hardware primitives relevant to each                            the functions (also discussed below):
+hardware component, and saves them in a per-component                                      (1) CREATE: The function CreateAtom creates an atom with
+PRIVATE ATTRIBUTE TABLE (PAT º), managed in hardware                                    the attributes specified by the input parameters, and returns
+by each component.                                                                      an Atom ID. Multiple invocations of CreateAtom at the same
+   Second, at run time, XMem operators, in the form of func-                            place in the program code always return the same Atom ID
+tion calls in XMemLib, are translated into ISA instructions                             (without reinvoking the function).
+that inform the system and architecture of the atoms’ activa-                              (2) MAP/UNMAP: These functions take an Atom ID and an
+tion/deactivation and mapping. Conceptually, the MAP/UNMAP                              address range as parameters, and invoke corresponding ISA
+operator (») is converted into ISA instructions that update                             instructions to tell the Atom Management Unit (AMU) to up-
+the ATOM ADDRESS MAP (AAM ¼), which enables looking up                                  date the Atom Address Map (§4.2). We create multiple func-
+the atom ID associated with a physical address (PA). We use                             tions so that we can easily map or unmap multi-dimensional
+the PA to index the AAM instead of the VA to simplify the ta-                           data structures (e.g., 2D/3D arrays). For example, Atom2DMap
+ble design (§4.2). The ACTIVATE/DEACTIVATE operator (½) is                              maps/unmaps a 2D block of data of width sizeX and height
+converted into ISA instructions that update an atom’s active                            sizeY, in a 2D data structure that has a row length lenX.
+status in the ATOM STATUS TABLE (AST ¾). The AST and                                       (3) ACTIVATE/DEACTIVATE: The functions AtomActivate
+AAM are managed by the Atom Management Unit (AMU ¿).                                    and AtomDeactivate serve to (de)activate the specified atom
+Because tables with entries for each PA are infeasible, we use                          at any given time. They invoke corresponding ISA instruc-
+simple mechanisms to avoid them. These mechanisms, and                                  tions that update the Atom Status Table (§4.2) at run time.
+the functioning and implementation of these hardware and                                4.1.2. Operating System Interface. XMem interfaces with
+software components, are described in §4.2.                                             the OS in two ways. First, the OS manages the Global
+   Flexibility and Extensibility. The system/architecture                               Attribute Table (GAT) (§4.2), which holds the attributes
+interface ensures that the ISA and the microarchitecture need                           of all the atoms in each application. Second, the OS can
+only implement the three operators, but does not dictate what                           optionally query for the static mapping between VA ranges
+application attributes can be conveyed. The attributes are                              and atoms through an interface to the memory allocator. This
+stored in the binary as a separate metadata segment with a                              interface ensures that the OS knows the mapping before the
+version identifier to identify the information format. The in-                          virtual pages are mapped to physical pages, so that the OS
+formation format can be enhanced across architecture gener-                             can perform static optimizations, such as memory placement
+ations, ensuring flexibility and extensibility, while the version                       based on program semantics. Specifically, we augment the
+identifier ensures forward/backward compatibility. Any fu-                              memory allocation APIs (e.g., malloc) to take Atom ID as a
+ture architecture can interpret the semantics and older XMem                            parameter. The memory allocator, in turn, passes the Atom
+architectures can simply ignore unknown formats.                                        ID to the OS via augmented system calls that request virtual
+
+
+                                                                                  6
+
+
+===== Page 7 =====
+
+Table 2: The XMem operators and corresponding XMemLib functions and ISA instructions (sizes/lengths in bytes).
+XMem Op     XMemLib Functions (Application Interface)                                       XMem ISA Insts (Architecture Interface)
+CREATE      AtomID CreateAtom(data_prop, access_pattern, reuse, rw_characteristics)         No ISA instruction required
+            AtomMap(atom_id, start_addr, size, map_or_unmap)                                ATOM_MAP AtomID, Dimensionality
+MAP/UNMAP   Atom2DMap(atom_id, start_addr, lenX, sizeX, sizeY, map_or_unmap)                ATOM_UNMAP AtomID, Dimensionality
+            Atom3DMap(atom_id, start_addr, lenX, lenY, sizeX, sizeY, sizeZ,                 Address ranges specified in AMU-specific registers
+            map_or_unmap)
+ACTIVATE/  AtomActivate(atom_id)                                                            ATOM_ACTIVATE AtomID
+DEACTIVATE AtomDeactivate(atom_id)                                                          ATOM_DEACTIVATE AtomID
+
+pages. The memory allocator maintains the static mapping                  To make it easy to look up the Atom ID for each address,
+between atoms and virtual pages by returning virtual pages            the AAM stores the Atom IDs consecutively for all the physical
+that match the requesting Atom ID. The compiler converts              pages. The index of the table is the physical page index and
+the pair A=malloc(size);          AtomMap(atomID,A,size);             each entry stores all Atoms IDs in each page. In the default
+into this augmented API: A=malloc(size,atomID);                       configuration, each of the Atom IDs require 8B of storage per
+AtomMap(atomID,A,size);. This interface enables the                   page (8 bits times 8 subpages). With this design, the OS or the
+OS to manipulate the virtual-to-physical address mapping              hardware architecture can simply use the physical address
+without extra system call overheads.                                  that is queried as the table index to find the Atom ID.
+4.1.3. Architecture Interface. We add two new ISA instruc-                We use the PA instead of the VA to index this table because
+tions to enable XMem to talk to the hardware at run time:             (i) there are far fewer PAs compared to VAs and (ii) this
+(i) ATOM_MAP/ATOM_UNMAP tells the Atom Management Unit                enables the simplified lookup scheme discussed above.
+(AMU) to update the address ranges of an atom. When this                  (2) Atom Status Table (AST): We use a bitmap to store the
+instruction is executed, the parameters required to convey the        status (active or inactive) of all atoms in each application. Be-
+address mapping for the different mapping types (Table 2) are         cause CreateAtom assigns atom IDs consecutively starting at
+implicitly saved in AMU-specific registers and accessed by the        0, this table is efficiently accessed using the atom ID as index.
+AMU. To map or unmap the address range to/from the specified          Assuming up to 256 atoms per application (all benchmarks
+atom, the AMU asks the Memory Management Unit (MMU) to                in our experiments had under 10 atoms, all in performance-
+translate the virtual address ranges specified by ATOM_MAP to         critical sections), the AST is only 32B per application. The
+physical address ranges, and updates the Atom Address Map             Atom Management Unit (AMU) updates the bitmap when an
+(AAM) (§4.2). (ii) ATOM_ACTIVATE/ATOM_DEACTIVATE causes               ATOM_(DE)ACTIVATE instruction is executed.
+the AMU to update the Atom Status Table (AST) to acti-                    (3) Attribute Tables (GAT and PAT) and the Attribute
+vate/deactivate the specified atom.                                   Translator: As discussed in §3.4, we store the attributes of
+                                                                      atoms in a Global Attribute Table (GAT) and multiple
+4.2. System Design: Key Components                                    Private Attribute Tables (PAT). GAT is managed by the
+   The system/architecture retrieves the data semantics asso-         OS in kernel space. Each hardware component that benefits
+ciated with each memory address in three steps: (i) determine         from XMem maintains its own PAT, which stores a translated
+to which atom (if any) a given address maps; (ii) determine           version of the attributes (an example of this is in §5). This
+whether the atom is active; and (iii) retrieve the atom at-           translation is done by the Attribute Translator, a hardware
+tributes. XMem enables this with four key components:                 runtime system that translates attributes for each component
+   (1) Atom Address Map (AAM): This component deter-                  at program load time and during a context switch.
+mines the latest atom (if any) associated with any PA. Be-                (4) Atom Management Unit (AMU): This is a hardware
+cause the storage overhead of maintaining a mapping table             unit that is responsible for (i) managing the AAM and AST and
+between each address and Atom ID would be prohibitively               (ii) looking up the Atom ID given a physical address. When
+large, we employ an approximate mapping between atoms                 the CPU executes an XMem ISA instruction, the CPU sends
+and address ranges at a configurable granularity. The system          the associated command to the AMU to update the AAM (for
+decides the smallest address range unit the AAM stores for each       ATOM_MAP or ATOM_UNMAP) or the AST (for ATOM_ACTIVATE).
+address-range-to-atom mapping. The default granularity is 8           For higher-dimensional data mappings, the AMU converts the
+cache lines (512B), which means each consecutive 512B can             mapping to a linear mapping at the AAM granularity and broad-
+map only to one atom. This design significantly reduces the           casts this mapping to all the hardware components that re-
+storage overhead as we need only store one Atom ID for each           quire accurate information of higher-dimensional address
+512B (0.2% storage overhead assuming an 8-bit Atom ID). We            mappings (see §5 for an example).
+can reduce this overhead further by increasing the granular-              A hardware component determines the Atom ID of a spe-
+ity or limiting the number of atoms in each application. For          cific physical address (PA) by sending an ATOM_LOOKUP re-
+instance, if we support only 6-bit Atom IDs with a 1KB ad-            quest to the AMU, which uses the PA as the index into the AAM.
+dress range unit, the storage overhead becomes 0.07%. Note            To avoid memory accesses for all the ATOM_LOOKUP requests,
+that because XMem provides only hints to the system, our              each AMU has an atom lookaside buffer (ALB), which caches
+approximate mapping may cause optimization inaccuracy                 the results of recent ATOM_LOOKUP requests. The functionality
+but it has no impact on functionality and correctness.                of an ALB is similar to a TLB in an MMU, so the AMU accesses
+
+
+                                                                  7
+
+
+===== Page 8 =====
+
+the AAM only on ALB misses. The tags for the ALB are the                tinguish between addresses from different applications/VMs
+physical page indexes, while the data are the Atom IDs in the           (similar to prior work [67] or modern commercial virtualiza-
+physical pages. In our evaluation, we find that a 256-entry             tion schemes [68, 69]).
+ALB can cover 98.9% of the ATOM_LOOKUP requests.
+                                                                        4.4. Overhead Analysis
+4.3. XMem in Virtualized Environments                                      The overheads of XMem fall into four categories: memory
+   Virtualized environments employ virtual machines (VMs)               storage overhead, instruction overhead, hardware area over-
+or containers that execute applications over layers of oper-            head, and context switch overhead, all of which are small (the
+ating systems and hypervisors. The existence of multiple                technical report has a more detailed discussion [70]):
+address spaces that are seen by the guest and host operating               (1) Memory storage overhead. The storage overhead
+systems, along with more levels of abstraction between the              comes from the tables that maintain the attributes, status,
+application and the underlying hardware resources, makes                and mappings of atoms (AAM, AST, GAT, and PAT). As §4.2
+the design of hardware-software mechanisms challenging.                 discusses, the AST is very small (32B). The GAT and PAT are
+XMem is, however, designed to seamlessly function in these              also small as the attributes of each atom need 19B, so each
+virtualized environments, as we describe next.                          GAT needs only 2.8KB assuming 256 atoms per application.
+   XMem Components. The primary components of XMem                      AAM is the largest table in XMem, but it is still insignificant as
+include the AAM, AST, the PATs, and the GAT. Each of these              it takes only 0.2% of the physical memory (e.g., 16MB on a
+components function with no changes in virtualized envi-                8GB system), and it can be made even smaller by increasing
+ronments: (i) AAM: The hardware-managed AAM, which maps                 the granularity of the address range unit (§4.2).
+physical addresses to atom IDs, is indexed by the host phys-               (2) Instruction overhead. There are instruction over-
+ical address. As a result, this table is globally shared across         heads when applications invoke the XMemLib functions to
+all processes running on the system irrespective of the pres-           create, map/unmap, activate/deactivate atoms, which execute
+ence of multiple levels of virtualization. (ii) AST and PATs: All       XMem instructions. We find this overhead negligible because:
+atoms are tracked at the process level (irrespective of whether         (i) XMem does not use extra system calls to communicate
+the processes belong to the same or different VMs). The per-            with the OS, so these operations are very lightweight; (ii) the
+process hardware-managed tables (AST and PATs) are reloaded             program semantics or data mapping do not change very fre-
+during a context switch to contain the state and attributes             quently. Among the workloads we evaluate, an additional
+of the atoms that belong to the currently-executing process.            0.014% instructions on average (at most, 0.2%) are executed.
+Hence, the functioning of these tables remains the same in the             (3) Hardware area overhead. XMem introduces two ma-
+presence of VMs or containers. (iii) GAT: The GAT is software-          jor hardware components, Attribute Translator and AMU.
+managed and is maintained by each guest OS. During context              We evaluate the storage overhead of these two components
+switches, a register is loaded with a host physical address             (including the AMU-specific registers) using CACTI 6.5 [71]
+that points to the new process’ GAT and AST.                            at 14 nm process technology, and find that their area is 0.144
+   XMem Interfaces. The three major interfaces (CREATE,                 mm2 , or 0.03% of a modern Xeon E5-2698 CPU.
+MAP/UNMAP, and ACTIVATE/DEACTIVATE) require no changes                     (4) Context switch overhead. XMem introduces one ex-
+for operation in virtualized environments. The CREATE opera-            tra register for context switches—it stores the pointer to AST
+tor is handled in software at compile time by the guest OS and          and GAT (stored consecutively for each application) in the
+all created atoms are loaded into the GAT by the guest OS at            AMU. AAM does not need a context-based register because it
+program load time. The MAP/UNMAP operator communicates                  is a global table. The OS does not save the AMU-specific
+directly with the MMU to map the host physical address to               registers for MAP/UNMAP (Table 2) as the information is saved
+the corresponding atom ID using the XMem ISA instructions.              in the AAM. One more register adds very small overhead (two
+The ACTIVATE/DEACTIVATE operator simply updates the AST,                instructions, ≤ 1 ns) to the OS context switch (typically 3-5
+which contains the executing process’ state.                            µs). Context switches also require flushing the ALBs and
+   Optimizations. OS-based software optimizations (e.g.,                PATs. Because these structures are small, the overhead is also
+DRAM placement in §6) require that the OS have visibility               commensurately small (~700 ns).
+into the available physical resources. The physical resources
+may however be abstracted away from the guest OS in the
+                                                                        5. Use Case 1: Cache Management
+presence of virtualization. In this case, the resource allocation       5.1. Overview
+and its optimization needs to be handled by the hypervisor                 Cache management is a well-known complex optimiza-
+or host OS for all the VMs that it is hosting. To enable the            tion problem with substantial prior work in both software
+hypervisor/host OS to make resource allocation decisions,               (e.g., code/compiler optimizations, auto tuners, reuse hints)
+the guest OS also communicates the attributes of the appli-             and hardware (advanced replacement/insertion/partitioning
+cation’s atoms to the hypervisor. For hardware optimiza-                policies). XMem seeks to supplement both software and hard-
+tions (e.g., caching policies, data compression), the hardware          ware approaches by providing key program semantics that are
+components (e.g., caches, prefetchers) retrieve the atom at-            challenging to infer at runtime. We discuss XMem’s benefits
+tributes for each process using the AAM and PATs. This is               for cache management in Table 1. As a concrete end-to-end
+the same mechanism irrespective of the presence of virtual-             example, we describe and evaluate how XMem enhances dy-
+ization. These components use application/VM IDs to dis-
+
+
+                                                                    8
+
+
+===== Page 9 =====
+
+namic policies to improve the portability and effectiveness               for the atom according to the expressed access pattern.
+of static software-based cache optimizations under varying                   (3) Support in cache controllers. To keep the pinned
+cache space availability (as a result of co-running applications          atoms in the cache as long as possible, the cache controller
+or unknown cache size in virtualized environments).                       inserts these atoms with the highest priority, and inserts
+   Many software techniques statically tune code by sizing the            all other data with the default insertion policy. When the
+active working set in the application to maximize cache local-            highest-priority cache lines fill 75% of the ways, all cache lines
+ity and reuse—e.g., hash-join partitioning [72] in databases,             are inserted with the default insertion policy. When the list
+cache tiling [60–66] in linear algebra and stencils, cache-               of active atoms changes (e.g., as a result of an UNMAP), only
+conscious data layout [73] for similarity search [74]. Static             then does the cache age (reduce priority of) the high-priority
+code optimization, however, makes assumptions regarding                   lines so they can be evicted by the default replacement policy.
+cache space availability when tuning code and hence imposes                  (4) Support in prefetchers. The prefetcher uses a PAT
+significant challenges in portability when the cache space                (§4.2) to keep the access pattern (stride) and address ranges
+availability is unknown or dynamically changing. Dynamic                  for all pinned atoms. When an access to one of these atoms
+approaches to address this problem [75–78] have three major               misses the cache, it prefetches the next cache line(s) based on
+shortcomings. They (i) require using sophisticated software               the access pattern.
+frameworks that use runtime systems to change code during
+execution, (ii) are highly specialized towards certain applica-
+                                                                          5.3. Evaluation Methodology
+tion classes, and (ii) are limited to codes that can be easily               We model and evaluate XMem using zsim [79] with a
+altered at runtime without losing correctness.                            DRAMSim2 [80] DRAM model. Table 3 summarizes the main
+   XMem improves the portability and effectiveness of static              simulation parameters. We use the Polybench suite [81], a
+optimizations when resource availability is unknown by con-               collection of linear algebra, stencil, and data mining kernels.
+veying the optimization intent to hardware—i.e., XMem con-                We use PLUTO [64], a polyhedral locality optimizer that uses
+veys which high-reuse working set (e.g., tile) should be kept             cache tiling to statically optimize the kernels. We evaluate
+in the cache. It does not dictate exactly what caching policy             kernels that can be tiled within three dimensions and a wide
+to use to do this. The hardware cache leverages the conveyed              range of tile sizes (from 64B to 8MB), ensuring the total work
+information to keep the high-reuse working set of each ap-                is always the same. We run the kernels to completion.
+plication in the cache by prioritizing such data over other                  Table 3: Simulation configuration for Use Case 1.
+low-reuse data. In cases where the active working set does
+                                                                                        3.6 GHz, Westmere-like [82] OOO, 4-wide issue,
+not fit in the available cache space, the cache mitigates thrash-          CPU          128-entry ROB, 32-entry LQ and SQ
+ing by pinning part of the working set and then prefetches                 L1 Cache     32KB Inst and 32KB Data, 8 ways, 4 cycles, LRU
+the rest based on the expressed access pattern.                            L2 Cache     128KB private per core, 8 ways, 8 cycles, DRRIP [83]
+                                                                           L3 Cache     8MB (1MB/core, partitioned), 16 ways, 27 cycles, DRRIP
+5.2. Mechanism
+                                                                           Prefetcher   Multi-stride prefetcher [33] at L3, 16 strides
+   (1) Expressing key working sets. As cache optimiza-                                  DDR3-1066, 2 channels, 1 rank/channel, 8 banks/rank,
+tions typically partition key data structures (e.g., the hash              DRAM         17GB/s (2.1GB/s/core), FR-FCFS [84], open-row policy [85]
+table in hash-join, tiles in arrays) to fit the caches, they simply
+need to use XMemLib to map the active high-reuse partitions               5.4. Evaluation Results
+(e.g., tiles) of key data structures to an atom that specifies a          Overall performance. To understand the cache tiling chal-
+high reuse value and the access pattern. When the program                 lenge, in Figure 4, we plot the execution time of 12 kernels,
+is done with one partition, it unmaps the current partition               which are statically compiled with different tile sizes. For each
+and maps the next partition to the same atom.                             workload, we show the results of two systems: (i) Baseline,
+   (2) Optimization algorithm. Based on each active                       the baseline system with a high-performance cache replace-
+atom’s size and reuse value, the cache decides the insertion              ment policy (DRRIP [83]) and a multi-stride prefetcher [33] at
+and prefetching policy for each atom. We use a simple and                 L3; and (ii) XMem, the system with the aforementioned cache
+practical greedy algorithm that the cache control logic runs,             management and prefetching mechanisms.
+to decide which data to pin in the cache and what data to                    For the Baseline system, execution time varies signifi-
+prefetch. The algorithm takes the active atoms in all the cores           cantly with tile size, making tile size selection a challenging
+(each time there is a change in active atoms), and sorts the              task. Small tiles significantly reduce the reuse in the applica-
+atoms based on the reuse values. Starting from the atom with              tion and can be on average 28.7% (up to 2× ¶) slower than the
+the highest reuse, the cache decides if it has enough space to            best tile size. Many optimizations, hence, typically size the tile
+keep the data specified by each atom. When the total data                 to be as big as what can fit in the available cache space [65,78].
+size kept in the cache reaches the pinning size limit (we use             However, when an optimization makes incorrect assumptions
+75% of the cache size so the cache still has space to handle              regarding available cache space (e.g., in virtualized environ-
+other data), the algorithm stops and returns the list of atoms            ments or due to co-running applications), the tile size may
+to be pinned. The cache inserts these atoms with the highest              exceed the available cache space. We find that this can lead to
+priority, and uses the default low-priority insertion policy for          cache thrashing and severe slowdown (64.8% on average, up
+all other data. Any cache miss for a pinned atom (e.g., due to            to 7.6× ·), compared to the performance with an optimized
+interference by a co-running application) triggers prefetching            tile size. XMem, however, significantly reduces this slowdown
+
+
+                                                                      9
+
+
+===== Page 10 =====
+
+                               3
+                                                                                   Baseline                      XMem                                                                                       (ii) XMem, the system that employs XMem for both cache
+                               2
+                                                                                                                                                                                                            management and prefetching. Figure 6 shows the speedup
+Normalized
+Exec. Time
+
+                               1
+                               0                                                                                                                                                                            of these two design points over the respective Baseline for
+                                                                                                                                                                                                            the largest tile sizes across three memory bandwidth con-
+                                         corr
+
+
+
+
+                                                                                          gesum
+
+
+
+
+                                                                                                                  jacobi-1D
+
+                                                                                                                                jacobi-2D
+
+                                                                                                                                                 lu
+
+
+
+
+                                                                                                                                                                     trisolv
+
+
+
+
+                                                                                                                                                                                               AVG
+                                                                  floyd
+
+                                                                                 gemm
+
+
+
+
+                                                                                                      gramsch
+
+
+
+
+                                                                                                                                                                                   trmm
+                                                                                                                                                          mvt
+                                                       dynprog
+                                                                                                                                                                                                            figurations (2 GB/s, 1 GB/s, 0.5 GB/s per core). We see that
+                                                                                                                                                                                                            both cache management and prefetching contribute to perfor-
+Figure 5: Maximum execution time with different                                                                                                                                                             mance improvement. On average, XMem performs better than
+cache sizes when code is optimized for a 2MB cache.                                                                                                                                                         XMem-Pref by 13%, 19.5%, 31% with different memory band-
+                        2.6                                                                           XMem-Pref                                                                                             width availability (2 GB/s, 1 GB/s and 0.5 GB/s, respectively).
+                                                                                                      XMem-All
+                        2.2
+                                                                                                                                                                                                            When the available memory bandwidth decreases, the gap be-
+Speedup over Baseline
+
+
+
+
+                        1.8
+                        1.4
+                          1                                                                                                                                                                                 tween these two designs increases because reducing memory
+                                                                                                                                                                                                            traffic is vital when memory bandwidth is scarce. XMem’s
+                        0.6
+                               2G 1G 0.5G 2G 1G 0.5G 2G 1G 0.5G 2G 1G 0.5G 2G 1G 0.5G 2G 1G 0.5G
+                                      corr                       dynprog                      floyd                           gemm                       gesum                 gramsch                      program-semantics-aware data pinning reduces memory traf-
+                        2.6
+                        2.2                                                                                                                                                                                 fic by keeping high-reuse data in the caches. We conclude that
+                        1.8
+                        1.4                                                                                                                                                                                 coordinating prefetching and cache management, by leverag-
+                          1
+                        0.6                                                                                                                                                                                 ing knowledge of program semantics, enables efficient use of
+                               2G
+                                      1G
+                                                0.5G
+                                                         2G
+                                                                 1G
+                                                                          0.5G
+                                                                                 2G
+                                                                                         1G
+                                                                                              0.5G
+                                                                                                      2G
+                                                                                                                1G
+                                                                                                                         0.5G
+                                                                                                                                2G
+                                                                                                                                            1G
+                                                                                                                                                  0.5G
+                                                                                                                                                         2G
+                                                                                                                                                                1G
+                                                                                                                                                                        0.5G
+                                                                                                                                                                               2G
+                                                                                                                                                                                          1G
+                                                                                                                                                                                                0.5G
+                                                                                                                                                                                                            memory resources to improve overall system performance.
+                                   jacobi-1D              jacobi-2D                      lu                     mvt                    trisolv                trmm                    AVG
+
+Figure 6: XMem’s speedup over Baseline with different
+                                                                                                                                                                                                            6. Use Case 2: Data Placement in DRAM
+memory bandwidth availability.                                                                                                                                                                                We describe a software-only use case that can be im-
+from cache thrashing in the largest tile sizes to 26.9% on av-                                                                                                                                              plemented without any of XMem’s hardware components.
+erage (up to 4.6× ¸). XMem’s large improvement comes from                                                                                                                                                   XMem enables more intelligent data placement in DRAM
+accurate pinning (that retains part of the high-reuse working                                                                                                                                               by leveraging knowledge of: (i) the key data structures in
+set in the cache) and more accurate prefetching (that fetches                                                                                                                                               the program and their access semantics, obtained from the
+the remaining working set).                                                                                                                                                                                 application and (ii) the underlying resources (e.g., number of
+Performance portability. To evaluate portability benefits                                                                                                                                                   banks, channels), obtained from the system.
+from the reduced impact of cache thrashing in large tile sizes,                                                                                                                                             6.1. Overview
+we run the following experiment. For each workload, we
+                                                                                                                                                                                                               Off-chip main memory (DRAM) latency is a major per-
+pick a tile size optimized for a 2MB cache, and evaluate the
+                                                                                                                                                                                                            formance bottleneck in modern CPUs [87–91]. The perfor-
+same program binary on a 2MB cache and 2 smaller caches
+                                                                                                                                                                                                            mance impact of this latency is in large part determined by
+(1MB and 512KB). Figure 5 depicts the maximum execution
+                                                                                                                                                                                                            two factors: (i) Row Buffer Locality (RBL) [92, 93]: how often
+time among these three cache sizes for both Baseline and
+                                                                                                                                                                                                            requests access the same DRAM row in a bank consecutively.
+XMem, normalized to Baseline with a 2MB cache. When
+                                                                                                                                                                                                            Consecutive accesses to the same open row saves the long
+executing with less cache space, we find that XMem increases
+                                                                                                                                                                                                            latency required to close the already-open row and open the
+the execution time by only 6%, compared to the Baseline’s
+                                                                                                                                                                                                            requested row. (ii) Memory Level Parallelism (MLP) [91, 94]:
+55%. Hence, we conclude that by leveraging the program
+                                                                                                                                                                                                            the number of concurrent accesses to different memory banks
+semantics, XMem greatly enhances the performance portability
+                                                                                                                                                                                                            or channels. Serving requests in parallel overlaps the latency
+of applications by reducing the impact of having less cache
+                                                                                                                                                                                                            of the different requests. A key factor that determines the
+space than what the program is optimized for.
+                                                                                                                                                                                                            DRAM access pattern—and thus RBL and MLP—is how the
+Effect of prefetching and cache management. We eval-
+                                                                                                                                                                                                            program’s data is mapped to the DRAM channels, banks, and
+uate two design points of XMem to see the effect of different
+                                                                                                                                                                                                            rows. This data placement is controlled by (i) the OS (via
+components: (i) XMem-Pref, the system that employs XMem-
+                                                                                                                                                                                                            the virtual-to-physical address mapping) and (ii) the memory
+based prefetching (using DRRIP for cache management) and
+                                                                                                                                                                                                            controller (via the mapping of physical addresses to DRAM
+achieves similar performance to software prefetching [86];
+                                                                                                                                                                                                            channels/banks/rows).
+
+                             1.2         correlation 1.4                                                        gemm                                  1.7               jacobi-2D                           1.1        dynprog       1.2       mvt          1.5       jacobi-1D
+     Normalized Exec. Time
+
+
+
+
+                                          Cache
+                                           Thrashing                                                                                                                                                                                   1
+                               1                                                          1                                                           1.3                                                   0.7                                              1
+                                                                                                                                                                                                                                     0.8
+                             0.8                                                        0.6                                                           0.9                                                   0.3                      0.6                    0.5
+                                     0      100 200                                               0                9    18     5                                             35    65                             0       2    4           2    32    62          0      1   50
+                             1.3            Thousands
+                                             trisolv                                    6.2                     Thousands
+                                                                                                                  lu       1.2                                              Thousands
+                                                                                                                                                                           trmm                                          Thousands
+                                                                                                                                                                                                                      gramschmidt              Thousands
+                                                                                                                                                                                                                                           floyd-warshall              Thousands
+                                                                                                                                                                                                                                                                      gesummv
+                                     Reduction in                                                                                                                                                           1.5                      1.7                    1.1
+                                      Slowdown                                          4.2                       2                                                                                                                  1.4
+                              1                                                                                                              3        0.8                      1                             1                                              0.9
+                                                                                        2.2                                                                                                                                          1.1
+                             0.7                                                        0.2                                                           0.4                              0.5                                           0.8                  0.7
+                                    0           50 100 150                                        0        10 1000                                              0         10 20 30          0     70    140                                0     30    60     0   500 1000
+                                                Thousands                                                Thousands                                                               Tile Size in kBThousands
+                                                                                                                                                                           Thousands                                                           Thousands
+                                                                                                                                                                                                                                                   Baseline     Thousands
+                                                                                                                                                                                                                                                                 XMem
+                              Figure 4: Execution time across different tile sizes (normalized to Baseline with the smallest tile size).
+
+
+                                                                                                                                                                                                       10
+
+
+===== Page 11 =====
+
+    To improve RBL and MLP, prior works use both the OS                6.4. Evaluation Results
+(e.g., [23, 24, 95–105]) and the memory controller (e.g., [106–           We evaluate three systems: (i) Baseline, the strengthened
+112]) to introduce randomness in how data is mapped to the             baseline system (§6.3); (ii) XMem, DRAM placement using
+DRAM channels/banks/rows or partition banks/channels be-               XMem (§6.2); (iii) an ideal system that has perfect RBL, which
+tween different threads or applications. While effective, these        represents the best performance possible by improving RBL.
+techniques are unaware of the different semantics of data              Figure 7 shows the speedup of the last two systems over
+structures in an application, and hence suffer from two short-         Baseline. Figure 8 shows the corresponding memory read
+comings. First, to determine the properties of data, an appli-         latency, normalized to Baseline. We make two observations.
+cation needs to be profiled before execution or pages need
+to be migrated reactively based on runtime behavior. Sec-                        1.8
+                                                                                                            XMem        Ideal
+ond, these techniques apply the same mapping for all data                        1.4
+
+
+
+
+                                                                       Speedup
+structures within the application, even if RBL and MLP vary                        1
+
+significantly across different data structures.                                  0.6
+
+    XMem enables distinguishing between data structures and                      0.2
+
+
+
+
+                                                                                                     astar
+
+
+
+
+                                                                                                  hmmer
+
+
+
+
+                                                                                                   soplex
+
+                                                                                              xalancbmk
+                                                                                             cactusADM
+                                                                                             GemsFDTD
+
+                                                                                                      mcf
+                                                                                                      milc
+
+
+
+
+                                                                                                       lud
+                                                                                                       nw
+                                                                                              pathfinder
+
+                                                                                                 srad_v1
+                                                                                                 srad_v2
+                                                                                                     histo
+                                                                                                      lbm
+                                                                                                  sgemm
+                                                                                                    spmv
+                                                                                                 hotspot
+                                                                                                    bzip2
+
+
+
+
+                                                                                               omnetpp
+
+                                                                                                 sphinx3
+
+
+
+
+                                                                                                        sc
+
+
+
+
+                                                                                                   stencil
+                                                                                               backprop
+                                                                                                  bfsRod
+
+
+
+                                                                                              hotspot3D
+
+
+
+
+                                                                                                      AVG
+                                                                                                       cfd
+provides key access semantics to the OS. Together with the
+knowledge of the underlying banks, channels, ranks, etc. and                                      SPEC       Rodinia            Parboil
+other co-running applications, the OS can create an intelligent
+mapping at the data structure granularity. Based on the data           Figure 7: Speedup w/ XMem-based DRAM placement.
+structure access patterns, the OS can (i) improve RBL by                                                    XMem
+                                                                                            1
+isolating data structures with high RBL from data structures
+
+                                                                       Normalized Memory
+                                                                                                            Ideal
+that could cause interference if placed in the same bank and
+
+                                                                          Read Latency
+                                                                                           0.8
+
+(ii) improve MLP by spreading out accesses to concurrently-                                0.6
+accessed data structures across multiple banks and channels.                               0.4
+
+
+                                                                                                         astar
+
+
+
+
+                                                                                                      hmmer
+
+
+
+
+                                                                                                       soplex
+
+                                                                                                  xalancbmk
+
+
+
+
+                                                                                                           nw
+
+
+                                                                                                     srad_v1
+                                                                                                     srad_v2
+                                                                                                         histo
+
+                                                                                                      sgemm
+                                                                                                 cactusADM
+
+
+                                                                                                          mcf
+                                                                                                          milc
+
+
+
+
+                                                                                                        spmv
+                                                                                                           lud
+
+                                                                                                  pathfinder
+
+
+
+
+                                                                                                          lbm
+
+
+                                                                                                       stencil
+                                                                                                        bzip2
+
+                                                                                                 GemsFDTD
+
+
+
+
+                                                                                                   omnetpp
+
+                                                                                                     sphinx3
+
+                                                                                                   backprop
+                                                                                                      bfsRod
+
+                                                                                                     hotspot
+
+
+
+
+                                                                                                            sc
+
+
+
+
+                                                                                                          AVG
+                                                                                                           cfd
+
+                                                                                                  hotspot3D
+6.2. Mechanism & Algorithm
+   The mechanism to support this use case involve three steps.                                       SPEC     Rodinia           Parboil
+First, the OS obtains the attributes of program data struc-
+tures by reading the atom segment when loading the program             Figure 8: Normalized read latency with XMem-based
+(§3.5.2). Second, based on the program semantics of all co-            DRAM placement.
+running applications, the OS decides how to map atoms to                  First, XMem-based DRAM placement improves perfor-
+DRAM channels and banks (described next). Third, the OS                mance across a range of workloads: by 8.5% on average over
+leverages XMem’s OS interface to obtain the Atom ID mapped             Baseline, up to 31.9%. It is a significant improvement as the
+to different virtual address ranges (§4.1.2), and manipulates          absolute upper-bound for any DRAM row-buffer optimization
+the virtual-to-physical address mapping to place data at spe-          is 24.4% (Ideal). Among the 27 workloads, only 5 workloads
+cific DRAM banks and channels.                                         do not see much improvement—they either (i) have less than
+   The OS employs an algorithm (described in detail in our             3% headroom to begin with (sc and histo) or (ii) are domi-
+technical report [70]) that takes the atom attributes as input,        nated by random accesses (mcf, xalancbmk, and bfsRod).
+and outputs the bank and channel mapping for each atom.                   Second, the performance improvement of XMem-based
+The algorithm first isolates the data structures with high RBL,        DRAM placement comes from the significant reduction in
+while ensuring that their access frequencies are high enough           average memory latency, especially read latency, which is
+that allocating a bank for them does not reduce the overall            usually on the critical path. On average, XMem reduces read
+MLP. The algorithm then spreads out all other data structures          latency by 12.6%, up to 31.4%. Write latency is reduced by
+to the unallocated banks to maximize MLP.                              6.2% (not shown).
+                                                                          We conclude that leveraging both the program semantics
+6.3. Evaluation Methodology                                            provided by XMem and knowledge of the underlying DRAM
+    We use zsim [79] and DRAMSim2 [80] with the parameters             organization enables the OS to create intelligent DRAM map-
+summarized in Table 3. We strengthen our baseline system in            pings at a fine (data structure) granularity, thereby reducing
+three ways: (i) We use the best-performing physical DRAM               memory latency and improving performance.
+mapping, among all the seven mapping schemes in DRAM-
+Sim2 and the two proposed in [106, 107], as our baseline;              7. Related Work
+(ii) We randomize virtual-to-physical address mapping, which             To our knowledge, this is the first work to design a holistic
+is shown to perform better than the Buddy algorithm [23];              and general cross-layer interface to enable the entire system
+(iii) For each workload, we enable the L3 prefetcher only              and architecture to be aware of key higher-level program
+if it improves performance. We evaluate a wide range of                semantics that can be leveraged in memory optimization. We
+workloads from SPEC CPU2006 [113], Rodinia [114], and                  now briefly discuss closely related prior work.
+Parboil [115] and show results for 27 memory intensive work-             Expressive programming models and runtime sys-
+loads (with L3 MPKI > 1). We run all applications to comple-           tems. Numerous software-only approaches tackle the dis-
+tion or for 10 billion instructions, whichever comes first.            connect between an application, the OS, and the underlying
+
+
+                                                                  11
+
+
+===== Page 12 =====
+
+memory resources via programming models and runtime                    ability to classify data into similar types and in retaining the
+systems that allow explicit expression of data locality and            benefits of dynamic management. However, XMem is (i) more
+independence [116–127] in the programming model. This                  versatile, as it enables dynamically classifying/reclassifying
+explicit expression enables the programmer and/or runtime              data and expressing more powerful program semantics than
+system to make effective memory placement decisions in a               just static data classification and (ii) a general and holistic
+NUMA system or produce code that is optimized to effectively           interface that can be used for a wide range of use cases, in-
+leverage the cache hierarchy. These approaches have several            cluding Whirlpool itself. Several prior works [137–143] use
+shortcomings. First, they are entirely software-based and are          runtime systems or the OS to aid in management of the cache.
+hence limited to using the existing interfaces to the architec-        These approaches are largely orthogonal to XMem and can
+tural resources. Second, unlike XMem, which is general and             be used in conjunction with XMem to provide more benefit.
+only hint-based, programming model-based approaches re-                   Tagged Architectures. Prior work associate software-
+quire rewriting applications to suit the model, while ensuring         defined metadata with each memory location in the form
+that program correctness is retained. Third, these systems             of tagged/typed memory [144–147]. These approaches are
+are specific to an application type (e.g., operations on tiles,        typically used for fine-grained memory access protection,
+arrays). XMem is a general interface that is not limited to any        debugging, etc., and usually incur non-trivial performance/s-
+programming language, application, or architecture. These              torage overhead. In contrast, XMem aims to deliver general
+approaches are orthogonal to XMem, and XMem can be built               program semantics to many system/hardware components
+into them to enable a wider range of memory.                           to aid in performance optimization with low overhead. To
+   The Locality Descriptor [128] is a cross-layer abstraction          this end, XMem is designed to enable a number of features
+to express data locality in GPUs. This abstraction is similar          and benefits that cannot be obtained from tagged/typed ar-
+in spirit to XMem in bridging the semantic gap between                 chitectures: (i) a flexible abstraction to dynamically describe
+hardware and software. However, the Locality Descriptor is             program behavior with XMemLib; and (ii) low-overhead inter-
+primarily designed to convey locality semantics to leverage            faces to many hardware components to access the expressed
+cache and NUMA locality in GPUs. XMem aims to convey                   semantics. PARD [67] and Labeled RISC-V [148] are tagged
+general program semantics to aid memory optimization. This             architectures that enable labeling memory requests with tags
+goal imposes different design challenges, requires describing a        to applications, VMs, etc. These tags are used to convey an
+different set of semantics, and requires optimizing a different        application’s QoS, security requirements, etc., to hardware.
+set of architectural techniques, leading to a very different           XMem is similar in that it provides an interface to hardware
+cross-layer design for the abstraction.                                to convey information from software. However, unlike these
+   Leveraging hints, annotations, and software man-                    works, we design a new abstraction (the atom) to flexibly
+agement for memory optimization. A large body of prior                 express program semantics that can be seamlessly integrated
+work aims to leverage the benefits of static program informa-          into programming languages, systems, and modern ISAs. The
+tion in the form of hints, annotations, or directives in memory        atom has a low-overhead implementation to convey software
+optimization. These include (i) hint-based approaches, such            semantics to hardware components dynamically and at flex-
+as software prefetch instructions [129] and cache bypass/in-           ible granularities. XMem can leverage tagged architectures
+sertion/eviction hints [1–13, 130]; (ii) hardware-software             to communicate atom IDs to hardware components. Hence,
+cooperative prefetch techniques [18–22, 38, 131–134] that              PARD and Labeled RISC-V are complementary to XMem.
+use compiler analysis or annotations to inform a hardware
+prefetch engine; and (iii) program annotations to place data
+                                                                       8. Conclusion
+in heterogeneous memories (e.g., [14, 17, 54]). XMem differs              This paper makes the case for richer cross-layer interfaces
+from these works in several ways. First, many of these ap-             to bridge the semantic gap between the application and the
+proaches seek to inform hardware components with specific              underlying system and architecture. To this end, we intro-
+directives that override dynamic policies by enforcing static          duce Expressive Memory (XMem), a holistic cross-layer in-
+policies. This loss in dynamism introduces challenges when             terface that communicates higher-level program semantics
+the workload behavior changes, the underlying architecture             from the application to different system-level and architec-
+changes or is unknown (portability), or in the presence of             tural components (such as caches, prefetchers, and memory
+co-running applications [15, 135, 136]. XMem does not di-              controllers) to aid in memory optimization. XMem improves
+rect policy at any component but only provides higher-level            the performance and portability of a wide range of software
+program semantics. The memory components can use this                  and hardware memory optimization techniques by enabling
+information to supplement their dynamic management poli-               them to leverage key semantic information that is otherwise
+cies. Second, the approaches are specific to an optimization           unavailable. We evaluate and demonstrate XMem’s benefits
+(e.g., prefetching, cache insertion/eviction). XMem provides           for two use cases: (i) static software cache optimization, by
+a general interface to communicate program semantics that              leveraging data locality semantics, and (ii) OS-based page
+can be leveraged by many system/architectural components.              placement in DRAM, by leveraging the ability to distinguish
+   The closest work to ours is Whirlpool [15], which provides          between data structures and their access patterns. We con-
+a memory allocator to statically classify data into pools. Each        clude that XMem provides a versatile, rich, and low overhead
+pool is then managed differently at runtime to place data effi-        interface to bridge the semantic gap in order to enhance mem-
+ciently in NUCA caches. Whirlpool is similar to XMem in the            ory system optimization. We hope XMem encourages future
+
+
+                                                                  12
+
+
+===== Page 13 =====
+
+work to explore re-architecting the traditional interfaces to                          [32] G. Pekhimenko et al., “A case for toggle-aware compression for GPU
+enable many other benefits that are not possible today.                                     systems,” in HPCA, 2016.
+                                                                                       [33] T. F. Chen et al., “Effective hardware-based data prefetching for high-
+Acknowledgments                                                                             performance processors,” TC, 1995.
+                                                                                       [34] S. Somogyi et al., “Spatial memory streaming,” in ISCA, 2006.
+  We thank the ISCA 2018 reviewers and our shepherd, Yun-                              [35] S. Somogyi et al., “Spatio-temporal memory streaming,” in ISCA, 2009.
+gang Bao, for their valuable suggestions. Special thanks go to                         [36] S. Volos et al., “Bump: Bulk memory access prediction and streaming,”
+                                                                                            in MICRO, 2014.
+Vivek Seshadri, Mike Kozuch, and Nathan Beckmann. We ac-                               [37] L. Peled et al., “Semantic locality and context-based prefetching using
+knowledge the support of our industrial partners, especially                                reinforcement learning,” in ISCA, 2015.
+Google, Huawei, Intel, Microsoft, and VMware. This work                                [38] E. Ebrahimi et al., “Techniques for bandwidth-efficient prefetching of
+                                                                                            linked data structures in hybrid prefetching systems,” in HPCA, 2009.
+was supported in part by SRC, NSF, and ETH Zürich.                                     [39] R. Cooksey et al., “A stateless, content-directed data prefetching mech-
+                                                                                            anism,” in ASPLOS, 2002.
+References                                                                             [40] M. R. Meswani et al., “Heterogeneous memory architectures: A hw/sw
+  [1] P. Jain et al., “Software-assisted cache replacement mechanisms for                   approach for mixing die-stacked and off-package memories,” in HPCA,
+      embedded systems,” in ICCAD, 2001.                                                    2015.
+                                                                                       [41] X. Jiang et al., “CHOP: Adaptive filter-based DRAM caching for CMP
+  [2] Ravindran et al., “Compiler-managed partitioned data caches for low                   server platforms,” in HPCA, 2010.
+      power,” in LCTES, 2007.                                                          [42] D. Jevdjic et al., “Unison cache: A scalable and effective die-stacked
+  [3] X. Gu et al., “P-OPT: program-directed optimal cache management,”                     DRAM cache,” in MICRO, 2014.
+      in LCPC, 2008.                                                                   [43] D. Jevdjic et al., “Die-stacked DRAM caches for servers: Hit ratio,
+  [4] J. Brock et al., “Pacman: Program-assisted cache management,” in                      latency, or bandwidth? have it all with footprint cache,” in ISCA, 2013.
+      ISMM, 2013.
+  [5] Z. Wang et al., “Using the compiler to improve cache replacement                 [44] X. Yu et al., “Banshee: Bandwidth-efficient DRAM caching via soft-
+      decisions,” in PACT, 2002.                                                            ware/hardware cooperation,” in MICRO, 2017.
+  [6] K. Beyls et al., “Generating cache hints for improved program effi-              [45] H. Yoon et al., “Row buffer locality-aware data placement in hybrid
+      ciency,” JSA, 2005.                                                                   memories,” in ICCD, 2012.
+  [7] J. B. Sartor et al., “Cooperative caching with keep-me and evict-me,”            [46] J. Meza et al., “Enabling efficient and scalable hybrid memories using
+      in INTERACT-9, 2005.                                                                  fine-granularity DRAM cache management,” in CAL, 2012.
+  [8] H. Yang et al., “Compiler-assisted cache replacement: Problem formu-             [47] J. S. Miguel et al., “Load value approximation,” in MICRO, 2014.
+      lation and performance evaluation,” LCPC, 2004.                                  [48] J. S. Miguel et al., “Doppelgänger: a cache for approximate computing,”
+  [9] J. B. Sartor et al., “Cooperative cache scrubbing,” in PACT, 2014.                    in MICRO, 2015.
+ [10] A. Pan et al., “Runtime-driven shared last-level cache management                [49] B. Thwaites et al., “Rollback-free value prediction with approximate
+      for task-parallel programs,” in SC, 2015.                                             loads,” in PACT, 2014.
+ [11] V. Papaefstathiou et al., “Prefetching and cache management using                [50] H. Esmaeilzadeh et al., “Architecture support for disciplined approxi-
+      task lifetimes,” in ICS, 2013.                                                        mate programming,” in ASPLOS, 2012.
+ [12] M. Manivannan et al., “RADAR: Runtime-assisted dead region man-                  [51] A. Sampson et al., “Approximate storage in solid-state memories,”
+      agement for last-level caches,” in HPCA, 2016.                                        TOCS, 2014.
+ [13] G. Tyson et al., “A modified approach to data cache management,” in              [52] A. Sampson et al., “EnerJ: Approximate data types for safe and general
+      MICRO, 1995.                                                                          low-power computation,” in PLDI, 2011.
+ [14] N. Agarwal et al., “Page placement strategies for GPUs within hetero-            [53] A. Yazdanbakhsh et al., “Rfvp: Rollback-free value prediction with
+      geneous memory systems,” in ASPLOS, 2015.                                             safe-to-approximate loads,” TACO, 2016.
+ [15] A. Mukkara et al., “Whirlpool: Improving dynamic cache management                [54] Y. Luo et al., “Characterizing application memory error vulnerability
+      with static data classification,” in ASPLOS, 2016.                                    to optimize datacenter cost via heterogeneous-reliability memory,” in
+ [16] S. R. Dulloor et al., “Data tiering in heterogeneous memory systems,”                 DSN, 2014.
+      in EuroSys, 2016.                                                                [55] N. Agarwal et al., “Unlocking bandwidth for GPUs in CC-NUMA
+ [17] S. Liu et al., “Flikker: Saving DRAM refresh-power through critical                   systems,” in HPCA, 2015.
+      data partitioning,” in ASPLOS, 2011.                                             [56] M. Dashti et al., “Traffic management: A holistic approach to memory
+ [18] T. F. Chen, “An effective programmable prefetch engine for on-chip                    placement on NUMA systems,” in ASPLOS, 2013.
+      caches,” in MICRO, 1995.                                                         [57] B. Wang et al., “Exploring hybrid memory for GPU energy efficiency
+ [19] S. P. Vander Wiel et al., “A compiler-assisted data prefetch controller,”             through software-hardware co-design,” in PACT, 2013.
+      in ICCD, 1999.                                                                   [58] Y. Li et al., “Utility-based hybrid memory management,” in CLUSTER,
+ [20] T. Chiueh, “Sunder: a programmable hardware prefetch architecture                     2017.
+      for numerical loops,” in SC, 1994.                                               [59] N. Hardavellas et al., “Reactive NUCA: near-optimal block placement
+ [21] E. H. Gornish et al., “An integrated hardware/software data prefetch-                 and replication in distributed caches,” in ISCA, 2009.
+      ing scheme for shared-memory multiprocessors,” in ICPP, 1994.                    [60] S. Mehta et al., “Tile size selection revisited,” TACO, 2013.
+ [22] Z. Wang et al., “Guided region prefetching: a cooperative hardware/-             [61] T. Yuki et al., “Automatic creation of tile size selection models,” in
+      software approach,” in ISCA, 2003.                                                    CGO, 2010.
+ [23] H. Park et al., “Regularities considered harmful: Forcing randomness             [62] J. Xiong et al., “SPL: A language and compiler for DSP algorithms,” in
+      to memory accesses to reduce row buffer conflicts for multi-core,                     PLDI, 2001.
+      multi-bank systems,” in ASPLOS, 2013.                                            [63] R. C. Whaley et al., “Automated empirical optimizations of software
+                                                                                            and the ATLAS project,” Parallel Computing, 2001.
+ [24] S. P. Muralidhara et al., “Reducing memory interference in multi-
+      core systems via application-aware memory channel partitioning,” in              [64] U. Bondhugula et al., “A practical automatic polyhedral parallelizer
+      MICRO, 2011.                                                                          and locality optimizer,” in PLDI, 2008.
+ [25] G. Pekhimenko et al., “Linearly compressed pages: a low-complexity,              [65] S. Coleman et al., “Tile size selection using cache organization and
+      low-latency main memory compression framework,” in MICRO, 2013.                       data layout,” in PLDI, 1995.
+ [26] N. Vijaykumar et al., “A case for core-assisted bottleneck acceleration          [66] T. Henretty et al., “A stencil compiler for short-vector simd architec-
+      in GPUs: enabling flexible data compression with assist warps,” in                    tures,” in SC, 2013.
+      ISCA, 2015.                                                                      [67] J. Ma et al., “Supporting differentiated services in computers via pro-
+ [27] G. Pekhimenko et al., “Base-delta-immediate compression: Practical                    grammable architecture for resourcing-on-demand (PARD),” in ASP-
+      data compression for on-chip caches,” in PACT, 2012.                                  LOS, 2015.
+ [28] J. Dusser et al., “Zero-content augmented caches,” in SC, 2009.                  [68] Intel Corporation, “Enabling Intel virtualization technology
+ [29] M. Ekman et al., “A robust main-memory compression scheme,” in                        features and benefits.” https://www.intel.com/content/dam/www/
+      ISCA, 2005.                                                                           public/us/en/documents/white-papers/virtualization-enabling-
+ [30] A. Arelakis et al., “SC2: A statistical compression cache scheme,” in                 intel-virtualization-technology-features-and-benefits-paper.pdf
+      ISCA, 2014.                                                                      [69] AMD, “AMD-V nested paging.” http://developer.amd.com/wordpress/
+ [31] G. Pekhimenko et al., “Exploiting compressed block size as an indicator               media/2012/10/NPT-WP-1%201-final-TM.pdf
+      of future reuse,” in HPCA, 2015.
+
+
+                                                                                  13
+
+
+===== Page 14 =====
+
+ [70] N. Vijaykumar et al., “A case for richer cross-layer abstractions: Bridg-        [111] M. Hillenbrand et al., “Multiple physical mappings: Dynamic DRAM
+      ing the semantic gap with expressive memory,” in CMU SAFARI Tech-                      channel sharing and partitioning,” in APSys, 2017.
+      nical Report No. 2018-001, 2018.                                                 [112] J. Carter et al., “Impulse: Building a smarter memory controller,” in
+ [71] S. Thoziyoor et al., “CACTI 5.1,” HP Laboratories, Tech. Rep. HPL-                     HPCA, 1999.
+      2008-20, 2008.                                                                   [113] SPEC CPU2006 Benchmarks, “http://www.spec.org/.”
+ [72] P. A. Boncz et al., “Database architecture optimized for the new bot-            [114] S. Che et al., “Rodinia: A benchmark suite for heterogeneous comput-
+      tleneck: Memory access,” in VLDB, 1999.                                                ing,” in IISWC, 2009.
+ [73] X. Tang et al., “Partitioned similarity search with cache-conscious              [115] J. A. Stratton et al., “Parboil: A revised benchmark suite for scientific
+      data traversal,” TKDD, 2017.                                                           and commercial throughput computing,” UIUC, Tech. Rep. IMPACT-
+ [74] R. J. Bayardo et al., “Scaling up all pairs similarity search,” in WWW,                12-01, 2012.
+      2007.                                                                            [116] P. Charles et al., “X10: An object-oriented approach to non-uniform
+ [75] J. Srinivas et al., “Reactive tiling,” in CGO, 2015.                                   cluster computing,” OOPSLA, 2005.
+ [76] A. Jain et al., “Continuous shape shifting: Enabling loop co-                    [117] B. Chamberlain et al., “Parallel programmability and the chapel lan-
+      optimization via near-free dynamic code rewriting,” in MICRO, 2016.                    guage,” IJHPCA, 2007.
+ [77] S. Tavarageri et al., “Dynamic selection of tile sizes,” in HiPC, 2011.          [118] K. Fatahalian et al., “Sequoia: Programming the memory hierarchy,”
+ [78] B. Bao et al., “Defensive loop tiling for shared cache,” in CGO, 2013.                 in SC, 2006.
+ [79] D. Sánchez et al., “Zsim: fast and accurate microarchitectural simula-           [119] S. Treichler et al., “Dependent partitioning,” in OOPSLA, 2016.
+      tion of thousand-core systems,” in ISCA, 2013.                                   [120] M. Bauer et al., “Structure slicing: Extending logical regions with
+ [80] P. Rosenfeld et al., “DRAMSim2: A cycle accurate memory system                         fields,” in SC, 2014.
+      simulator,” CAL, 2011.                                                           [121] S. Treichler et al., “Realm: An event-based low-level runtime for
+ [81] L. Pouchet, “Polybench: The polyhedral benchmark suite.” http:                         distributed memory architectures,” in PACT, 2014.
+      //web.cse.ohio-state.edu/~pouchet.2/software/polybench/                          [122] E. Slaughter et al., “Regent: A high-productivity programming lan-
+ [82] N. A. Kurd et al., “Westmere: A family of 32nm IA processors,” in                      guage for HPC with logical regions,” in SC, 2015.
+      ISSCC, 2010.                                                                     [123] Y. Yan et al., “Hierarchical place trees: A portable abstraction for task
+ [83] A. Jaleel et al., “High Performance Cache Replacement Using Re-                        parallelism and data movement.” in LCPC, 2009.
+      reference Interval Prediction (RRIP),” in ISCA, 2010.                            [124] G. Bikshandi et al., “Programming for parallelism and locality with
+ [84] S. Rixner et al., “Memory access scheduling,” in ISCA, 2000.                           hierarchically tiled arrays,” in PPoPP, 2006.
+ [85] Y. Kim et al., “ATLAS: a scalable and high-performance scheduling                [125] M. Bauer et al., “Legion: Expressing locality and independence with
+      algorithm for multiple memory controllers,” in HPCA, 2010.                             logical regions,” in SC, 2012.
+ [86] T. C. Mowry et al., “Design and evaluation of a compiler algorithm               [126] J. Guo et al., “Programming with tiles,” in PPoPP, 2008.
+      for prefetching,” in ASPLOS, 1992.                                               [127] D. Unat et al., “Tida: High-level programming abstractions for data
+ [87] J. Dean et al., “The tail at scale,” Commun. ACM, 2013.                                locality management,” in HiPC, 2016.
+ [88] S. Kanev et al., “Profiling a warehouse-scale computer,” in ISCA, 2015.          [128] N. Vijaykumar et al., “The Locality Descriptor: A Holistic Cross-Layer
+ [89] M. V. Wilkes, “The memory gap and the future of high performance                       Abstraction to Express Data Locality in GPUs,” in ISCA, 2018.
+      memories,” CAN, 2001.                                                            [129] “Memory management optimizations on the Intel® Xeon Phi™ copro-
+ [90] O. Mutlu, “Memory scaling: A systems architecture perspective,” in
+                                                                                             cessor,” in https:// software.intel.com/ sites/ default/ files/ managed/ b4/
+      IMW, 2013.
+ [91] O. Mutlu et al., “Runahead execution: An alternative to very large                     24/ mem_management_dgemm.pdf . Intel Compiler Lab, 2015.
+      instruction windows for out-of-order processors,” in HPCA, 2003.                 [130] K. Beyls et al., “Compile-time cache hint generation for EPIC archi-
+ [92] O. Mutlu et al., “Parallelism-aware batch scheduling: Enhancing both                   tectures,” in EPIC, 2002.
+      performance and fairness of shared DRAM systems,” in ISCA, 2008.                 [131] P. Jain et al., “Controlling cache pollution in prefetching with software-
+                                                                                             assisted cache replacement,” Comptation Structures Group, Laboratory
+ [93] Y. Kim et al., “Thread cluster memory scheduling: Exploiting differ-
+                                                                                             for Computer Science CSG Memo, 2001.
+      ences in memory access behavior,” in MICRO, 2010.
+ [94] A. Glew, “MLP yes! ILP no,” ASPLOS WACI, 1998.                                   [132] J. Skeppstedt et al., “Hybrid compiler/hardware prefetching for multi-
+                                                                                             processors using low-overhead cache miss traps,” in ICPP, 1997.
+ [95] K. Sudan et al., “Micro-pages: increasing DRAM efficiency with
+      locality-aware data placement,” ASPLOS, 2010.                                    [133] M. Karlsson et al., “A prefetching technique for irregular accesses to
+ [96] L. Liu et al., “A software memory partition approach for eliminating                   linked data structures,” in HPCA, 2000.
+                                                                                       [134] A. Fuchs et al., “Loop-aware memory prefetching using code block
+      bank-level interference in multicore systems,” in PACT, 2012.                          working sets,” in MICRO, 2014.
+ [97] L. Liu et al., “BPM/BPM+: Software-based dynamic memory partition-
+                                                                                       [135] J. Leverich et al., “Comparing memory systems for chip multiproces-
+      ing mechanisms for mitigating DRAM bank-/channel-level interfer-
+                                                                                             sors,” in ISCA, 2007.
+      ences in multicore systems,” TACO, February 2014.                                [136] N. Vijaykumar et al., “Zorua: A Holistic Approach to Resource Virtu-
+ [98] W. Ding et al., “Compiler support for optimizing memory bank-level                     alization in GPUs,” in MICRO, 2016.
+      parallelism,” in MICRO, 2014.                                                    [137] D. Chiou et al., “Application-specific memory management for em-
+ [99] R. A. Bheda et al., “Improving DRAM bandwidth utilization with                         bedded systems using software-controlled caches,” in DAC, 2000.
+      MLP-Aware OS paging,” in MEMSYS, 2016.                                           [138] N. Beckmann et al., “Jigsaw: Scalable software-defined caches,” in
+[100] M. Xie et al., “Improving system throughput and fairness simultane-                    PACT, 2013.
+      ously in shared memory CMP systems via dynamic bank partitioning,”               [139] P. Tsai et al., “Jenga: Software-defined cache hierarchies,” in ISCA,
+      in HPCA, 2014.                                                                         2017.
+[101] W. Mi et al., “Software-hardware cooperative DRAM bank partitioning              [140] H. Cook et al., “Virtual local stores: Enabling software-managed mem-
+      for chip multiprocessors,” NPC, 2010.                                                  ory hierarchies in mainstream computing environments,” EECS De-
+[102] M. K. Jeong et al., “Balancing DRAM locality and parallelism in shared                 partment, University of California, Berkeley, Tech. Rep., Sep 2009.
+      memory CMP systems,” in HPCA, 2012.                                              [141] J. Cong et al., “An energy-efficient adaptive hybrid cache,” in ISLPED,
+[103] H. Yun et al., “Palloc: DRAM bank-aware memory allocator for per-                      2011.
+      formance isolation on multicore platforms,” in RTAS, 2014.                       [142] C. F. Fajardo et al., “Buffer-integrated-cache: A cost-effective SRAM
+[104] L. Liu et al., “Going vertical in memory management: Handling multi-                   architecture for handheld and embedded platforms,” in DAC, 2011.
+      plicity by multi-policy,” in ISCA, 2014.                                         [143] N. Beckmann et al., “Talus: A simple way to remove cliffs in cache
+[105] Y. Liu et al., “Locality-aware bank partitioning for shared DRAM                       performance,” in HPCA, 2015.
+      MPSoCs,” in ASP-DAC, 2017.                                                       [144] U. Dhawan et al., “Architectural support for software-defined metadata
+[106] Z. Zhang et al., “A permutation-based page interleaving scheme to                      processing,” ASPLOS, 2015.
+      reduce row-buffer conflicts and exploit data locality,” in MICRO, 2000.          [145] E. A. Feustel, “On the advantages of tagged architecture,” TC, 1973.
+[107] D. Kaseridis et al., “Minimalist open-page: A DRAM page-mode                     [146] N. Zeldovich et al., “Hardware enforcement of application security
+      scheduling policy for the many-core era,” in MICRO, 2011.                              policies using tagged memory.” in OSDI, 2008.
+[108] H. Vandierendonck et al., “XOR-based hash functions,” TC, 2005.                  [147] E. Witchel et al., “Mondrian memory protection,” in ASPLOS, 2002.
+[109] Z. Zhang et al., “Breaking address mapping symmetry at multi-levels              [148] Z. Yu et al., “Labeled RISC-V: A new perspective on software-defined
+      of memory hierarchy to reduce DRAM row-buffer conflicts,” JILP,                        architecture,” in CARVV, 2017.
+      2001.
+[110] M. Ghasempour et al., “Dream: Dynamic re-arrangement of address
+      mapping to improve the performance of DRAMs,” in MemSys, 2016.
+
+
+                                                                                  14

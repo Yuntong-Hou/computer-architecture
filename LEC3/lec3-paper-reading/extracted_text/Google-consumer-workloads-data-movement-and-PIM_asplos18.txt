@@ -1,0 +1,1550 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/Google-consumer-workloads-data-movement-and-PIM_asplos18.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/Google-consumer-workloads-data-movement-and-PIM_asplos18.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+                                 Google Workloads for Consumer Devices:
+                                  Mitigating Data Movement Bottlenecks
+                                 Amirali Boroumand1      Saugata Ghose1     Youngsok Kim2
+                        Rachata Ausavarungnirun 1    Eric Shiu3    Rahul Thakur3    Daehyun Kim4,3
+                        Aki Kuusela3    Allan Knies3    Parthasarathy Ranganathan3    Onur Mutlu5,1
+     1 Carnegie Mellon University                 2 Dept. of ECE, Seoul National University                3 Google      4 Samsung Research        5 ETH Zürich
+
+
+Abstract                                                                                        1   Introduction
+We are experiencing an explosive growth in the number of con-                                   Consumer devices, which include smartphones, tablets, web-based
+sumer devices, including smartphones, tablets, web-based compu-                                 computers such as Chromebook [40], and wearable devices, have be-
+ters such as Chromebooks, and wearable devices. For this class of                               come increasingly ubiquitous in recent years. There were 2.3 billion
+devices, energy efficiency is a first-class concern due to the limi-                            smartphone users worldwide in 2017 [32]. Tablets have witnessed
+ted battery capacity and thermal power budget. We find that data                                similar growth, as 51% of the U.S. population owns a tablet as of
+movement is a major contributor to the total system energy and                                  2016, and 1.2 billion people in the world use tablets [32]. There is
+execution time in consumer devices. The energy and performance                                  similar demand for web-based computers like Chromebooks [40],
+costs of moving data between the memory system and the compute                                  which now account for 58% of all computer shipments to schools
+units are significantly higher than the costs of computation. As a                              in the U.S. [63].
+result, addressing data movement is crucial for consumer devices.                                   Energy consumption is a first-class concern for consumer de-
+   In this work, we comprehensively analyze the energy and per-                                 vices. The performance requirements of these consumer devices
+formance impact of data movement for several widely-used Google                                 have increased dramatically every year to support emerging ap-
+consumer workloads: (1) the Chrome web browser; (2) TensorFlow                                  plications such as 4K video streaming and recording [154], virtual
+Mobile, Google’s machine learning framework; (3) video playback,                                reality (VR) [87], and augmented reality (AR) [6, 18, 60, 93]. A con-
+and (4) video capture, both of which are used in many video services                            sumer device integrates many power-hungry components such as
+such as YouTube and Google Hangouts. We find that processing-in-                                powerful CPUs, a GPU, special-purpose accelerators, sensors, and a
+memory (PIM) can significantly reduce data movement for all of                                  high-resolution screen. Despite the rapid growth in processing capa-
+these workloads, by performing part of the computation close to                                 bility, two trends greatly limit the performance of consumer devices.
+memory. Each workload contains simple primitives and functions                                  First, lithium-ion battery capacity has only doubled in the last 20
+that contribute to a significant amount of the overall data mo-                                 years [26, 123]. Second, the thermal power dissipation of consumer
+vement. We investigate whether these primitives and functions                                   devices has become a severe performance constraint [60]. There-
+are feasible to implement using PIM, given the limited area and                                 fore, fundamentally energy-efficient design of consumer devices is
+power constraints of consumer devices. Our analysis shows that                                  critical to keep up with increasing user demands and to support a
+offloading these primitives to PIM logic, consisting of either simple                           wide range of emerging applications [18, 82, 87, 100–102, 109, 154].
+cores or specialized accelerators, eliminates a large amount of data                                To identify the major sources of energy consumption in con-
+movement, and significantly reduces total system energy (by an                                  sumer devices, we conduct an in-depth analysis of several popu-
+average of 55.4% across the workloads) and execution time (by an                                lar Google consumer workloads, as they account for a significant
+average of 54.2%).                                                                              portion of the applications executed on consumer devices. We ana-
+                                                                                                lyze (1) Chrome [39], the most commonly-used web browser [108];
+                                                                                                (2) TensorFlow Mobile [52], Google’s machine learning framework
+CCS Concepts • Hardware → Power and energy; Memory                                              that is used in various services such as Google Translate [49], Goo-
+and dense storage; • Human-centered computing → Ubiqui-                                         gle Now [48], and Google Photos [46]; (3) video playback [55]
+tous and mobile devices; • Computer systems organization                                        and (4) video capture using the VP9 codec [55], which is used by
+→ Heterogeneous (hybrid) systems;                                                               many video services such as YouTube [53], Skype [97], and Google
+                                                                                                Hangouts [45]. These workloads are among the most commonly-
+Keywords processing-in-memory; data movement; consumer wor-                                     used applications by consumer device users [25, 28, 33, 68, 113],
+kloads; memory systems; energy efficiency                                                       and they form the core of many Google services (e.g., Gmail [42],
+                                                                                                YouTube [53], the Android OS [38], Google Search [47]) that each
+ACM Reference Format:                                                                           have over a billion monthly active users [54, 117].
+A. Boroumand et al. 2018. Google Workloads for Consumer Devices: Mi-                                We make a key observation based on our comprehensive wor-
+tigating Data Movement Bottlenecks. In ASPLOS ’18: 2018 Architectural                           kload analysis: among the many sources of energy consumption in
+Support for Programming Languages and Operating Systems, March 24–                              consumer devices (e.g., CPUs, GPU, special purpose accelerators,
+28, 2018, Williamsburg, VA, USA. ACM, New York, NY, USA, 16 pages.                              memory), data movement between the main memory system and
+http://dx.doi.org/10.1145/3173162.3173177                                                       computation units (e.g., CPUs, GPU, special-purpose accelerators)
+Permission to make digital or hard copies of all or part of this work for personal or
+                                                                                                is a major contributor to the total system energy. For example, when
+classroom use is granted without fee provided that copies are not made or distributed           the user scrolls through a Google Docs [44] web page, moving data
+for profit or commercial advantage and that copies bear this notice and the full citation       between memory and computation units causes 77% of the total
+on the first page. Copyrights for components of this work owned by others than ACM              system energy consumption (Section 4.2.1). This is due to the fact
+must be honored. Abstracting with credit is permitted. To copy otherwise, or republish,         that the energy cost of moving data is orders of magnitude higher
+to post on servers or to redistribute to lists, requires prior specific permission and/or
+a fee. Request permissions from permissions@acm.org.
+                                                                                                than the energy cost of computation [80]. We find that across all
+ASPLOS’18, March 24–28, 2018, Williamsburg, VA, USA
+                                                                                                of the applications we study, 62.7% of the total system energy, on
+© 2018 Association for Computing Machinery.                                                     average, is spent on data movement between main memory and
+ACM ISBN 978-1-4503-4911-6/18/03. . . $15.00                                                    the compute units.
+http://dx.doi.org/10.1145/3173162.3173177
+
+
+                                                                                            1
+
+
+===== Page 2 =====
+
+    Based on our key observation, we find that we can substan-                   provide larger benefits, with an average energy reduction of 55.4%
+tially reduce the total system energy if we greatly mitigate the                 (up to 73.5%) and performance improvement of 54.2% (up to 2.5x)
+cost of data movement. One potential way to do so is to execute                  for a state-of-the-art consumer device. However, PIM accelerators
+the data-movement-heavy portions of our applications close to the                require custom logic to be implemented for each separate workload.
+data. Recent advances in 3D-stacked memory technology have ena-                  We find that PIM accelerators are especially effective for workloads
+bled cost-effective solutions to realize this idea [71, 75, 90, 94]. 3D-         such as video playback, which already make use of specialized
+stacked DRAM architectures include a dedicated logic layer, that is              hardware accelerators in consumer devices.
+capable of providing logic functionality, with high-bandwidth low-                  We make the following key contributions in this work:
+latency connectivity to DRAM layers. Recent works [3–5, 12, 30,                  • We conduct the first comprehensive analysis of important Google
+35, 36, 56, 59, 65, 66, 81, 82, 98, 99, 106, 116, 138, 150, 151, 153] take          consumer workloads, including the Chrome browser [39], Ten-
+advantage of the logic layer [71, 75, 90, 94] to perform processing-in-             sorFlow Mobile [52], video playback [55], and video capture [55],
+memory (PIM), also known as near-data processing. PIM allows the                    to identify major sources of energy consumption.
+CPU to dispatch parts of the application for execution on compute                • We observe that data movement between the main memory and
+units that are close to DRAM. Offloading computation using PIM                      conventional computation units is a major contributor to the total
+has two major benefits. First, it eliminates a significant portion                  system energy consumption in consumer devices. On average,
+of the data movement between main memory and conventional                           data movement accounts for 62.7% of the total energy consumed
+processors. Second, it can take advantage of the high-bandwidth                     by Google consumer workloads.
+and low-latency access to the data inside 3D-stacked DRAM.                       • We observe that most of the data movement in consumer wor-
+    However, there are challenges against introducing PIM in con-                   kloads is generated by simple functions and primitives. These
+sumer devices. Consumer devices are extremely stringent in terms                    functions and primitives are composed of operations such as
+of the area and energy budget they can accommodate for any new                      memcopy, memset, basic arithmetic operations, and bitwise ope-
+hardware enhancement. Regardless of the memory technology used                      rations, all of which can be implemented in hardware at low
+to enable PIM (whether it is HMC [71], HBM [75], or some other                      cost.
+form of 3D-stacked or compute-capable memory [85, 90, 125, 126]),                • We perform the first detailed analysis of processing-in-memory
+any additional logic can potentially translate into a significant cost             (PIM) for consumer devices, considering the stringent power and
+in consumer devices. In fact, unlike prior proposals for PIM in                     area constraints of such devices. Our evaluation shows that we
+server or desktop environments, consumer devices may not be                         can design cost-efficient PIM logic that significantly reduces the
+able to afford the addition of full-blown general-purpose PIM co-                   total system energy and execution time of consumer worklo-
+res [12, 30, 35], GPU PIM cores [65, 116, 153], or sophisticated PIM                ads, by 55.4% and 54.2%, respectively, averaged across all of the
+accelerators [3, 36, 66] to 3D-stacked memory. As a result, a major                 consumer workloads we study.
+challenge for enabling PIM in consumer devices is to identify what
+kind of in-memory logic can both (1) maximize energy efficiency                  2    Background
+and (2) be implemented at minimum possible cost.                                 Processing-in-memory (PIM) involves embedding logic directly
+    To investigate the potential benefits of PIM, given the area and             within a memory device, and by offloading some of the computation
+energy constraints of consumer devices, we delve further into each               onto this embedded logic. Early works on PIM [86, 115, 129, 134] add
+consumer workload to understand what underlying functions and                    substantial processing logic completely inside a DRAM chip. Later
+characteristics contribute most to data movement. Our analysis                   works [29, 79, 95, 112] propose more versatile substrates that incre-
+leads to a second key observation: across all of the consumer                    ase the flexibility and computational capability available within the
+workloads we examine, there are often simple functions and primi-                DRAM chip. These proposals have limited to no adoption, as they
+tives (which we refer to as PIM targets) that are responsible for a              require very costly DRAM–logic integration.
+significant fraction of the total data movement. These PIM targets                   The emergence of 3D-stacked DRAM architectures [71, 75, 90,
+range from simple data reorganization operations, such as tiling                 94] offers a promising solution. These architectures stack multiple
+and packing, to value interpolation and quantization. For example,               layers of DRAM arrays within a single chip, and use vertical through-
+as we show in Sections 4 and 5, the data movement cost of data reor-             silicon vias (TSVs) to provide much greater bandwidth between
+ganization operations in Chrome and TensorFlow Mobile account                    layers than the off-chip bandwidth available between DRAM and
+for up to 25.7% and 35.3% of the total system energy, respectively.              the CPUs. Several 3D-stacked DRAM architectures (e.g., HBM [75],
+    We find that many of these PIM targets are comprised of simple               HMC [71]) provide a dedicated logic layer within the stack that
+operations such as memcopy, memset, and basic arithmetic and bit-                can have low-complexity (due to thermal constraints) logic. Recent
+wise operations. Such PIM targets are mostly data-intensive and re-              works on PIM embed computation units within the logic layer
+quire relatively little and simple computation. For example, texture             (e.g., [3–5, 12, 30, 35, 36, 56, 59, 65, 66, 81, 82, 98, 99, 106, 116, 138,
+tiling in Chrome is comprised of memcopy, basic arithmetic, and bit-             150, 151, 153]). However, these previous proposals are not designed
+wise operations. We find that the PIM targets can be implemented                 for the highly-stringent area, power, and thermal constraints of
+as PIM logic using either (1) a small low-power general-purpose em-              modern commercial consumer devices.
+bedded core (which we refer to as a PIM core) or (2) a group of small                We refer the reader to our survey works [37, 127, 128] for more
+fixed-function accelerators (PIM accelerators). Our analysis shows               detail on prior processing-in-memory proposals.
+that the area of a PIM core and a PIM accelerator take up no more
+than 9.4% and 35.4%, respectively, of the area available for PIM logic           3    Analyzing and Mitigating Data Movement
+in an HMC-like [71] 3D-stacked memory architecture (Section 3.2).                Our goal in this work is to (1) understand the data movement related
+Thus, the PIM core and PIM accelerator are cost-effective to use in              bottlenecks in modern consumer workloads, (2) comprehensively
+consumer devices.                                                                analyze the benefits that PIM can provide for such workloads, and
+    Our comprehensive experimental evaluation shows that PIM                     (3) investigate the PIM logic that can benefit these workloads while
+cores are sufficient to eliminate a majority of data movement, due               still being feasible to implement given the limited area, power, and
+to the computational simplicity and high memory intensity of the                 thermal budgets of consumer devices.
+PIM targets. On average across all of the consumer workloads that                    We start by identifying those portions of the consumer worklo-
+we examine, PIM cores provide a 49.1% energy reduction (up to                    ads that cause significant data movement and that are best suited
+59.4%) and a 44.6% performance improvement (up to 2.2x) for a                    for PIM execution. We examine four widely-used Google consu-
+state-of-the-art consumer device. We find that PIM accelerators                  mer workloads: (1) the Chrome web browser [39]; (2) TensorFlow
+
+                                                                             2
+
+
+===== Page 3 =====
+
+Mobile [52], Google’s machine learning framework; (3) video play-                 require more area than is available in the logic layer of 3D-stacked
+back, and (4) video capture using the VP9 video codec [55]. These                 memory (see Section 3.3). In the rest of this paper, we study only
+workloads form the core of many Google services (e.g., Gmail [42],                PIM target candidates that pass both of these criteria.
+YouTube [53], the Android OS [38], Google Search [47]) that each
+have over a billion monthly active users [54, 117].                               3.3 Implementing PIM Targets in 3D-Stacked DRAM
+   In this section, we discuss our characterization methodology                   For each workload, once we have identified a PIM target, we propose
+(Section 3.1), our approach for identifying PIM targets in each                   PIM logic that can perform the PIM target functionality inside the
+consumer workload (Section 3.2), and the types of PIM logic we                    logic layer of 3D-stacked memory. We propose two types of PIM
+use to implement the PIM targets (Section 3.3).                                   logic: (1) a general-purpose PIM core, where a single PIM core can
+3.1 Workload Analysis Methodology                                                 be used by any of our PIM targets; and (2) a fixed-function PIM
+                                                                                  accelerator, where we design custom logic for each PIM target.
+We perform our workload characterization on a Chromebook [40]                        For the PIM core, we design a custom 64-bit low-power single-
+with an Intel Celeron (N3060 dual core) SoC [72] and 2GB of DRAM.                 issue core similar in design to the ARM Cortex-R8 [9] (see Section 9
+Our performance and traffic analyses are based on hardware per-                   for more details). All of the PIM targets that we evaluate are data-
+formance counters within the SoC.                                                 intensive, and the majority of them perform only simple operations
+   We build our energy model based on prior work [114], which                     (e.g., memcopy, basic arithmetic operations, bitwise operations).
+sums up the total energy consumed by the CPU cores, DRAM, off-                    As a result, we do not implement aggressive instruction-level pa-
+chip interconnects, and all caches. We use hardware performance                   rallelism (ILP) techniques (e.g., sophisticated branch predictors,
+counters to drive this model. During our characterization, we turn                superscalar execution) in our core. Several of our PIM targets exhi-
+off Wi-Fi and use the lowest brightness for the display to ensure that            bit highly data-parallel behavior, leading us to incorporate a SIMD
+the majority of the total energy is spent on the SoC and the memory               unit that can perform a single operation on multiple pieces of data
+system [113, 114]. We use CACTI-P 6.5 [104] with a 22nm process                   concurrently. We empirically set the width of our SIMD unit to 4.
+technology to estimate L1 and L2 cache energy. We estimate the                       For the PIM accelerator for each of our PIM targets, we first
+CPU energy based on prior works [114, 143] and scale the energy                   design a customized in-memory logic unit, which is fixed-function
+to accurately fit our Celeron processor. We model the 3D-stacked                  logic that performs a single thread of the PIM target in the logic
+DRAM energy as the energy consumed per bit, using estimates                       layer. To exploit the data-parallel nature of the PIM targets, we
+and models from prior works [74, 124]. We conservatively use the                  add multiple copies of the in-memory logic unit, so that multiple
+energy of the ARM Cortex-R8 to estimate the energy consumed                       threads of execution can be performed concurrently.
+by a PIM core, and we estimate the PIM accelerator energy based                      We evaluate the performance and energy consumption of a state-
+on [1], conservatively assuming that the accelerator is 20x more                  of-the-art consumer device that contains either PIM cores or PIM
+energy-efficient than the CPU cores.                                              accelerators in 3D-stacked memory (Section 10). In order to assess
+Chrome Web Browser. We analyze Chrome [39] using the Tele-                        the feasibility of implementing our PIM cores or PIM accelerators in
+metry framework [23], which automates user actions on a set of                    memory, we estimate the area consumed by both types of PIM logic
+web pages. We analyze three pages that belong to important Google                 for a 22 nm process technology. We assume that the 3D-stacked
+web services (Google Docs [44], Gmail [42], Google Calendar [43]),                memory contains multiple vaults (i.e., vertical slices of 3D-stacked
+two of the top 25 most-accessed web sites [7] (WordPress [149] and                DRAM), and that we add one PIM core or PIM accelerator per vault.
+Twitter [142]), and one animation-heavy page [23].                                Assuming an HMC-like [71] 3D-stacked memory architecture for
+TensorFlow Mobile. To analyze TensorFlow Mobile [52], we pro-                     PIM, there is around 50–60 mm2 of area available for architects
+file four representative neural networks: VGG-19 [131], ResNet-v2-                to add new logic into the DRAM logic layer. This translates to an
+152 [62], Inception-ResNet-v2 [137], and Residual-GRU [141]. The                  available area of approximately 3.5–4.4 mm2 per vault to implement
+first three networks are for image classification, and Residual-GRU               our PIM logic [30, 36, 74].1 We find that each PIM core requires
+is for image compression. All four networks have a number of use                  less than 0.33 mm2 of area in the logic layer, conservatively based
+cases on mobile consumer devices (e.g., grouping similar images,                  on the footprint of the ARM Cortex-R8 [9]. This requires no more
+reducing the size of newly-taken photos on the fly).                              than 9.4% of the area available per vault to implement PIM logic.
+Video Playback and Video Capture. We evaluate both hardware                       The area required for each PIM accelerator depends on the PIM
+and software implementations of the VP9 codec [55, 146]. We use                   target being implemented, and we report these area numbers in
+publicly-available video frames [152] as inputs to the VP9 decoder                Sections 4–7.
+and encoder. For the in-house hardware implementation, we use
+a bit-level C++ model to accurately model all traffic between each                4    Chrome Web Browser
+component of the hardware and DRAM. The RTL for the commer-                       A web browser is one of the most commonly-used applications
+cial VP9 hardware is generated from this C++ model using Calypto                  by consumer device users [28], and is listed as one of the most
+Catapult [96].                                                                    common applications in many mobile benchmarks [57, 68, 113].
+                                                                                  We study Google Chrome, which has claimed the majority of the
+3.2 Identifying PIM Targets                                                       mobile browsing market share for several years [108], and has over
+We use hardware performance counters and our energy model to                      a billion active users [117].
+identify candidate functions that could be PIM targets. A function                   The user perception of the browser speed is based on three
+is a PIM target candidate if (1) it consumes the most energy out of               factors: (1) page load time, (2) smooth web page scrolling, and
+the all functions in the workload, (2) its data movement consumes                 (3) quick switching between browser tabs. In our study, we focus on
+a significant fraction of the total workload energy, (3) it is memory-            two user interactions that impact these three factors, and govern a
+intensive (i.e., its last-level cache misses per kilo instruction, or MPKI,       user’s browsing experience: (1) page scrolling and (2) tab switching.
+is greater than 10 [21, 83, 84, 103]), and (4) data movement is the               Note that each interaction includes page loading.
+single largest component of the function’s energy consumption.
+We then check if each candidate is amenable to PIM logic imple-
+mentation using two criteria. First, we discard any PIM targets that
+                                                                                  1 As a comparison, a typical system-on-chip (SoC) used in a consumer device has an
+incur any performance loss when run on simple PIM logic (i.e., PIM
+core, PIM accelerator). Second, we discard any PIM targets that                   area of 50–100 mm2 [132, 136, 139, 147, 148].
+
+
+                                                                              3
+
+
+===== Page 4 =====
+
+                                                                                                                 Texture Tiling                  Color Blitting    Other            Data Movement              Compute
+
+
+
+
+                                                                                Total Energy (pJ)
+4.1 Background                                                                                      18×1012                                                                            40%
+
+
+
+
+                                                                                                                                                                               Total Energy
+                                                                                                                                                                                Fraction of
+When a web page is downloaded, the rendering engine in Chrome,                                      15×1012                                                                                   30%
+                                                                                                    12×1012
+called Blink [22], parses the HTML to construct a Document Object                                    9×1012                                                                                   20%
+Model (DOM) tree, which consists of the internal elements of the                                     6×1012
+                                                                                                     3×1012                                                                                   10%
+web page represented as tree nodes. Blink also parses the style
+                                                                                                     0×1012                                                                                   0%
+rule data from the Cascading Style Sheet (CSS). The DOM tree and                                               CPU          L1             LLC     Inter- Mem DRAM                                      Texture Color
+                                                                                                                                                  connect Ctrl                                           Tiling Blitting
+style rules enable a visual representation of the page, called the
+render tree. Each render tree node, called a render object, requires            Figure 2. Energy breakdown when scrolling through a Google
+geometric information of the corresponding element to paint it to               Docs web page.
+the display. The process of calculating the position and size of each
+render object is called layout. Once layout is complete, Chrome                 4.2.2 Analysis of PIM Effectiveness
+uses the Skia library [51] to perform rasterization, where a bitmap             In this section, we analyze the suitability of texture tiling and color
+is generated for each render object by recursively traversing the               blitting for PIM execution.
+render tree. The rasterized bitmap (also known as a texture) is then
+sent to the GPU through a process called texture upload, after which            Texture Tiling. Figure 3a illustrates the major steps and associated
+the GPU performs compositing. During compositing, the GPU paints                data movement that take place during the texture tiling process.
+the pixels corresponding to the texture onto the screen.                        Texture tiling takes place after rasterization and before composi-
+                                                                                ting. Rasterization generates a linear rasterized bitmap, which is
+4.2 Page Scrolling                                                              written using a linear access pattern to memory ( 1 in the figure).
+Scrolling triggers three operations: (1) layout, (2) rasterization, and         After rasterization, compositing accesses each texture in both the
+(3) compositing. All three operations must happen within the mo-                horizontal and vertical directions. To minimize cache misses du-
+bile screen refresh time (60 FPS or 16.7 ms [92, 105]) to avoid frame           ring compositing, the graphics driver reads the rasterized bitmap
+dropping. Scrolling often forces the browser to recompute the la-               ( 2 ) and converts the bitmap into a tiled texture layout ( 3 ). For
+yout for the new dimensions and position of each web page element,              example, the Intel HD Graphics driver breaks down each rasterized
+which is highly compute-intensive. However, a careful design of                 bitmap into multiple 4 kB texture tiles [70]. This allows the GPU to
+web pages can mitigate this cost [135, 140]. The browser also needs             perform compositing on only one tile from the bitmap at a time to
+to rasterize any new objects that were not displayed previously.                improve data locality.
+Depending on the web page contents and scroll depth, this requires                                              (a) CPU-Only                                time               (b) CPU + PIM
+significant computation [91, 140]. The updated rasterized bitmap                                          CPU                                Memory                      CPU                                 PIM
+must then be composited to display the results of the scroll on the
+                                                                                                       rasterization                                                rasterization
+screen.                                                                                                  generates           1                                        generates
+                                                                                                      linear bitmap                                                linear bitmap
+4.2.1 Scrolling Energy Analysis                                                                                                            linear bitmap                                                linear bitmap
+                                                                                                                       2
+                                                                                                       read bitmap         data movement                                                            4
+Figure 1 shows the energy breakdown for scrolling on different                                                                                                                                          convert bitmap
+                                                                                texture tiling
+
+
+
+
+                                                                                                      from memory
+
+
+
+
+                                                                                                                                                                        idle
+                                                                                                                                                                    5                                   to tiled texture
+web pages. Across all of the pages that we test, a significant por-
+                                                                                                                                high
+
+
+                                                                                                     convert bitmap
+tion (41.9%) of page scrolling energy is spent on two data-intensive                                 to tiled texture                                                                                    texture tiles
+components: (1) texture tiling, where the graphics driver reorga-                                                    3                                             driver invokes
+                                                                                                        write tiles                                                 compositing
+nizes the linear bitmap data into a tiled format for the GPU; and                                      to memory
+(2) color blitting, which is invoked by the Skia library [51] during                                                                       texture tiles
+rasterization. The rest of the energy is spent on a variety of other                                 driver invokes
+                                                                                                      compositing
+libraries and functions, each of which contributes to less than 1%
+of the total energy consumption (labeled Other in Figure 1).                                                  Figure 3. Texture tiling on (a) CPU vs. (b) PIM.
+                            Texture Tiling   Color Blitting   Other
+Total Energy
+
+
+
+
+               100%
+ Fraction of
+
+
+
+
+                80%                                                                 As we observe from Figure 2 (right), 25.7% of the total system
+                60%                                                             energy is spent on data movement generated by texture tiling. In
+                40%                                                             fact, only 18.5% of the total energy consumed by texture tiling is
+                20%
+                 0%                                                             used for computation, and the rest goes to data movement. The
+                      Google Gmail Google Word- Twitter Ani-          AVG       majority of the data movement comes from (1) the poor data locality
+                       Docs        Calendar Press      mation
+                                                                                during texture tiling; and (2) the large rasterized bitmap size (e.g.,
+                  Figure 1. Energy breakdown for page scrolling.
+                                                                                1024x1024 pixels, which is 4 MB), which typically exceeds the LLC
+   Figure 2 (left) gives more insight into where energy is spent                capacity. Due to the high amount of data movement, texture tiling
+in the system when we scroll through a Google Docs [44] web                     is a good candidate for PIM execution. As shown in Figure 3b, by
+page. We find that 77% of the total energy consumption is due to                moving texture tiling to PIM ( 4 in the figure), we can free up the
+data movement. The data movement energy includes the energy                     CPU ( 5 ) to perform other important compute-intensive tasks in
+consumed by DRAM, the off-chip interconnect, and the on-chip                    Chrome, such as handling user interaction, executing JavaScript
+caches. The data movement generated by texture tiling and color                 code, or rasterizing other render objects.
+blitting alone accounts for 37.7% of the total system energy (right                 We next determine whether texture tiling can be implemented
+graph in Figure 2). We confirm this by measuring the MPKI issued                in a cost-effective manner using PIM. Our analysis indicates that
+by the last-level cache (LLC). All of our pages exhibit a high MPKI             texture tiling requires only simple primitives: memcopy, bitwise
+(21.4 on average), and the majority of LLC misses are generated by              operations, and simple arithmetic operations (e.g., addition). These
+texture tiling and color blitting. Texture tiling and color blitting are        operations can be performed at high performance on our PIM core
+also the top two contributors to the execution time, accounting for             (see Section 3.3), and are amenable to be implemented as a fixed-
+27.1% of the cycles executed when scrolling through our Google                  function PIM accelerator. Our PIM accelerator for texture tiling
+Docs page.                                                                      consists of multiple in-memory tiling units. Each in-memory tiling
+   We conclude that texture tiling and color blitting are responsible           unit consists of only a simple ALU, and operates on a single 4 kB
+for a significant portion of the data movement that takes place                 tile. We empirically decide to use four in-memory tiling units in
+during web page scrolling.                                                      each PIM accelerator. Using the area estimation approach proposed
+
+                                                                            4
+
+
+===== Page 5 =====
+
+in prior work [30], we estimate that the overhead of each PIM                  users tend to open multiple tabs at a time [31, 110], with each tab
+accelerator is less than 0.25 mm2 , which requires no more than                consuming additional memory. Third, consumer devices typically
+7.1% of the area available per vault for PIM logic (see Section 3.3).          have a much lower memory capacity than server or desktop sy-
+We conclude that the area required for texture tiling PIM logic is             stems, and without careful memory management, Chrome could
+small, making the PIM logic feasible to implement in a consumer                run out of memory on these systems over time.
+device with 3D-stacked memory. We evaluate the energy efficiency                  One potential solution to handle a memory shortage is to kill
+and performance of both the PIM core and PIM accelerator for                   inactive background tabs, and when the user accesses those tabs
+texture tiling in Section 10.1.                                                again, reload the tab pages from the disk. There are two downsides
+    An alternate way to reduce the data movement cost of texture               to this mechanism. First, reloading tabs from the disk (which invo-
+tiling is to directly rasterize the content in the GPU, instead of the         kes page faults) and rebuilding the page objects take a relatively
+CPU, by using OpenGL primitives [24]. While GPU rasterization                  long time. Second, such reloading may lead to the loss of some
+eliminates the need to move textures around the system, the GPU’s              parts of the page (e.g., active remote connections). To avoid these
+highly-parallel architecture is not a good fit for rasterizing fonts           drawbacks, Chrome uses memory compression to reduce each tab’s
+and other small shapes [73]. We observe this issue in particular for           memory footprint. When the available memory is lower than a
+text-intensive pages. We find that when Chrome uses the GPU to                 predetermined threshold, Chrome compresses pages of an inactive
+rasterize text-intensive pages, the page load time increases by up to          tab, with assistance from the OS, and places them into a DRAM-
+24.9%. This is one of the main reasons that the GPU rasterization is           based memory pool, called ZRAM [76]. When the user switches to
+not enabled by default in Chrome. PIM can significantly reduce the             a previously-inactive tab whose pages were compressed, Chrome
+overhead of texture tiling, while still allowing Chrome to exploit             loads the data from ZRAM and decompresses it. This allows the
+the benefits of CPU-based rasterization.                                       browser to avoid expensive I/O operations to disk, and retrieve the
+                                                                               web page data much faster, thereby improving overall performance
+Color Blitting. During rasterization, the Skia library [51] uses               and the browsing experience.
+high-level functions to draw basic primitives (e.g., lines, text) for
+each render object. Each of these high-level functions uses a color            4.3.1 Tab Switching Energy Analysis
+blitter, which converts the basic primitives into the bitmaps that             To study data movement during tab switching, we perform an
+are sent to the GPU. The primary operation of a blitter is to copy             experiment where a user (1) opens 50 tabs (picked from the top
+a block of pixels from one location to another. Blitting has many              most-accessed websites [7]), (2) scrolls through each tab for a few
+uses cases, such as drawing lines and filling paths, performing                seconds, and then (3) switches to the next tab. During this study,
+double buffering, alpha compositing, and combining two images or               we monitor the amount of data that is swapped in and out of ZRAM
+primitives together.                                                           per second, which we plot in Figure 4. We observe that, in total,
+   Color blitting requires simple computation operations, but ge-              11.7 GB of data is swapped out to ZRAM (left graph in Figure 4), at
+nerates a large amount of data movement. As we see in Figure 2                 a rate of up to 201 MB/s. When the CPU performs this swapping, as
+(right), color blitting accounts for 19.1% of the total system energy          shown in Figure 5a, it incurs significant overhead, as it must read
+used during page scrolling. 63.9% of the energy consumed by color
+blitting is due to data movement (right graph in Figure 2), primarily          the inactive page data ( 1 in the figure), compress the data ( 2 ),
+due to its streaming access pattern and the large sizes of the bitmaps         and write the compressed data to ZRAM ( 3 ). We observe a similar
+(e.g., 1024x1024 pixels). Similar to texture tiling, color blitting is a       behavior for decompression (right graph in Figure 4), with as much
+good candidate for PIM execution due to its high amount of data                as 7.8 GB of data swapped in, at a rate of up to 227 MB/s. Note that
+movement.                                                                      during decompression, most of the newly-decompressed page cache
+   We next determine whether color blitting can be implemented in              lines are not accessed by the CPU, as the tab rendering process
+a cost-effective manner using PIM. Our analysis reveals that color             needs to read only a small fraction of the decompressed cache lines
+blitting requires only low-cost computations such as memset, simple            to display the tab’s contents. When switching between 50 tabs,
+arithmetic operations to perform alpha blending (e.g., addition                compression and decompression incur 19.6 GB of data movement,
+and multiplication), and shift operations. These operations can be             and contribute to 18.1% and 14.2% of the total system energy and
+performed at high performance on our PIM core (see Section 3.3),               execution time of tab switching, respectively.
+or we can use a PIM accelerator that consists of the same four in-                                250                                       250
+                                                                                                                         from ZRAM (MB/s)
+                                                                               Data Swapped Out
+
+
+
+
+                                                                                                                          Data Swapped In
+                                                                                to ZRAM (MB/s)
+
+
+
+
+memory logic units that we design for texture tiling, with different                              200                                       200
+control logic specifically designed to perform color blitting. Thus,                              150                                       150
+we conclude that the area required for color blitting PIM logic is                                100                                       100
+small, and that the PIM logic is feasible to implement in a consumer                               50                                        50
+device with 3D-stacked memory. We evaluate the energy efficiency
+                                                                                                    0                                         0
+and performance of both the PIM core and PIM accelerator for color
+                                                                                                                                                    0
+
+
+
+                                                                                                                                                  100
+                                                                                                                                                  120
+                                                                                                                                                  140
+                                                                                                                                                  160
+                                                                                                                                                  180
+                                                                                                                                                  200
+                                                                                                                                                  220
+                                                                                                                                                   20
+                                                                                                                                                   40
+                                                                                                                                                   60
+                                                                                                                                                   80
+                                                                                                          0
+                                                                                                         20
+                                                                                                         40
+                                                                                                         60
+                                                                                                         80
+                                                                                                        100
+                                                                                                        120
+                                                                                                        140
+                                                                                                        160
+                                                                                                        180
+                                                                                                        200
+                                                                                                        220
+
+
+
+
+blitting in Section 10.1.
+                                                                                                        Time (seconds)                            Time (seconds)
+4.3 Tab Switching                                                              Figure 4. Number of bytes per second swapped out to ZRAM (left)
+Chrome uses a multi-process architecture, where each tab has its               and in from ZRAM (right), while switching between 50 tabs.
+own application process for rendering the page displayed in the
+tab (see Section 4.1), to enhance reliability and security. When a             4.3.2 Analysis of PIM Effectiveness
+user switches between browser tabs, this triggers two operations:              Compression and decompression are a good fit for PIM execution,
+(1) a context switch to the process for the selected tab, and (2) a            as (1) they cause a large amount of data movement; and (2) com-
+load operation for the new page. There are two primary concerns                pression can be handled in the background, since none of the active
+during tab switching: (1) how fast a new tab loads and becomes                 tab processes need the data that is being compressed. Figure 5b
+interactive, as this directly affects user satisfaction; and (2) memory        shows the compression operation once it has been offloaded to
+consumption. Memory consumption is a major concern for three                   PIM. In this case, the CPU only informs the PIM logic about the
+reasons. First, the average memory footprint of a web page has                 pages that need to be swapped out, and the PIM logic operates
+increased significantly in recent years [67] due to the increased              on the uncompressed page data that is already in memory ( 4 in
+use of images, JavaScript, and video in modern web pages. Second,              the figure). This (1) eliminates the off-chip page data movement
+
+                                                                           5
+
+
+===== Page 6 =====
+
+                         (a) CPU-Only                              time              (b) CPU + PIM                      which performs classification to generate a prediction based on the
+                   CPU                                Memory                   CPU                       PIM            input data.
+                 swap out                                                    swap out
+              N inactive pages                      uncompressed          N inactive pages           uncompressed       5.2 TensorFlow Mobile Energy Analysis
+                              1                         pages                                            pages
+               read N pages                                                                      4                      Figure 6 shows the breakdown of the energy consumed by each
+              from memory           data movement                         other tasks for              compress         function in TensorFlow Mobile, for four different input networks.
+compression
+
+
+
+
+                                                                           active pages                 N pages
+                compress                                                                     5                          As convolutional neural networks (CNNs) consist mainly of 2-D
+                                         high
+
+
+                 N pages                                                                              compressed        convolution layers and fully-connected layers [2], the majority of
+                                2                                                                    pages (ZRAM)
+                write back                                                                                              energy is spent on these two types of layers. However, we find that
+              N compressed                          3                                                                   there are two other functions that consume a significant fraction of
+                  pages                              compressed
+                                                    pages (ZRAM)                                                        the system energy: packing/unpacking and quantization. Packing
+              other tasks for                                                                                           and unpacking reorder the elements of matrices to minimize cache
+               active pages                                                                                             misses during matrix multiplication. Quantization converts 32-bit
+                                                                                                                        floating point and integer values into 8-bit integers to improve the
+          Figure 5. Compression on (a) CPU vs. (b) PIM.
+                                                                                                                        execution time and energy consumption of inference. These two
+that took place during CPU-based compression, and (2) frees up                                                          together account for 39.3% of total system energy on average. The
+the CPU to perform other tasks while PIM performs compression                                                           rest of the energy is spent on a variety of other functions such
+in the background ( 5 ). We observe a similar behavior for tab de-                                                      as random sampling, reductions, and simple arithmetic, and each
+compression, where the compressed data is kept within DRAM,                                                             of which contributes to less than 1% of total energy consumption
+and only those cache lines used later by the CPU are sent across                                                        (labeled Other in Figure 6).
+the off-chip channel, reducing data movement and improving CPU                                                                                Packing    Quantization    Conv2D + MatMul     Other
+cache utilization.                                                                                                                     100%
+
+
+
+
+                                                                                                                        Total Energy
+                                                                                                                         Fraction of
+   We find that compression and decompression are good candida-                                                                         80%
+tes for PIM execution. Chrome’s ZRAM uses the LZO compression                                                                           60%
+algorithm [111] which uses simple operations and favors speed                                                                           40%
+                                                                                                                                        20%
+over compression ratio [78, 111]. Thus, LZO can execute without                                                                          0%
+performance loss on our PIM core (see Section 3.3). Prior work [156]                                                                          ResNet-    VGG-19    Residual-   Inception-   AVG
+shows that sophisticated compression algorithms (e.g., LZ77 com-                                                                                V2                   GRU         ResNet
+pression [160] with Huffman encoding [69]) can be implemented                                                           Figure 6. Energy breakdown during inference execution on four
+efficiently using an accelerator. Thus, we expect that the simpler                                                      input networks.
+LZO compression algorithm can be implemented as a PIM accele-
+rator that requires less than 0.25 mm2 of area [156]. Thus, both the                                                       Further analysis (not shown) reveals that data movement bet-
+PIM core and PIM accelerator are feasible to implement in-memory                                                        ween the CPUs and main memory accounts for the majority of total
+compression/decompression.                                                                                              system energy consumed by TensorFlow Mobile. While Conv2D
+   In-memory compression/decompression can benefit a number of                                                          and MatMul dominate CPU energy consumption, 57.3% of the total
+other applications and use cases. For example, many modern opera-                                                       system energy is spent on data movement, on average across our
+ting systems support user-transparent file system compression (e.g.,                                                    four input networks. We find that 54.4% of the data movement
+BTRFS [122] and ZFS [11]). Such compression is not yet widely                                                           energy comes from packing/unpacking and quantization.
+supported in commercial mobile operating systems due to energy                                                             Even though the main goal of packing and quantization is to
+and performance issues [156]. An in-memory compression unit                                                             reduce energy consumption and inference latency, our analysis
+can enable efficient user-transparent file system compression by                                                        shows that they generate a large amount of data movement, and
+eliminating the off-chip data movement cost and largely reducing                                                        thus, lose part of the energy savings they aim to achieve. Furt-
+the decompression latency.                                                                                              hermore, Figure 7 shows a significant portion (27.4% on average)
+                                                                                                                        of the execution time is spent on the packing and quantization
+5             TensorFlow Mobile                                                                                         process. Hence, we focus our analysis on these two functions. We
+                                                                                                                        exclude Conv2D and MatMul from our analysis because (1) a majo-
+Machine learning (ML) is emerging as an important core function                                                         rity (67.5%) of their energy is spent on computation; and (2) Conv2D
+for consumer devices. Recent works from academia and industry                                                           and MatMul require a relatively large and sophisticated amount of
+are pushing inference to mobile devices [8, 14, 19, 118, 119], as                                                       PIM logic [36, 81], which may not be cost-effective for consumer
+opposed to performing inference on cloud servers. In this work, we                                                      devices.
+study TensorFlow Mobile [52], a version of Google’s TensorFlow
+ML library that is specifically tailored for mobile and embedded                                                                               Packing   Quantization    Conv2D + MatMul     Other
+platforms. TensorFlow Mobile enables a variety of tasks, such as                                                               ResNet-V2
+image classification, face recognition, and Google Translate’s in-                                                               VGG-19
+stant visual translation [50], all of which perform inference on                                                            Residual-GRU
+consumer devices using a neural network that was pre-trained on                                                         Inception-ResNet
+cloud servers.                                                                                                                                  0% 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
+                                                                                                                                                          Fraction of Execution Time
+5.1 Background
+                                                                                                                                        Figure 7. Execution time breakdown of inference.
+Inference begins by feeding input data (e.g., an image) to a neural
+network. A neural network is a directed acyclic graph consisting of                                                     5.3            Analysis of PIM Effectiveness
+multiple layers. Each layer performs a number of calculations and
+forwards the results to the next layer. Depending on the type of the                                                    Packing. GEneralized Matrix Multiplication (GEMM) is the core
+layer, the calculation can differ for each level. A fully-connected                                                     building block of neural networks, and is used by both 2-D con-
+layer performs matrix multiplication (MatMul) on the input data,                                                        volution and fully-connected layers. These two layers account for
+to extract high-level features. A 2-D convolution layer applies a                                                       the majority of TensorFlow Mobile execution time. To implement
+convolution filter (Conv2D) across the input data, to extract low-                                                      fast and energy-efficient GEMM, TensorFlow Mobile employs a
+level features. The last layer of a neural network is the output layer,                                                 low-precision, quantized GEMM library called gemmlowp [41]. The
+
+                                                                                                                    6
+
+
+===== Page 7 =====
+
+gemmlowp library performs GEMM by executing its innermost                                    re-quantization of the result matrix ( 3 and 4 ). The majority of the
+kernel, an architecture-specific GEMM code portion for small fixed-                          quantization overhead comes from data movement. Because both
+size matrix chunks, multiple times. First, gemmlowp fetches matrix                           the input matrix quantization and the result matrix re-quantization
+chunks which fit into the LLC from DRAM. Then, it executes the                               need to scan a large matrix twice, they exhibit poor cache locality
+GEMM kernel on the fetched matrix chunks in a block-wise manner.                             and incur a large amount of data movement. For example, for the
+   To minimize cache misses, gemmlowp employs a process called                               ResNet network, 73.5% of the energy consumed during quantization
+packing, which reorders the matrix chunks based on the memory                                is spent on data movement, indicating that the computation is
+access pattern of the kernel to make the chunks cache-friendly.                              relatively cheap (in comparison, only 32.5% of Conv2D/MatMul
+After performing GEMM, gemmlowp performs unpacking, which                                    energy goes to data movement, while the majority goes to MAC
+converts the result matrix chunk back to its original order.                                 computation). 19.8% of the total data movement energy of inference
+   Packing and unpacking account for up to 40% of the total sy-                              execution comes from quantization. As Figure 8b shows, we can
+stem energy and 31% of the inference execution time, as shown in                             offload both quantization ( 5 in the figure) and re-quantization ( 6 )
+Figures 6 and 7, respectively. Due to their unfriendly cache access                          to PIM to eliminate data movement. This frees up the CPU to focus
+pattern and the large matrix sizes, packing and unpacking generate                           on GEMM execution, and allows the next Conv2D operation to be
+a significant amount of data movement. For instance, for VGG-                                performed in parallel with re-quantization ( 7 ).
+19 [131], 35.3% of the total energy goes to data movement incur-
+red by packing-related functions. On average, we find that data                                                           (a) CPU-Only                                time             (b) CPU + PIM
+movement is responsible for 82.1% of the total energy consumed                                                      CPU                               Memory                     CPU                   PIM
+during the packing/unpacking process, indicating that packing and                                                                                   32-bit matrix                                  32-bit matrix
+
+
+
+
+                                                                                             quantization
+                                                                                                               1
+unpacking are bottlenecked by data movement.                                                                   find min/max                                                                        find min/max
+   Packing and unpacking are simply pre-processing steps, to pre-                                                                                                                              5
+                                                                                                               quantize each                                                                    quantize each
+
+
+
+
+                                                                                                                                    data movement
+pare data in the right format for the kernel. Ideally, the CPU should                                          matrix element                                                                   matrix element
+execute only the GEMM kernel, and assume that packing and un-                                                                   2
+
+
+
+
+                                                                                                                                         high
+                                                                                                                8-bit matrix                                                                       8-bit matrix
+packing are already taken care of. PIM can enable such a scenario by                                                                                                          run Conv2D
+performing packing and unpacking without any CPU involvement.                                                    run Conv2D                                                    to filter a
+                                                                                                                  to filter a                                                 convolution
+Our PIM logic packs matrix chunks, and sends the packed chunks                                                   convolution                                                 layer of CNN
+to the CPU, which executes the GEMM kernel. Once the GEMM                                                       layer of CNN                                                                   32-bit result matrix
+                                                                                             re-quantization
+                                                                                                                                               32-bit result matrix
+kernel completes, the PIM logic receives the result matrix chunk                                               3                                                                                   find min/max
+                                                                                                                find min/max                                                  run Conv2D
+from the CPU, and unpacks the chunk while the CPU executes the                                                                                                                on the next 7    6
+                                                                                                                                                                                                quantize each
+                                                                                                               4
+GEMM kernel on a different matrix chunk.                                                                       quantize each                                                  convolution       matrix element
+   We next determine whether packing and unpacking can be imple-                                               matrix element                                                layer of CNN
+                                                                                                                                                                                                8-bit result matrix
+mented in a cost-effective manner using PIM. Our analysis reveals
+that packing is a simple data reorganization process and requires                                                     Figure 8. Quantization on (a) CPU vs. (b) PIM.
+simple arithmetic operations to scan over matrices and compute
+new indices. As a result, packing and unpacking can be performed                                Quantization itself is a simple data conversion operation that
+at high performance on our PIM core (see Section 3.3), or on a PIM                           requires shift, addition, and multiplication operations. As a result,
+accelerator that consists of the same four in-memory logic units that                        quantization can be performed at high performance on our PIM
+we design for texture tiling (see Section 4.2.2), with different control                     core (see Section 3.3), or on a PIM accelerator that consists of the
+logic specifically designed to perform packing and unpacking. For                            same four in-memory logic units that we design for texture tiling
+packing and unpacking, we can assign each in-memory logic unit                               (see Section 4.2.2), with different control logic specifically designed
+to work on one chunk of the matrix. Thus, we conclude that it                                to perform quantization. For quantization, we can assign each in-
+is feasible to implement packing and unpacking using PIM in a                                memory logic unit to work on a separate Conv2D operation. Thus,
+consumer device with 3D-stacked memory.                                                      we conclude that it is feasible to implement quantization using PIM
+                                                                                             in a consumer device with 3D-stacked memory.
+Quantization. TensorFlow Mobile performs quantization twice for
+each Conv2D operation. First, quantization is performed on the 32-
+bit input matrix before Conv2D starts. Then, Conv2D runs, during
+                                                                                             6                 Video Playback
+which gemmlowp generates a 32-bit result matrix.2 Quantization                               Video playback is among the most heavily- and commonly-used
+is performed for the second time on this result matrix (this step                            applications among mobile users [155]. Recent reports on mobile
+is referred to as re-quantization). Accordingly, invoking Conv2D                             traffic [25, 33] show that video dominates consumer device traffic
+more frequently (which occurs when there are more 2-D convolu-                               today. Many Google services and products, such as YouTube [53],
+tion layers in a network) leads to higher quantization overheads.                            Google Hangouts [45], and the Chrome web browser [39] rely he-
+For example, VGG requires only 19 Conv2D operations, incurring                               avily on video playback. YouTube alone has over a billion users,
+small quantization overheads. On the other hand, ResNet requires                             and the majority of video views on YouTube come from mobile
+156 Conv2D operations, causing quantization to consume 16.1%                                 devices [54]. Video playback requires a dedicated decoder, which de-
+of the total system energy and 16.8% of the execution time. The                              compresses and decodes the streaming video data and renders video
+quantization overheads are expected to increase as neural networks                           on the consumer device. In this work, we focus on the VP9 deco-
+get deeper.                                                                                  der [55], which is an open-source codec widely used by video-based
+   Figure 8a shows how TensorFlow quantizes the result matrix                                applications, and is supported by most consumer devices [144].
+using the CPU. First, the entire matrix needs to be scanned to                               6.1 Background
+identify the minimum and maximum values of the matrix ( 1 in
+the figure). Then, using the minimum and maximum values, the                                 Figure 9 shows a high-level overview of the VP9 decoder architec-
+matrix is scanned a second time to convert each 32-bit element of                            ture. VP9 processes video one frame at a time, and uses a reference
+the matrix into an 8-bit integer ( 2 ). These steps are repeated for                         frame to decode the current frame. For the current frame, the deco-
+                                                                                             der reads the frame’s compressed content (i.e., the input bitstream)
+2 Even though gemmlowp reads 8-bit input matrices, its output matrix uses 32-bit inte-       from memory ( 1 in the figure) and sends the content to the en-
+gers, because multiplying two 8-bit integers produces a 16-bit result, and gemmlowp          tropy decoder. The entropy decoder ( 2 ) extracts (1) motion vectors,
+uses a 32-bit integer to store each 16-bit result.                                           which predict how objects move relative to the reference frame;
+
+                                                                                         7
+
+
+===== Page 8 =====
+
+   compressed
+ 1 video                          reference         9 reconstructed                total energy is spent on data movement, the majority (80.4%) of
+         stream               4     frame                 frame
+                                                                      Memory       which is performed by MC and the deblocking filter. Sub-pixel inter-
+                                                                         SoC       polation is the dominant function of MC, and on its own generates
+               motion vectors 3 MC: Motion
+                              Compensation
+                                                     7
+                                                          8 Deblocking
+                                                                                   42.6% of the total data movement. We find that the CPU spends the
+       Entropy                                                                     majority of its time and energy stalling (not shown in Figure 11)
+     2 Decoder
+                        5 Inverse      6 Inverse     +        Filter
+                                                                                   as it waits for data from memory during MC and deblocking filter
+          residual data Quantization    Transform
+                                                                                   execution. The other functions generate much less data movement
+             Figure 9. General overview of the VP9 decoder.                        because their working set fits within the CPU caches. For example,
+                                                                                   the entropy decoder works on the encoded bit stream and the in-
+and (2) residual data, which fills in information not predicted by                 verse transform works on the decoded coefficients, and both are
+the motion vectors.                                                                small enough to be captured by the caches.
+   The motion vectors are sent to the motion compensation (MC)                                                    MC: Sub-Pixel Interpolation     Other MC Functions
+unit ( 3 ), which applies the object movement predictions to the                                                  Deblocking Filter               Entropy Decoder
+reference frame ( 4 ). MC predicts movement at a macro-block (i.e.,                                               Inverse Transform               Other
+
+
+
+
+                                                                                   Total Energy (pJ)
+                                                                                                       2.0×1012
+16x16-pixel) granularity. Each frame is decomposed into macro-
+blocks, and each motion vector points to a macro-block in the                                          1.5×1012
+reference frame. VP9 allows motion vectors to have a resolution                                        1.0×1012
+as small as 18 th of a pixel, which means that a motion vector may                                     0.5×1012
+point to a pixel location with a non-integer value. In such cases,
+MC performs sub-pixel interpolation to estimate the image at a                                         0.0×1012
+                                                                                                                  CPU      L1        LLC     Inter-   Mem     DRAM
+non-integer pixel location. In parallel with MC, the residual data is                                                                       connect   Ctrl
+transformed by the inverse quantization ( 5 ) and inverse transform                                     Figure 11. Energy breakdown of VP9 software decoder.
+( 6 ) blocks. The resulting information is combined with the macro-
+block output by MC ( 7 ) to reconstruct the current frame.                            We conclude that video playback generates a large amount of
+   Due to block-based prediction, there may be discontinuities at                  data movement, the majority of which comes from sub-pixel inter-
+the border between two blocks. The deblocking filter ( 8 ) attempts                polation and the deblocking filter.
+to remove such artifacts by (1) identifying edge pixels (i.e., pixels
+that lie on the border of two blocks) that are discontinuous with                  6.2.2                   Analysis of PIM Effectiveness
+their neighbors, and (2) applying a low-pass filter to these pixels.
+                                                                                   Sub-Pixel Interpolation. During sub-pixel interpolation, VP9
+Finally, the reconstructed frame ( 9 ) is written back to the frame                uses a combination of multi-tap finite infinite response (FIR) and
+buffer in memory.                                                                  bi-linear filters to interpolate the value of pixels at non-integer
+   The VP9 decoder architecture can be implemented in either                       locations [55]. The interpolation process is both compute- and
+software or hardware. We provide an extensive analysis of two                      memory-intensive, for two reasons. First, interpolating each sub-
+decoder implementations in this section: (1) libvpx [145], Google’s                pixel value requires multiple pixels to be fetched from memory.
+open-source software decoder library, which is used as a reference                 VP9 decomposes each frame into 64x64-pixel superblocks, which
+software implementation for the VP9 codec; and (2) Google’s VP9                    are then divided further into smaller sub-blocks, as small as 4x4-
+hardware decoder [146].                                                            pixel. In the worst case, where the decoder interpolates pixels in a
+6.2 VP9 Software Decoder                                                           sub-block at a 18 -pixel resolution, the decoder fetches 11x11 pixels
+6.2.1 Software Decoder Energy Analysis                                             from the reference frame. Second, each motion vector can point to
+                                                                                   any location in the reference frame. As a result, there is poor loca-
+Figure 10 shows the total system energy consumed when libvpx                       lity, and sub-pixel interpolation does not benefit significantly from
+VP9 decoder is used to play a 4K (3840x2160-pixel) video from                      caching. We confirm this in Figure 11, where we observe that data
+Netflix [152]. We find that the majority of energy (53.4%) is spent                movement between main memory and the CPU accounts for 65.3%
+on MC, which is the most bandwidth-intensive and time-consuming                    of the total energy consumed by sub-pixel interpolation. As a result,
+task in the decoder [13, 64]. Prior works [58, 88, 120] make similar               sub-pixel interpolation is a good candidate for PIM execution.
+observations for other video codecs. Most of the energy consump-                       We find that sub-pixel interpolation is amenable for PIM, as
+tion in MC is due to sub-pixel interpolation, the most memory-                     it consists mainly of multiplication, addition, and shift operati-
+intensive component of MC [13, 64, 77]. We find that sub-pixel                     ons [55, 64, 77]. As a result, sub-pixel interpolation can be executed
+interpolation alone consumes 37.5% of the total energy and 41.2%                   with high performance on our PIM core (see Section 3.3), and can be
+of the execution time spent by the entire decoder. Aside from MC,                  implemented as a fixed-function PIM accelerator. Our PIM accelera-
+the deblocking filter is another major component of the decoder,                   tor for sub-pixel interpolation is similar in design to the sub-pixel
+consuming 29.7% of the software decoder energy and 24.3% of the                    interpolation component of the hardware VP9 decoder. Our analy-
+total cycle count. Other components, such as the entropy decoder                   sis shows that our PIM accelerator occupies an area of 0.21 mm2 ,
+and inverse transform, consume a smaller portion of the energy.                    which requires no more than 6.0% of the area available per vault for
+   Figure 11 shows the per-function breakdown of the energy con-                   PIM logic (see Section 3.3). Thus, we conclude that it is feasible to
+sumption of each hardware component when the VP9 software                          implement sub-pixel interpolation using PIM in a consumer device
+decoder is used to play back 4K video. We find that 63.5% of the                   with 3D-stacked memory.
+             MC: Sub-Pixel Interpolation        Other MC Functions                 Deblocking Filter. Recall that the deblocking filter works on the
+             Deblocking Filter                  Entropy Decoder                    edge pixels in each 64x64-pixel superblock, to remove blocking
+             Inverse Transform                  Other                              artifacts. Deblocking invokes a low-pass filter on neighboring edge
+4K                                                                                 pixels, and iterates through the superblocks in a raster scan or-
+                                                                                   der [55]. For each edge between two superblocks, the filter evalu-
+     0%     10% 20% 30% 40% 50% 60% 70% 80% 90% 100%                               ates up to eight pixels on either side of the edge, and if the filter
+                           Fraction of Energy                                      condition is triggered, the filter may modify up to seven pixels on
+          Figure 10. Energy analysis of VP9 software decoder.                      either side.
+
+                                                                               8
+
+
+===== Page 9 =====
+
+                                                                                 Reference Frame                   Compression Info              Decoder Data
+    Like sub-pixel interpolation, the deblocking filter is compute-
+                                                                                 Reconst. Frame Metadata           Deblocking Filter             Reconstructed Frame
+and memory-intensive, and accounts for a third of the computation
+                                                                                   With Compression
+
+
+
+
+                                                                             HD
+complexity of the entire VP9 decoder [20, 27]. As the filter needs to
+                                                                                      No Compression
+check the vertical and horizontal edges of each 4x4-pixel block in
+                                                                                   With Compression
+the frame, its memory access pattern exhibits poor cache locality.
+
+
+
+
+                                                                             4K
+                                                                                      No Compression
+Instead, the filter generates a large amount of data movement and
+produces strictly less output than input, with 71.1% of the movement                                       0        5    10    15      20   25    30    35   40     45
+taking place on the off-chip memory channel. Hence, the deblocking                                     Off-Chip Traffic to/from DRAM (MB)
+filter is a good fit for PIM.                                                Figure 12. Off-chip traffic breakdown of VP9 hardware decoder.
+    We find that the deblocking filter is amenable for PIM, as it is
+a simple low-pass filter that requires only arithmetic and bitwise           6.3.2 Analysis of PIM Effectiveness
+operations. As a result, the deblocking filter can be executed with
+high performance on our PIM core (see Section 3.3), and can be               Similar to our observations for the software decoder (see
+implemented as a fixed-function PIM accelerator that is is similar           Section 6.2), the MC unit (sub-pixel interpolation, in particular)
+in design to the deblocking filter component of the hardware VP9             is responsible for the majority of off-chip data movement in the
+decoder. Our analysis shows that our PIM accelerator occupies an             hardware VP9 decoder. The MC unit is a good fit for PIM execution,
+                                                                             because we can eliminate the need to move reference frames from
+area of 0.12 mm2 , which requires no more than 3.4% of the area              memory to the on-chip decoder, thus saving significant energy. Fi-
+available per vault for PIM logic (see Section 3.3). Thus, we conclude       gure 13 shows a high-level overview of our proposed architecture,
+that it is feasible to implement the deblocking filter using PIM in a        and how a modified hardware decoder interacts with memory and
+consumer device with 3D-stacked memory.                                      with the in-memory MC unit. In this architecture, the entropy deco-
+6.3 VP9 Hardware Decoder                                                     der ( 1 in the figure) sends the motion vectors to memory, where
+                                                                             the MC unit now resides. The in-memory MC unit ( 2 ) generates
+For high-resolution (e.g., 4K) video playback, a hardware decoder
+                                                                             macro-blocks using the motion vectors and the reference frame
+is essential. It enables fast video decoding at much lower energy
+consumption than a software decoder. In this section, we present             ( 3 ) fetched from memory. The macro-blocks generated by MC
+our analysis on the VP9 hardware decoder, which is used in a large           are then combined with residual data and sent to the deblocking
+fraction of consumer devices [144].                                          filter ( 4 ). To avoid sending the macro-blocks back to the decoder
+   Unlike the software decoder, the VP9 hardware decoder employs             (which would eliminate part of the energy savings of not moving
+several techniques to hide memory latency, such as prefetching               reference frame data), we also made the design choice of moving
+and parallelization. For example, the hardware decoder can work              the deblocking filter into memory ( 4 ). While the deblocking filter
+on a batch of motion vectors simultaneously, which allows the                itself does not generate significant traffic, by placing it in PIM, we
+decoder to fetch the reference pixels for the entire batch at once.          can avoid moving the reconstructed frame ( 5 ) back and forth on
+In addition, the hardware decoder does not make use of the CPU               the main memory bus unnecessarily.
+caches, and instead sends requests directly to DRAM, which allows
+                                                                                  compressed                       reference                      reconstructed
+the decoder to avoid cache lookup latencies and cache coherence                   video stream                 3     frame                            frame     5
+overheads. Thus, there is little room to improve the memory latency
+for the hardware decoder. However, we find that despite these                                              2 MC: Motion                          4 Deblocking
+optimizations, there is still a significant amount of off-chip data                              motion     Compensation                    +        Filter
+movement generated by the hardware decoder, which consumes                                       vectors                                                          PIM
+significant memory bandwidth and system energy.                                                                                                                   SoC
+                                                                                    Entropy                 Inverse              Inverse
+                                                                                  1 Decoder                                    Transform
+                                                                                                 residual Quantization
+6.3.1 Hardware Decoder Energy Analysis                                                             data
+Figure 12 shows the breakdown of off-chip traffic when decoding                     Figure 13. Modified VP9 decoder with in-memory MC.
+one frame of a 4K video and an HD (720x1280-pixel) video. For
+each resolution, we show the traffic both with and without los-                 Overall, moving the MC unit and deblocking filter reduces data
+sless frame compression. We make five key observations from the              movement significantly, as only the compressed input bitstream,
+analysis. First, the majority of the traffic (up to 75.5% for HD and         the motion vectors, and the residual data need to move between the
+59.6% for 4K) comes from reading the reference frame data from               decoder hardware components and the memory. Another benefit of
+DRAM during MC. This data movement is responsible for 71.3%                  this approach is that we can use the same in-memory components
+and 69.2% of total hardware decoder energy, respectively. Note               for software VP9 decoding as well. In total, the area used by a PIM
+that while frame compression reduces the reference frame traffic,            accelerator that performs MC and the deblocking filter is 0.33 mm2 ,
+reference frame data movement still accounts for a significant por-          which requires no more than 9.4% of the area available per vault
+tion (62.2% for HD and 48.8% for 4K) of the off-chip traffic. Second,        for PIM logic (see Section 3.3). We conclude that it is effective to
+similar to our observations for the software decoder, the bulk of            perform part of VP9 hardware decoding in memory.
+this data movement is due to the extra reference pixels required by
+sub-pixel interpolation. For every pixel of the current frame, the           7     Video Capture
+decoder reads 2.9 reference frame pixels from DRAM. Third, data              Video capture is used in many consumer applications, such as video
+movement increases significantly as the video resolution increases.          conferencing (e.g., Google Hangouts [45], Skype [97]), video strea-
+Our analysis indicates that decoding one 4K frame requires 4.6x              ming (e.g., YouTube [53], Instagram [34]), and recording local video
+the data movement of a single HD frame. Fourth, the reconstructed            from a mobile device camera. Video-capture-based applications
+frame data output by the decoder is the second-biggest contributor           account for a significant portion of mobile traffic [25, 33, 155]. It is
+to the off-chip data movement, generating 22.2% of the total traffic.        expected that video will constitute 78% of all mobile data traffic by
+Fifth, unlike the software decoder, the deblocking filter does not           2021 [25]. To effectively capture, store, and transfer video content
+generate much off-chip data movement in the hardware decoder,                over the network, a video encoder is required. The video encoder
+as the hardware employs large SRAM buffers (875 kB) to cache the             handles the majority of the computation for video capture. In this
+reference pixels read during MC, so that the pixels can be reused            work, we focus on the VP9 encoder, as it is the main compression
+during deblocking.                                                           technology used by Google Hangouts [45], YouTube [53], and most
+
+                                                                         9
+
+
+===== Page 10 =====
+
+web-based video applications in the Chrome browser [39], and is                                         Motion Estimation     Intra-Prediction      Transform
+                                                                                                        Quantization          Deblocking Filter     Other
+supported by many mobile devices [144].
+                                                                                             HD
+7.1 Background
+                                                                                                  0%     10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
+Figure 14 shows a high-level overview of the VP9 encoder archi-                                                         Fraction of Energy
+tecture. The encoder fetches the current frame ( 1 in the figure)                                      Figure 15. Energy analysis of VP9 software encoder.
+and three reference frames ( 2 ) from DRAM. Then, the current
+frame is sliced into 16x16-pixel macro-blocks. Each macro-block                              7.2.2 Analysis of PIM Effectiveness
+is passed into the intra-prediction ( 3 ) and motion estimation (ME)                         In libvpx, ME uses the diamond search algorithm [157] to locate
+( 4 ) units. Intra-prediction predicts the value of an entire macro-                         matching objects in reference frames, using the sum of absolute dif-
+block by measuring its similarity to adjacent blocks within the                              ferences (SAD) to evaluate matches. ME is highly memory-intensive
+frame. ME, also known as inter-prediction, compresses the frame by                           and requires high memory bandwidth. 54.7% of ME’s energy con-
+exploiting temporal redundancy between adjacent frames. Then,                                sumption is spent on data movement (not shown). For each macro-
+ME finds the motion vector, which encodes the spatial offset of                              block, ME needs to check for matching objects in three reference
+each macro-block relative to the reference frames. If successful,                            frames, which leads to a large amount of data movement. Hence,
+ME replaces the macro-block with the motion vector. The mode                                 ME is a good candidate for PIM execution.
+decision unit ( 5 ) examines the outputs of intra-prediction and ME                             While ME is more compute- and memory-intensive than the
+for each macro-block, and chooses the best prediction for the block.                         other PIM targets we examine, it primarily calculates SAD, which
+The macro-block prediction is then (1) transformed into the fre-                             requires only simple arithmetic operations. As a result, ME can be
+quency domain using a discrete cosine (DCT) transform ( 6 ), and                             executed with high performance on our PIM core (see Section 3.3),
+(2) simultaneously sent to the motion compensation (MC) unit ( 7 )                           and can be implemented as a fixed-function PIM accelerator that
+to reconstruct the currently-encoded frame, which will be used as                            is similar in design to the ME component of the hardware VP9
+a reference frame ( 8 ) to encode future frames. The encoder then                            decoder. Our analysis shows that our PIM accelerator occupies an
+uses quantization ( 9 ) to compress the DCT coefficients of each                             area of 1.24 mm2 , which requires no more than 35.4% of the area
+macro-block. Finally, the entropy coder step ( 10 ) uses run-length                          available per vault for PIM logic (see Section 3.3). Thus, we conclude
+coding and variable-length coding to reduce the number of bits                               that it is feasible to implement ME using PIM in a consumer device
+required to represent the DCT coefficients.                                                  with 3D-stacked memory.
+reconstructed 3 reference                   current          encoded                         7.3 VP9 Hardware Encoder
+frame                                     1 frame            bitstream
+                   frames                                                     Memory         In this section, we present our analysis on the VP9 hardware enco-
+             2
+    8
+                                                                                 SoC         der. While software encoding offers more flexibility, hardware en-
+                 3 reference                 current                                         coding enables much faster encoding in an energy-efficient manner.
+                    frames                    frame
+                                                                                             Similar to the hardware video decoder (Section 6.3), the hardware
+                                                                        10
+                               4                       motion vectors    Entropy             video encoder employs prefetching to hide memory latency. Unlike
+ Deblocking                        ME: Motion                              Coder             the decoder, the encoder’s memory access pattern is highly predic-
+   Filter                          Estimation            3
+                                                           Intra-                            table, as the search window for each reference frame is predefined.
+             7                                           Prediction                5
+              MC: Motion                                                     Mode            As a result, the encoder (specifically the ME unit) successfully hi-
+        +    Compensation motion                                            Decision         des latency. However, energy consumption and the cost of data
+                               vectors
+                                                       9                   6                 movement remain as major challenges.
+                   Inverse            Inverse           Quantization        Transform
+                 Transform          Quantization
+                                                                                             7.3.1 Hardware Encoder Energy Analysis
+            Figure 14. General overview of the VP9 encoder.                                  Figure 16 shows the breakdown of off-chip traffic for encoding a
+   As is the case for the VP9 decoder, the encoder can be implemen-                          single frame of 4K and HD video, both with and without lossless
+ted in either software or hardware. We analyze both libvpx [145],                            frame compression. Similar to our findings for the software encoder,
+Google’s open source software encoder library, and Google’s VP9                              the majority of the off-chip traffic is due to the reference frame
+hardware encoder [146].                                                                      pixels fetched by ME (shown as Reference Frame in the figure),
+                                                                                             which accounts for 65.1% of the entire encoder’s data movement
+7.2 VP9 Software Encoder                                                                     for HD video. The traffic grows significantly when we move to
+7.2.1 Software Encoder Energy Analysis                                                       4K video, as the encoder requires 4.3x the number of pixels read
+                                                                                             during HD video encoding. While frame compression can reduce
+Figure 15 shows our energy analysis during the real-time encoding                            the amount of data transferred by 59.7%, a significant portion of
+of an HD video. We find that a significant portion of the system                             encoder energy is still spent on reference frame traffic.
+energy (39.6%) is spent on ME. ME is the most memory-intensive                                  The two other major contributors to off-chip traffic are (1) the cur-
+unit in the encoder [133], accounting for 43.1% of the total enco-                           rent frame after encoding, and (2) the reconstructed frame, which
+ding cycles. The next major contributor to total system energy is                            is used as a future reference frame. The current frame generates
+the deblocking filter, which we discuss in in Section 6.2. While                             14.2% of the traffic when frame compression is disabled, but since
+intra-prediction, transform, and quantization are other major con-
+tributors to the energy consumption, none of them individually                                 Current Frame       Reference Frame          Deblocking Filter   Other
+account for more than 9% of the total energy. The remaining energy,                            Compression Info    Reconstructed Frame      Encoded Bitstream
+labeled Other in the figure, is spent on decoding the encoded frame,                             With Compression
+                                                                                             HD
+
+
+
+
+and behaves the same way as the software decoding we discuss in                                     No Compression
+Section 6.2.                                                                                     With Compression
+                                                                                             4K
+
+
+
+
+   We find that 59.1% of encoder energy goes to data movement. The                                  No Compression
+majority of this data movement is generated by ME, and accounts
+for 21.3% of the total system energy. Other major contributors to                                                     0     10 20 30 40 50 60 70 80 90 100
+data movement are the MC and deblocking filter used to decode                                                         Off-Chip Traffic to/from DRAM (MB)
+the encoded frames (see Section 6.2).                                                        Figure 16. Off-chip traffic breakdown of VP9 hardware encoder.
+
+                                                                                        10
+
+
+===== Page 11 =====
+
+compression cannot be applied to the encoded version of the cur-                                   between PIM logic and the CPUs. The CPU-side directory acts as
+rent frame, the total data movement for the current frame takes                                    the main coherence point for the system, interfacing with both the
+up to 31.9% of the traffic when compression is enabled. The recon-                                 processor caches and the PIM-side directory. Our design can benefit
+structed frame consumes on average 12.4% of the traffic across the                                 further from other approaches to coherence like LazyPIM [12, 37].
+two resolutions.
+                                                                                                   9     Methodology
+7.3.2 Analysis of PIM Effectiveness
+                                                                                                   We evaluate our proposed PIM architectures using the gem5 [10]
+Similar to the software encoder, ME is responsible for the majority                                full-system simulator. Table 1 lists our system configuration.
+of data movement in the hardware encoder, and is again a good can-
+didate for PIM execution, which would eliminate the need to move                                       SoC               4 OoO cores, 8-wide issue; L1 I/D Caches: 64 kB
+three reference frames to the on-chip encoder. Figure 17 shows the                                                       private, 4-way assoc.; L2 Cache: 2 MB shared,
+high-level architecture of a modified VP9 encoder with in-memory                                                         8-way assoc.; Coherence: MESI
+ME (which is the same as the PIM accelerator in Section 7.2.2). Once                                   PIM Core          1 core per vault, 1-wide issue, 4-wide SIMD unit,
+in-memory ME ( 1 in the figure) generates the motion vector for a                                                        L1 I/D Caches: 32 kB private, 4-way assoc.
+macro-block, it sends the vector back to the mode decision unit ( 2 )                                  3D-Stacked        2 GB cube, 16 vaults per cube; Internal Bandwidth:
+                                                                                                       Memory            256 GB/s; Off-Chip Channel Bandwidth: 32 GB/s
+in the on-chip accelerator. Note that we also offload MC ( 3 ) and
+                                                                                                       Baseline Memory   LPDDR3, 2 GB, FR-FCFS scheduler
+the deblocking filter ( 4 ) to PIM, similar to the hardware decoder
+(see Section 6.3.2), since they use reference frames ( 5 ) together                                               Table 1. Evaluated system configuration.
+with the motion vectors output by ME to reconstruct the encoded
+frame. This eliminates data movement during frame reconstruction.                                     We organize our PIM architecture such that each vault in 3D-
+We conclude that data movement can be reduced significantly by                                     stacked memory has its own PIM logic. The PIM logic for each
+implementing the ME, MC, and deblocking filter components of                                       vault consists of either a PIM core or a PIM accelerator. We assume
+the VP9 hardware encoder in memory.                                                                that the PIM core is ISA-compatible with the main processor cores
+                                                                                                   in the SoC, and is a simple general-purpose core (e.g., 1-wide issue,
+ reconstructed          3 reference                  current      encoded                          no prefetcher) that has only a 32KB private L1 cache. Each PIM
+ frame                                                frame       bitstream                        accelerator has a small 32kB buffer to hold its working set of data.
+                       5 frames
+ Deblocking                                                                                        Like prior works [3, 4, 12, 35, 65, 66], we use the memory bandwidth
+   Filter          3                      1                                                        available to the logic layer of 3D-stacked memory as the memory
+ 4                   MC: Motion               ME: Motion
+                    Compensation              Estimation                                           bandwidth to the PIM core/accelerator. We model our 3D-stacked
+      +                                                                                 PIM        memory similar to HBM [75] and use the bandwidth available in the
+                                                     current                            SoC        logic layer of HBM (256GB/s), which is 8x more than the bandwidth
+                                                                  motion
+                                                      frame       vectors     Entropy              available (32GB/s) to the off-chip CPU cores.
+                                                                               Coder                  To evaluate how PIM benefits each of the PIM targets that we
+                                                                 Intra-                            identified, we study each target in isolation, by emulating each tar-
+                                                               Prediction        2
+                                      motion                                      Mode             get separately, constructing a microbenchmark for the component,
+                                      vectors                                    Decision
+                                                                                                   and then analyzing the benefit of PIM in our simulator. We use
+                   Inverse              Inverse                                                    Verilog RTL [96] to estimate the area overhead of the VP9 hardware
+                                                           Quantization         Transform
+                 Transform            Quantization                                                 encoder and decoder.
+      Figure 17. Modified VP9 encoder with in-memory ME.                                           Chrome Browser. For texture tiling, we precisely emulate
+                                                                                                   glTextImage2d() for OpenGL from the Intel i965 graphics dri-
+                                                                                                   ver, using 512x512-pixel RGBA tiles as the input set. For color
+8    System Integration                                                                            blitting, we construct a microbenchmark that closely follows the
+We briefly discuss two system challenges to implementing PIM in                                    color blitting implementation in Skia, and use randomly-generated
+the consumer device context.                                                                       bitmaps (ranging from 32x32 to 1024x1024 pixels) as inputs. For
+                                                                                                   compression and decompression, we use LZO [111] from the latest
+8.1 Software Interface for Efficient Offloading                                                    upstream Linux version. We generate the input data by starting
+We use a simple interface to offload the PIM targets. We identify                                  Chrome on our Chromebook, opening 50 tabs, navigating through
+PIM targets using two macros, which mark the beginning and end                                     them, and then dumping the entire contents of the Chromebook’s
+of the code segment that should be offloaded to PIM. The compiler                                  main memory to a file.
+converts these macros into instructions that we add to the ISA,
+which trigger and end PIM kernel execution. Examples are provides                                  TensorFlow Mobile. For packing, we modify the gemmlowp li-
+in a related work [37].                                                                            brary [41] to perform only matrix packing, by disabling the quanti-
+                                                                                                   zed matrix multiplication and result matrix unpacking routines. We
+8.2 Coherence Between CPUs and PIM Logic                                                           evaluate in-memory quantization using a microbenchmark that in-
+A major system challenge to implementing PIM is CPU-PIM com-                                       vokes TensorFlow Mobile’s post-Conv2D/MatMul re-quantization
+munication and coherence. The majority of the PIM targets we                                       routines, and we use the result matrix sizes of GEMMs to reflect
+identified are minimal functions/primitives that are interleaved                                   real-world usage.
+with other parts of the workloads in a fine-grained manner. As a re-                               Video Playback and Capture. For sub-pixel interpolation and
+sult, to fully benefit from offloading them to PIM, we need efficient                              the deblocking filter, we construct microbenchmarks that closely
+communication between the CPU and PIM logic to allow coordi-                                       follow their implementations in libvpx, and use 100 frames from a 4K
+nation, ordering, and synchronization between different parts of                                   Netflix video [152] as an input. For motion estimation, we develop
+the workloads. We find that coherence is required to (1) enable                                    a microbenchmark that uses the diamond search algorithm [157]
+efficient synchronization, (2) retain programmability, and (3) retain                              to perform block matching using three reference frames, and use
+the benefits’ of using PIM. As a result, we employ a simple fine-                                  10 frames from an HD video [152] as an input. For the hardware VP9
+grained coherence technique, which uses a local PIM-side directory                                 evaluation, we use the off-chip traffic analysis (Figures 12 and 16)
+in the logic layer to maintain coherence between PIM cores (or PIM                                 together with in-memory ME and in-memory MC traffic analysis
+accelerators), and to enable low-overhead fine-grained coherence                                   from our simulator to model the energy cost of data movement.
+
+                                                                                              11
+
+
+===== Page 12 =====
+
+                                                                                                                                                                                        CPU                       L1                              LLC
+10                        Evaluation                                                                                                                                                    Interconnect              MemCtrl                         DRAM                                  CPU-Only   PIM-Core   PIM-Acc
+
+
+
+
+                                                                                                                                                                                                                                                             Normalized Speedup
+                                                                                                                                                                  Normalized Energy
+In this section, we examine how our four consumer workloads                                                                                                                           1.0                                                                                         2.5
+benefit from PIM. We show results normalized to a processor-only                                                                                                                      0.8                                                                                         2.0
+baseline (CPU-Only), and compare to PIM execution using PIM                                                                                                                           0.6                                                                                         1.5
+                                                                                                                                                                                      0.4                                                                                         1.0
+cores (PIM-Core) or fixed-function PIM accelerators (PIM-Acc).
+                                                                                                                                                                                      0.2                                                                                         0.5
+10.1 Chrome Browser                                                                                                                                                                   0.0                                                                                         0.0
+
+
+
+
+                                                                                                                                                                                                                  PIM-Acc
+
+
+
+
+                                                                                                                                                                                                                                                   PIM-Acc
+                                                                                                                                                                                            CPU-Only
+
+                                                                                                                                                                                                       PIM-Core
+
+
+
+                                                                                                                                                                                                                            CPU-Only
+
+                                                                                                                                                                                                                                       PIM-Core
+                                                                                                                                                                                                                                                                                            1       4      16
+Figure 18 shows the energy consumption and runtime of CPU-                                                                                                                                                                                                                              Number of GEMM Operations
+Only, PIM-Core, and PIM-Acc across different browser kernels,
+normalized to CPU-only. We make three key observations on energy
+                                                                                                                                                                                                   Packing                  Quantization
+from the left graph in Figure 18. First, we find that offloading these
+kernels to PIM reduces the energy consumption, on average across                                                                                                  Figure 19. Energy (left) and performance (right) for TensorFlow
+all of our evaluated web pages, by 51.3% when we use PIM-Core, and                                                                                                Mobile kernels, for four neural networks [62, 131, 137, 141].
+by 61.0% when we use PIM-Acc. Second, we find that the majority of
+this reduction comes from eliminating data movement. For example,                                                                                                 computation energy accounts for a negligible portion of the total
+eliminating data movement in texture tiling contributes to 77.7%                                                                                                  energy consumption. For instance, 82.6% of the energy reduction
+of the total energy reduction. Third, PIM-Acc provides 18.9% more                                                                                                 for packing is due to the reduced data movement. Third, we find
+energy reduction over PIM-Core, though the energy reduction                                                                                                       that the data-intensive nature of these kernels and their low com-
+of PIM-Acc is limited by the highly-memory-intensive behavior                                                                                                     putational complexity limit the energy benefits PIM-Acc provides
+of these browser kernels. This is because while computation on                                                                                                    over PIM-Core.
+PIM-Acc is more efficient than computation using PIM-Core, data                                                                                                      Figure 19 (right) shows the total execution time of CPU-Only,
+movement accounts for the majority of energy consumption in                                                                                                       PIM-Core and PIM-Acc as we vary the number of GEMM operations
+the kernels, limiting the impact of more efficient computation on                                                                                                 performed. For CPU-Only, we evaluate a scenario where the CPU
+overall energy consumption.                                                                                                                                       performs packing, GEMM operations, quantization, and unpacking.
+                                                                                                                                                                  To evaluate PIM-Core and PIM-Acc, we assume that packing and
+                      CPU              L1              LLC                      CPU-Only                    PIM-Core                     PIM-Acc
+                      Interconnect     MemCtrl         DRAM
+                                                                                                                                                                  quantization are handled by the PIM logic, and the CPU performs
+Normalized Energy
+
+
+
+
+                                                                Normalized Runtime
+
+
+
+
+                    1.0                                                              1.0                                                                          GEMM operations. We find that as the number of GEMM operations
+                    0.8                                                              0.8                                                                          increases, PIM-Core and PIM-Acc provide greater performance im-
+                    0.6                                                              0.6                                                                          provements over CPU-Only. For example, for one GEMM operation,
+                    0.4                                                              0.4                                                                          PIM-Core and PIM-Acc achieve speedups of 13.1% and 17.2%, re-
+                    0.2                                                              0.2
+                    0.0                                                              0.0                                                                          spectively. For 16 GEMM operations, the speedups of PIM-Core and
+                                                                                                                                                                  PIM-Acc increase to 57.2% and 98.1%, respectively, over CPU-Only.
+                          CPU-Only
+
+
+                          CPU-Only
+
+
+                          CPU-Only
+
+
+                          CPU-Only
+                          PIM-Core
+                           PIM-Acc
+
+                          PIM-Core
+                           PIM-Acc
+
+                          PIM-Core
+                           PIM-Acc
+
+                          PIM-Core
+                           PIM-Acc
+
+
+
+
+                                                                                           Texture Tiling
+
+                                                                                                              Color Blitting
+
+                                                                                                                               Compression
+
+                                                                                                                                             Decompression
+
+
+
+
+                                                                                                                                                                  These improvements are the result of PIM logic (1) exploiting the
+                                                                                                                                                                  higher bandwidth and lower latency of 3D-stacked memory, and
+                                                                                                                                                                  (2) enabling the CPU to perform GEMM in parallel while the PIM
+                           Texture Color Com- Decom-                                                                                                              logic handles packing and quantization. For example, offloading
+                            Tiling Blitting pression pression
+                                                                                                                                                                  packing to the PIM core speeds up the operation by 32.1%. Similar
+Figure 18. Energy (left) and runtime (right) for all browser kernels,                                                                                             to our observation for the browser kernels (Section 10.1), as these
+                                                                                                                                                                  kernels are not compute-intensive, the performance improvement
+normalized to CPU-Only, for kernel inputs listed in Section 9.
+                                                                                                                                                                  of PIM-Acc over PIM-Core is limited.
+   We make five observations on performance from the right graph
+                                                                                                                                                                  10.3 Video Playback and Capture
+in Figure 18. First, PIM-Core and PIM-Acc significantly outperform
+CPU-Only across all kernels, improving performance by 1.6x and                                                                                                    10.3.1 VP9 Software
+2.0x, on average across all of our evaluated web pages. Second,                                                                                                   Figure 20 (left) shows the energy consumption of CPU-Only, PIM-
+we observe that the browser kernels benefit from the higher band-                                                                                                 Core, and PIM-Acc across different video kernels, normalized to
+width and lower access latency of 3D-stacked memory (due to                                                                                                       CPU-Only. We make three observations from the figure. First, all of
+their data-intensive nature), leading to performance improvement.                                                                                                 the kernels significantly benefit from PIM-Core and PIM-Acc, with
+Third, this performance benefit increases as the working set size                                                                                                 an average energy reduction of 46.8% and 66.6%, respectively, across
+increases. For example, our analysis (not shown) shows that the                                                                                                   our input videos. Second, the energy reductions are a result of the
+speedup increases by 31.2% when the texture size increases from                                                                                                   memory-bound behavior of these video kernels. Moving the kernels
+256x256 to 512x512 pixels. Fourth, the performance improvement                                                                                                    to PIM logic (1) eliminates a majority of the data movement, and
+of PIM-Acc over PIM-Core for texture tiling and color blitting is                                                                                                 (2) allows the kernels to benefit from the lower power consumed
+limited by the low computational complexity of these two kernels.                                                                                                 by PIM logic than by the CPU without losing performance. For
+Fifth, compression and decompression benefit significantly from                                                                                                   example, offloading sub-pixel interpolation and the deblocking
+using PIM-Acc over PIM-Core in terms of performance, because                                                                                                      filter to PIM-Core reduces their total energy consumption by 49.9%
+these kernels are more compute-intensive and less data-intensive                                                                                                  and 50.1%, respectively. Of those reductions, 34.6% and 51.9% come
+compared to texture tiling and color blitting.                                                                                                                    from the reduced energy consumption of PIM-Core compared to
+                                                                                                                                                                  the SoC CPU, while the rest of the reduction comes from decreasing
+10.2 TensorFlow Mobile                                                                                                                                            data movement. Third, we find that PIM-Acc provides, on average,
+Figure 19 (left) shows the energy consumption of CPU-Only, PIM-                                                                                                   a 42.7% additional energy reduction than PIM-Core across all of the
+Core, and PIM-Acc for the four most time- and energy-consuming                                                                                                    video kernels.
+GEMM operations for each input neural network in packing and                                                                                                          Figure 20 (right) shows the runtime of CPU-Only, PIM-Core, and
+quantization, normalized to CPU-Only. We make three key obser-                                                                                                    PIM-Acc on our video kernels. We observe from the figure that PIM-
+vations. First, PIM-Core and PIM-Acc decrease the total energy                                                                                                    Core and PIM-Acc improve performance over CPU-Only by 23.6%
+consumption by 50.9% and 54.9%, on average across all four in-                                                                                                    and 70.2%, respectively, averaged across all input videos. While
+put networks, compared to CPU-Only. Second, the majority of the                                                                                                   PIM-Core provides a modest speed up (12.6%) over CPU-Only for
+energy savings comes from the reduction in data movement, as the                                                                                                  the motion estimation kernel, PIM-Acc significantly outperforms
+
+                                                                                                                                                             12
+
+
+===== Page 13 =====
+
+                           CPU                                             L1                                        LLC                                    CPU-Only                 PIM-Core                  PIM-Acc                (PIM) benefits consumer devices, given the stringent power and
+Normalized Energy
+
+
+                           Interconnect                                    MemCtrl                                   DRAM
+                    1.0                                                                                                                                          1.0
+
+
+
+
+                                                                                                                                            Normalized Runtime
+                                                                                                                                                                                                                                      area constraints of such devices. Section 2 briefly discusses related
+                    0.8                                                                                                                                          0.8
+                    0.6                                                                                                                                          0.6
+                                                                                                                                                                                                                                      work on PIM. In this section, we discuss other related works.
+                    0.4                                                                                                                                          0.4                                                                     Prior works [15, 57, 68, 113, 121] study the general performance
+                    0.2                                                                                                                                          0.2                                                                  and energy profile of mobile applications. Narancic et al. [107] study
+                    0.0                                                                                                                                          0.0                                                                  the memory system behavior of a mobile device. Shingari et al. [130]
+                           CPU-Only
+
+
+
+                                                                CPU-Only
+
+
+
+                                                                                                     CPU-Only
+                                      PIM-Core
+                                                     PIM-Acc
+
+
+                                                                            PIM-Core
+                                                                                       PIM-Acc
+
+
+                                                                                                                PIM-Core
+                                                                                                                           PIM-Acc
+
+
+
+
+                                                                                                                                                                                                                 Estimation
+                                                                                                                                                                         Interpolation
+
+                                                                                                                                                                                               Deblocking
+                                                                                                                                                                                                                                      characterize memory interference for mobile workloads. None of
+
+
+
+
+                                                                                                                                                                                                                  Motion
+                                                                                                                                                                           Sub-Pixel
+
+
+
+                                                                                                                                                                                                 Filter
+                                                                                                                                                                                                                                      these works analyze (1) the sources of energy consumption and
+                                                                                                                                                                                                                                      data movement in consumer workloads, or (2) the benefits of PIM
+                             Sub-Pixel Deblocking Motion                                                                                                                                                                              for modern consumer workloads. One prior work [114] measures
+                           Interpolation Filter   Estimation
+                                                                                                                                                                                                                                      the data movement cost of emerging mobile workloads. However,
+Figure 20. Energy (left) and runtime (right) for all video kernels,                                                                                                                                                                   the work does not identify or analyze the sources of data movement
+normalized to CPU-Only, using 100 4K frames [152] for decoding                                                                                                                                                                        in consumer workloads, and does not propose any mechanism to
+and 10 HD [152] frames for encoding.                                                                                                                                                                                                  reduce data movement.
+                                                                                                                                                                                                                                         A number of prior works select a single consumer application
+                                                                                                                                                                                                                                      and propose techniques to improve the application. Many prior
+CPU-Only and improves performance by 2.1x. The reason is that                                                                                                                                                                         works [16, 17, 158, 159] use a variety of techniques, such as micro-
+motion estimation kernel has relatively high computational de-                                                                                                                                                                        architecture support and language extensions, to improve browsing
+mand, compared to the other PIM targets we evaluate, and thus,                                                                                                                                                                        energy and performance. None of these works (1) conduct a de-
+benefits much more from executing on PIM logic.                                                                                                                                                                                       tailed analysis of important user interactions (page scrolling and
+                                                                                                                                                                                                                                      tab switching) when browsing real-world web pages, or (2) iden-
+10.3.2 VP9 Hardware
+                                                                                                                                                                                                                                      tify sources of energy consumption and data movement during
+Figure 21 shows the total energy consumption for the decoder (left)                                                                                                                                                                   these interactions. Other works [13, 20, 27, 77, 88, 89, 155] attempt
+and encoder (right), for three configurations: VP9 only (which uses                                                                                                                                                                   to improve the efficiency of motion compensation, motion esti-
+the baseline VP9 hardware accelerator [146] in the SoC), VP9 with                                                                                                                                                                     mation, and the deblocking filter in different video codec formats
+PIM-Core, and VP9 with PIM-Acc. For each configuration, we show                                                                                                                                                                       using various techniques, ranging from software optimization to
+results without and with lossless frame compression.                                                                                                                                                                                  hardware acceleration. None of these works (1) thoroughly ana-
+                                           DRAM                                          MemCtrl                                              Interconnect                                     Computation                            lyze the data movement cost for a video codec, or (2) use PIM to
+                    10.0                                                                                                                   5.0                                                                                        improve the energy and performance of the video codec. Several
+                                                                           HW Decoder                                                                                                             HW Encoder
+                                                                                                                             Energy (mJ)
+Energy (mJ)
+
+
+
+
+                     8.0                                                                                                                   4.0                                                                                        works [19, 36, 61, 81, 119] focus on accelerating inference. While
+                     6.0                                                                                                                   3.0                                                                                        these mechanisms can speed up inference on mobile TensorFlow,
+                     4.0                                                                                                                   2.0                                                                                        they do not address the data movement issues related to packing
+                     2.0                                                                                                                   1.0
+                     0.0                                                                                                                   0.0                                                                                        and quantization. Tetris [36] and Neurocube [81] attempt to push
+                                                                                                                                                                                                                                      the entire inference execution into PIM. While Tetris and Neuro-
+                                VP9
+
+
+                                                               PIM-Acc
+                                                                             VP9
+
+
+                                                                                                           PIM-Acc
+
+
+
+
+                                                                                                                                                                   VP9
+
+
+                                                                                                                                                                                     PIM-Acc
+                                                                                                                                                                                                  VP9
+
+
+                                                                                                                                                                                                                       PIM-Acc
+                                                 PIM-Core
+
+
+
+
+                                                                                          PIM-Core
+
+
+
+
+                                                                                                                                                                          PIM-Core
+
+
+
+
+                                                                                                                                                                                                            PIM-Core
+
+
+
+
+                                                                                                                                                                                                                                      cube eliminate data movement during inference, their PIM logic
+                                                                                                                                                                                                                                      incurs high area and energy overheads, which may not be practical
+                                No          With                                                                                                                     No          With
+                                                                                                                                                                                                                                      to implement in consumer devices given the limited area and power
+                             Compression Compression                                                                                                              Compression Compression                                             budgets. In contrast, our work identifies the minimal functions of
+                                                                                                                                                                                                                                      inference that benefit from PIM, allowing us to greatly reduce data
+Figure 21. Total energy for VP9 hardware decoder (left) and VP9                                                                                                                                                                       movement without requiring a large area or energy overhead, and
+hardware encoder (right), based on an analysis using 4K and HD                                                                                                                                                                        making our PIM logic feasible to implement in consumer devices.
+video [152].
+                                                                                                                                                                                                                                      12    Conclusion
+   We make four key observations from the figure. First, we find that                                                                                                                                                                 Energy is a first-class design constraint in consumer devices. In this
+for both the VP9 decoder and encoder, off-chip data movement is the                                                                                                                                                                   paper, we analyze several widely-used Google consumer workloads,
+major source of energy consumption, consuming 69.2% and 71.5% of                                                                                                                                                                      and find that data movement contributes to a significant portion
+the total decoder and encoder energy, respectively. Second, we find                                                                                                                                                                   (62.7%) of their total energy consumption. Our analysis reveals
+that computation using the VP9 hardware is an order of magnitude                                                                                                                                                                      that the majority of this data movement comes from a number
+more energy-efficient than computation using PIM-Core. As a result,                                                                                                                                                                   of simple functions and primitives that are good candidates to be
+when compression is enabled, PIM-Core actually consumes 63.4%                                                                                                                                                                         executed on low-power processing-in-memory (PIM) logic. We
+more energy than the VP9 baseline. Third, we find that PIM-Acc                                                                                                                                                                        comprehensively study the energy and performance benefit of PIM
+reduces energy when compared to the VP9 hardware baseline, by                                                                                                                                                                         to address the data movement cost on Google consumer workloads.
+75.1% for decoding and by 69.8% for encoding. This is because PIM-                                                                                                                                                                    Our evaluation shows that offloading simple functions from these
+Acc embeds parts of the VP9 hardware itself in memory, retaining                                                                                                                                                                      consumer workloads to PIM logic, consisting of either simple cores
+the computational energy efficiency of the baseline accelerator                                                                                                                                                                       or specialized accelerators, reduces system energy consumption
+while reducing the amount of data movement that takes place.                                                                                                                                                                          by 55.4% and execution time by 54.2%, on average across all of
+Fourth, we find that PIM-Acc without compression uses less energy                                                                                                                                                                     our workloads. We conclude that reducing data movement via
+than the VP9 hardware baseline with compression. This indicates                                                                                                                                                                       processing-in-memory is a promising approach to improve both
+that the PIM logic is more effective at reducing data movement                                                                                                                                                                        the performance and energy efficiency of modern consumer devices
+than compression alone. We achieve the greatest energy reduction                                                                                                                                                                      with tight area, power, and energy budgets.
+by combining PIM-Acc with compression.
+                                                                                                                                                                                                                                      Acknowledgments
+11                        Other Related Work                                                                                                                                                                                          This research started at Google, during Amirali Boroumand’s exten-
+To our knowledge, this is the first work to (1) conduct a comprehen-                                                                                                                                                                  ded internship and Onur Mutlu’s stay as a visiting researcher. We
+sive analysis of Google’s consumer device workloads to identify                                                                                                                                                                       thank our industrial partners, especially Google, Huawei, Intel, and
+major sources of energy consumption, with a focus on data mo-                                                                                                                                                                         VMware, for their generous support. This research was partially
+vement; and (2) analyze and evaluate how processing-in-memory                                                                                                                                                                         supported by the Semiconductor Research Corporation.
+
+                                                                                                                                                                                                                                 13
+
+
+===== Page 14 =====
+
+References                                                                                        [36] M. Gao, J. Pu, X. Yang, M. Horowitz, and C. Kozyrakis, “TETRIS: Scalable and
+ [1] D. Abts, “Lost in the Bermuda Triangle: Complexity, Energy, and Performance,”                     Efficient Neural Network Acceleration with 3D Memory,” in ASPLOS, 2017.
+     in WCED, 2006.                                                                               [37] S. Ghose, K. Hsieh, A. Boroumand, R. Ausavarungnirun, and O. Mutlu, “Ena-
+ [2] R. Adolf, S. Rama, B. Reagen, G.-Y. Wei, and D. Brooks, “Fathom: Reference                        bling the Adoption of Processing-in-Memory: Challenges, Mechanisms, Future
+     Workloads for Modern Deep Learning Methods,” in IISWC, 2016.                                      Research Directions,” arxiv:1802.00320 [cs.AR], 2018.
+ [3] J. Ahn, S. Hong, S. Yoo, O. Mutlu, and K. Choi, “A Scalable Processing-in-Memory             [38] Google LLC, “Android,” https://www.android.com/.
+     Accelerator for Parallel Graph Processing,” in ISCA, 2015.                                   [39] Google LLC, “Chrome Browser,” https://www.google.com/chrome/browser/.
+ [4] J. Ahn, S. Yoo, O. Mutlu, and K. Choi, “PIM-Enabled Instructions: A Low-                     [40] Google LLC, “Chromebook,” https://www.google.com/chromebook/.
+     Overhead, Locality-Aware Processing-in-Memory Architecture,” in ISCA, 2015.                  [41] Google LLC, “gemmlowp: a small self-contained low-precision GEMM library,”
+ [5] B. Akin, F. Franchetti, and J. C. Hoe, “Data Reorganization in Memory Using                       https://github.com/google/gemmlowp.
+     3D-Stacked DRAM,” in ISCA, 2015.                                                             [42] Google LLC, “Gmail,” https://www.google.com/gmail/.
+ [6] A. Al-Shuwaili and O. Simeone, “Energy-Efficient Resource Allocation for Mo-                 [43] Google LLC, “Google Calendar,” https://calendar.google.com/.
+     bile Edge Computing-Based Augmented Reality Applications,” IEEE Wireless                     [44] Google LLC, “Google Docs,” https://docs.google.com/.
+     Communications Letters, 2017.                                                                [45] Google LLC, “Google Hangouts,” https://hangouts.google.com/.
+ [7] Alexa Internet, Inc., “Website Traffic, Statistics and Analytics,” http://www.alexa.         [46] Google LLC, “Google Photos,” https://photos.google.com/.
+     com/siteinfo/.                                                                               [47] Google LLC, “Google Search,” https://www.google.com/.
+ [8] M. Alzantot, Y. Wang, Z. Ren, and M. B. Srivastava, “RSTensorFlow: GPU Enabled               [48] Google LLC, “Google Search: About Google App,” https://www.google.com/
+     TensorFlow for Deep Learning on Commodity Android Devices,” in EMDL, 2017.                        search/about/.
+ [9] ARM Holdings PLC, “ARM Cortex-R8,” https://developer.arm.com/products/                       [49] Google LLC, “Google Translate,” https://translate.google.com/.
+     processors/cortex-r/cortex-r8.                                                               [50] Google LLC, “Google Translate App,” https://translate.google.com/intl/en/
+[10] N. Binkert, B. Beckman, A. Saidi, G. Black, and A. Basu, “The gem5 Simulator,”                    about/.
+     Comp. Arch. News, 2011.                                                                      [51] Google LLC, “Skia Graphics Library,” https://skia.org/.
+[11] J. Bonwick and B. Moore, “ZFS: The Last Word in File Systems,” https://csde.                 [52] Google LLC, “TensorFlow: Mobile,” https://www.tensorflow.org/mobile/.
+     washington.edu/~mbw/OLD/UNIX/zfs_lite.pdf, 2007.                                             [53] Google LLC, “YouTube,” https://www.youtube.com/.
+[12] A. Boroumand, S. Ghose, M. Patel, H. Hassan, B. Lucia, K. Hsieh, K. T. Malladi,              [54] Google LLC, “YouTube for Press,” https://www.youtube.com/yt/about/press/.
+     H. Zheng, and O. Mutlu, “LazyPIM: An Efficient Cache Coherence Mechanism                     [55] A. Grange, P. de Rivaz, and J. Hunt, “VP9 Bitstream & Decoding Process Specifica-
+     for Processing-in-Memory,” IEEE CAL, 2017.                                                        tion,” http://storage.googleapis.com/downloads.webmproject.org/docs/vp9/vp9-
+[13] F. Bossen, B. Bross, K. Suhring, and D. Flynn, “HEVC Complexity and Imple-                        bitstream-specification-v0.6-20160331-draft.pdf.
+     mentation Analysis,” IEEE CSVT, 2012.                                                        [56] Q. Guo, N. Alachiotis, B. Akin, F. Sadi, G. Xu, T. M. Low, L. Pileggi, J. C. Hoe, and
+[14] Q. Cao, N. Balasubramanian, and A. Balasubramanian, “MobiRNN: Efficient                           F. Franchetti, “3D-Stacked Memory-Side Acceleration: Accelerator and System
+     Recurrent Neural Network Execution on Mobile GPU,” in EMDL, 2017.                                 Design,” in WoNDP, 2014.
+[15] A. Carroll and G. Heiser, “An Analysis of Power Consumption in a Smartphone,”                [57] A. Gutierrez, R. G. Dreslinski, T. F. Wenisch, T. Mudge, A. Saidi, C. Emmons, and
+     in USENIX ATC, 2010.                                                                              N. Paver, “Full-System Analysis and Characterization of Interactive Smartphone
+[16] G. Chadha, S. Mahlke, and S. Narayanasamy, “EFetch: Optimizing Instruction                        Applications,” in IISWC, 2011.
+     Fetch for Event-Driven Web Applications,” in PACT, 2014.                                     [58] H. Habli, J. Lilius, and J. Ersfolk, “Analysis of Memory Access Optimization for
+[17] G. Chadha, S. Mahlke, and S. Narayanasamy, “Accelerating Asynchronous                             Motion Compensation Frames in MPEG-4,” in SOC, 2009.
+     Programs Through Event Sneak Peek,” in ISCA, 2015.                                           [59] R. Hadidi, L. Nai, H. Kim, and H. Kim, “CAIRO: A Compiler-Assisted Techni-
+[18] D. Chatzopoulos, C. Bermejo, Z. Huang, and P. Hui, “Mobile Augmented Reality                      que for Enabling Instruction-Level Offloading of Processing-in-Memory,” ACM
+     Survey: From Where We Are to Where We Go,” IEEE Access, 2017.                                     TACO, 2017.
+[19] Y. H. Chen, T. Krishna, J. S. Emer, and V. Sze, “Eyeriss: An Energy-Efficient                [60] M. Halpern, Y. Zhu, and V. J. Reddi, “Mobile CPU’s Rise to Power: Quantifying
+     Reconfigurable Accelerator for Deep Convolutional Neural Networks,” JSSC,                         the Impact of Generational Mobile CPU Design Trends on Performance, Energy,
+     2017.                                                                                             and User Satisfaction,” in HPCA, 2016.
+[20] J.-A. Choi and Y.-S. Ho, “Deblocking Filter Algorithm with Low Complexity for                [61] S. Han, X. Liu, H. Mao, J. Pu, A. Pedram, M. Horowitz, and B. Dally, “EIE: Efficient
+     H.264 Video Coding,” in PCM, 2008.                                                                Inference Engine on Compressed Deep Neural Network,” in ISCA, 2016.
+[21] C. Chou, P. Nair, and M. K. Qureshi, “Reducing Refresh Power in Mobile Devices               [62] K. He, X. Zhang, S. Ren, and J. Sun, “Identity Mappings in Deep Residual Net-
+     with Morphable ECC,” in DSN, 2015.                                                                works,” in ECCV, 2016.
+[22] Chromium Project, “Blink Rendering Engine,” https://www.chromium.org/blink.                  [63] B. Heater, “As Chromebook Sales Soar in Schools, Apple and Microsoft
+[23] Chromium Project, “Catapult: Telemetry,” https://chromium.googlesource.com/                       Fight Back,” https://techcrunch.com/2017/04/27/as-chromebook-sales-soar-in-
+     catapult/+/HEAD/telemetry/README.md.                                                              schools-apple-and-microsoft-fight-back/, 2017.
+[24] Chromium Project, “GPU Rasterization in Chromium,” https://www.chromium.                     [64] M. Horowitz, A. Joch, F. Kossentini, and A. Hallapuro, “H.264/AVC Baseline
+     org/developers/design-documents/gpu-accelerated-compositing-in-chrome,                            Profile Decoder Complexity Analysis,” CSVT, 2003.
+     2014.                                                                                        [65] K. Hsieh, E. Ebrahimi, G. Kim, N. Chatterjee, M. O’Conner, N. Vijaykumar,
+[25] Cisco Systems, Inc., “Cisco Visual Networking Index: Global Mo-                                   O. Mutlu, and S. Keckler, “Transparent Offloading and Mapping (TOM): Enabling
+     bile Data Traffic Forecast Update, 2016–2021 White Paper,” http:                                  Programmer-Transparent Near-Data Processing in GPU Systems,” in ISCA, 2016.
+     //www.cisco.com/c/en/us/solutions/collateral/service-provider/visual-                        [66] K. Hsieh, S. Khan, N. Vijaykumar, K. K. Chang, A. Boroumand, S. Ghose, and
+     networking-index-vni/mobile-white-paper-c11-520862.html, 2017.                                    O. Mutlu, “Accelerating Pointer Chasing in 3D-Stacked Memory: Challenges,
+[26] E. Cuervo, A. Balasubramanian, D. Cho, A. Wolman, S. Saroiu, R. Chandra,                          Mechanisms, Evaluation,” in ICCD, 2016.
+     and P. Bahl, “MAUI: Making Smartphones Last Longer with Code Offload,” in                    [67] “HTTP Archive,” http://httparchive.org/.
+     MobiSys, 2010.                                                                               [68] Y. Huang, Z. Zha, M. Chen, and L. Zhang, “Moby: A Mobile Benchmark Suite
+[27] H. Deng, X. Zhu, and Z. Chen, “An Efficient Implementation for H.264 Decoder,”                    for Architectural Simulators,” in ISPASS, 2014.
+     in ICCSIT, 2010.                                                                             [69] D. A. Huffman, “A Method for the Construction of Minimum Redundancy
+[28] T. M. T. Do, J. Blom, and D. Gatica-Perez, “Smartphone Usage in the Wild: A                       Codes,” Proc. IRE, 1952.
+     Large-Scale Analysis of Applications and Context,” in ICMI, 2011.                            [70] D. Hwang, “Native One-Copy Texture Uploads,” https://01.org/chromium/2016/
+[29] J. Draper, J. Chame, M. Hall, C. Steele, T. Barrett, J. LaCoss, J. Granacki, J. Shin,             native-one-copy-texture-uploads-for-chrome-OS, 2016.
+     C. Chen, C. W. Kang, I. Kim, and G. Daglikoca, “The Architecture of the DIVA                 [71] Hybrid Memory Cube Consortium, “HMC Specification 2.0,” 2014.
+     Processing-in-memory Chip,” in ICS, 2002.                                                    [72] Intel Corp., “Intel Celeron Processor N3060,” https://ark.intel.com/products/
+[30] M. Drumond, A. Daglis, N. Mirzadeh, D. Ustiugov, J. Picorel, B. Falsafi, B. Grot,                 91832/Intel-Celeron-Processor-N3060-2M-Cache-up-to-2_48-GHz.
+     and D. Pnevmatikatos, “The Mondrian Data Engine,” in ISCA, 2017.                             [73] Intel Corp., “Software vs. GPU Rasterization in Chromium,” https://software.
+[31] P. Dubroy and R. Balakrishnan, “A Study of Tabbed Browsing Among Mozilla                          intel.com/en-us/articles/software-vs-gpu-rasterization-in-chromium.
+     Firefox Users,” in CHI, 2010.                                                                [74] J. Jeddeloh and B. Keeth, “Hybrid Memory Cube New DRAM Architecture
+[32] eMarketer, Inc., “Slowing Growth Ahead for Worldwide Internet Au-                                 Increases Density and Performance,” in VLSIT, 2012.
+     dience,” https://www.emarketer.com/article/slowing-growth-ahead-worldwide-                   [75] JEDEC Solid State Technology Assn., “JESD235: High Bandwidth Memory (HBM)
+     internet-audience/1014045?soc1001, 2016.                                                          DRAM,” 2013.
+[33] Ericsson, Inc., “Ericsson Mobility Report: On the Pulse of the Networked So-                 [76] S. Jennings, “Transparent Memory Compression in Linux,” https://events.static.
+     ciety,” https://www.ericsson.com/res/docs/2015/ericsson-mobility-report-june-                     linuxfound.org/sites/events/files/slides/tmc_sjennings_linuxcon2013.pdf, 2013.
+     2015.pdf, 2015.                                                                              [77] E. Kalali and I. Hamzaoglu, “A Low Energy HEVC Sub-Pixel Interpolation
+[34] Facebook, Inc., “Instagram,” https://www.instagram.com/.                                          Hardware,” in ICIP, 2014.
+[35] M. Gao, G. Ayers, and C. Kozyrakis, “Practical Near-Data Processing for In-                  [78] J. Kane and Q. Yang, “Compression Speed Enhancements to LZO for Multi-Core
+     Memory Analytics Frameworks,” in PACT, 2015.                                                      Systems,” in SBAC-PAD, 2012.
+
+
+
+
+                                                                                             14
+
+
+===== Page 15 =====
+
+ [79] Y. Kang, W. Huang, S.-M. Yoo, D. Keen, Z. Ge, V. Lam, P. Pattnaik, and J. Torrellas,        [113] D. Pandiyan, S.-Y. Lee, and C.-J. Wu, “Performance, Energy Characterizations
+      “FlexRAM: Toward an Advanced Intelligent Memory System,” in ICCD, 2012.                           and Architectural Implications of an Emerging Mobile Platform Benchmark
+ [80] S. W. Keckler, W. J. Dally, B. Khailany, M. Garland, and D. Glasco, “GPUs and                     Suite – MobileBench,” in IISWC, 2013.
+      the Future of Parallel Computing,” IEEE Micro, 2011.                                        [114] D. Pandiyan and C.-J. Wu, “Quantifying the Energy Cost of Data Movement for
+ [81] D. Kim, J. Kung, S. Chai, S. Yalamanchili, and S. Mukhopadhyay, “NeuroCube:                       Emerging Smartphone Workloads on Mobile Platforms,” in IISWC, 2014.
+      A Programmable Digital Neuromorphic Architecture with High-Density 3D                       [115] D. Patterson, T. Anderson, N. Cardwell, R. Fromm, K. Keeton, C. Kozyrakis,
+      Memory,” in ISCA, 2016.                                                                           R. Thomas, and K. Yelick, “A Case for Intelligent RAM,” IEEE Micro, 1997.
+ [82] J. S. Kim, D. Senol, H. Xin, D. Lee, S. Ghose, M. Alser, H. Hassan, O. Ergin,               [116] A. Pattnaik, X. Tang, A. Jog, O. Kayiran, A. K. Mishra, M. T. Kandemir, O. Mutlu,
+      C. Alkan, and O. Mutlu, “GRIM-Filter: Fast Seed Location Filtering in DNA Read                    and C. R. Das, “Scheduling Techniques for GPU Architectures with Processing-
+      Mapping Using Processing-in-Memory Technologies,” BMC Genomics, 2018.                             in-Memory Capabilities,” in PACT, 2016.
+ [83] Y. Kim, D. Han, O. Mutlu, and M. Harchol-Balter, “ATLAS: A Scalable and High-               [117] B. Popper, “Google Services Monthly Active Users,” https://www.theverge.com/
+      Performance Scheduling Algorithm for Multiple Memory Controllers,” in HPCA,                       2017/5/17/15654454/android-reaches-2-billion-monthly-active-users, 2017.
+      2010.                                                                                       [118] Qualcomm Technologies, Inc., “Snapdragon 835 Mobile Platform,” https://www.
+ [84] Y. Kim, M. Papamichael, O. Mutlu, and M. Harchol-Balter, “Thread Cluster                          qualcomm.com/products/snapdragon/processors/835.
+      Memory Scheduling: Exploiting Differences in Memory Access Behavior,” in                    [119] B. Reagen, P. Whatmough, R. Adolf, S. Rama, H. Lee, S. K. Lee, J. M. Hernández-
+      MICRO, 2010.                                                                                      Lobato, G.-Y. Wei, and D. Brooks, “Minerva: Enabling Low-Power, Highly-
+ [85] Y. Kim, W. Yang, and O. Mutlu, “Ramulator: A Fast and Extensible DRAM                             Accurate Deep Neural Network Accelerators,” in ISCA, 2016.
+      Simulator,” IEEE CAL, 2015.                                                                 [120] J. Ren and N. Kehtarnavaz, “Comparison of Power Consumption for Motion
+ [86] P. M. Kogge, “EXECUBE: A New Architecture for Scaleable MPPs,” in ICPP, 1994.                     Compensation and Deblocking Filters in High Definition Video Coding,” in ISCE,
+ [87] Z. Lai, Y. C. Hu, Y. Cui, L. Sun, and N. Dai, “Furion: Engineering High-Quality                   2007.
+      Immersive Virtual Reality on Today’s Mobile Devices,” in MobiCom, 2017.                     [121] P. V. Rengasamy, H. Zhang, N. Nachiappan, S. Zhao, A. Sivasubramaniam,
+ [88] M. J. Langroodi, J. Peters, and S. Shirmohammadi, “Decoder-Complexity-Aware                       M. T. Kandemir, and C. R. Das, “Characterizing Diverse Handheld Apps for
+      Encoding of Motion Compensation for Multiple Heterogeneous Receivers,”                            Customized Hardware Acceleration,” in IISWC, 2017.
+      TOMM, 2015.                                                                                 [122] O. Rodeh, J. Bacik, and C. Mason, “BTRFS: The Linux B-Tree Filesystem,” ACM
+ [89] C. Lee and Y. Yu, “Design of a Motion Compensation Unit for H.264 Decoder                         TOS, 2013.
+      Using 2-Dimensional Circular Register Files,” in ISOCC, 2008.                               [123] S. Rosen, A. Nikravesh, Y. Guo, Z. M. Mao, F. Qian, and S. Sen, “Revisiting
+ [90] D. Lee, S. Ghose, G. Pekhimenko, S. Khan, and O. Mutlu, “Simultaneous Multi-                      Network Energy Efficiency of Mobile Apps: Performance in the Wild,” in IMC,
+      Layer Access: Improving 3D-Stacked Memory Bandwidth at Low Cost,” ACM                             2015.
+      TACO, 2016.                                                                                 [124] F. Ross, “Migrating to LPDDR3: An Overview of LPDDR3 Commands, Operati-
+ [91] P. Lewis, “Avoiding Unnecessary Paints,” https://www.html5rocks.com/en/                           ons, and Functions,” in JEDEC LPDDR3 Symposium, 2012.
+      tutorials/speed/unnecessary-paints/, 2013.                                                  [125] V. Seshadri, K. Hsieh, A. Boroumand, D. Lee, M. A. Kozuch, O. Mutlu, P. B.
+ [92] T. Li, C. An, X. Xiao, A. T. Campbell, and X. Zhou, “Real-Time Screen-Camera                      Gibbons, and T. C. Mowry, “Fast Bulk Bitwise AND and OR in DRAM,” CAL,
+      Communication Behind Any Scene,” in MobiSys, 2015.                                                2015.
+ [93] F. Liu, P. Shu, H. Jin, L. Ding, J. Yu, D. Niu, and B. Li, “Gearing Resource-               [126] V. Seshadri, D. Lee, T. Mullins, H. Hassan, A. Boroumand, J. Kim, M. A. Kozuch,
+      Poor Mobile Devices with Powerful Clouds: Architectures, Challenges, and                          O. Mutlu, P. B. Gibbons, and T. C. Mowry, “Ambit: In-Memory Accelerator for
+      Applications,” IEEE Wireless Communications, 2013.                                                Bulk Bitwise Operations Using Commodity DRAM Technology,” in MICRO,
+ [94] G. H. Loh, “3D-Stacked Memory Architectures for Multi-Core Processors,” in                        2017.
+      ISCA, 2008.                                                                                 [127] V. Seshadri and O. Mutlu, “The Processing Using Memory Paradigm: In-DRAM
+ [95] K. Mai, T. Paaske, N. Jayasena, R. Ho, W. J. Dally, and M. Horowitz, “Smart                       Bulk Copy, Initialization, Bitwise AND and OR,” arXiv:1610.09603 [cs:AR], 2016.
+      Memories: A Modular Reconfigurable Architecture,” in ISCA, 2000.                            [128] V. Seshadri and O. Mutlu, “Simple Operations in Memory to Reduce Data Mo-
+ [96] Mentor Graphics Corp., “Catapult High-Level Synthesis,” https://www.mentor.                       vement,” in Advances in Computers, Volume 106, 2017.
+      com/hls-lp/catapult-high-level-synthesis/.                                                  [129] D. E. Shaw, S. J. Stolfo, H. Ibrahim, B. Hillyer, G. Wiederhold, and J. A. Andrews,
+ [97] Microsoft Corp., “Skype,” https://www.skype.com/.                                                 “The NON-VON Database Machine: A Brief Overview,” IEEE DEB, 1981.
+ [98] A. Mirhosseini, A. Agrawal, and J. Torrellas, “Survive: Pointer-Based In-                   [130] D. Shingari, A. Arunkumar, and C.-J. Wu, “Characterization and Throttling-
+      DRAM Incremental Checkpointing for Low-Cost Data Persistence and Rollback-                        Based Mitigation of Memory Interference for Heterogeneous Smartphones,” in
+      Recovery,” IEEE CAL, 2017.                                                                        IISWC, 2015.
+ [99] N. Mirzadeh, O. Kocberber, B. Falsafi, and B. Grot, “Sort vs. Hash Join Revisited           [131] K. Simonyan and A. Zisserman, “Very Deep Convolutional Networks for Large-
+      for Near-Memory Execution,” in ASBD, 2007.                                                        Scale Image Recognition,” in ICLR, 2015.
+[100] B. Moatamed, Arjun, F. Shahmohammadi, R. Ramezani, A. Naeim, and M. Sar-                    [132] R. Smith, “Apple’s A9 SoC Is Dual Sourced From Samsung & TSMC,”
+      rafzadeh, “Low-Cost Indoor Health Monitoring System,” in BSN, 2016.                               https://www.anandtech.com/show/9665/apples-a9-soc-is-dual-sourced-from-
+[101] A. Mosenia, S. Sur-Kolay, A. Raghunathan, and N. K. Jha, “CABA: Continuous                        samsung-tsmc, 2015.
+      Authentication Based on BioAura,” IEEE TC, 2017.                                            [133] J. Stankowski, D. Karwowski, K. Klimaszewski, K. Wegner, O. Stankiewicz, and
+[102] A. Mosenia, S. Sur-Kolay, A. Raghunathan, and N. K. Jha, “Wearable Medical                        T. Grajek, “Analysis of the Complexity of the HEVC Motion Estimation,” in
+      Sensor-Based System Design: A Survey,” MSCS, 2017.                                                IWSSIP, 2016.
+[103] S. P. Muralidhara, L. Subramanian, O. Mutlu, M. Kandemir, and T. Moscibroda,                [134] H. S. Stone, “A Logic-in-Memory Computer,” IEEE TC, 1970.
+      “Reducing Memory Interference in Multicore Systems via Application-Aware                    [135] R. Sukale, “What Are Reflows and Repaints and How to Avoid Them,”
+      Memory Channel Partitioning,” in MICRO, 2011.                                                     http://javascript.tutorialhorizon.com/2015/06/06/what-are-reflows-and-
+[104] N. Muralimanohar, R. Balasubramonian, and N. Jouppi, “Optimizing NUCA                             repaints-and-how-to-avoid-them/, 2015.
+      Organizations and Wiring Alternatives for Large Caches with CACTI 6.0,” in                  [136] S. Sutardja, “The Future of IC Design Innovation,” in ISSCC, 2015.
+      MICRO, 2007.                                                                                [137] C. Szegedy, S. Ioffe, V. Vanhoucke, and A. A. Alemi, “Inception-v4, Inception-
+[105] N. C. Nachiappan, H. Zhang, J. Ryoo, N. Soundararajan, A. Sivasubramaniam,                        ResNet and the Impact of Residual Connections on Learning,” in AAAI, 2017.
+      M. T. Kandemir, R. Iyer, and C. R. Das, “VIP: Virtualizing IP Chains on Handheld            [138] X. Tang, O. Kislal, M. Kandemir, and M. Karakoy, “Data Movement Aware
+      Platforms,” in ISCA, 2015.                                                                        Computation Partitioning,” in MICRO, 2017.
+[106] L. Nai, R. Hadidi, J. Sim, H. Kim, P. Kumar, and H. Kim, “GraphPIM: Enabling                [139] TechInsights, “Samsung Galaxy S6,” http://www.techinsights.com/about-
+      Instruction-Level PIM Offloading in Graph Computing Frameworks,” in HPCA,                         techinsights/overview/blog/inside-the-samsung-galaxy-s6/.
+      2017.                                                                                       [140] R. Thompson, “Improve Rendering Performance with Dev Tools,” ttps://inviqa.
+[107] G. Narancic, P. Judd, D. Wu, I. Atta, M. Elnacouzi, J. Zebchuk, J. Albericio, N. E.               com/blog/improve-rendering-performance-dev-tools, 2014.
+      Jerger, A. Moshovos, K. Kutulakos, and S. Gadelrab, “Evaluating the Memory                  [141] G. Toderici, D. Vincent, N. Johnston, S. J. Hwang, D. Minnen, J. Shor, and M. Co-
+      System Behavior of Smartphone Workloads,” in SAMOS, 2014.                                         vell, “Full Resolution Image Compression with Recurrent Neural Networks,” in
+[108] Net Applications, “Market Share Statistics for Internet Technologies,” https:                     CVPR, 2017.
+      //www.netmarketshare.com/.                                                                  [142] Twitter, Inc., “Twitter,” https://www.twitter.com/.
+[109] A. M. Nia, M. Mozaffari-Kermani, S. Sur-Kolay, A. Raghunathan, and N. K. Jha,               [143] E. Vasilakis, “An Instruction Level Energy Characterization of ARM Processors,”
+      “Energy-Efficient Long-term Continuous Personal Health Monitoring,” MSCS,                         Foundation of Research and Technology Hellas, Inst. of Computer Science, Tech.
+      2015.                                                                                             Rep. FORTH-ICS/TR-450, 2015.
+[110] Nielsen Norman Group, “Page Parking: Millennials’ Multi-Tab Mania,” https:                  [144] WebM Project, “Hardware: SoCs Supporting VP8/VP9,” http://wiki.webmproject.
+      //www.nngroup.com/articles/multi-tab-page-parking/.                                               org/hardware/socs.
+[111] M. F. X. J. Oberhumer, “LZO Real-Time Data Compression Library,” http://www.                [145] WebM Project, “WebM Repositories — libvpx: VP8/VP9 Codec SDK,” https:
+      oberhumer.com/opensource/lzo/, 2018.                                                              //www.webmproject.org/code/.
+[112] M. Oskin, F. T. Chong, and T. Sherwood, “Active Pages: A Computation Model                  [146] WebM Project, “WebM Video Hardware RTLs,” https://www.webmproject.org/
+      for Intelligent Memory,” in ISCA, 1998.                                                           hardware/.
+
+
+
+                                                                                             15
+
+
+===== Page 16 =====
+
+[147] S. Wegner, A. Cowsky, C. Davis, D. James, D. Yang, R. Fontaine, and J. Morrison,        [155] H. Zhang, P. V. Rengasamy, S. Zhao, N. C. Nachiappan, A. Sivasubramaniam,
+      “Apple iPhone 7 Teardown,” http://www.techinsights.com/about-techinsights/                    M. T. Kandemir, R. Iyer, and C. R. Das, “Race-to-Sleep + Content Caching +
+      overview/blog/apple-iphone-7-teardown/, 2016.                                                 Display Caching: A Recipe for Energy-Efficient Video Streaming on Handhelds,”
+[148] A. Wei, “Qualcomm Snapdragon 835 First to 10 nm,” http://www.techinsights.                    in MICRO, 2017.
+      com/about-techinsights/overview/blog/qualcomm-snapdragon-835-first-to-                  [156] X. Zhang, J. Li, H. Wang, D. Xiong, J. Qu, H. Shin, J. P. Kim, and T. Zhang,
+      10-nm/, 2017.                                                                                 “Realizing Transparent OS/Apps Compression in Mobile Devices at Zero Latency
+[149] WordPress Foundation, “WordPress,” https://www.wordpress.com/.                                Overhead,” IEEE TC, 2017.
+[150] S. L. Xi, O. Babarinsa, M. Athanassoulis, and S. Idreos, “Beyond the Wall: Near-        [157] S. Zhu and K.-K. Ma, “A New Diamond Search Algorithm for Fast Block Matching
+      Data Processing for Databases,” in DaMoN, 2015.                                               Motion Estimation,” in ICICS, 1997.
+[151] C. Xie, S. L. Song, J. Wang, W. Zhang, and X. Fu, “Processing-in-Memory Enabled         [158] Y. Zhu and V. J. Reddi, “WebCore: Architectural Support for Mobile Web Brow-
+      Graphics Processors for 3D Rendering,” in HPCA, 2017.                                         sing,” in ISCA, 2014.
+[152] Xiph.Org Foundation, “Derf Video Test Collection,” https://media.xiph.org/              [159] Y. Zhu and V. J. Reddi, “GreenWeb: Language Extensions for Energy-Efficient
+      video/derf/.                                                                                  Mobile Web Computing,” in PLDI, 2016.
+[153] D. P. Zhang, N. Jayasena, A. Lyashevsky, J. L. Greathouse, L. Xu, and M. Igna-          [160] J. Ziv and A. Lempel, “A Universal Algorithm for Sequential Data Compression,”
+      towski, “TOP-PIM: Throughput-Oriented Programmable Processing in Memory,”                     TIT, 1977.
+      in HPDC, 2014.
+[154] H. Zhang, P. V. Rengasamy, S. Zhao, N. C. Nachiappan, A. Sivasubramaniam,
+      M. T. Kandemir, R. Iyer, and C. R. Das, “Race-To-Sleep + Content Caching +
+      Display Caching: A Recipe for Energy-eficient Video Streaming on Handhelds,”
+      in MICRO, 2017.
+
+
+
+
+                                                                                         16

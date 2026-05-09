@@ -1,0 +1,1525 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/MEMCON-system-level-data-dependent-DRAM-failure-detection-mitigation_micro17.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/MEMCON-system-level-data-dependent-DRAM-failure-detection-mitigation_micro17.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+        Detecting and Mitigating Data-Dependent DRAM Failures
+                 by Exploiting Current Memory Content
+      Samira Khan? Chris Wilkerson† Zhe Wang† Alaa R. Alameldeen† Donghyuk Lee‡ Onur Mutlu∗
+                                   ? University of Virginia        † Intel Labs      ‡ Nvidia Research      ∗ ETH Zürich
+
+
+
+                                Abstract                                          65-74%, leading to a 10%/17%/40% (min) to 12%/22%/50% (max)
+   DRAM cells in close proximity can fail depending on the data                   performance improvement for a single-core and 10%/23%/52%
+content in neighboring cells. These failures are called data-                     (min) to 17%/29%/65% (max) performance improvement for a
+dependent failures. Detecting and mitigating these failures on-                   4-core system using 8/16/32 Gb DRAM chips.
+line, while the system is running in the field, enables various opti-             CCS CONCEPTS
+mizations that improve reliability, latency, and energy efficiency                • Computer systems organization → Processors and mem-
+                                                                                  ory architectures; • Hardware → Dynamic memory;
+of the system. For example, a system can improve performance
+and energy efficiency by using a lower refresh rate for most cells                KEYWORDS
+and mitigate the failing cells using higher refresh rates or error                DRAM, Data-Dependent Failures, System-Level Failure De-
+correcting codes. All these system optimizations depend on accu-                  tection and Mitigation, Performance, Energy, Fault Tolerance,
+rately detecting every possible data-dependent failure that could                 Refresh, Retention Failures, Memory Systems, Reliability.
+occur with any content in DRAM. Unfortunately, detecting all                      ACM Reference Format
+data-dependent failures requires the knowledge of DRAM inter-                     Samira Khan, Chris Wilkerson, Zhe Wang, Alaa R. Alameldeen,
+nals specific to each DRAM chip. As internal DRAM architecture                    Donghyuk Lee and Onur Mutlu. 2017. Detecting and Mit-
+is not exposed to the system, detecting data-dependent failures at                igating Data-Dependent DRAM Failures by Exploiting Cur-
+the system-level is a major challenge.                                            rent Memory Content. In Proceedings of The 50th Annual
+   In this paper, we decouple the detection and mitigation of                     IEEE/ACM International Symposium on Microarchitecture, Cam-
+data-dependent failures from physical DRAM organization such                      bridge, MA, USA, October 14-18, 2017 (MICRO’50), 14 pages.
+                                                                                  https://doi.org/10.1145/3123939.3123945
+that it is possible to detect failures without knowledge of DRAM
+internals. To this end, we propose MEMCON, a memory content-                      1. Introduction
+based detection and mitigation mechanism for data-dependent                          The continued scaling of DRAM process technology has en-
+failures in DRAM. MEMCON does not detect every possible data-                     abled higher density DRAM by placing smaller memory cells
+dependent failure. Instead, it detects and mitigates failures that                close to each other. Unfortunately, the close proximity of cells
+occur only with the current content in memory while the pro-                      exacerbates cell-to-cell interference, making cells susceptible
+grams are running in the system. Such a mechanism needs to                        to failures [30, 31, 32, 35, 39, 51, 52, 56, 59, 61, 62, 63, 66, 67, 72].
+detect failures whenever there is a write access that changes the                 Recent works propose to detect and mitigate these failures
+content of memory. As detection of failure with a runtime testing                 in the field, while the system is under operation, as a way
+has a high overhead, MEMCON selectively initiates a test on a                     to ensure correct DRAM operation while still being able to
+write, only when the time between two consecutive writes to that                  continue the scaling of process technology. Such system-level
+page (i.e., write interval) is long enough to provide significant ben-            detection and mitigation of DRAM failures provides better reli-
+efit by lowering the refresh rate during that interval. MEMCON                    ability, performance, and energy efficiency in future memory
+builds upon a simple, practical mechanism that predicts the long                  systems [7, 14, 17, 20, 24, 31, 32, 39, 45, 46, 51, 52, 53, 53, 55,
+write intervals based on our observation that the write intervals                 58, 61, 65, 67, 70, 74, 81, 82, 86]. For example, it is possible
+                                                                                  to improve system energy and performance by using a lower
+in real workloads follow a Pareto distribution: the longer a page
+                                                                                  refresh rate, if we can detect the failing cells at a lower refresh
+remains idle after a write, the longer it is expected to remain idle.
+                                                                                  rate and mitigate only those failing cells using a higher refresh
+   Our evaluation shows that compared to a system that uses an                    rate [52, 53, 67, 70, 86]. Such ideas that require system-level
+aggressive refresh rate, MEMCON reduces refresh operations by                     detection and mitigation rely on (i) detecting every cell that can
+Permission to make digital or hard copies of all or part of this work for         fail during the entire lifetime of the system and (ii) mitigating
+personal or classroom use is granted without fee provided that copies are not     failures via a high refresh rate, ECC, and/or remapping of faulty
+made or distributed for profit or commercial advantage and that copies bear       cells to reliable memory regions [32, 51, 65, 70, 88].
+this notice and the full citation on the first page. Copyrights for components       Unfortunately, detection and mitigation of DRAM failures
+of this work owned by others than ACM must be honored. Abstracting with
+credit is permitted. To copy otherwise, or republish, to post on servers or to
+                                                                                  caused by cell-to-cell interference is quite challenging, as
+redistribute to lists, requires prior specific permission and/or a fee. Request   shown by prior works testing real DRAM chips [21, 31, 32,
+permissions from Permissions@acm.org.                                             39, 51, 67]. A prominent type of interference failure occurs
+MICRO-50, October 14-18, 2017, Cambridge, MA, USA                                 depending on the data content in neighboring cells. Such fail-
+© 2017 Association for Computing Machinery.                                       ures are called data-dependent failures [31, 32, 39, 51, 67, 72].
+ACM. ISBN 978-1-4503-4952-9/17/10...$15.00.                                       Historically, data-dependent failures have been a major prob-
+DOI: https://doi.org/10.1145/3123939.3123945                                      lem for manufacturing reliable DRAM cells since as early as
+
+
+===== Page 2 =====
+
+MICRO’17, October 14-18, 2017, Boston, MA, USA                                                                         Samira Khan et al.
+
+the Intel 1103, the first commercialized DRAM chip [2]. These          testing has some cost associated with it, it also provides a
+failures are inherent to DRAM design as they are caused by the         benefit as a memory row can be refreshed at a lower rate if
+electromagnetic coupling between wires used to access DRAM             no failure is found after testing. Consequently, the cost of
+cells [5, 31, 39, 51, 72]. Manufacturers detect these failures by      testing can be amortized if the content remains the same for a
+exhaustively testing neighboring DRAM cells with data pat-             long time, providing an opportunity to continue eliminating
+terns that introduce enough cell-to-cell interference to cause         the unnecessary refresh operations. The longer the content
+failures and then either remap the failed bits or discard the          remains the same, the higher the benefit from the reduced
+faulty chips to mitigate/avoid the failures. However, detection        refresh operations. In this work, we provide a cost-benefit
+of data-dependent failures in the system, while the DRAM chip          analysis of testing and show that the cost of testing can be
+is being used in the field, faces a challenge. The detection of        amortized if consecutive tests in a row are performed at a
+data-dependent failures is closely tied to internal DRAM organi-       minimum time interval of 448–864 ms, depending on the test
+zation, which is different in each chip and usually not exposed        mode, refresh rate, and DRAM timing parameters (Section 3).
+to the system [29, 31, 45, 51, 67, 85]. Without exact knowledge        As testing is triggered by a write operation that changes the
+of the internal design of a DRAM chip, it is extremely difficult       data content in memory, we refer to this minimum interval as
+to detect all failures (as discussed in detail in Section 2). As       MinWriteInterval.
+DRAM cells get smaller, more cells fail due to cell-to-cell inter-        Second, we observe that write intervals in real applications
+ference, which poses a significant challenge to DRAM scaling           follow the Pareto distribution. A large number of writes occur
+and systems that rely on DRAM scaling for higher memory ca-            within a very small interval, but the rest of the writes are spread
+pacity and performance [30, 31, 39, 51, 56, 59, 61, 62, 63, 66, 72].   far enough such that a significant fraction of a program’s time is
+Handling such failures during the manufacturing time greatly           spent on intervals greater than MinWriteInterval. For example,
+impacts the testing time that directly increases the cost of           we find that on average 81.5% of the total write intervals are
+DRAM [30, 56, 62, 72]. Therefore, it is important to enable            spent on intervals greater than 1024 ms in 12 real-world appli-
+efficient detection and mitigation of data-dependent DRAM              cations, including popular photo, audio, and video editors and
+failures in the system, during the online operations.                  streaming applications (details in Section 4.1; our collected data
+   The goal of this work is to design a low-overhead detection         is publicly available online [34]). This result demonstrates that
+and mitigation mechanism for data-dependent failures that can          MEMCON can amortize the cost of testing in real workloads.
+be implemented in the system without requiring any knowledge              Based on our model and analysis on write intervals, we
+about the specifics of the internal DRAM design. We develop a          propose a simple mechanism to predict the write interval length
+DRAM-transparent mechanism based on the key observation                at each write. Our mechanism, probabilistic remaining interval
+that, in order to ensure correct operation of memory during            length predictor (PRIL), builds upon a key property of the Pareto
+runtime, it is not required to detect and mitigate every possible      distribution of write intervals: the longer a page is idle (not
+data-dependent failure that can potentially occur throughout           written to), the longer it is expected to remain idle. Hence, the
+the lifetime of the system. Instead, it is sufficient to ensure        remaining write interval of a page can easily predicted by how
+reliability against data-dependent failures that occur with only       long the page has been remained idle after a write.
+the current data content in memory. Leveraging this key insight,          We demonstrate that MEMCON leads to 64.7%-74.5% reduc-
+we propose MEMCON, a memory content-based detection and                tion in refresh operations compared to a system using an ag-
+mitigation mechanism for data-dependent failures in DRAM.              gressive refresh rate (16 ms) to mitigate failures. However,
+While the system and applications are running, MEMCON                  extra read and write accesses during testing can interfere with
+detects failures with the current content in memory. These             memory-intensive applications. We show that performance
+detected failures are mitigated using a high refresh rate for          impact of extra read-write accesses due to testing is minimal.
+rows that contain the failing cells. MEMCON significantly              Our evaluation on SPEC [80], STREAM [1], and server [84]
+reduces the mitigation cost as the number of failures with             benchmarks demonstrates that PRIL improves performance by
+current data content is less than the total number of failures         10%/17%/40% (min) to 12%/22%/50% (max) for a single-core sys-
+with every possible data content. Using experimental data from         tem and 10%/23%/52% (min) to 17%/29%/65% (max) for a 4-core
+real DRAM chips tested with real program data content, we              system using 8/16/32 Gb DRAM chips compared to a baseline
+show that program data content in memory exhibits 2.4X-35.2X           system that uses an aggressive refresh rate.
+fewer failures than all possible failures with any data content,
+                                                                          This paper makes the following contributions:
+making MEMCON effective in reducing mitigation cost.
+   One critical issue with MEMCON is that whenever there is a           • This is the first work to propose a system-level online data-
+write to memory, content gets changed and MEMCON needs to                 dependent failure detection and mitigation technique that
+test that new content to determine if the new content introduces          is completely decoupled from the internal physical organiza-
+any data-dependent failures. Unfortunately, testing memory                tion of DRAM. Our online failure detection and mitigation
+for data-dependent failures while the programs are running                technique, MEMCON, detects failures only for the current
+in the system is expensive. Testing leads to extra memory                 memory content of the applications running in the system.
+accesses that can interfere with critical program accesses and          • We analyze and model the cost and benefit of failure detec-
+can slow down the running programs. In order to design a                  tion and mitigation with the current memory content. Our
+cost-effective detection and mitigation technique, we make                analysis demonstrates that the cost of testing for the current
+two critical observations. First, we observe that even though             content can be amortized if consecutive tests in a row are
+
+
+===== Page 3 =====
+
+MEMCON: Detecting and Mitigating Data-Dependent DRAM Failures                           MICRO’17, October 14-18, 2017, Boston, MA, USA
+
+
+   performed at a minimum time interval (between 448 and          within the cells, these failures increase when DRAM operates at
+   864 ms according to our evaluation). As testing needs to be    longer refresh intervals. It is easier to cause a failure perturbing
+   performed when data content changes with program writes,       the cells when the cell capacitor contains less charge at higher
+   we refer to this minimum interval as MinWriteInterval.         refresh intervals. Prior works demonstrate that the probability
+ • Based on our analysis of write intervals across a wide range   of data-dependent failures increases exponentially with lower
+   of real applications, we find that the interval of writes in   refresh rates [66, 72].
+   these applications follow a Pareto distribution and applica-       Unlike traditional manufacturing time testing, some re-
+   tions spend a significant amount of time on very long write    cent works propose to detect data-dependent failures on-
+   intervals. As a result, MEMCON can (i) amortize the cost       line, at the system-level to enable system optimizations that
+   of testing and (ii) provide significant benefit by reducing    improve reliability, latency, and energy efficiency of mem-
+   the refresh rate during these long intervals.                  ory [31, 32, 51, 52, 67, 70]. These works propose to test every
+                                                                  cell in a DRAM chip to detect all possible cells that are suscep-
+ • We propose PRIL, a simple mechanism that predicts the
+                                                                  tible to data-dependent failures with any possible data content
+   long write intervals based on the key property of a Pareto
+                                                                  in memory. They propose to detect these cells with an initial
+   distribution that the amount of time a page is idle after
+                                                                  testing phase and mitigate the failures with ECC, remapping, or
+   a write can indicate how long it will remain idle in the
+                                                                  higher refresh rates to ensure correct operation for any content
+   future. Therefore, MEMCON only initiates testing for pages
+                                                                  in memory that can possibly occur during system operation.
+   that has been idle (not written to) for a while and leads
+                                                                  For example, RAIDR [52] detects such data-dependent failures
+   to 64.7%-74.5% reduction in refresh operations by using a
+                                                                  using an initial test during the system boot-up and uses a low
+   lower refresh rate during the long write intervals.
+                                                                  refresh interval to mitigate them, while it refreshes all other
+2. Background and Motivation                                      cells less frequently to improve performance and energy con-
+DRAM Organization. A DRAM module is connected to an sumption by reducing the total number of refresh operations.
+on-chip memory controller through a channel. The memory However, there are two major challenges in detecting and miti-
+controller sends commands and addresses to DRAM through gating data-dependent failures in the system.
+the channel and transfers data to and from DRAM. As shown in          (i) System-level failure detection is challenging due to
+Figure 1, each module is hierarchically organized into multiple   unknown            internal DRAM organization. There are two de-
+ranks, chips, and banks. For example, a typical DRAM module       sign    issues       in modern DRAM chips that make system-level
+can have one rank with 8 chips, where each chip consists of       failure     detection        particularly difficult.
+8 banks. A DRAM bank is organized as multiple 2D arrays of            First, DRAM vendors internally scramble the address space
+cells. Figure 1 shows a cell array within a bank, where all cells within DRAM. Neighboring addresses in the system address
+in a row are connected to a wire called wordline, and cells in space do not correspond to neighboring physical cells [29, 31,
+each column are accessed through a vertical wire called bitline. 44, 45, 51, 85]. Consequently, testing neighboring cells for
+While accessing DRAM, an entire row is read and latched into data-dependent failures by writing a specific data pattern in
+sense-amplifiers. A DRAM cell stores data as charge in a ca- neighboring addresses at the system-level does not test adjacent
+pacitor. As capacitor leaks charge over time, DRAM cells are cells in the DRAM cell array. Figure 2a shows one example
+periodically refreshed every 64 ms (32 ms at high temperature of scrambled address space in DRAM. Neighbors of the cell
+operational mode) to maintain data integrity [52].                at address X are expected to be located at adjacent addresses
+                                                                  X-1 and X+1 with a regular linear mapping of physical address
+             <data>        Rank                  Cell             space to system address space. However, due to scrambling
+       Controller
+        Memory
+
+
+
+
+             <addr>                              Wordline
+             <cmd>      Chip                                      of the address space, neighbors of X are located at system
+            Channel                              Bitline          addresses X-4 and X+5. This internal address mapping from
+                      Bank                       Sense Amp
+                                                                  physical to system-level address is not exposed to the system,
+                                     Cell Array
+                        Module                                    e.g., the memory controller [31, 44, 45, 51, 85]. To make things
+                  Figure 1: DRAM organization                     worse, vendors scramble the addresses differently for each
+Data-Dependent Failures. During a DRAM access, the para- generation of DRAM chips [31, 45].
+sitic capacitance between adjacent bitlines provide an indirect                          Cell Array                 Original Cell Array
+                                                                                                                                        Redundant Columns
+
+
+
+
+connecting path between neighboring cells [5, 72]. Therefore,
+neighboring cells can interfere each other, depending on the
+data content stored in the cells. DRAM failures that occur
+depending on the content of a cell and its neighboring cells Physical 0 1 2 3 40 51 06 7 Physical 0 1 2 3 4 5 6 7
+                                                                  Address                                 Address
+are called data-dependent failures [31, 32, 39, 51, 72]. In order System Linear Mapping X−1 X X−1
+                                                                  Address Scrambled Mapping X−4 X X+5                             Remapping
+to detect data-dependent failures, manufacturers exhaustively
+test neighboring DRAM cells with data patterns that introduce          (a) Address scrambling                     (b) Column remapping
+enough cell-to-cell interference to cause failures. Experimental Figure 2: Address scrambling and column remapping in
+studies on DRAM chips demonstrate that a large fraction of DRAM
+DRAM cells exhibit data-dependent behavior in various failure         Second, DRAM vendors repair some of the faulty cells de-
+modes [14, 32, 39, 51, 66]. As data-dependent failures occur tected during manufacturing tests by remapping the faulty
+when the interference is large enough to perturb the charge columns to available redundant columns in DRAM [22]. Fig-
+
+
+===== Page 4 =====
+
+MICRO’17, October 14-18, 2017, Boston, MA, USA                                                                                                               Samira Khan et al.
+
+
+ure 2b shows an example of remapping where three faulty                               igate the failures that can occur only with the current content in
+columns at physical column addresses 1, 4, and 6 are remapped                         memory, stored by programs running in the system, and ensure
+to the redundant columns located at the right of the original                         a reliability guarantee that there will be no failure in the system
+cell array. Due to this remapping, cells in remapped columns                          with the current memory content. Doing so makes system-level
+now depend on neighbors located in the redundant columns.                             detection and mitigation independent of the internal DRAM
+For example, the neighbors of cells located at physical column                        architecture as it eliminates the need to detect every susceptible
+address 1 are now located at physical addresses 4 and 7. Remap-                       cell that can fail due to any data content in memory.
+ping makes neighboring cell information different for each chip                       3.1. High-Level Design of MEMCON
+based on the location of faulty cells and remapped columns,                              Based on this observation, we make a case for memory
+making it necessary to design specific failure detection tests                        content-based detection and mitigation of data-dependent fail-
+targeted for each individual chip in the system.                                      ures in DRAM, which we refer to as MEMCON. While the
+   Vendors consider the internal DRAM design as proprietary                           programs are running, MEMCON detects failures with the cur-
+information and do not expose it outside of the manufacturing                         rent memory content, and uses a higher refresh rate for faulty
+organization. Even if the vendors expose the details of DRAM                          rows to mitigate those failures. Therefore, it detects failures
+internals, scrambling of address space and remapped columns                           dynamically while programs are running and mitigates only
+make system-level failure detection tightly coupled with each                         failures that can be triggered by the current data content of the
+specific DRAM chip. Exposing such information efficiently for                         programs.
+each chip and designing a generalized detection mechanism in                             As we will demonstrate, MEMCON (i) eliminates the need for
+the system that will work for all commercially available DRAM                         detecting every possible data-dependent failure, which requires
+chips is rather challenging.                                                          knowledge of DRAM internals, and (ii) reduces the mitigation
+   (ii) System-level failure mitigation is very expensive. It                         cost as the number of failures with the current memory content
+is expected that systems will have to mitigate a large number                         is much smaller than the total number of failures with every
+of failures in the future as cells become more vulnerable to                          possible combination of data content in memory.
+cell-to-cell interference with DRAM scaling [39, 61, 66]. Prior                          To motivate MEMCON, Figure 3 experimentally demon-
+works have shown that mitigating a large number of failures                           strates that cells fail conditionally depending on the memory
+with ECC, remapping, or higher refresh rates adds a significant                       content. In this figure, each dot on a vertical line represents
+storage, performance, and energy overhead, making mitigation                          a particular cell failing with some specific data content (i.e,
+very expensive [32, 65].                                                              data pattern) when a DRAM chip is tested with an FPGA-based
+   The goal of this work is to design a low-overhead technique                        infrastructure (details in Section 5). We observe that a particu-
+for detecting and mitigating data-dependent failures that does                        lar cell may or may not fail depending on the data content in
+not require any knowledge about the internal DRAM orga-                               memory. As a result, instead of detecting every cell that can
+nization. To this end, we propose to decouple the detection                           fail with any possible content, detecting and mitigating failures
+and mitigation of data-dependent failures from information                            with just the current program content can significantly reduce
+about the internal organization of a DRAM chip.1 We limit                             the mitigation cost.
+the scope of our mechanism to data-dependent DRAM failures,                                             100
+                                                                                      Data Pattern ID
+
+
+
+
+as other types of interference failures [39, 61, 66] and random                                         80
+failures [24, 58, 70] can be mitigated using ECC or orthogo-
+nal failure-specific mechanisms [11, 32, 39, 61, 65, 70, 88]. We                                        60
+
+also do not provide mechanisms to handle variation in data-                                             40
+dependent DRAM failures with the change in temperature.                                                 20
+Prior works showed that it is possible to protect against these
+                                                                                                         0
+variations using well-known and experimentally-validated tem-                                                 0   200   400   600    800   1,000 1,200 1,400 1,600 1,800 2,000
+perature models and adding an appropriate guardband to the                                                                           Failing Cell ID
+mitigation technique [32, 46, 51, 67]. In the next section, we                                          Figure 3: DRAM cells failing with different data content
+describe our DRAM-transparent online data-dependent failure                              Figure 4 shows the percentage of rows that contain data-
+detection and mitigation mechanism that relies only on the                            dependent failures with current memory content compared to
+change in memory content during the execution of applications                         every possible data-dependent failure detected in memory. The
+in the system.                                                                        fraction of the rows represents the number of failed rows for
+3. MEMCON: Memory Content-Based                                                       each workload when its memory footprint is duplicated in
+                                                                                      the entire DRAM module to ensure that the whole memory
+   Detection and Mitigation of DRAM Failures                                          is occupied by program content. We present the percentage
+   In this work, we make the argument that it is not necessary                        of failing rows (averaged over every 100 million instructions
+to detect and mitigate every possible data-dependent failure                          across a set of representative phases [69]) for 20 SPEC CPU
+that can potentially occur with any memory content during the                         2006 [80] benchmarks.2 This figure shows that only 0.38%-
+lifetime of the system. Instead, it is sufficient to detect and mit-
+                                                                                                         2 Even if we demonstrate the fraction of failing rows for only SPEC bench-
+    1 Note that detection of retention failures that occur due to weak cells that     marks, we believe that other workloads with larger working sets will also
+always fail irrespective of the data content is not a major problem. These failures   exhibit similar results. The number of failures does not depend on the size of
+can be easily detected as these cells fail every time a chip is tested.               the working set, but depends on the data content in memory.
+
+
+===== Page 5 =====
+
+MEMCON: Detecting and Mitigating Data-Dependent DRAM Failures                                                                                                                                                                         MICRO’17, October 14-18, 2017, Boston, MA, USA
+
+
+5.6% of the rows encounter failures with the program content,                                                                                                                                               performance and/or energy overhead) depends on the extra
+where 13.5% of all rows encounter failures when tested with                                                                                                                                                 memory requests issued for testing. The benefit of testing
+any possible memory content (represented by ALL FAIL in the                                                                                                                                                 comes from our technique of optimizing the refresh rate based
+figure). Thus, the number of failures is 2.4X-35.2X less with the                                                                                                                                           on the results of testing: MEMCON initially refreshes each row
+current program content than with every possible content.                                                                                                                                                   very frequently to avoid any failure; after the row content is
+                      15
+                                                                                                                                                                                                            tested and no failure is detected for a row, that row is refreshed
+ Percentage of Rows
+
+
+
+
+                                                                                                                                                                                                            at a lower rate. Therefore, the benefit of testing comes from
+                      10
+                                                                                                                                                                                                            the reduction in refresh operations enabled by testing.
+                      5
+                                                                                                                                                                                                                Figure 5 examines the tradeoff between the cost of testing (in
+                      0
+                                                                                                                                                                                                            terms of latency) and the frequency of testing of a single row
+
+
+
+
+                                                                                                                                                                                ASTAR
+                                                      ZEUSMP
+
+
+
+
+                                                                                                SOPLEX
+                                                                        NAMD
+
+
+
+
+                                                                                                                    HMMER
+                                                                                       DEALII
+
+
+
+
+                                                                                                                            GEMS
+
+
+
+
+                                                                                                                                                                                                 ALL FAIL
+                            PERL
+
+
+
+                                                MCF
+
+
+
+
+                                                                                                                                                                      OMNETPP
+                                   BZIP
+
+
+
+
+                                                                               GOBMK
+
+
+
+
+                                                                                                                                                                                        XALANC
+                                                                                                                                                        TONTO
+                                          GCC
+
+
+
+
+                                                                                                         CALCULIX
+
+
+
+                                                                                                                                   LIBQUANT
+
+
+
+                                                                                                                                                                LBM
+                                                               CACTUS
+
+
+
+
+                                                                                                                                              H264REF
+                                                                                                                                                                                                            to demonstrate that the cost of frequent testing can potentially
+                                                                                                                                                                                                            outweigh the benefit of testing. There are three different costs
+                           Figure 4: Percentage of rows that exhibit failures                                                                                                                               associated with MEMCON: (i) Without any testing, all rows
+                                                                                                                                                                                                            have to be refreshed aggressively so that failures do not get
+3.2. Design Challenge of MEMCON                                                                                                                                                                             exposed to running applications. This cost of aggressive refresh
+   MEMCON ensures correct DRAM operation by detecting                                                                                                                                                       (i.e., the periodic latency required to refresh a row) is repre-
+and mitigating possible failures with the current memory con-                                                                                                                                               sented as the HI-REF state in the figure. (ii) The cost of testing
+tent. As long as the content remains the same, MEMCON                                                                                                                                                       (i.e., the latency required for extra read-write accesses), which
+comfortably ensures reliability since it provides the right level                                                                                                                                           is represented as the highest bar in the figure, labeled as TEST-
+of protection (e.g., the appropriate refresh rate) for that content.                                                                                                                                        ING. The figure shows that testing is more expensive than the
+Read accesses do not alter memory content and therefore, can-                                                                                                                                               HI-REF state due to the extra read-write accesses incurred for
+not introduce any new failures. However, whenever there is a                                                                                                                                                testing. (iii) When testing for data-dependent failures is done
+write to a row in memory, content gets changed and MEMCON                                                                                                                                                   and no failures are found in a tested row, the row can be re-
+needs to (i) test that new content to detect whether or not that                                                                                                                                            freshed less frequently. This low-cost refresh state (the latency
+content introduces any data-dependent failure and (ii) if so,                                                                                                                                               required for infrequent refresh operations) is represented as
+find the right level of protection for the rows failing with the                                                                                                                                            LO-REF in the figure.
+new content.                                                                                                                                                                                                          TESTING   TESTING                      TESTING               TESTING             TESTING
+                                                                                                                                                                                                            Cost
+
+
+
+
+                                                                                                                                                                                                                                                                            Cost
+   Unfortunately, detecting data-dependent failures while the                                                                                                                                                                                Cost
+                                                                                                                                                                                                                                      AVG                                AVG HI−REF
+programs are running in the system could cause performance                                                                                                                                                         HI−REF            COST           HI−REF
+                                                                                                                                                                                                                                                                        COST
+                                                                                                                                                                                                                                                                                               HI−REF
+                                                                                                                                                                                                                                                                                                               AVG
+                                                                                                                                                                                                                                                                                                              COST
+degradation. Testing current memory content for detecting                                                                                                                                                                   LO−REF                       LO−REF        LO−REF            LO−REF              LO−REF
+data-dependent failures involves keeping the the row that is                                                                                                                                                                          Time                               Time
+                                                                                                                                                                                                                                                                                    t1            t2    t3
+                                                                                                                                                                                                                                                                                                               Time
+being tested (i.e., the in-test row) idle until the end of the refresh                                                                                                                                             (a) In−frequent testing           (b) Frequent testing           (c) Selective testing
+period so that cells in that row are tested with the lowest pos-                                                                                                                                                    Figure 5: Tradeoff between frequency of testing vs. cost
+sible charge, when they are the most vulnerable to cell-to-cell                                                                                                                                                Figure 5 demonstrates the average cost of MEMCON over
+interference. As any access to a row fully charges all cells in                                                                                                                                             some specific period of time, when testing is performed at
+that row, program accesses during the testing period cannot be                                                                                                                                              different rates for a row. First, if testing is infrequent (i.e.,
+serviced from the in-test row and have to be serviced by tem-                                                                                                                                               writes to a row are separated far apart in time), the benefit of
+porarily buffering the content of the row in a different region.                                                                                                                                            the LO-REF state overshadows the cost of testing, such that
+Therefore, there are two sources of overhead in detecting data-                                                                                                                                             the average cost remains equal to or lower than that of the HI-
+dependent failures with current memory content. First, testing                                                                                                                                              REF state (shown in Figure 5(a)). In this case, a longer interval
+involves reading the row content into the memory controller                                                                                                                                                 between two consecutive tests leads to a higher benefit and the
+and buffering the read content of the row, keeping the row idle                                                                                                                                             average cost gets lower. Second, as testing is very expensive,
+for the test period, and reading the entire row again to compare                                                                                                                                            frequent testing can increase the average cost to a level higher
+with the buffered row content to determine if there are any                                                                                                                                                 than the HI-REF state (Figure 5(b)). In this case, it is better
+data-dependent failures. As a result, all the cache blocks in                                                                                                                                               to just use frequent refreshes (HI-REF), instead of detecting
+the in-test row have to be read at least twice to compare their                                                                                                                                             any failures, to minimize the average cost. Therefore, there
+contents before and after the test. Second, temporarily buffer-                                                                                                                                             is a trade-off between the cost of testing vs. the frequency
+ing the content of the in-test row in some other region (either                                                                                                                                             of testing. In order to minimize the overall cost (and thus
+inside the memory controller or inside memory) involves extra                                                                                                                                               maximize the benefit of testing), MEMCON should not initiate
+read and write traffic to copy the in-test row to that region.                                                                                                                                              a test every time there is a new write to a row. Instead, it should
+These additional read and write requests for testing purposes                                                                                                                                               test the row on a write, only when the cost of testing can be
+increase bandwidth consumption and can interfere with critical                                                                                                                                              amortized by the future infrequent refreshes to the tested row.
+program accesses. The key design challenge MEMCON is to                                                                                                                                                     Therefore, MEMCON should skip testing for cases where the
+minimize the overhead of the testing.                                                                                                                                                                       interval between two consecutive writes to a row is not large
+3.3. Cost-Benefit Analysis of MEMCON                                                                                                                                                                        enough to amortize the cost of testing.3 Such selective testing
+   As testing at the system-level is expensive, it is necessary to                                                                                                                                              3 MEMCON can be further optimized by eliminating testing if the row gets
+analyze the cost-benefit of MEMCON on application runtime                                                                                                                                                   read frequently enough such that it does not need refresh. We leave such an
+to demonstrate its effectiveness. The cost of testing (i.e., its                                                                                                                                            optimization for future work.
+
+
+===== Page 6 =====
+
+MICRO’17, October 14-18, 2017, Boston, MA, USA                                                                                                                                                                         Samira Khan et al.
+
+
+for MEMCON is illustrated in Figure 5(c). MEMCON tests the                                                                                                     Copy and Compare. One problem with the prior test
+row at t1 , as the interval between two writes (t1 and t2 ) is large                                                                                        mode is that testing a large number of rows simultaneously
+enough to amortize the cost of testing. It skips testing for the                                                                                            requires a large buffer in the memory controller. As an alterna-
+write that arrives at t2 , as the interval between t2 and t3 is too                                                                                         tive, in this second mode of testing, the contents of the in-test
+small. Instead, MEMCON moves to the HI-REF state during                                                                                                     rows are temporarily stored in a different, special region of
+that interval to avoid the high cost associated with testing.                                                                                               memory to service requests to in-test rows during the test. In
+    In order to determine the minimum interval between two                                                                                                  this mode, the in-test row is copied to another region in mem-
+consecutive writes to a row that amortizes the cost of testing,                                                                                             ory by reading the row into the memory controller and then
+we compare the total cost for two configurations: (i) when a                                                                                                writing it to that special region in memory. Only the ECC in-
+row is refreshed aggressively (always at the HI-REF state), and                                                                                             formation is calculated and stored in the memory controller.
+(ii) with MEMCON, i.e., when a row is tested and then refreshed                                                                                             After the test, the content of the row is read back again into
+at a lower rate if appropriate (LO-REF state only after testing).                                                                                           the memory controller to compare the old and new ECC values
+The total accumulated cost would increase linearly with time, as                                                                                            to determine any occurrence of failure. As a result, this Copy
+rows are refreshed periodically in both cases. However, initially,                                                                                          and Compare mode involves reading the entire row into the
+MEMCON would have a higher cost than HI-REF because of                                                                                                      memory controller twice (once before the test and once after
+the high cost associated with testing. As MEMCON moves to                                                                                                   the test) and writing the entire row once into a new location.
+the low refresh state after testing, its total cost would increase at                                                                                       The cost for Copy and Compare in terms of latency is 1602 ns
+a slower rate compared to the HI-REF configuration. The point                                                                                               (details in Appendix).5 6
+in time when the total cost of HI-REF would become higher                                                                                                      Figure 6 shows that both of these test modes pay the high
+than the total cost of MEMCON indicates the time interval                                                                                                   latency cost of testing in the beginning (1068 ns and 1602 ns,
+between two writes that can amortize the cost of testing. We                                                                                                respectively). After that, the system is refreshed once every 64
+refer to this interval as minWriteInterval in this work.                                                                                                    ms.7 Therefore, the total cost increases more slowly over time
+    Figure 6 shows the total accumulated cost over time (in terms                                                                                           compared to that of the HI-REF configuration, where rows are
+of latency) for both MEMCON and the HI-REF configuration.                                                                                                   refreshed every 16 ms all the time. The figure shows that the
+In order to determine the minWriteInterval, we model the cost                                                                                               total cost of testing becomes lower than the cost of the HI-REF
+of HI-REF and MEMCON based on the latency required to                                                                                                       configuration, if the system can be at the LO-REF state for at
+perform refresh and read-write operations. The HI-REF con-                                                                                                  least 560 ms and 864 ms, respectively for Read and Compare
+figuration refreshes the rows every 16 ms, which is 4X more                                                                                                 and Copy and Compare test modes. Thus, the MinWriteInter-
+frequent than the typical refresh interval in modern DRAM de-                                                                                               val should be 560 ms/864 ms for these two configurations. We
+vices.4 Thus, the cost of refresh in terms of required latency per                                                                                          also evaluate the MinWriteInterval for the LO-REF state with
+row is 39 ns for every 16 ms (details in Appendix). Therefore,                                                                                              a refresh interval of 128 ms and 256 ms, found it to be 480 ms
+the cost for HI-REF increases sharply with time (represented as                                                                                             and 448 ms, respectively.
+the red line in the figure). In this work, we compare two modes                                                                                                We conclude that MEMCON can amortize the cost of
+of testing for MEMCON (Read and Compare vs. Copy and                                                                                                        testing if tests are done at a minimum interval of 448-
+Compare), based on where data content is buffered to serve                                                                                                  864 ms, depending on the combination of test mode and
+accesses during the test. The cost of testing for each mode                                                                                                 refresh interval. Note that the MinWriteInterval is quite long,
+determines the frequency of testing that can amortize the cost.                                                                                             almost half a second to a full second. This requirement for
+                     5000              Read and Compare (64 ms)                                                                                             long write intervals implies that MEMCON would provide ben-
+ Accumulated Cost
+
+
+
+
+                     4000              Copy and Compare (64 ms)
+                                                                                                                                                            efit only when the applications spend a large fraction of their
+   in Latency (ns)
+
+
+
+
+                     3000              HI-REF (16 ms)
+                     2000
+                                                                                                                                                            execution time on long write intervals. In the next section,
+                     1000                                                                                  MinWriteInterval                                 we analyze the write intervals in real applications and, based
+                        0                                      560 ms            864 ms
+                                                                                                                                                            on our analysis, propose a simple prediction mechanism to
+                            16
+                                 112
+                                       208
+                                             304
+                                                   400
+                                                         496
+                                                               592
+                                                                     688
+                                                                           784
+                                                                                 880
+                                                                                       976
+                                                                                             1072
+                                                                                                    1168
+                                                                                                           1264
+                                                                                                                  1360
+                                                                                                                         1456
+                                                                                                                                1552
+                                                                                                                                       1648
+                                                                                                                                              1744
+                                                                                                                                                     1840
+
+
+
+
+                                                                                                                                                            determine when to initiate a test such that the cost of testing
+                                                                           Time (ms)
+                                                                                                                                                            is amortized.
+                            Figure 6: Determining MinWriteInterval
+                                                                                                                                                                 5 The storage overhead of this mode, i.e., the amount of memory required
+   Read and Compare. In this mode, an in-test row is
+buffered in the memory controller. This mode involves reading                                                                                               to copy the in-test rows to, is modest as only a small fraction of rows are tested
+                                                                                                                                                            concurrently. For example, reserving 512 rows per bank in a 2 GB module with
+the entire row into the memory controller twice (once before                                                                                                8 banks, results in only a 1.56% loss in DRAM capacity; details in Appendix.
+the test and once after the test) to compare the old and new                                                                                                This mode also requires memory requests to the in-test rows to be redirected
+content and determine any occurrence of failure. The latency                                                                                                by the memory controller to the appropriate region of memory, which can be
+of reading an entire 8K row twice from memory is 1068 ns                                                                                                    accomplished with little storage overhead.
+                                                                                                                                                                 6 Note that this mode can become significantly faster by (i) performing copy
+(details in Appendix).
+                                                                                                                                                            operations completely within DRAM, using mechanisms like RowClone [76]
+     4 Modern DRAM chips use frequent refresh operations to ensure data                                                                                     and LISA [16], (ii) exploiting subarray-level parallelism [41], tiered-latency
+integrity (e.g., LPDDR2 uses 32 ms refresh intervals at 85°C [26], DDR3/4 uses                                                                              DRAM [47], or a Dual-Data-Port DRAM [42], or (iii) performing comparison
+32 ms refresh intervals at 95°C [27, 28]). As DRAM scaling is getting worse, we                                                                             operations inside DRAM or in the logic layer of 3D-stacked memory [3, 4, 23,
+believe that a 16 ms refresh interval is reasonable for future DRAMs. However,                                                                              75, 77, 78, 79]. We leave the evaluation of such optimizations for future work.
+we also compare our results with a less aggressive baseline of a 32 ms refresh                                                                                   7 We use 64 ms refresh interval is this figure, but we also report summary
+
+interval (Figure 16 in Section 6.2).                                                                                                                        results for 128 ms and 256 ms later (at the end of the same paragraph).
+
+
+===== Page 7 =====
+
+MEMCON: Detecting and Mitigating Data-Dependent DRAM Failures                                                                                                                            MICRO’17, October 14-18, 2017, Boston, MA, USA
+
+
+                      100                                                                                                  100                                                                                                    100
+                                                                                                                            10
+
+
+
+
+                                                                                                                                                                                                      Percentage of
+                                                                                                   Percentage of
+                         10                                                                                                                                                                                                           10
+     Percentage of
+
+
+
+                                                                                                                             1
+
+
+
+
+                                                                                                                                                                                                         Writes
+                                                                                                      Writes
+                            1                                                                                                                                                                                                          1
+        Writes
+
+
+
+                                                                                                                           0.1
+                       0.1                                                                                                                                                                                                            0.1
+                                                                                                                          0.01
+                      0.01                                                                                                                                                                                                      0.01
+                                                                                                                        0.001
+                     0.001                                                                                             0.0001                                                                                                0.001
+                                     1               8          64         512    4096     32768                                 1         10         100      1000         10000                                                           1                 8                    64                512                  4096           32768
+                                                           Write Interval in ms                                                                 Write Interval in ms                                                                                                    Write Interval in ms
+
+                                            (a) ACBrotherhood                           (b) Netflix                           (c) SystemMgt
+                                                       Figure 7: Distribution of write intervals in three representative workloads
+4. Write Interval Prediction for MEMCON                             long intervals constitute a small fraction of the total number
+   MEMCON selectively initiates a test on a write to a page, of writes, the corresponding write intervals are very long. As
+only when the time interval between two consecutive write a result, our programs spend a very large fraction of their
+requests to the page is predicted to be long enough (i.e., at least execution time in these long write intervals. We demonstrate
+448-864 ms, as shown in Section 3.3). Therefore, when there this phenomenon in Figure 9, which shows the fraction of the
+is a write access to a page, MEMCON (i) predicts the write execution time each workload spends on long write intervals.
+interval and (ii) if the interval is predicted to be long enough We observe that, on average, write intervals greater than 1024
+to amortize the cost of testing, tests the page with the current ms constitute 89.5% of the total time spent on write intervals.
+content. In this section, we first demonstrate the characteristics
+                                                                               Write Interval < 1024 ms Write Interval >= 1024 ms
+of the write intervals in real applications (Section 4.1). Based                100
+
+
+
+
+                                                                                                                                                                 Execution Time Spent
+on those characteristics, we propose a simple mechanism to                       75
+
+
+
+
+                                                                                                                                                                  on Write Intervals
+                                                                                 50
+
+
+                                                                                                                                                                     Percentage of
+predict the write intervals (Section 4.2).
+                                                                                                                                                                                    25
+4.1. Write Interval Characteristics in Real Applications                                                                                                                             0
+
+
+
+
+                                                                                                                                                                                                                                                                                                                           SystemMgt
+                                                                                                                                                                                                                                       AVCHD
+
+
+
+
+                                                                                                                                                                                                                                                                         FinalMaster
+
+
+
+
+                                                                                                                                                                                                                                                                                                                                       VideoEnc
+                                                                                                                                                                                                                         AllSysMark
+
+
+
+
+                                                                                                                                                                                                                                                                                                                Netflix
+                                                                                                                                                                                                                                                                                       AdobePrem
+                                                                                                                                                                                                         AdobePhoto
+
+
+
+
+                                                                                                                                                                                                                                                             FinalCut
+                                                                                                                                                                                         ACBrother
+
+
+
+
+                                                                                                                                                                                                                                                                                                   MotionPlay
+                                                                                                                                                                                                                                                BlurMotion
+   We use an FPGA-based memory tracing system, similar to
+HMTT [8], to track the characteristics of writes to each page
+in various real programs. These traces span several minutes
+of execution time after the initialization phase. Our evaluated
+                                                                                                                                                      Figure 9: Execution time is dominated by long write intervals
+applications include popular games, video editors and players,                                                                                        (i.e., write intervals with length greater than 1024 ms)
+system management software, video streaming applications,
+and others (see Table 1; details of our methodology in Section 5).                                                                                      Our empirical observations on write intervals indicate that
+   Figure 7 demonstrates the distribution of write intervals for                                                                                     write intervals in real applications follow a Pareto distribu-
+three representative workloads: ACBrotherhood, Netflix, and                                                                                          tion [6]. The intervals exhibit a heavy-tailed property, where
+System Management (Win 7). The x-axis represents different                                                                                           the number of long intervals are very few, but these long write
+write intervals, from 1 ms to 32768 ms, and the y-axis represents                                                                                    intervals comprise a very large fraction of the total execution
+the percentage of writes that are within the corresponding write                                                                                     time. Mathematically, a Pareto distribution of the write in-
+interval range. We make two observations from this figure.                                                                                           tervals means that the probability of the write interval being
+First, a large majority (more than 95%) of the writes occur                                                                                          greater than x follows this function: Probability (Write Interval
+within 1 ms. Fortunately, writes within 1 ms do not trigger                                                                                          Length > x) = k.x−α , where k, α > 0 are constants. Figure 8
+testing because such frequent accesses naturally refresh the                                                                                         demonstrates that the probability distribution of write interval
+row before the refresh interval and therefore, do not cause any                                                                                      lengths in three representative workloads closely follow this
+data-dependent failures. Thus, our mechanism is not affected                                                                                         equation: the plotted curves match a linear fit on the log-log
+by such short-interval writes. Second, only a small fraction of                                                                                      scale with very high R2 values, indicating that the Pareto dis-
+the writes exhibit write intervals that are equal to or greater                                                                                      tribution is indeed a good fit. Various system properties have
+than the MinWriteInterval that can amortize the cost of testing.                                                                                     been shown to follow a Pareto distribution, such as system job
+For example, on average, less than 0.43% of the total number of                                                                                      lengths [19, 73], Unix process lifetimes [19], sizes of files and
+writes exhibit write interval lengths greater than 1024 ms. We                                                                                       web traffic [18, 68, 73], lengths of memory episodes [40], and
+refer to such a write interval with length greater than 1024 ms,                                                                                     memory errors in servers [58].
+where there is significant opportunity to lower the refresh rate                                                                                        In this work, we leverage the decreasing hazard rate (DHR)
+for a long time, as a long write interval. Even though writes with                                                                                   property [9] of a Pareto distribution to predict the write interval
+                                            1                                                                                1                                                                                                  1
+                                           0.1                                                                             0.1
+                 P (Write Interval
+
+
+
+
+                                                                                                                                                                                                     P (Write Interval
+                                                                                                   P (Write Interval
+                    Length > x)
+
+
+
+
+                                                                                                                                                                                                                           0.1
+                                                                                                                                                                                                        Length > x)
+                                                                                                      Length > x)
+
+
+
+
+                                          0.01                                                                            0.01
+                                         0.001                                                                           0.001
+                                                                                                                                                                                                                         0.01
+                                     0.0001                                                                             0.0001
+                                                         R² = 0.94416                                                                R² = 0.93747                                                                                           R² = 0.98579
+                                0.00001                                                                                0.00001                                                                                        0.001
+                                                 1                   100           10000                                         1                 100           10000                                                                 1                            100                                10000
+                                                                        x (ms)                                                                       x (ms)                                                                                                              x (ms)
+
+                                                 (a) ACBrotherhood                         (b) Netflix                        (c) SystemMgt
+                                                              Figure 8: Pareto distribution of write intervals in three workloads
+
+
+===== Page 8 =====
+
+MICRO’17, October 14-18, 2017, Boston, MA, USA                                                                                                                                                                                                         Samira Khan et al.
+
+
+on a write access. This property implies that the elapsed time                                                                                          32768 ms to predict that the RIL is greater than 1024 ms would
+in an interval can be used to predict the remaining length: the                                                                                         provide a high-accuracy prediction; however, it would lead to a
+longer a page is idle (i.e., not written to) after a write, the longer                                                                                  low coverage. Figure 12 shows the coverage of the time spent in
+it is expected to remain idle (i.e., the more likely it has a long                                                                                      write intervals when current interval length varies from 1 ms to
+write interval). On the other hand, if the elapsed time after a                                                                                         32768 ms. We observe that the coverage of total write interval
+write to a page is short, it is expected that the write interval                                                                                        time becomes lower as we increase CIL. A CIL of 512-2048 ms
+will end soon.                                                                                                                                          provides a prediction accuracy of 50-80% with a reasonable
+    We define two parameters for a write interval, as shown in                                                                                          coverage (on average 65-85%). Based on these observations, we
+Figure 10. (i) Current interval length (CIL), the elapsed time                                                                                          conclude that it is possible to devise a simple write interval
+after the latest write to the page at the current time T, and (ii)                                                                                      prediction mechanism that achieves both high accuracy and
+remaining interval length (RIL), the remaining length of the                                                                                            high coverage, simply by waiting for a specific amount of time
+write interval. We show that the probability that RIL is long                                                                                           after a write (e.g., 512-2048 ms as the current interval length).
+increases with a longer CIL in real applications (Figure 11). For                                                                                                         100
+
+
+
+
+                                                                                                                                                        Fraction of the Total
+                                                                                                                                                         Write Interval Time
+this experiment, we conservatively set the RIL to be 1024 ms as                                                                                                                 75
+
+the MinWriteInterval required to amortize the cost of testing                                                                                                                   50
+                                                                                                                                                                                25
+ranges from 448-864 ms. Therefore, Figure 11 illustrates the
+                                                                                                                                                                                0
+probability that the remaining interval length is greater than                                                                                                                       1     2     4    8   16   32     64    128   256     512   1024 2048 4096 8192 16384 32768
+                                                                                                                                                                                                                       Current Interval Length (CIL) (ms)
+1024 ms when we vary the current interval length from 1 ms                                                                                                                           ACBrotherHood         AdobePhotoshop               AllSysMark             AVCHD
+to 32768 ms. This figure shows that the probability that the                                                                                                                         Blur                  FinalCutProPlayback          FinalMaster            AdobePremierePro
+                                                                                                                                                                                     MotionPlayback        Netflix                      SystemMgt              VideoEncode
+remaining interval length is greater than 1024 ms is very low
+when the current interval length is within 1 to 256 ms. However,                                                                                        Figure 12: Coverage of the time spent in the write intervals
+the probability increases with increasing current interval length                                                                                       when P(RIL) > 1024 ms, as a function of CIL
+and becomes approximately 50%-80% at a current interval length
+                                                                                                                                                        4.2. Probabilistic Remaining Interval Length (PRIL)
+of 512 ms. The probability approaches 1 when the current inter-
+                                                                                                                                                               Prediction
+val length is higher than 16384 ms. Based on this observation,
+we can devise a mechanism that predicts the RIL, after it has                                                                                               In order to exploit long write intervals for lowering the re-
+observed the length of the CIL, for a given page. For example,                                                                                          fresh rate, we propose a simple mechanism to predict the write
+if such a mechanism predicts that the RIL would be greater                                                                                              interval after each write. Our mechanism, probabilistic remain-
+than 1024 ms, when it has already observed that the CIL so                                                                                              ing interval length prediction (PRIL), builds upon our observa-
+far has been 512 ms, the probability of misprediction would be                                                                                          tion that if the elapsed time after a write to a page (i.e., the
+relatively low. We conclude that the probability distribution                                                                                           current interval length), has been long enough, it is highly likely
+we observe for write interval lengths (shown in Figure 11) can                                                                                          that the remaining interval length would be long. Therefore, it
+be used to predict the long write intervals for each page only                                                                                          is possible to predict the the remaining interval length of a write
+by tracking the length of the current write interval.                                                                                                   interval, just by measuring how much time has elapsed after
+                                                                                                                                                        the last write to the page (i.e., since the write interval started).
+                          Write Requests
+
+
+
+
+                                                                                      T
+                                                                                                                                                        However, tracking the elapsed time after the last write for each
+                                                                  Current                 Remaining                                                     page using a counter can introduce high overhead. To avoid
+                                                                  Interval                 Interval
+                                                                Length (CIL)            Length (RIL)                                                    such overhead, we propose a simple mechanism that tracks
+                                                                                                                                  Time                  writes to pages across coarse-grained time quanta. The key
+                                                                         Write Interval
+                                                                                                                                                        idea of PRIL is to divide the execution time into fixed-length
+                                 Figure 10: Terminology used for write intervals
+                                                                                                                                                        quanta, where the quantum size is set to be equal to a current in-
+                     1
+                                                                                                                                                        terval length that provides a high-accuracy and a high-coverage
+ P(RIL) > 1024 ms
+
+
+
+
+                    0.8
+                    0.6
+                                                                                                                                                        prediction (e.g., 1024 ms), and detect the pages that remain idle
+                    0.4                                                                                                                                 (i.e., without writes) for at least one quantum.
+                    0.2                                                                                                                                     High-Level Design. We describe one implementation of
+                     0
+                          1                 2      4        8    16     32     64     128   256      512    1024   2048   4096   8192   16384   32768   PRIL that aims to minimize the hardware overhead while
+                                                                       Current Interval Length (CIL) in ms
+                                           ACBrotherHood              AdobePhotoshop              AllSysMark                AVCHD                       achieving most of the opportunity available from an ideal pre-
+                                           Blur                       FinalCutProPlayback         FinalMaster               AdobePremierePro
+                                           MotionPlayback             Netflix                     SystemMgt                 VideoEncode
+                                                                                                                                                        diction mechanism. In order to detect the pages that receive
+                                                                                                                                                        no writes for at least one quantum, PRIL keeps track of the
+Figure 11: Probability that RIL is greater than 1024 ms, as a                                                                                           pages (i.e., row addresses) that (i) have been written to only
+function of CIL
+                                                                                                                                                        once during each quantum and (ii) remain idle (i.e., receive no
+  A longer CIL provides better accuracy, but at the same time                                                                                           writes) in the next quantum.8 This mechanism ensures that
+reduces the length of RIL. Thus, there is a tradeoff between how
+                                                                                                                                                             8 Note that tracking the pages that are written to only once is a design choice
+long we should wait to observe the length of CIL to avoid mis-
+predictions vs. how much opportunity we will lose to reduce                                                                                             we make to limit the number of page addresses we track in the write buffer.
+                                                                                                                                                        Removing pages that are written to multiple times during a time quantum
+the refresh rate if we wait longer. We define the coverage of our                                                                                       greatly reduces the number of addresses MEMCON tracks while minimally
+prediction as the fraction of the time spent in write intervals                                                                                         affecting the accuracy of our prediction mechanism. The effect on accuracy
+that has been correctly predicted. A higher CIL increases accu-                                                                                         is minimal because pages that are written to multiple times within a short
+racy, but reduces coverage, e.g., waiting for the CIL to reach                                                                                          interval are unlikely to have long write intervals.
+
+
+===== Page 9 =====
+
+MEMCON: Detecting and Mitigating Data-Dependent DRAM Failures                                                             MICRO’17, October 14-18, 2017, Boston, MA, USA
+
+  Write Access to                                                                                     End of
+      page X        Any prior write to X in   ¶ No             First Occurrence                      Quantum    An entry exists in the   Yes         Interval less than a Quantum
+                    the current Quantum?              Add X to current Write−Map and Write−Buffer              current Write−Buffer?               The pages are candidates in the next Quantum
+
+                                              · Yes   Interval less than a Quantum                              An entry exists in the   ¹ Yes    Interval greater than a Quantum
+                                                         Remove X from current Write−Buffer                    previous Write−Buffer?                       Get the page addresses to test
+
+
+                    Any prior write to X in   ¸ Yes    Interval less than a Quantum                                                      º        Clear all entries in previous Write−Buffer and Map
+                     the last Quantum?                   Remove X from previous Write−Buffer                                                     Swap previous and current Write−Buffers and Maps
+
+
+              Figure 13: Workflow for PRIL: Steps associated with (i) the arrival of a write and (ii) the end of a quantum
+the elapsed time after the write is greater than the quantum                                        quantum start being tracked by the current write-buffer and
+length (even if the write occurs at the very last moment in the                                     current write-map (as indicated by º). We discuss the storage
+first quantum). Therefore, PRIL uses two consecutive quanta                                         overhead of PRIL in Section 6.4. We leave the exploration of
+to detect the long-interval writes. At the end of the second                                        cheaper implementations of PRIL for future work.
+quantum, all the pages that have received only one write in the
+first quantum and no writes in the second quantum, are pre-                                         5. Methodology
+dicted to have a long remaining interval length and MEMCON                               In this paper, we demonstrate the feasibility of MEMCON
+initiates testing for those pages.9                                                   using three different evaluation infrastructures. First, we
+    Implementation. Figure 13 shows the operations that take                          use an FPGA-based DRAM testing infrastructure based on
+place in each quantum. PRIL uses two structures to keep track                         SoftMC [21], to test real DRAM chips for data-dependent fail-
+of the pages that receive only one write access during one quan-                      ures (results shown in Section 3). Second, we use an FPGA-
+tum. First, it uses a bit vector (called write-map) to mark the                       based testing infrastructure to collect memory traces from long-
+pages that receive at least one write access during a quantum.                        running applications (results in Section 4). Third, we use a
+The appropriate bit in the write-map is set when there is a                           cycle-accurate simulator [36, 37] to study the impact of MEM-
+write access to a page. Second, it uses a write-buffer to store                       CON on system performance (Section 6). Next, we discuss our
+the addresses of the pages that have been written to only once                        methodology for each of these evaluation techniques.
+during that quantum. When there is a write access to a page,                             FPGA infrastructure to test real DRAM chips. We use
+the address of that page is inserted in the write-buffer only                         an infrastructure based on SoftMC [21], as done in a variety
+if the corresponding bit in the write-map indicates that this                         of DRAM characterization studies [12, 13, 14, 17, 31, 32, 38, 39,
+is the first write to that page (indicated by ¶ in Figure 13).10                      43, 45, 46, 51, 67, 70]. Our infrastructure provides the ability
+Otherwise, if the write-map indicates that the page has already                       to: i) dump application memory content in the test DRAM
+received at least one write access before in the current quantum                      chip with different refresh rates, ii) provide an interface from
+(i.e., the corresponding bit in the write-map is set), that address                   a host machine to the FPGA test infrastructure. We use a Xil-
+is deleted from the write-buffer, because the write interval is                       inx ML605 board [87] that includes an FPGA-based memory
+clearly less than the quantum length (indicated by ·).As PRIL                         controller connected to a DDR3 SO-DIMM socket. The FPGA
+tracks two consecutive quanta to determine the pages that have                        board is connected to the host machine using the PCIe bus. We
+current interval length greater than the quantum length, there                        run experiments on DRAM chips in a temperature-controlled
+are two write-maps and two write-buffers in PRIL: the current                         environment. We test DRAM chips with a refresh interval of
+write-map and the current write-buffer track the occurrence of                        4 s at 45°C, which corresponds to a refresh interval of 328 ms
+writes in the current quantum, where as the previous write-map                        at 85°C [51]. There are three steps involved in our tests: (i)
+and the previous write-buffer have already been tracking the                          Generate the memory content traces for 20 SPEC CPU2006
+addresses of the pages that have received only one write access                       benchmarks [80] and replicate the content in the tested DRAM
+during the last quantum. PRIL deletes any address from the                            chip such that the entire memory gets filled up with the col-
+previous write-buffer, if that address receives a write access in                     lected real data content from a specific time. (ii) Keep memory
+the current quantum (indicated by ¸). As a result, the entries                        idle for the refresh interval and (iii) Read back the content
+in the previous write-buffer contain only the addresses of the                        to determine the failing content. While a program executes
+pages that have received only one write access in the last quan-                      in the system, data content in memory changes over time as
+tum and no write access in the current quantum; these pages                           dirty cache blocks get written back to memory. We generate
+become candidates for testing at the end of a quantum (indi-                          memory content traces for each workload at every 100 million
+cated by ¹). At the end of each quantum, MEMCON (i) gets                              instructions and test DRAM chips to determine the number of
+the recorded page addresses from the previous write-buffer to                         failures with each data content trace. We report the average
+initiate testing on them and (ii) clears all entries in the previous                  percentage of failing rows over 0.5 billion instructions (with the
+write-buffer and write-map. Then, the current and previous                            maximum and minimum shown as the error bars) in Figure 4
+write-buffers and maps are swapped, and the writes in the next                        in Section 3.
+                                                                                         FPGA infrastructure to generate memory traces for
+     9 MEMCON can become even more effective if we can recognize silent
+                                                                                      long-running applications. We use another FPGA-based
+writes to a page (i.e., writes that do not change the value in memory) [10, 48, infrastructure, similar to HMTT [8], to generate memory traces
+49, 50] and not initiate testing on such writes.
+    10 If the write buffer is full, we discard the new page and set its refresh state from real applications. This infrastructure intercepts the mem-
+to HI-REF. By doing so, MEMCON loses the potential opportunity to reduce ory bus and tracks commands, associated addresses, and times-
+the refresh rate for that page, but this does not affect correctness as a discarded tamps of every memory request sent to DRAM. The traces
+page will be refreshed at the HI-REF state.                                           span several minutes of application runtime (as shown in Ta-
+
+
+===== Page 10 =====
+
+MICRO’17, October 14-18, 2017, Boston, MA, USA                                                                                                                                                                    Samira Khan et al.
+
+
+ble 1) and are collected after a fixed time interval passes to               frequently (in the LO-REF state). We evaluate MEMCON’s
+avoid tracing an application’s initialization phase. We use this             reduction in refresh operation count compared to a baseline
+infrastructure to track the write intervals in some popular ap-              system that refreshes every row aggressively at a refresh inter-
+plications taken from different domains, such as gaming, video               val of 16 ms. MEMCON uses a 64 ms refresh interval (LO-REF
+editing, playback, and streaming, photo editing, system man-                 state) for rows that are (i) identified as read-only, and (ii) pre-
+agement. Table 1 provides the names and characteristics of                   dicted to be idle (i.e., not written to) for more than 1024 ms after
+these long-running applications. We made the write interval                  a write. The remaining rows are refreshed at a 16 ms interval
+characteristics of these traces publicly available online [34].              (HI-REF state). If all rows were refreshed at a 64 ms interval
+                                                                             (LO-REF state), MEMCON would reduce the refresh count by
+  Application        Type                Time (s)    Mem (GB)      Threads   75% (which is the upper bound refresh reduction achievable
+  ACBrotherHood      Game                209.1       2.8           8         with the HI/LO-REF parameters we evaluate).
+  AdobePhotoshop     Photo editing       149.2       3.0           4            Figure 14 shows MEMCON’s reduction in refresh count with
+  AllSysMark         Media creation      2064        3.4           4         three different values of current interval length (CIL): 512, 1024,
+  AVCHD              Video playback      217.3       5.2           2
+  BlurMotion         Image processing    93.4        0.2           2
+                                                                             and 2048 ms. With these three values, PRIL provides both high
+  FinalCutPro        Video editing       76.9        3.0           2         accuracy and high coverage when predicting the long write
+  FinalMaster        Movie display       248.1       2.0           2         intervals (as shown in Figure 12). We make two observations
+  AdobePremiere      Video editing       298.8       5.0           2         from Figure 14. First, on average, MEMCON’s reduction in
+  MotionPlayBack     Video processing    233.9       5.6           2         refresh count comes very close to the upper bound (75%). De-
+  Netflix            Video streaming     229.4       4.6           2         pending on the characteristics of the applications, the reduction
+  SystemMgt          Win 7 managing      466.2       7.6           2
+  VideoEncode        Video encoding      299.1       7.3           4         ranges from 64.7% to 74.5%. This result implies that our simple
+                                                                             prediction mechanism, PRIL is very effective at identifying the
+         Table 1: Evaluated long-running workloads                           long write intervals. Second, we observe that the reduction in
+                                                                             refresh count does not change significantly when we vary CIL
+   Cycle-accurate simulation. We use a cycle-accurate open-
+                                                                             from 512 ms to 2048 ms. This is because a significant fraction
+source simulator, Ramulator [36, 37], to evaluate the perfor-
+                                                                             of the execution time is dominated by very long write intervals
+mance impact of MEMCON. It is driven by a frontend based
+                                                                             that are on the order of minutes and a small variation in CIL
+on Pin [54]. It is not possible to perform a cycle-accurate simu-
+                                                                             (in the range of milliseconds) does not affect the coverage of
+lation of minutes of actual execution time. As a result, we get
+                                                                             write intervals in a significant way (as discussed in Section 4.1).
+the reduction in refresh rate from the write interval character-
+                                                                             From these observations, we conclude that MEMCON achieves
+istics of the long-running traces for MEMCON and model the
+                                                                             a refresh reduction that is very close to the upper bound.
+corresponding refresh rate with the overhead of testing to eval-
+uate MEMCON using our simulator. We use multiprogrammed                                                                              CIL 512 ms                       CIL 1024 ms                              CIL 2048 ms
+                                                                                                100
+                                                                             % Reduction in Refresh
+
+
+
+
+workloads that contain benchmarks from SPEC CPU2006 [80],                                                                                                                                         Upper Bound
+                                                                                                      75
+                                                                                 over Baseline
+
+
+
+
+TPC-C and TPC-H [84]. We combine 4 randomly-selected ap-
+                                                                                                      50
+plications from these benchmark suites to generate 30 multi-
+                                                                                                      25
+programmed workload mixes for our multi-core evaluations.
+                                                                                                       0
+Table 2 shows our system configuration.
+                                                                                                                                                                                                                MotionPlay
+                                                                                                                                                         BlurMotion
+
+                                                                                                                                                                      FinalCutPro
+                                                                                                                       AdobePhoto
+                                                                                                           ACBrother
+
+
+
+
+                                                                                                                                                                                                                             Netflix
+                                                                                                                                    AllSysMark
+
+
+
+
+                                                                                                                                                                                                   AdobePrem
+                                                                                                                                                                                    FinalMaster
+                                                                                                                                                 AVCHD
+
+
+
+
+                                                                                                                                                                                                                                                   VideoEnc
+                                                                                                                                                                                                                                       SystemMgt
+    Processor 1-4 cores, 4GHz, 4-wide, 128-entry instruction window
+    Last-Level 64B cache-line, 16-way associative
+    Cache      512KB private cache-slice per core                                              Figure 14: Reduction in refresh count with MEMCON
+                8GB DIMM
+    Main        DDR3-1600 (800MHz clock rate, 1.25ns cycle time)   6.2. Performance Impact of Refresh Reduction
+    Memory      Baseline (tREFI /tRFC ): 1.95us/350ns                 In this section, we evaluate the performance improvement
+                MEMCON: tREFI : LO-REF 7.8us, HI-REF 1.95us        of MEMCON resulting from the reduction in refresh operation
+                MEMCON: tRFC : 530/890/1600ns (16/32/64Gb)         count. The actual execution of our long-running applications
+            Table 2: Evaluated system configuration                ranges from seconds to several minutes (Table 1). As cycle-
+                                                                   accurate simulation of such long execution times cannot be
+6. Results                                                         feasibly performed with current tools, we provide an alterna-
+                                                                   tive method to evaluate the performance impact of MEMCON.
+   We first evaluate the effect of MEMCON on refresh reduction
+                                                                   The performance impact of MEMCON depends on two param-
+(Section 6.1) and performance (Section 6.2). Then, we compare
+                                                                   eters: (i) the reduction in refresh count, and (ii) the execution
+the performance of MEMCON to other refresh optimizations
+                                                                   time overhead of testing. We evaluate the performance impact
+(Section 6.3). Finally, we provide an analysis of our write inter-
+                                                                   of MEMCON in simulation (i) by modeling the refresh reduc-
+val prediction mechanism, PRIL (Section 6.4).
+                                                                   tion we found in Section 6.1 for our long-running applications
+6.1. Reduction in Refresh Operations                               and (ii) injecting extra memory accesses that are required for
+   In this section, we demonstrate that MEMCON is effective testing. Section 6.1 demonstrates that the reduction in refresh
+at reducing the number of refreshes by identifying the long count ranges from 64.7% to 74.5% in our long-running applica-
+write intervals in programs when a row can be refreshed less tions. We model (i) two refresh reduction amounts (60% to 75%
+
+
+===== Page 11 =====
+
+MEMCON: Detecting and Mitigating Data-Dependent DRAM Failures                                                                                       MICRO’17, October 14-18, 2017, Boston, MA, USA
+
+
+reduction compared to the baseline) on 30 single-core and four-                                                   Second, we compare MEMCON to a prior refresh optimization
+core workloads from SPEC [80] and server [84] applications,                                                       work, RAIDR [52], which refreshes all rows with any possible
+and (ii) 256 concurrent memory tests performed every 64 ms by                                                     failure (for any possible data content in memory) at the HI-REF
+injecting extra read/write accesses. Figure 15 shows that MEM-                                                    state. This mechanism depends on identifying every failing
+CON’s performance improvement ranges from 10%/17%/40%                                                             cell with an initial test and thus, relies on having access to the
+to 12%/22%/50% in a single-core system and 10%/23%/52% to                                                         internal DRAM layout to detect these failures. The LO/HI-REF
+17%/29%/65% in a 4-core system for 8/16/32 Gb DRAM chips.11                                                       state evaluated for RAIDR is the same as ours (64/16 ms). We
+We conclude that (i) MEMCON provides significant perfor-                                                          model that 16% of all rows are refreshed at the HI-REF state
+mance improvement due to the large reduction in refresh count                                                     (when memory failures are randomly distributed with an error
+it enables, and (ii) MEMCON’s performance improvement in-                                                         rate of 10−5 ), which matches our experimental data from real
+creases with DRAM chip capacity.                                                                                  DRAM chips in Figure 4. Third, we compare MEMCON with
+                      1.5                                                      1.7                                the ideal system that always uses the LO-REF state (i.e., 64 ms)
+                                   60% Reduction                                           60% Reduction
+                                                                               1.6
+                                                            Baseline (16 ms)
+
+
+
+
+                      1.4
+   Baseline (16 ms)
+
+
+
+
+                                                                                           75% Reduction          for the entire memory, without any testing overhead (this is
+                                                             Speedup over
+    Speedup over
+
+
+
+
+                                   75% Reduction                               1.5
+                      1.3                                                      1.4                                the upper bound shown in Section 6.1).
+                      1.2                                                      1.3                                    Figures 16a and 16b provide three major observations. First,
+                                                                               1.2
+                      1.1                                                                                         MEMCON provides significant performance benefits even over
+                                                                               1.1
+                       1                                                         1                                a baseline with 32 ms refresh rate. On average, MEMCON im-
+                            8Gb          16Gb        32Gb                            8Gb        16Gb       32Gb
+                                                                                                                  proves performance by 4%/6%/13% and 5%/8%/17% for 8/16/32
+                            (a) Single-core                                            (b) Four-core              Gb DRAM chips in a single- and multi-core system over the
+Figure 15: MEMCON’s range of performance improvement                                                              baseline that always uses a 32 refresh interval. Second, MEM-
+with 60-75% refresh reduction over the baseline (16 ms refresh)                                                   CON consistently provides better performance than RAIDR.
+                                                                                                                  This is because that RAIDR refreshes more rows at the HI-REF
+   Analysis of testing overhead. In this section, we model
+                                                                                                                  state compared to MEMCON, as it detects every possible fail-
+256-1024 concurrent tests every 64 ms in order to demonstrate
+                                                                                                                  ure with an initial test and cannot exploit the fact that not all
+the impact of extra memory accesses that are required for test-
+                                                                                                                  content triggers errors. Note that we assume that the error
+ing. Each test initiates extra memory requests to read, write,
+                                                                                                                  profiling information used for RAIDR is robust (and hence the
+and compare data content according to the test mechanism de-
+                                                                                                                  RAIDR mechanism does not lead to incorrect execution), even
+scribed in Section 3.3. Running 1024 concurrent tests every 64
+                                                                                                                  though prior works have demonstrated that the worst-case pro-
+ms can test 8192 rows during every quantum (when the quan-
+                                                                                                                  filing of every possible failure with every possible data content
+tum length is 512 ms). Table 3 shows the average performance
+                                                                                                                  in memory is extremely challenging [31, 32, 51, 67, 70]. Third,
+loss due to testing compared to the ideal case where testing has
+                                                                                                                  MEMCON performs within 3-5% of the performance of the 64
+no overhead. The results show that the performance impact
+                                                                                                                  ms refresh configuration. This is expected because the refresh
+of extra accesses due to testing is very low, only 0.5%-1.9% on
+                                                                                                                  reduction of MEMCON is close the the 75% upper bound (as
+average for single-core systems. The overhead is lower in the
+                                                                                                                  shown in Section 6.1).
+multi-core system that can handle the extra accesses better
+with more parallelism. We conclude that the extra accesses                                                                       1.6                                                          1.8
+                                                                                                                                         32 ms   RAIDR   MEMCON     64 ms                           32 ms   RAIDR   MEMCON     64 ms
+due to testing have a negligible impact on performance. Note
+                                                                                                                   Baseine (16 ms)
+
+
+
+
+                                                                                                                                                                            Baseine (16 ms)
+
+
+
+
+                                                                                                                                                                                              1.6
+                                                                                                                    Speedup over
+
+
+
+
+                                                                                                                                                                             Speedup over
+
+
+
+
+that MEMCON’s full performance results in Figure 15 already                                                                      1.4
+                                                                                                                                                                                              1.4
+include this testing overhead.                                                                                                   1.2
+                                                                                                                                                                                              1.2
+
+                                                   Number of Concurrent Tests                                                        1                                                         1
+
+                                                   256     512       1024                                                                8Gb         16Gb         32Gb                               8Gb        16Gb         32Gb
+
+
+                                  Single-core 0.54%              1.03%                     1.88%                                         (a) Single-core                                             (b) Four-core
+                                  Four-core 0.05%                0.09%                     0.48%                             Figure 16: Comparison with other refresh mechanisms
+Table 3: Performance loss due to the extra accesses required                                                        We conclude that dynamically detecting and mitigating data-
+for testing by MEMCON
+                                                                                                                  dependent failures at the system-level using the current mem-
+6.3. Performance Comparison to Other                                                                              ory content, while detection and mitigation occurs simultane-
+     Refresh Optimizations                                                                                        ously with program execution is a feasible and cost-effective
+                                                                                                                  approach that performs better than prior approaches.
+   MEMCON uses a 16 ms refresh interval for the HI-REF state
+and a 64 ms of refresh interval for the LO-REF state. In this 6.4. Evaluation of PRIL
+section, we compare MEMCON with systems using other re-                      We evaluate the coverage and the misprediction overhead
+fresh intervals and refresh optimization techniques. First, we of PRIL when identifying the long write intervals. We also
+compare the performance benefit of MEMCON to a system that analyze the storage overhead to implement PRIL.
+always uses a 32 ms refresh interval. This configuration repre-
+sents a system that uses a less aggressive baseline than ours.               Coverage of execution time. Figure 17 shows the fraction
+                                                                          of total execution time spent while operating at the LO-REF
+   11 We scale up the refresh operation count with DRAM chip capacity, as state (referred to as coverage) when our prediction mechanism
+done in prior works [13, 15, 31, 51, 67, 70].                             uses three different current interval lengths. On average, 95%
+
+
+===== Page 12 =====
+
+MICRO’17, October 14-18, 2017, Boston, MA, USA                                                                                                                                                                                                                                                    Samira Khan et al.
+
+
+                                                                                CIL 512 ms
+                                                                  ory controller. Note that these overheads can be optimized              CIL 1024 ms                                               CIL 2048 ms
+                       100
+% of Total Execution
+
+
+
+
+                                                                  by leveraging prior techniques that use the last-level cache to
+   Time Covered
+
+
+
+
+      75
+                                                                  store metadata [88] or co-locate data and metadata in memory
+      50
+                                                                  to reduce extra accesses for metadata [57, 71, 89]. We leave the
+      25
+                                                                  exploration of such optimizations for future work.
+       0
+                                                                      Sensitivity to Cache Size. Our mechanism relies on real
+
+
+
+
+                                                                                                                                                                                                                                SystemMgt
+                                                                                                         AVCHD
+
+
+
+
+                                                                                                                                                                FinalMaster
+
+
+
+
+                                                                                                                                                                                                                                            VideoEnc
+                                                                               AllSysMark
+
+
+
+
+                                                                                                                                                                                                                     Netflix
+                                                                                                                                                                                    AdobePrem
+                                                     AdobePhoto
+
+
+
+
+                                                                                                                                           FinalCutPro
+                             ACBrother
+
+
+
+
+                                                                                                                                                                                                     MotionPlay
+                                                                                                                     BlurMotion
+                                                                  applications spending a large fraction of their execution time
+                                                                  on long write intervals. However, the distribution of writes
+Figure 17: Execution time coverage of PRIL (operating in the to memory can change depending on how data gets evicted
+LO-REF state)                                                     from the last-level cache based on cache contention or other
+of the total execution time is spent in the LO-REF state. We microarchitectural events. We analyze the probability of the
+conclude that PRIL is an effective mechanism that can detect remaining interval length being greater than 1024 ms, when the
+the long write intervals in real applications with high coverage. interval between two consecutive writes to a page becomes
+                                                                  smaller. To do so, we halve the write intervals for each appli-
+   Misprediction Overhead. MEMCON initiates testing for
+                                                                  cation. Figure 19a demonstrates that the distribution of the
+any page that is predicted to be remain idle (e.g., likely not
+                                                                  write intervals slightly moves to the left when all intervals are
+be written to for a long time interval). However, as we have
+                                                                  halved. As the write interval distribution shows an exponential
+demonstrated in Section 4.1, the prediction mechanism is not
+                                                                  behavior (Section 4.1), most of the write intervals are less than 1
+completely accurate and MEMCON can initiate testing for some
+                                                                  ms. Due to this behavior, Figure 19b shows that the probability
+pages that may receive write requests relatively soon in the fu-
+                                                                  that the remaining interval length is greater than 1024 ms does
+ture. For these pages, the cost of testing would not be possible
+                                                                  not change significantly compared to the configuration where
+to amortize, as these pages have to be refreshed at the HI-REF
+                                                                  all write intervals were twice as long. We conclude that cache
+state after the next write access. Figure 18 represents the frac-
+                                                                  size does not significantly impact MEMCON.
+tion of time MEMCON spends on testing (for both correctly                          ACBrotherHood                                  Full Interval     Half Interval
+predicted and mispredicted pages) and refresh operations nor-               100                                                 1
+                                                                                                                                                                                                                                                       Percentage of Writes
+
+
+
+
+                                                                              10                         Full Interval
+
+
+
+
+                                                                                                                                                                                                                                                                              P (RIL) > 1024 ms
+malized to the amount of time spent on refresh in the baseline                 1
+                                                                                                         Half Interval       0.75
+
+system. In the baseline all pages are refreshed with a 16 ms                 0.1                                              0.5
+
+refresh interval (HI-REF state). This figure shows that the time           0.01
+                                                                                                                             0.25
+                                                                          0.001
+spent on testing (for both correctly and mispredicted pages)                     1 8      64       512       4096      32768    0
+                                                                                      Write Interval in ms                           512        1024       2048
+is very small and constitutes, on average, only 0.01% of the                                                                      Current Interval Length (CIL)
+
+time spent on refresh operations in the baseline system. We                             (a)                                                (b)
+conclude that testing memory simultaneously with program ex-
+                                                                  Figure 19: (a) Write interval distribution and (b) the probabil-
+ecution introduces negligible overhead even when some pages ity of RIL > 1024 ms, when the write intervals get halved
+are tested unnecessarily due to misprediction of long write
+intervals with PRIL.                                              7. Related Work
+                Refresh  Testing (correct) Testing (mispredicted)
+                                                                      To our knowledge, this is the first work to propose a system-
+ % Normalzied Time
+
+
+
+
+         40
+  Spent on Refresh
+
+
+
+
+                                                                  level detection and mitigation technique for data-dependent
+         30
+    and Testing
+
+
+
+
+         20                                                       failures that does not require knowledge of DRAM internals.
+         10                                                       No prior work (i) proposes a technique that can detect and
+          0
+                                                                  mitigate failures based on program data content, (ii) demon-
+                                                                                                                                                  FinalCutPro
+
+
+
+
+                                                                                                                                                                                                        MotionPlay
+                                                                                                                             BlurMotion
+
+
+
+
+                                                                                                                                                                                                                      Netflix
+
+
+
+
+                                                                                                                                                                                                                                            VideoEnc
+                                                                  AdobePhoto
+
+
+
+
+                                                                                                             AVCHD
+                                         ACBrother
+
+
+
+
+                                                                                                                                                                                                                                SystemMgt
+                                                                                            AllSysMark
+
+
+
+
+                                                                                                                                                                                        AdobePrem
+                                                                                                                                                                      FinalMaster
+
+
+
+
+                                                                  strates the properties of write intervals in real applications, and
+                                                                  (iii) proposes a simple prediction mechanism to predict write
+                                                                  intervals in real applications.
+Figure 18: Fraction of time MEMCON spends on refresh oper-            We discuss some related and mostly complementary works
+ations and testing normalized to time spent on refresh in the on DRAM failures and optimizing DRAM refresh. Note that,
+baseline with 16 ms refresh
+                                                                  even though we demonstrate the benefits of MEMCON in the
+   Storage Overhead. The storage overhead of PRIL comes context of refresh optimization, MEMCON can be used to pro-
+mainly from the write-maps and write-buffers (Section 4.2). vide better reliability and scalability by detecting and miti-
+Write-maps are simple bit vectors, where each bit represents gating failures at the system-level [32, 51, 67, 70] or to lower
+one memory page. Therefore, the overhead of a write-map is latency/power of DRAM by detecting cells that fail when we
+128KB for an 8GB memory with 8KB pages. Our workloads reduce the DRAM timing parameters/voltage [14, 17, 20, 45, 46].
+access at most around 100K pages at each quantum, so we               System-Level DRAM Failure Detection. Prior works
+cache the write-maps in a 12KB direct-mapped cache in the demonstrate the difficulty of detecting data-dependent DRAM
+memory controller. Note that predicting write intervals is off failures at the system-level [31, 32, 51, 52, 67, 70]. Many of
+the critical path and does not affect performance. Write-buffers these failures depend on the internal architecture of DRAM,
+store the addresses of pages that are idle for the length of the such as true-anti cell organization [51], open-closed bitline
+quantum. We found that on average 4000 entries are enough to architecture [16, 45], remapping of faulty cells [31], address
+hold the addresses in each quantum (in the applications that we scrambling [31, 85], etc. Each DRAM chip can have failures
+evaluate), leading to a storage overhead of 17KB in the mem- with different data and access patterns and addresses. Some
+
+
+===== Page 13 =====
+
+MEMCON: Detecting and Mitigating Data-Dependent DRAM Failures                            MICRO’17, October 14-18, 2017, Boston, MA, USA
+
+
+of this information can potentially be reverse-engineered with      Acknowledgments
+elegant techniques [29, 31, 45]. However, prior works demon-           We thank the anonymous reviewers for their valuable sug-
+strate that, even then, some failures remain undetected [31].       gestions. We thank David Zimmerman, Kevin J. Long, and
+Our work is the first to attempt to detect and mitigate data-       Matthew A. Blackmore from Intel for their support with the
+dependent failures without requiring information about DRAM         workload traces. We acknowledge the support of our industrial
+internal organization.                                              partners: Google, Huawei, Intel, Microsoft, Samsung, VMware.
+   Multi-Rate DRAM Refresh. Prior works propose multi-              This research was partially supported by NSF, Semiconductor
+rate DRAM refresh mechanisms to reduce the performance and          Research Corporation, and the Intel Science and Technology
+energy impact of refresh operations [52, 53, 70, 86]. Many of       Center for Cloud Computing. We thank the reviewers of IEEE
+these works first profile the DRAM failures by simply writing       CAL for the positive and helpful feedback on an earlier version
+0/1s in memory and detecting data-dependent failures. They re-      of this work [33].
+fresh the rows with failures more frequently and rows without       References
+failures less frequently, thereby reducing the refresh operation     [1] “STREAM Benchmark,” http://www.streambench.org/.
+count. Recent works demonstrate that simple testing mecha-           [2] “Oral history of Joel Karp,” Computer History Museum, 2003.
+nisms cannot detect all possible data-dependent failures and         [3] J. Ahn et al., “A Scalable Processing-in-Memory Accelerator for Parallel
+employing such simple mechanisms would result in bit flips               Graph Processing,” in ISCA, 2015.
+                                                                     [4] J. Ahn et al., “PIM-Enabled Instructions: A Low-Overhead, Locality-
+and unreliable DRAM operation [32, 51, 67, 70]. MEMCON                   Aware Processing-in-Memory Architecture,” in ISCA, 2015.
+is the first detection and mitigation mechanism that does not        [5] Z. Al-Ars et al., “Effects of bit line coupling on the faulty behavior of
+depend on detecting all possible data-dependent failures.                DRAMs,” in VTS, 2004.
+                                                                     [6] B. Arnold, Pareto distributions. Chapman & Hall/CRC Monographs on
+   Refresh Optimization. Other works reduce the perfor-                  Statistics & Applied Probability, 1983.
+mance overhead of refresh by scheduling refresh operations           [7] A. Bacchini et al., “Characterization of data retention faults in DRAM
+in a flexible way such that they interfere less with program             devices,” in DFT, 2014.
+                                                                     [8] Y. Bao et al., “HMTT: A platform independent full-system memory trace
+memory requests [15, 25, 60, 64, 83]. Our work is orthogonal,            monitoring system,” in SIGMETRICS, 2008.
+as MEMCON can still be applied on top of these techniques            [9] R. E. Barlow et al., “Properties of probability distributions with monotone
+to reduce the overall refresh operation count and improve the            hazard rate,” The Annals of Mathematical Statistics, 1963.
+                                                                    [10] G. B. Bell et al., “Characterization of silent stores,” in PACT, 2000.
+performance and energy efficiency of the system.                    [11] S. Cha et al., “Defect analysis and cost-effective resilience architecture
+   Pareto Distribution in Real Workloads. Prior studies                  for future DRAM devices,” in HPCA, 2017.
+demonstrate that jobs running in real systems follow the Pareto     [12] K. Chandrasekar et al., “Exploiting Expendable Process-margins in
+                                                                         DRAMs for Run-time Performance Optimization,” in DATE, 2014.
+distribution: only a small fraction of the jobs are the largest     [13] K. K. Chang, “Understanding and improving the latency of DRAM-based
+ones, but they comprise most of the total load in the system [19,        memory systems,” Ph.D. dissertation, CMU, 2017.
+73]. Similarly, Unix process lifetimes [19], sizes of files and     [14] K. K. Chang et al., “Understanding Latency Variation in Modern DRAM
+                                                                         Chips: Experimental Characterization, Analysis, and Optimization,” in
+web traffic [18, 68, 73], lengths of memory episodes [40], and           SIGMETRICS, 2016.
+memory errors across servers [58] are shown to follow the           [15] K. K. Chang et al., “Improving DRAM performance by parallelizing re-
+Pareto distribution. No prior work demonstrates that the write           freshes with accesses,” in HPCA, 2014.
+                                                                    [16] K. K. Chang et al., “Low-Cost Inter-Linked Subarrays (LISA): Enabling
+intervals in real workloads follow the Pareto distribution.              Fast Inter-Subarray Data Movement in DRAM,” in HPCA, 2016.
+                                                                    [17] K. K. Chang et al., “Understanding reduced-voltage operation in modern
+8. Conclusion                                                            DRAM devices: Experimental characterization, analysis, and mecha-
+                                                                         nisms,” in SIGMETRICS, 2017.
+   We introduce MEMCON, the first system-level detection and        [18] M. E. Crovella and A. Bestavros, “Self-similarity in world wide web traffic:
+mitigation technique for data-dependent DRAM failures that               Evidence and possible causes,” IEEE/ACM Trans. Netw., 1997.
+completely decouples failure detection from internal DRAM           [19] M. Harchol-Balter and A. B. Downey, “Exploiting process lifetime distri-
+                                                                         butions for dynamic load balancing,” in SIGMETRICS, 1996.
+organization. MEMCON detects failures with the current con-         [20] H. Hassan et al., “ChargeCache: Reducing DRAM Latency by Exploiting
+tent in memory by running online testing simultaneously with             Row Access Locality,” in HPCA, 2016.
+program execution. As testing a page for data-dependent fail-       [21] H. Hassan et al., “SoftMC: A Flexible and Practical Open-Source Infras-
+                                                                         tructure for Enabling Experimental DRAM Studies,” in HPCA, 2017.
+ures after every write to the page (i.e., whenever the data con-    [22] M. Horiguchi and K. Itoh, Repair for Nanoscale Memories. Springer, 2011.
+tent changes) incurs a large performance and energy overhead,       [23] K. Hsieh et al., “Accelerating pointer chasing in 3D-stacked memory:
+MEMCON uses selective testing to initiate a test only when a             Challenges, mechanisms, evaluation,” in ICCD, 2016.
+write to a page is predicted to be followed by a long interval      [24] A. A. Hwang et al., “Cosmic Rays Don’t Strike Twice: Understanding
+                                                                         the Nature of DRAM Errors and the Implications for System Design,” in
+without any writes. MEMCON builds upon a simple, practical               ASPLOS, 2012.
+mechanism that predicts such long write intervals based on our      [25] C. Isen and L. John, “ESKIMO - Energy savings using semantic knowledge
+observation that the write intervals in real workloads follow            of inconsequential memory occupancy for DRAM subsystem,” in ISCA,
+                                                                         2009.
+a Pareto distribution: the longer a page remains idle (i.e., not    [26] JEDEC, JEDEC Standard: Low Power Double Data Rate 2 (LPDDR2), 2010.
+written to) after a write, the longer it is expected to remain      [27] JEDEC, Standard No. 79-3F. DDR3 SDRAM Specification, 2012.
+                                                                    [28] JEDEC, Standard No. 79-4B. DDR4 SDRAM Specification, 2017.
+idle. Our detailed experimental analysis shows that MEMCON          [29] M. Jung et al., “Reverse engineering of DRAMs: Row hammer with
+greatly reduces refresh operation count and improves system              crosshair,” in MEMSYS, 2016.
+performance. We believe that our analysis and experimental          [30] U. Kang et al., “Co-Architecting Controllers and DRAM to Enhance DRAM
+                                                                         Process Scaling,” in The Memory Forum, 2014.
+results will inspire future works to further develop and uti-       [31] S. Khan et al., “PARBOR: An Efficient System-Level Technique to Detect
+lize memory content-based failure detection and mitigation               Data-Dependent Failures in DRAM,” in DSN, 2016.
+techniques in real systems.                                         [32] S. Khan et al., “The Efficacy of Error Mitigation Techniques for DRAM
+
+
+===== Page 14 =====
+
+MICRO’17, October 14-18, 2017, Boston, MA, USA                                                                                                    Samira Khan et al.
+
+
+     Retention Failures: A Comparative Experimental Study,” in SIGMETRICS,                ing,” IEEE/ACM Transactions on Networking, 1995.
+     2014.                                                                           [69] E. Perelman et al., “Using SimPoint for accurate and efficient simulation,”
+[33] S. Khan et al., “A case for memory content-based detection and mitigation            in SIGMETRICS, 2003.
+     of data-dependent failures in DRAM,” in IEEE CAL, 2016.                         [70] M. Qureshi et al., “AVATAR: A Variable-Retention-Time (VRT) Aware
+[34] S. Khan et al., MEMCON Data Repository, https://github.com/samirakhan/               Refresh for DRAM Systems,” in DSN, 2015.
+     MEMCON-data, 2017.                                                              [71] M. Qureshi and G. H. Loh, “Fundamental latency trade-off in architecting
+[35] K. Kim, “Technology for sub-50nm DRAM and NAND flash manufactur-                     DRAM caches: Outperforming impractical SRAM-Tags with a simple and
+     ing,” in IEDM, 2005.                                                                 practical design,” in MICRO, 2012.
+[36] Y. Kim et al., “Ramulator: A Fast and Extensible DRAM Simulator,” in            [72] M. Redeker et al., “An investigation into crosstalk noise in DRAM struc-
+     IEEE CAL, 2015.                                                                      tures,” in MTDT, 2002.
+[37] Y. Kim et al., Ramulator Repository, https://github.com/CMU-SAFARI/             [73] B. Schroeder and M. Harchol-Balter, “Evaluation of task assignment
+     ramulator, 2015.                                                                     policies for supercomputing servers: The case for load unbalancing and
+[38] Y. Kim, “Architectural techniques to enhance DRAM scaling,” Ph.D. dis-               fairness,” Cluster Computing, vol. 7, no. 2, Apr. 2004.
+     sertation, CMU, 2015.                                                           [74] B. Schroeder et al., “DRAM errors in the wild: A large-scale field study,”
+[39] Y. Kim et al., “Flipping Bits in Memory Without Accessing Them: An                   in SIGMETRICS, 2009.
+     Experimental Study of DRAM Disturbance Errors,” in ISCA, 2014.                  [75] V. Seshadri et al., “Fast bulk bitwise AND and OR in dram,” in IEEE CAL,
+[40] Y. Kim et al., “ATLAS: A scalable and high-performance scheduling algo-              2015.
+     rithm for multiple memory controllers.” in HPCA, 2010.                          [76] V. Seshadri et al., “RowClone: Fast and Energy-efficient in-DRAM Bulk
+[41] Y. Kim et al., “A Case for Exploiting Subarray-Level Parallelism (SALP)              Data Copy and Initialization,” in MICRO, 2013.
+     in DRAM,” in ISCA, 2012.                                                        [77] V. Seshadri et al., “Ambit: In-memory accelerator for bulk bitwise opera-
+[42] D. Lee et al., “Decoupled Direct Memory Access: Isolating CPU and IO                 tions using commodity DRAM technology,” in MICRO, 2017.
+     Traffic by Leveraging a Dual-Data-Port DRAM,” in PACT, 2015.                    [78] V. Seshadri et al., “Gather-scatter DRAM: In-DRAM address translation
+[43] D. Lee, “Reducing DRAM latency at low cost by exploiting heterogeneity,”             to improve the spatial locality of non-unit strided accesses,” in MICRO,
+     Ph.D. dissertation, CMU, 2015.                                                       2015.
+[44] D. Lee et al., “Reducing DRAM latency by exploiting design-induced              [79] V. Seshadri and O. Mutlu, Simple Operations in Memory to Reduce Data
+     latency variation in modern DRAM chips,” in ArXiv, 2016.                             Movement. Advances in Computers, 2016.
+[45] D. Lee et al., “Design-induced latency variation in modern DRAM chips:          [80] SPEC CPU2006, “Standard Performance Evaluation Corporation,”
+     Characterization, analysis, and latency reduction mechanisms,” in SIG-               http://www.spec.org/cpu2006.
+     METRICS, 2017.                                                                  [81] V. Sridharan et al., “Memory errors in modern systems: The good, the
+[46] D. Lee et al., “Adaptive-latency DRAM: Optimizing DRAM timing for the                bad, and the ugly,” in ASPLOS, 2015.
+     common-case,” in HPCA, 2015.                                                    [82] V. Sridharan and D. Liberty, “A Study of DRAM Failures in the Field,” in
+[47] D. Lee et al., “Tiered-latency DRAM: A low latency and low cost DRAM                 SC, 2012.
+     architecture,” in HPCA, 2013.                                                   [83] J. Stuecheli et al., “Elastic refresh: Techniques to mitigate refresh penalties
+[48] K. M. Lepak and M. H. Lipasti, “Silent stores for free,” in MICRO, 2000.             in high density memory,” in ISCA, 2010.
+[49] K. M. Lepak and M. H. Lipasti, “On the value locality of store instructions,”   [84] Transaction Processing Performance Council, “TPC 2011,”
+     in ISCA, 2000.                                                                       http://www.tpc.org/.
+[50] K. M. Lepak and M. H. Lipasti, “Temporally silent stores,” in ASPLOS,           [85] A. J. van de Goor and I. Schanstra, “Address and Data Scrambling: Causes
+     2002.                                                                                and Impact on Memory Tests,” in DELTA, 2002.
+[51] J. Liu et al., “An Experimental Study of Data Retention Behavior in Modern
+                                                                                     [86] R. Venkatesan et al., “Retention-Aware Placement in DRAM (RAPID):
+     DRAM Devices: Implications for Retention Time Profiling Mechanisms,”                 Software Methods for Quasi-Non-Volatile DRAM,” in HPCA, 2006.
+     in ISCA, 2013.
+[52] J. Liu et al., “RAIDR: Retention-Aware Intelligent DRAM Refresh,” in ISCA,      [87] Xilinx, ML605 Hardware User Guide, 2012.
+     2012.                                                                           [88] D. H. Yoon and M. Erez, “Virtualized and Flexible ECC for Main Memory,”
+[53] S. Liu et al., “Flikker: Saving DRAM Refresh-power Through Critical Data             in ASPLOS, 2010.
+     Partitioning,” in ASPLOS, 2011.                                                 [89] X. Yu et al., “Banshee: Bandwidth-efficient DRAM caching via soft-
+[54] C.-K. Luk et al., “Pin: Building customized program analysis tools with              ware/hardware cooperation,” in MICRO, 2017.
+     dynamic instrumentation,” in PLDI, 2005.
+[55] Y. Luo et al., “Characterizing application memory error vulnerability to        Appendix
+     optimize datacenter cost via heterogeneous-reliability memory,” in DSN,             Cost of Read and Compare. There are three steps involved: (i) read
+     2014.                                                                           and store the in-test row in the memory controller, (ii) keep the in-test row idle
+[56] J. A. Mandelman et al., “Challenges and future directions for the scaling
+     of dynamic random-access memory (DRAM),” IBM J. of Res. and Dev.,               in memory for the duration of the target refresh interval to make sure victim
+     2002.                                                                           cells are tested with the least possible charge in them, and (iii) read back the
+[57] J. Meza et al., “Enabling efficient and scalable hybrid memories using          row again into the memory controller to compare its content to determine the
+     fine-granularity DRAM cache management,” IEEE CAL, vol. 11, 2012.               failures. Therefore, Read and Compare mode involves reading the entire row
+[58] J. Meza et al., “Revisiting Memory Errors in Large-Scale Production Data        into the memory controller twice. The cost of reading one row into the memory
+     Centers: Analysis and Modeling of New Trends from the Field,” in DSN,           controller includes activating the row (tRCD), reading the cache blocks into
+     2015.                                                                           the memory controller (128 * tCCD for a typical 8K row), and closing the row
+[59] W. Mueller et al., “Challenges for the DRAM cell scaling to 40nm,” in           by precharging (tRP) it. Therefore, the cost for two row reads in terms of
+     IEDM, 2005.                                                                     latency is 2*(tRCD + 128 * tCCD + tRP) = 1068 ns, using DDR3-1600 timing
+[60] J. Mukundan et al., “Understanding and mitigating refresh overheads in          parameters [27].
+     high-density DDR4 DRAM systems,” in ISCA, 2013.                                     Cost of Copy and Compare. The Copy and Compare mode involves
+[61] O. Mutlu, “The rowhammer problem and other issues we may face as                reading the entire row into the memory controller twice (once before the test
+     memory becomes denser,” in DATE, 2017.                                          and once after the test) and writing the entire row once into a new row. The
+[62] O. Mutlu, “Memory scaling: A systems architecture perspective,” IMW,            cost of Copy and Compare in terms of latency is 3*(tRCD + 128 * tCCD +
+     2013.                                                                           tRP) = 1602 ns, using DDR3-1600 timing parameters [27].
+[63] O. Mutlu and L. Subramanian, “Research problems and opportunities in                Cost of a Refresh Operation. A row is refreshed by activating (tRAS)
+     memory systems,” SUPERFRI, 2014.                                                and precharging (tRP) it, making the cost of one refresh operation tRAS +
+[64] P. Nair et al., “A case for refresh pausing in DRAM memory systems,” in         tRP = 39 ns, using DDR3-1600 timing parameters [27].
+     HPCA, 2013.                                                                         Storage Overhead of Copy and Compare. A 2 GB module consists of
+[65] P. Nair et al., “ArchShield: Architectural framework for assisting DRAM         32768 rows per bank (a total of 262144 rows in 8 banks). Reserving 512 rows
+     scaling by tolerating high error rates,” in ISCA, 2013.                         per bank (4K rows in total for all banks) for the special memory region to hold
+[66] Y. Nakagome et al., “The impact of data-line interference noise on DRAM         the content of the in-test rows results in 4096 / 262144 * 100 = 1.56% overhead
+     scaling,” JSSC, 1988.                                                           of the total DRAM capacity.
+[67] M. Patel et al., “The reach profiler (REAPER): Enabling the mitigation of
+     DRAM retention failures via profiling at aggressive conditions,” in ISCA,
+     2017.
+[68] V. Paxson and S. Floyd, “Wide area traffic: The failure of Poisson model-

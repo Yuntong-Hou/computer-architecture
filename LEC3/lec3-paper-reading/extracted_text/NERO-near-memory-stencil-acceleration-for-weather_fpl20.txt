@@ -1,0 +1,802 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/NERO-near-memory-stencil-acceleration-for-weather_fpl20.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/NERO-near-memory-stencil-acceleration-for-weather_fpl20.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+     NERO: A Near High-Bandwidth Memory Stencil Accelerator
+                for Weather Prediction Modeling
+ Gagandeep Singha,b,c             Dionysios Diamantopoulosc   Christoph Hagleitnerc                                                                                      Juan Gómez-Lunab
+                               Sander Stuijka     Onur Mutlub       Henk Corporaala
+                 a Eindhoven University of Technology                 b ETH Zürich                                                      c IBM Research Europe, Zurich
+
+
+
+   Ongoing climate change calls for fast and accurate weather                     of the data access patterns and algorithmic complexity of the
+and climate modeling. However, when solving large-scale                           entire COSMO model. They are similar to the kernels used
+weather prediction simulations, state-of-the-art CPU and GPU                      in other weather and climate models [60, 79, 107]. Their per-
+implementations suffer from limited performance and high en-                      formance is dominated by memory-bound operations with
+ergy consumption. These implementations are dominated by                          unique irregular memory access patterns and low arithmetic
+complex irregular memory access patterns and low arithmetic                       intensity that often results in <10% sustained floating-point
+intensity that pose fundamental challenges to acceleration. To                    performance on current CPU-based systems [99].
+overcome these challenges, we propose and evaluate the use of                        Figure 1 shows the roofline plot [104] for an IBM 16-
+near-memory acceleration using a reconfigurable fabric with                       core POWER9 CPU (IC922).1 After optimizing the vadvc
+high-bandwidth memory (HBM). We focus on compound sten-                           and hdiff kernels for the POWER architecture by follow-
+cils that are fundamental kernels in weather prediction models.                   ing the approach in [105], they achieve 29.1 GFLOP/s and
+By using high-level synthesis techniques, we develop NERO, an                     58.5 GFLOP/s, respectively, for 64 threads. Our roofline anal-
+FPGA+HBM-based accelerator connected through IBM CAPI2                            ysis indicates that these kernels are constrained by the host
+(Coherent Accelerator Processor Interface) to an IBM POWER9                       DRAM bandwidth. Their low arithmetic intensity limits their
+host system. Our experimental results show that NERO out-                         performance, which is one order of magnitude smaller than
+performs a 16-core POWER9 system by 4.2× and 8.3× when                            the peak performance, and results in a fundamental memory
+running two different compound stencil kernels. NERO reduces                      bottleneck that standard CPU-based optimization techniques
+the energy consumption by 22× and 29× for the same two                            cannot overcome.
+kernels over the POWER9 system with an energy efficiency of
+                                                                                                               10 4
+                                                                                                                      Roofline for POWER9 (16-core, SMT4) & [AD9V3,AD9H7] FPGAs
+1.5 GFLOPS/Watt and 17.3 GFLOPS/Watt. We conclude that
+employing near-memory acceleration solutions for weather pre-                                                             AD9H7 FPGA (3.6 TFLOP/s, 410GBps HBM, 7.26 TBps BRAM, 400MHz)
+                                                                          Attainable Performance [GFlop/sec]
+
+
+
+
+diction modeling is promising as a means to achieve both high
+performance and high energy efficiency.                                                                        10 3          AD9V3 FPGA (0.97 TFLOP/s, 32GBps DRAM, 1.62 TBps BRAM, 200MHz)
+                                                                                                                                             486.4 GFLOP/s/socket (3.8GHz x 16 cores x 8 flops/cycle)
+1. Introduction                                                                                                                                 Bps             EAM    Attainable performance is constra-
+                                                                                                                                  e      3 G7
+                                                                                                                                                             STR       ined by memory bandwidth, as
+   Accurate weather prediction using detailed weather mod-                                                                  -cach 6=33                   o n           CPU micro-architecture features
+                                                                                                                        L3 7)x1                    l B W
+els is essential to make weather-dependent decisions in a                                                      10 2        .5                                          become ineffective for a given
+                                                                                                                    (2 0
+                                                                                                                         8                    e nta
+                                                                                                                                R A M e r im               58.5GFlop/s arithmetic intensity and access
+timely manner. The Consortium for Small-Scale Modeling                                                                         D exp
+                                                                                                                                s
+                                                                                                                                                                       patterns do not favor the memory
+                                                                                                                                                                       hierarchy.
+(COSMO) [38] built one such weather model to meet the                                                                       GBp
+                                                                                                                      110 29.1GFlop/s                                       hdiff (P9 64 threads)
+high-resolution forecasting requirements of weather services.                                                  10 1                                                         hdiff (P9 1 thread)
+                                                                                                                                                                            vadvc (P9 64 threads)
+The COSMO model is a non-hydrostatic atmospheric pre-                                                                                                    5.13GFlop/s
+                                                                                                                                                                            vadvc (P9 1 thread)
+                                                                                                                                3.3GFlop/s
+diction model currently being used by a dozen nations for                                                                                                                   Arithmetic Intensity for hdiff
+meteorological purposes and research applications.                                                                                                                          Arithmetic Intensity for vadvc
+                                                                                                                  0
+                                                                                                               10 -1
+   The central part of the COSMO model (called dynamical                                                         10                                   10 0                      10 1                       10 2
+                                                                                                                                           Arithmetic Intensity [flop/byte]
+core or dycore) solves the Euler equations on a curvilinear
+grid and applies implicit discretization (i.e., parameters are                    Figure 1: Roofline [104] for POWER9 (1-socket) showing ver-
+dependent on each other at the same time instance [26]) in the                    tical advection (vadvc) and horizontal diffusion (hdiff) ker-
+                                                                                  nels for single-thread and 64-thread implementations. The
+vertical dimension and explicit discretization (i.e., a solution is               plot shows also the rooflines of the FPGAs used in our work.
+dependent on the previous system state [26]) in the horizontal
+dimension. The use of different discretizations leads to three                       In this work, our goal is to overcome the memory bot-
+computational patterns [96]: 1) horizontal stencils, 2) tridi-                    tleneck of weather prediction kernels by exploiting near-
+agonal solvers in the vertical dimension, and 3) point-wise                       memory computation capability on FPGA accelerators with
+computation. These computational kernels are compound                             high-bandwidth memory (HBM) [5, 65, 66] that are attached
+stencil kernels that operate on a three-dimensional grid [48].
+                                                                                       1 IBM and POWER9 are registered trademarks or common law marks
+Vertical advection (vadvc) and horizontal diffusion (hdiff) are
+                                                                                  of International Business Machines Corp., registered in many jurisdictions
+such compound kernels found in the dycore of the COSMO                            worldwide. Other product and service names might be trademarks of IBM
+weather prediction model. These kernels are representative                        or other companies.
+
+
+                                                                      1
+
+
+===== Page 2 =====
+
+to the host CPU. Figure 1 shows the roofline models of the            • We evaluate the performance and energy consumption of
+two FPGA cards (AD9V3 [2] and AD9H7 [1]) used in this                   our accelerator and perform a scalability analysis. We show
+work. FPGAs can handle irregular memory access patterns                 that an FPGA+HBM-based design outperforms a complete
+efficiently and offer significantly higher memory bandwidth             16-core POWER9 system (running 64 threads) by 4.2× for
+than the host CPU with their on-chip URAMs (UltraRAM),                  the vertical advection (vadvc) and 8.3× for the horizontal
+BRAMs (block RAM), and off-chip HBM (high-bandwidth                     diffusion (hdiff) kernels with energy reductions of 22×
+memory for the AD9H7 card). However, taking full advan-                 and 29×, respectively. Our design provides an energy effi-
+tage of FPGAs for accelerating a workload is not a trivial              ciency of 1.5 GLOPS/Watt and 17.3 GFLOPS/Watt for vadvc
+task. To compensate for the higher clock frequency of the               and hdiff kernels, respectively.
+baseline CPUs, our FPGAs must exploit at least one order
+                                                                      2. Background
+of magnitude more parallelism in a target workload. This                 In this section, we first provide an overview of the vadvc
+is challenging, as it requires sufficient FPGA programming            and hdiff compound stencils, which represent a large frac-
+skills to map the workload and optimize the design for the            tion of the overall computational load of the COSMO weather
+FPGA microarchitecture.                                               prediction model. Second, we introduce the CAPI SNAP
+   Modern FPGA boards deploy new cache-coherent inter-                (Storage, Network, and Analytics Programming) framework2
+connects, such as IBM CAPI [93], Cache Coherent Intercon-             that we use to connect our NERO accelerator to an IBM
+nect for Accelerators (CCIX) [24], and Compute Express Link           POWER9 system.
+(CXL) [88], which allow tight integration of FPGAs with CPUs          2.1. Representative COSMO Stencils
+at high bidirectional bandwidth (on the order of tens of GB/s).          A stencil operation updates values in a structured multidi-
+However, memory-bound applications on FPGAs are limited               mensional grid based on the values of a fixed local neighbor-
+by the relatively low DDR4 bandwidth (72 GB/s for four in-            hood of grid points. Vertical advection (vadvc) and horizon-
+dependent dual-rank DIMM interfaces [11]). To overcome                tal diffusion (hdiff) from the COSMO model are two such
+this limitation, FPGA vendors have started offering devices           compound stencil kernels, which represent the typical code
+equipped with HBM [6,7,12,66] with a theoretical peak band-           patterns found in the dycore of COSMO. Algorithm 1 shows
+width of 410 GB/s. HBM-equipped FPGAs have the potential              the pseudo-code for vadvc and hdiff kernels. The horizontal
+to reduce the memory bandwidth bottleneck, but a study of             diffusion kernel iterates over a 3D grid performing Laplacian
+their advantages for real-world memory-bound applications             and flux to calculate different grid points. Vertical advection
+is still missing.                                                     has a higher degree of complexity since it uses the Thomas
+   We aim to answer the following research question:                  algorithm [97] to solve a tri-diagonal matrix of the velocity
+Can FPGA-based accelerators with HBM mitigate the                     field along the vertical axis. Unlike the conventional stencil
+performance bottleneck of memory-bound compound                       kernels, vertical advection has dependencies in the vertical
+weather prediction kernels in an energy efficient way?                direction, which leads to limited available parallelism.
+As an answer to this question, we present NERO, a near-HBM               Such compound kernels are dominated by memory-bound
+accelerator for weather prediction. We design and imple-              operations with complex memory access patterns and low
+ment NERO on an FPGA with HBM to optimize two kernels                 arithmetic intensity. This poses a fundamental challenge to
+(vertical advection and horizontal diffusion), which notably          acceleration. CPU implementations of these kernels [105]
+represent the spectrum of computational diversity found in            suffer from limited data locality and inefficient memory usage,
+the COSMO weather prediction application. We co-design a              as our roofline analysis in Figure 1 exposes.
+hardware-software framework and provide an optimized API              2.2. CAPI SNAP Framework
+to interface efficiently with the rest of the COSMO model,               The OpenPOWER Foundation Accelerator Workgroup [8]
+which runs on the CPU. Our FPGA-based solution for hdiff              created the CAPI SNAP framework, an open-source envi-
+and vadvc leads to performance improvements of 4.2× and               ronment for FPGA programming productivity. CAPI SNAP
+8.3× and energy reductions of 22× and 29×, respectively,              provides two key benefits [103]: (i) it enables an improved
+with respect to optimized CPU implementations [105].                  developer productivity for FPGA acceleration and eases the
+  The major contributions of this paper are as follows:               use of CAPI’s cache-coherence mechanism, and (ii) it places
+                                                                      FPGA-accelerated compute engines, also known as FPGA ac-
+• We perform a detailed roofline analysis to show that rep-
+                                                                      tions, closer to relevant data to achieve better performance.
+  resentative weather prediction kernels are constrained by
+                                                                      SNAP provides a simple API to invoke an accelerated ac-
+  memory bandwidth on state-of-the-art CPU systems.
+                                                                      tion, and also provides programming methods to instantiate
+• We propose NERO, the first near-HBM FPGA-based accel-
+                                                                      customized accelerated actions on the FPGA side. These ac-
+  erator for representative kernels from a real-world weather
+                                                                      celerated actions can be specified in C/C++ code that is then
+  prediction application.
+                                                                      compiled to the FPGA target using the Xilinx Vivado High-
+• We optimize NERO with a data-centric caching scheme
+                                                                      Level Synthesis (HLS) tool [10].
+  with precision-optimized tiling for a heterogeneous mem-
+  ory hierarchy (consisting of URAM, BRAM, and HBM).                     2 https://github.com/open-power/snap
+
+
+
+
+                                                                  2
+
+
+===== Page 3 =====
+
+ Algorithm 1: Pseudo-code for vertical advection and                                                 HBM2                 HBM2
+ horizontal diffusion kernels used by the COSMO [38]                                                 Stack 1              Stack 2              DRAM
+                                                                                                                                     256-bit
+                                                                                                FPGA   16x
+                                                                                                       ....                 16x
+                                                                                                                            ....
+ weather prediction model.                                                                                                            AXI3
+
+ 1 Function verticalAdvection(float* ccol, float* dcol, float* wcon, float*
+                                                                                                                 HBM IP
+    ustage, float* upos, float* utens, float* utensstage)                                           Accelerator Functional Unit                   P9
+ 2      for c ← 2 to column – 2 do                                                                       PE               PE                     Core
+ 3            for r ← 2 to row-2 do                                                                  URAM LU
+                                                                                                                 ....   URAM LU
+ 4                  Function forwardSweep(float* ccol, float* dcol, float* wcon,                          FF                 FF                  IBM
+                     float* ustage, float* upos, float* utens, float* utensstage)                    BRAM LU            BRAM LU                 Power9
+                                                                                                                                    PSL
+ 5                        for d ← 1 to depth do
+                                   /* forward sweep calculation */
+ 6                           end                                                        Figure 2: Heterogeneous platform with an IBM POWER9 sys-
+ 7                     end                                                              tem connected to an HBM-based FPGA board via CAPI2.
+ 8                     Function backwardSweep(float* ccol, float* dcol, float*
+                        wcon, float* ustage, float* upos, float* utens, float*
+                        utensstage)
+                                                                                        Accelerator Processor Interface version 2 (CAPI2). The FPGA
+ 9                         for d ← depth – 1 to 1 do                                    consists of two HBM stacks3 , each with 16 pseudo-memory
+10                           end
+                                   /* backward sweep calculation */
+                                                                                        channels [3]. A channel is exposed to the FPGA as a 256-bit
+11                     end                                                              wide port, and in total, the FPGA has 32 such ports. The
+12               end                                                                    HBM IP provides 8 memory controllers (per stack) to handle
+       end
+                                                                                        the data transfer to and from the HBM memory ports. Our
+13
+14 end
+15 Function horizontalDiffusion(float* src, float* dst )                                design consists of an accelerator functional unit (AFU) that
+       for d ← 1 to depth do
+16
+17          for c ← 2 to column – 2 do
+                                                                                        interacts with the host system through the power service
+18                for r ← 2 to row-2 do                                                 layer (PSL), which is the CAPI endpoint on the FPGA. An
+19
+                             /* Laplacian calculation */
+                             lapCR = laplaceCalculate(c, r) /* row-laplacian */
+                                                                                        AFU comprises of multiple processing elements (PEs) that
+20                           lapCRm = laplaceCalculate(c, r – 1)                        perform compound stencil computation. Figure 3a shows
+                             lapCRp = laplaceCalculate(c, r + 1)
+21
+                                /* column-laplacian */
+                                                                                        the architecture overview of NERO. As vertical advection is
+22                           lapCmR = laplaceCalculate(c – 1, r)                        the most complex kernel, we depict our architecture design
+                             lapCpR = laplaceCalculate(c + 1, r) /* column-flux
+23
+                                 calculation */
+                                                                                        flow for vertical advection. We use a similar design for the
+24                            fluxC = lapCpR – lapCR                                    horizontal diffusion kernel.
+                             fluxCm = lapCR – lapCmR
+25
+                             /* row-flux calculation */
+                                                                                           The weather data, based on the atmospheric model reso-
+26                           fluxR = lapCRp – lapCR                                     lution grid, is stored in the DRAM of the host system ( 1 in
+                             fluxRm = lapCR – lapCmR
+27
+                             /* output calculation */
+                                                                                        Figure 3a). We employ the double buffering technique be-
+28                           dest[d][c][r] = src[d][c][r]–                              tween the CPU and the FPGA to hide the PCIe (Peripheral
+                             c1 * (fluxCR – fluxCmR ) + (fluxCR – fluxCRm )
+29
+30                     end
+                                                                                        Component Interconnect Express [72]) transfer latency. By
+31               end                                                                    configuring a buffer of 64 cache lines, between the AXI4 inter-
+32         end                                                                          face of CAPI2/PSL and the AFU, we can reach the theoretical
+     end
+33
+                                                                                        peak bandwidth of CAPI2/PCIe (i.e., 16 GB/s). We create a
+                                                                                        specialized memory hierarchy from the heterogeneous FPGA
+3. Design Methodology                                                                   memories (i.e., URAM, BRAM, and HBM). By using a greedy
+3.1. NERO, A Near HBM Weather Prediction Ac-                                            algorithm, we determine the best-suited hierarchy for our
+     celerator                                                                          kernel. The memory controller (shown in Figure 2) handles
+                                                                                        the data placement to the appropriate memory type based on
+   The low arithmetic intensity of real-world weather pre-
+                                                                                        programmer’s directives.
+diction kernels limits the attainable performance on current
+                                                                                           On the FPGA, following the initial buffering ( 2 ), the trans-
+multi-core systems. This sub-optimal performance is due
+                                                                                        ferred grid data is mapped onto the HBM memory ( 3 ). As the
+to the kernels’ complex memory access patterns and their
+                                                                                        FPGA has limited resources we propose a 3D window-based
+inefficiency in exploiting a rigid cache hierarchy, as quan-
+                                                                                        grid transfer from the host DRAM to the FPGA, facilitating
+tified in the roofline plot in Figure 1. These kernels can-
+                                                                                        a smaller, less power-hungry deployment. The window size
+not fully utilize the available memory bandwidth, which
+                                                                                        represents the portion of the grid a processing element (PE
+leads to high data movement overheads in terms of latency
+                                                                                        in Figure 2) would process. Most FPGA developers manually
+and energy consumption. We address these inefficiencies
+                                                                                        optimize for the right window size. However, manual opti-
+by developing an architecture that combines fewer off-chip
+                                                                                        mization is tedious because of the huge design space, and it
+data accesses with higher throughput for the loaded data.
+                                                                                        requires expert guidance. Further, selecting an inappropriate
+To this end, our accelerator design takes a data-centric ap-
+                                                                                        window size leads to sub-optimal results. Our experiments (in
+proach [13, 14, 27, 43, 52, 53, 63, 75, 89, 91] that exploits near
+                                                                                        Section 4.2) show that: (1) finding the best window size is crit-
+high-bandwidth memory acceleration.
+                                                                                        ical in terms of the area vs. performance trade-off, and (2) the
+   Figure 2 shows a high-level overview of our integrated
+system. An HBM-based FPGA is connected to a server system                                  3 In this work, we enable only a single stack based on our resource and
+based on an IBM POWER9 processor using the Coherent                                     power consumption analysis for the vadvc kernel.
+
+
+                                                                                    3
+
+
+===== Page 4 =====
+
+                            Virtual       2                                                               Software-defined FPGA
+                                                       1 POWER9 Cache-line
+                          address                   1024-bit = 128B -> 32 x float32                          data (un)packing
+                       translation                                                                                                        6
+                                                         FPGA AXI Register
+                           by PSL                         512-bit x 2 reads                                                                          Data Packing/Unpacking
+                                                                                                          3D window gridding/degridding              Address Translation & Coherency by PSL
+                                                        FPGA Cacheline Buffer
+                                                                                                                                                     POWER9 cacheline transfer 1024-bit=128B
+                                                             32 x float32
+                                                                                                                                              POWER9
+  POWER9              512-bit                                                                                                                   Host
+                                                                                                                                                                   Host execution
+                      CAPI2              3                                                                2D partitioned BRAM or URAM
+ Host System                                                HBM2 Stack                                                                                    AXI Full Bus
+                                                                                                                                                          Transaction
+                                                                .......
+                                                                    16x            256-bit AXI3
+
+
+
+
+                                                                                                                                                                                     AXI lite conrol flow
+                                                                                                                                                CAPI2 Cacheline buffering
+  1               Precision-aware
+                                           4              Stream Converter                                      ...                             DMA
+   Weather data                                256-bit to 512-bit           512-bit to 256-bit        7                                                     Shared mem.            Shared mem.
+                   auto-tuning for                                                                              Forward Sweep
+    in the host     window size                    5                                                                                            HBM
+                                                                                                                                                            start notify           completion notify
+      DRAM                                              Fields Stream Splitter                                                 VADVC                                                MC1
+                                                                                          8               Intermediate                         Memory             MC1*
+
+                                      Multiple fields                               512-bit      Single       FIFO             Engine                                            *MC= memory channel
+                                                                                                                                                FPGA
+                                                          512-bit                   output       output
+                                       to represent
+                                       atmospheric         upos     ... 512-bit
+                                                                         wcon       stream       stream
+                                                                                                               Backward Sweep                 Execution                    PE1
+                                                                                                                                                                    Dataflow execution
+                                       components         stream          stream
+                                                                                                                                                                         Time
+
+                                                                    (a)                                                                                                  (b)
+Figure 3: (a) Architecture overview of NERO with data flow sequence from the host DRAM to the on-board FPGA memory via
+POWER9 cachelines. We depict a single processing element (PE) fetching data from a dedicated HBM port. The number of
+HBM ports scales linearly with the number of PEs. Heterogeneous partitioning of on-chip memory blocks reduces read and
+write latencies across the FPGA memory hierarchy. (b) Execution timeline with data flow sequence from the host DRAM to
+the onboard FPGA memory.
+
+best window size depends on the datatype precision. Hence,                                                  x- and y-dimensions. Therefore, we demonstrate our design
+instead of pruning the design space manually, we formu-                                                     flow by means of the vadvc kernel (Figure 3a). Note that we
+late the search for the best window size as a multi-objective                                               show only a single port-based PE operation. However, for
+auto-tuning problem taking into account the datatype preci-                                                 multiple PEs, we enable multiple HBM ports.
+sion. We make use of OpenTuner [20], which uses machine-                                                       We make use of memory reshaping techniques to con-
+learning techniques to guide the design-space exploration.                                                  figure our memory space with multiple parallel BRAMs or
+   Our design consists of multiple PEs (shown in Figure 2) that                                             URAMs [37]. We form an intermediate memory hierarchy
+exploit data-level parallelism in COSMO weather prediction                                                  by decomposing (or slicing) 3D window data into a 2D grid.
+kernels. A dedicated HBM memory port is assigned to a                                                       This allows us to bridge the latency gap between the HBM
+specific PE; therefore, we enable as many HBM ports as the                                                  memory and our accelerator. Moreover, it allows us to exploit
+number of PEs. This allows us to use the high HBM bandwidth                                                 the available FPGA resources efficiently. Unlike traditionally-
+effectively because each PE fetches from an independent port.                                               fixed CPU memory hierarchies, which perform poorly with
+In our design, we use a switch, which provides the capability                                               irregular access patterns and suffer from cache pollution ef-
+to bypass the HBM, when the grid size is small, and map the                                                 fects, application-specific memory hierarchies are shown to
+data directly onto the FPGA’s URAM and BRAM. The HBM                                                        improve energy and latency by tailoring the cache levels and
+port provides 256-bit data, which is half the size of the CAPI2                                             cache sizes to an application’s memory access patterns [98].
+bitwidth (512-bit). Therefore, to match the CAPI2 bandwidth,
+                                                                                                               The main computation pipeline ( 7 ) consists of a forward
+we introduce a stream converter logic ( 4 ) that converts a
+                                                                                                            and a backward sweep logic. The forward sweep results are
+256-bit HBM stream to a 512-bit stream (CAPI compatible)
+                                                                                                            stored in an intermediate buffer to allow for backward sweep
+or vice versa. From HBM, a PE reads a single stream of data
+                                                                                                            calculation. Upon completion of the backward sweep, results
+that consists of all the fields4 that are needed for a specific
+                                                                                                            are placed in an output buffer that is followed by a degridding
+COSMO kernel computation. The PEs use a fields stream
+                                                                                                            logic ( 6 ). The degridding logic converts the calculated results
+splitter logic ( 5 ) that splits a single HBM stream to multiple
+                                                                                                            to a 512-bit wide output stream ( 8 ). As there is only a single
+streams (512-bit each), one for each field.
+                                                                                                            output stream (both in vadvc and hdiff), we do not need
+   To optimize a PE, we apply various optimization strategies.
+                                                                                                            extra logic to merge the streams. The 512-bit wide stream goes
+First, we exploit the inherent parallelism in a given algorithm
+                                                                                                            through an HBM stream converter logic ( 4 ) that converts
+through hardware pipelining. Second, we partition on-chip
+                                                                                                            the stream bitwidth to HBM port size (256-bit).
+memory to avoid the stalling of our pipelined design, since the
+on-chip BRAM/URAM has only two read/write ports. Third,                                                       Figure 3b shows the execution timeline from our host sys-
+all the tasks execute in a dataflow manner that enables task-                                               tem to the FPGA board for a single PE. The host offloads the
+level parallelism. vadvc is more computationally complex                                                    processing to an FPGA and transfers the required data via
+than hdiff because it involves forward and backward sweeps                                                  DMA (direct memory access) over the CAPI2 interface. The
+with dependencies in the z-dimension. While hdiff performs                                                  SNAP framework allows for parallel execution of the host
+only Laplacian and flux calculations with dependencies in the                                               and our FPGA PEs while exchanging control signals over the
+                                                                                                            AXI lite interface [4]. On task completion, the AFU notifies
+     4 Fields represent atmospheric components like wind, pressure, velocity,                               the host system via the AXI lite interface and transfers back
+etc. that are required for weather calculation.                                                             the results via DMA.
+
+
+                                                                                                     4
+
+
+===== Page 5 =====
+
+3.2. NERO Application Framework                                                                   Table 1: System parameters and hardware configuration for
+                                                                                                  the CPU and the FPGA board.
+    Figure 4 shows the NERO application framework to sup-
+                                                                                                               Host CPU        16-core IBM POWER9 AC922
+port our architecture. A software-defined COSMO API ( 1 )
+                                                                                                                               @3.2 GHz, 4-way SMT
+handles offloading jobs to NERO with an interrupt-based
+                                                                                                               Cache-Hierarchy 32 KiB L1-I/D, 256 KiB L2, 10 MiB L3
+queuing mechanism. This allows for minimal CPU usage
+                                                                                                               System Memory 32GiB RDIMM DDR4 2666 MHz
+(and, hence, power usage) during FPGA operation. NERO em-
+                                                                                                                               Alpha Data ADM-PCIE-9H7
+ploys an array of processing elements to compute COSMO                                                         HBM-based
+                                                                                                                               Xilinx Virtex Ultrascale+ XCVU37P-2
+kernels, such as vertical advection or horizontal diffusion.                                                   FPGA Board
+                                                                                                                               8GiB (HBM2) with PCIe Gen4 x8
+Additionally, we pipeline our PEs to exploit the available                                                                     Alpha Data ADM-PCIE-9V3
+spatial parallelism. By accessing the host memory through                                                      DDR4-based
+                                                                                                                               Xilinx Virtex Ultrascale+ XCVU3P-2
+the CAPI2 cache-coherent link, NERO acts as a peer to the                                                      FPGA Board
+                                                                                                                               8GiB (DDR4) with PCIe Gen4 x8
+CPU. This is enabled through the Power-Service Layer (PSL)
+( 2 ). SNAP ( 3 ) allows for seamless integration of the COSMO
+API with our CAPI-based accelerator. The job manager ( 4 )                                         4.2. Evaluation
+dispatches jobs to streams, which are managed in the stream                                          We run our experiments using a 256 × 256 × 64-point do-
+scheduler ( 5 ). The execution of a job is done by streams that                                   main similar to the grid domain used by the COSMO weather
+determine which data is to be read from the host memory                                           prediction model. We employ an auto-tuning technique to
+and sent to the PE array through DMA transfers ( 6 ). The                                         determine a Pareto-optimal solution (in terms of performance
+pool of heterogeneous on-chip memory is used to store the                                         and resource utilization) for our 3D window dimensions. The
+input data from the main memory and the intermediate data                                         auto-tuning with OpenTuner exhaustively searches for every
+generated by each PE.                                                                             tile size in the x- and y-dimensions for vadvc.5 For hdiff,
+                                                                                                  we consider sizes in all three dimensions. We define our
+                                                1   COSMO API         libCXL
+     COSMO WEATHER
+         MODEL
+                                 Host POWER          Coherent Accelerator                         auto-tuning as a multi-objective optimization with the goal
+                                   System           Processor Proxy (CAPP)
+                                                                                                  of maximizing performance with minimal resource utiliza-
+       FPGA                         CAPI2                                                         tion. Section 3 provides further details on our design. Figure 5
+                                                                                          2
+                                                                                                  shows hand-tuned and auto-tuned performance and FPGA
+        PCIe4                CAPI2 POWER Service Layer (PSL)
+                                                                                                  resource utilization results for vadvc, as a function of the
+          AXI Full Bus
+        Burst Transactions             SNAP         3
+                                                               AXI Lite Bus
+                                                            MMIO Control registers
+                                                                                                  chosen tile size. From the figure, we draw two observations.
+                                                                                                  Performance (GFlop/s)
+
+
+
+
+                                                                                                                                                              Performance (GFlop/s)
+                                                                                                                           64x2                                                   16
+                                                                                                                                                                                          32x16                             64x64
+                                                                                                                      8                                                                16x16
+                                                                                                                                                                                     8x8              32x32
+                             5              6                                                                                       32x32             64x64
+                                                                                                                          8x8 16x16
+                                                                     NERO
+        Job 4      Stream                                 PE    PE      .....   PE   PE                                                                                           14 4x4
+                                                                                                                                                                                          64x2
+                                   AXI DMA
+      Manager     Scheduler                              Partitioned On-chip Memory                                   6 4x4                                                       12
+                                                                                                                                               (a)                                10
+                                                                                                                                                                                                                  (b)
+                                                                                                                      4
+                             HBM Memory Controller                                                                                                                                    8
+                                                                                                                                              hand-tuned                                                      hand-tuned
+                   16x                                         16x                                                    2                                                               6
+                   ......                                      ......
+                                                                                                                                              auto-tuned                                                      auto-tuned
+             HBM2 Stack 1                               HBM2 Stack 2                                                                                                                  4
+                                                                                                                          12      14     16     18    20                                  5       6    7      8         9       10
+                                                                                                                               Resource utilization (%)                                       Resource utilization (%)
+Figure 4: NERO application framework. We co-design our
+software and hardware using the SNAP framework. COSMO                                              Figure 5: Performance and FPGA resource utilization of sin-
+API allows the host to offload kernels to our FPGA platform.                                       gle vadvc PE, as a function of tile-size, using hand-tuning
+                                                                                                   and auto-tuning for (a) single-precision (32-bit) and (b) half-
+                                                                                                   precision (16-bit). We highlight the Pareto-optimal solution
+                                                                                                   that we use for our vadvc accelerator (with a red circle). Note
+4. Results                                                                                         that the Pareto-optimal solution changes with precision.
+4.1. System Integration                                                                              First, by using the auto-tuning approach and our careful
+   We implemented our design on an Alpha-Data ADM-                                                FPGA microarchitecture design, we can get Pareto-optimal
+PCIE-9H7 card [1] featuring the Xilinx Virtex Ultrascale+                                         results with a tile size of 64 × 2 × 64 for single-precision
+XCVU37P-FSVH2892-2-e [9] and 8GiB HBM2 (i.e., two stacks                                          vadvc, which gives us a peak performance of 8.49 GFLOP/s.
+of 4GiB each) [5] with an IBM POWER9 as the host system.                                          For half-precision, we use a tile size of 32 × 16 × 64 to achieve
+The POWER9 socket has 16 cores, each of which supports                                            a peak performance of 16.5 GFLOP/s. We employ a similar
+four-thread simultaneous multi-threading. We compare our                                          strategy for hdiff to attain a single-precision performance of
+HBM-based design to a conventional DDR4 DRAM [2] based                                            30.3 GFLOP/s with a tile size of 16×64×8 and a half-precision
+design. We perform the experiments for the DDR4-based                                             performance of 77.8 GFLOP/s with a tile size of 64 × 8 × 64.
+design on an Alpha-Data ADM-PCIE-9V3 card featuring the                                              Second, in FPGA acceleration, designers usually rely on
+Xilinx Virtex Ultrascale+ XCVU3P-FFVC1517-2-i [9].                                                expert judgement to find the appropriate tile-size and of-
+   Table 1 provides our system parameters. We have co-                                            ten adapt the design to use homogeneous tile sizes. How-
+designed our hardware and software interface around the
+SNAP framework while using the HLS design flow.                                                        5 vadvc has dependencies in the z-dimension; therefore, it cannot be
+                                                                                                   parallelized in the z-dimension.
+
+
+                                                                                              5
+
+
+===== Page 6 =====
+
+ ever, as shown in Figure 5, such hand-tuned implementations                                                                         Fourth, in the DDR4-based design, the use of only a single
+ lead to sub-optimal results in terms of either resource utiliza-                                                                  channel to feed multiple PEs leads to a congestion issue that
+ tion or performance.                                                                                                              causes a non-linear run-time reduction. As we increase the
+    We conclude that the Pareto-optimal tile size depends on                                                                       number of accelerator PEs, we observe that the PEs compete
+ the data precision used: a good tile-size for single-precision                                                                    for a single memory channel, which causes frequent stalls.
+ might lead to poor results when used with half-precision.                                                                         This phenomenon leads to worse performance scaling char-
+    Figure 6 shows single-precision performance results for                                                                        acteristics for the DDR4-based design as compared to the
+ the (a) vertical advection and (b) horizontal diffusion kernels.                                                                  HBM-based design.
+ For both kernels, we implement our design on an HBM- and                                                                           4.3. Energy Analysis
+ a DDR4-based FPGA board. To compare the performance                                                                                   We compare the energy consumption of our accelera-
+ results, we scale the number of PEs and analyze the change in                                                                      tor to a 16-core POWER9 host system. For the POWER9
+ execution time. For the DDR4-based design, we can accommo-                                                                         system, we use the AMESTER7 tool to measure the active
+ date only 4 PEs on the 9V3 board, while for the HBM-based                                                                          power8 consumption. We measure 99.2 Watts for vadvc, and
+ design, we can fit 14 PEs before exhausting the on-board                                                                           97.9 Watts for hdiff by monitoring built power sensors in
+ resources. We draw four observations from the figure.                                                                              the POWER9 system.
+             16       16.12                                                    8                                                       By executing these kernels on an HBM-based board, we
+                      15.39                            HBM                                                        HBM
+                                          (a)                                         6.3             (b)                           reduce the energy consumption by 22× for vadvc and 29×
+Runtime (msec)
+
+
+
+
+                                                                  Runtime (msec)
+
+
+
+
+             12                                        DDR4                    6                                  DDR4
+                          8.98                                                     4.17                                             for hdiff compared to the 16-core POWER9 system. Figure 7
+                 8 8.06                                                        4                POWER9 socket (64 threads)
+                                 6.34                                                     3.1                                       shows the energy efficiency (GFLOPS per Watt) for vadvc
+                                     POWER9 socket (64 threads)
+                 4        4.03                                                 2 2.36     1.67        1.39                          and hdiff on the HBM- and DDR4-based designs. We make
+                                              2.02        1.11                       1.72
+                                                                                                      0.84
+                                                                                                                       0.42         three major observations from the figure.
+                 00              4           8         12 14                   00           4         8        12 14                                            3                                                                             20
+                                 Number of PEs                                                  Number of PEs                     Energy Efficiency (GFlop/s/Watt)
+
+
+
+
+                                                                                                                                                                                                                Energy Efficiency (GFlop/s/Watt)
+                                                                                                                                                                                                    HBM                                                                  17.33             17.34
+ Figure 6: Single-precision performance for (a) vadvc and (b)                                                                                                                                       DDR4                                                    15.17
+                                                                                                                                                                                                                                              15
+ hdiff, as a function of accelerator PE count on the HBM- and                                                                                                   2                                                                                      13.24 14.8         14.58         HBM
+                                                                                                                                                                       1.65 1.78        1.71
+                                                                                                                                                                                                                                                            10.8                        DDR4
+ DDR4-based FPGA boards. We also show the single socket                                                                                                              1.44 1.61                           1.45                                 10
+ (64 threads) performance of an IBM POWER9 host system                                                                                                               1.37      1.31                                                                    9.75
+ for both vadvc and hdiff.                                                                                                                                      1                      (a)                                                                 6.5             (b)
+                                                                                                                                                                                                                                                   5
+    First, our full-blown HBM-based vadvc and hdiff imple-                                                                                                                        POWER9 socket (64 threads)
+                                                                                                                                                                                                                                                                     POWER9 socket (64 threads)
+ mentations provide 120.7 GFLOP/s and 485.4 GFLOP/s perfor-                                                                                                     00            4           8         12    14                                       00            4         8        12 14
+                                                                                                                                                                               Number of PEs                                                                         Number of PEs
+ mance, which are 4.2× and 8.3× higher than the performance
+ of a complete POWER9 socket. For half-precision, if we use                                                                         Figure 7: Energy efficiency for (a) vadvc and (b) hdiff on
+                                                                                                                                    HBM- and DDR4-based FPGA boards. We also show the sin-
+ the same amount of PEs as in single precision, our accel-                                                                          gle socket (64 threads) energy efficiency of an IBM POWER9
+ erator reaches a performance of 247.9 GFLOP/s for vadvc                                                                            host system for both vadvc and hdiff.
+ (2.1× the single-precision performance) and 1.2 TFLOP/s for                                                                         First, with our full-blown HBM-based designs (i.e., 14 PEs
+ hdiff (2.5× the single-precision performance). Our DDR4-
+                                                                                                                                  for vadvc and 16 PEs for hdiff), we achieve energy efficiency
+ based design achieves 34.1 GFLOP/s and 145.8 GFLOP/s for                                                                         values of 1.5 GFLOPS/Watt and 17.3 GFLOPS/Watt for vadvc
+ vadvc and hdiff, respectively, which are 1.2× and 2.5× the
+                                                                                                                                  and hdiff, respectively.
+ performance on the POWER9 CPU.
+                                                                                                                                     Second, the DDR4-based design is more energy efficient
+    Second, for a single PE, which fetches data from a single                                                                     than the HBM-based design when the number of PEs is small.
+ memory channel, the DDR4-based design provides higher                                                                            This observation is inline with our discussion about perfor-
+ performance than the HBM-based design. This is because the                                                                       mance with small PE counts in Section 4.2. However, as we
+ DDR4-based FPGA has a larger bus width (512-bit) than an                                                                         increase the number of PEs, the HBM-based design provides
+ HBM port (256-bit). This leads to a lower transfer rate for                                                                      better energy efficiency for memory-bound kernels. This is
+ an HBM port (0.8-2.1 GT/s6 ) than for a DDR4 port (2.1-4.3                                                                       because more data can be fetched and processed in parallel
+ GT/s). One way to match the DDR4 bus width would be                                                                              via multiple ports.
+ to have a single PE fetch data from multiple HBM ports in                                                                           Third, kernels like vadvc, with intricate memory access
+ parallel. However, using more ports leads to higher power                                                                        patterns, are not able to reach the peak computational power
+ consumption (∼1 Watt per HBM port).                                                                                              of FPGAs. The large amount of control flow in vadvc leads to
+    Third, as we increase the number of PEs, we observe a                                                                         large resource consumption. Therefore, when increasing the
+ linear reduction in the execution time of the HBM-based                                                                          PE count, we observe a high increase in power consumption
+ design. This is because we can evenly divide the computation                                                                     with low energy efficiency.
+ between multiple PEs, each of which fetches data from a
+ separate HBM port.                                                                                                                                                  7 https://github.com/open-power/amester
+                                                                                                                                         8 Active power denotes the difference between the total power of a
+                                                                                                                                    complete socket (including CPU, memory, fans, I/O, etc.) when an application
+                 6 Gigatransfers per second.                                                                                        is running compared to when it is idle.
+
+
+                                                                                                                              6
+
+
+===== Page 7 =====
+
+  We conclude that enabling many HBM ports might not                               addition of HBM to FPGAs presents an opportunity to exploit
+always be beneficial in terms of energy consumption because                        high memory bandwidth with the low-power FPGA fabric.
+each HBM port consumes ∼1 Watt of power consumption.                               The potential of high-bandwidth memory [5, 66] has been
+However, data-parallel kernels like hdiff can achieve much                         explored in many-core processors [44, 82] and GPUs [44, 108].
+higher performance in an energy efficient manner with more                         A recent work [102] shows the potential of HBM for FPGAs
+PEs and HBM ports.                                                                 with a memory benchmarking tool. NERO is the first work
+4.4. FPGA Resource Utilization                                                     to accelerate a real-world HPC weather prediction applica-
+                                                                                   tion using the FPGA+HBM fabric. Compared to a previous
+   Table 2 shows the resource utilization of vadvc and hdiff
+                                                                                   work [90] that optimizes only the horizontal diffusion kernel
+on the AD9H7 board. We draw two observations. First, there
+                                                                                   on an FPGA with DDR4 memory, our analysis reveals that the
+is a high BRAM consumption compared to other FPGA re-
+                                                                                   vertical advection kernel has a much lower compute intensity
+sources. This is because we implement input, field, and output
+                                                                                   with little to no regularity. Therefore, our work accelerates
+signals as hls::streams. In high-level synthesis, by default,
+                                                                                   both kernels that together represent the algorithmic diversity
+streams are implemented as FIFOs that make use of BRAM.
+                                                                                   of the entire COSMO weather prediction model. Moreover,
+Second, vadvc has a much larger resource consumption than
+                                                                                   compared to [90], NERO improves performance by 1.2× on
+hdiff because vadvc has higher computational complexity
+                                                                                   a DDR4-based board and 37× on an HBM-based board for
+and requires a larger number of fields to perform the com-
+                                                                                   horizontal diffusion by using a dataflow implementation with
+pound stencil calculation. Note that for hdiff, we can accom-
+                                                                                   auto-tuning.
+modate more PEs, but in this work, we make use of only a
+single HBM stack. Therefore, we use 16 PEs because a single                           Enabling higher performance for stencil computations has
+HBM stack offers 16 memory ports.                                                  been a subject of optimizations across the whole computing
+                                                                                   stack [21, 32, 33, 34, 35, 46, 48, 51, 73, 85, 92, 95, 101]. Szus-
+Table 2:   FPGA resource utilization in our highest-                               tak et al. accelerate the MPDATA advection scheme on
+performing HBM-based designs for vadvc and hdiff.
+                                                                                   multi-core CPU [94] and computational fluid dynamics ker-
+  Algorithm         BRAM          DSP       FF      LUT       URAM                 nels on FPGA [84]. Bianco et al. [25] optimize the COSMO
+  vadvc             81%           39%       37%     55%       53%                  weather prediction model for GPUs while Thaler et al. [96]
+  hdiff             58%           4%        6%      11%       8%                   port COSMO to a many-core system. Wahib et al. [100] de-
+                                                                                   velop an analytical performance model for choosing an opti-
+5. Related Work                                                                    mal GPU-based execution strategy for various scientific appli-
+   To our knowledge, this is the first work to evaluate the ben-                   cations, including COSMO. Gysi et al. [48] provide guidelines
+efits of using FPGAs equipped with high-bandwidth memory                           for optimizing stencil kernels for CPU–GPU systems.
+(HBM) to accelerate stencil computation. We exploit near-
+memory capabilities of such FPGAs to accelerate important
+                                                                                   6. Conclusion
+weather prediction kernels.                                                          We introduce NERO, the first design and implementation
+   Modern workloads exhibit limited locality and operate on                        on a reconfigurable fabric with high-bandwidth memory
+large amounts of data, which causes frequent data movement                         (HBM) to accelerate representative weather prediction ker-
+between the memory subsystem and the processing units [27,                         nels, i.e., vertical advection (vadvc) and horizontal diffusion
+43, 75, 76]. This frequent data movement has a severe impact                       (hdiff), from a real-world weather prediction application.
+on overall system performance and energy efficiency. A way                         These kernels are compound stencils that are found in vari-
+to alleviate this data movement bottleneck [27, 43, 75, 76, 89]                    ous weather prediction applications, including the COSMO
+is near-memory computing (NMC), which consists of placing                          model. We show that compound kernels do not perform
+processing units closer to memory. NMC is enabled by new                           well on conventional architectures due to their complex data
+memory technologies, such as 3D-stacked memories [5, 62,                           access patterns and low data reusability, which make them
+65, 66, 81], and also by cache-coherent interconnects [24, 88,                     memory-bounded. Therefore, they greatly benefit from our
+93], which allow close integration of processing units and                         near-memory computing solution that takes advantage of the
+memory units. Depending on the applications and systems of                         high data transfer bandwidth of HBM.
+interest (e.g., [13, 14, 15, 22, 23, 27, 29, 31, 40, 42, 49, 50, 53, 58, 61,          NERO’s implementations of vadvc and hdiff outper-
+68, 69, 71, 74, 77, 87]), prior works propose different types of                   form the optimized software implementations on a 16-core
+near-memory processing units, such as general-purpose CPU                          POWER9 with 4-way multithreading by 4.2× and 8.3×, with
+cores [13, 16, 27, 28, 29, 39, 64, 69, 78, 83, 86], GPU cores [44, 52,             22× and 29× less energy consumption, respectively. We
+80, 106], reconfigurable units [41, 55, 57, 90], or fixed-function                 conclude that hardware acceleration on an FPGA+HBM fab-
+units [14, 47, 49, 50, 53, 63, 70, 77].                                            ric is a promising solution for compound stencils present
+   FPGA accelerators are promising to enhance overall system                       in weather prediction applications. We hope that our re-
+performance with low power consumption. Past works [17,                            configurable near-memory accelerator inspires developers
+18, 19, 30, 36, 45, 54, 56, 57, 59, 67] show that FPGAs can be em-                 of different high-performance computing applications that
+ployed effectively for a wide range of applications. The recent                    suffer from the memory bottleneck.
+
+
+                                                                               7
+
+
+===== Page 8 =====
+
+Acknowledgments                                                                             [30] L.-W. Chang et al., “Collaborative Computing for Heterogeneous Integrated Sys-
+                                                                                                 tems,” in ICPE, 2017.
+   This work was performed in the framework of the Hori-                                    [31] P. Chi et al., “PRIME: A Novel Processing-in-memory Architecture for Neural
+zon 2020 program for the project “Near-Memory Computing                                          Network Computation in ReRAM-based Main Memory,” 2016.
+                                                                                            [32] Y. Chi et al., “SODA: Stencil with Optimized Dataflow Architecture,” in ICCAD,
+(NeMeCo)”. It is funded by the European Commission under                                         2018.
+Marie Sklodowska-Curie Innovative Training Networks Euro-                                   [33] M. Christen et al., “PATUS: A Code Generation and Autotuning Framework for
+                                                                                                 Parallel Iterative Stencil Computations on Modern Microarchitectures,” in IPDPS,
+pean Industrial Doctorate (Project ID: 676240). Special thanks                                   2011.
+to Florian Auernhammer and Raphael Polig for providing                                      [34] K. Datta et al., “Optimization and Performance Modeling of Stencil Computa-
+                                                                                                 tions on Modern Microprocessors,” SIAM review, 2009.
+access to IBM systems. We appreciate valuable discussions                                   [35] J. de Fine Licht et al., “Designing scalable FPGA architectures using high-level
+with Kaan Kara and Ronald Luijten. We would also like to                                         synthesis,” in PPoPP, 2018.
+                                                                                            [36] D. Diamantopoulos et al., “ecTALK: Energy efficient coherent transprecision ac-
+thank Bruno Mesnet and Alexandre Castellane from IBM                                             celerators - The bidirectional long short-term memory neural network case,” in
+France for help with the SNAP framework. This work was                                           COOL CHIPS, 2018.
+                                                                                            [37] D. Diamantopoulos and C. Hagleitner, “A System-Level Transprecision FPGA
+partially supported by the H2020 research and innovation                                         Accelerator for BLSTM Using On-chip Memory Reshaping,” in FPT, 2018.
+programme under grant agreement No 732631, project OPRE-                                    [38] G. Doms and U. Schättler, “The Nonhydrostatic Limited-Area Model LM (Lokal-
+                                                                                                 model) of the DWD. Part I: Scientific Documentation,” DWD, GB Forschung und
+COMP. We also thank Google, Huawei, Intel, Microsoft, SRC,                                       Entwicklung, 1999.
+and VMware for their funding support.                                                       [39] M. Drumond et al., “The Mondrian Data Engine,” in ISCA, 2017.
+                                                                                            [40] A. Farmahini-Farahani et al., “NDA: Near-DRAM Acceleration Architecture
+                                                                                                 Leveraging Commodity DRAM Devices and Standard Memory Modules,” in
+References                                                                                       HPCA, 2015.
+ [1] “ADM-PCIE-9H7-High-Speed Communications Hub, https://www.alpha-data.                   [41] M. Gao and C. Kozyrakis, “HRL: Efficient and Flexible Reconfigurable Logic for
+     com/dcp/products.php?product=adm-pcie-9h7.”                                                 Near-Data Processing,” in HPCA, 2016.
+ [2] “ADM-PCIE-9V3-High-Performance Network Accelerator, https://www.                       [42] M. Gao et al., “Practical Near-Data Processing for In-Memory Analytics Frame-
+     alpha-data.com/dcp/products.php?product=adm-pcie-9v3.”                                      works,” in PACT, 2015.
+ [3] “AXI High Bandwidth Memory Controller v1.0, https://www.xilinx.com/                    [43] S. Ghose et al., “Processing-in-memory: A workload-driven perspective,” IBM
+     support/documentation/ip_documentation/hbm/v1_0/pg276-axi-hbm.pdf.”                         JRD, 2019.
+ [4] “AXI Reference Guide, https://www.xilinx.com/support/documentation/ip_                 [44] S. Ghose et al., “Demystifying Complex Workload-DRAM Interactions: An Ex-
+     documentation/ug761_axi_reference_guide.pdf.”                                               perimental Study,” POMACS, 2019.
+ [5] “High Bandwidth Memory (HBM) DRAM (JESD235), https://www.jedec.org/                    [45] H. Giefers et al., “Accelerating arithmetic kernels with coherent attached FPGA
+     document_search?search_api_views_fulltext=jesd235.”                                         coprocessors,” in DATE, 2015.
+ [6] “High Bandwidth Memory (HBM) DRAM, https://www.jedec.org/sites/default/                [46] J. González and A. González, “Speculative Execution via Address Prediction and
+     files/JESD235B-HBM_Ballout.zip.”                                                            Data Prefetching,” in ICS, 1997.
+ [7] “Intel Stratix 10 MX FPGAs, https://www.intel.com/content/www/us/en/                   [47] B. Gu et al., “Biscuit: A Framework for Near-data Processing of Big Data Work-
+     products/programmable/sip/stratix-10-mx.html.”                                              loads,” ISCA, 2016.
+ [8] “OpenPOWER Work Groups, https://openpowerfoundation.org/technical/                     [48] T. Gysi et al., “MODESTO: Data-centric Analytic Optimization of Complex Sten-
+     working-groups.”                                                                            cil Programs on Heterogeneous Architectures,” in SC, 2015.
+ [9] “Virtex UltraScale+, https://www.xilinx.com/products/silicon-devices/fpga/             [49] M. Hashemi et al., “Accelerating Dependent Cache Misses with an Enhanced
+     virtex-ultrascale-plus.html.”                                                               Memory Controller,” in ISCA, 2016.
+[10] “Vivado High-Level Synthesis, https://www.xilinx.com/products/design-tools/            [50] M. Hashemi et al., “Continuous Runahead: Transparent Hardware Acceleration
+     vivado/integration/esl-design.html.”                                                        for Memory Intensive Workloads,” in MICRO, 2016.
+[11] “Xilinx VCU1525, https://www.xilinx.com/products/boards-and-kits/vcu1525-a.            [51] T. Henretty et al., “Data Layout Transformation for Stencil Computations on
+     html.”                                                                                      Short-Vector SIMD Architectures,” in CC, 2011.
+[12] “Xilinx Virtex Ultrascale+, https://www.xilinx.com/products/silicon-devices/           [52] K. Hsieh et al., “Transparent Offloading and Mapping (TOM): Enabling
+     fpga/virtex-ultrascale-plus.html.”                                                          Programmer-Transparent Near-Data Processing in GPU Systems,” in ISCA, 2016.
+[13] J. Ahn et al., “A Scalable Processing-in-Memory Accelerator for Parallel Graph         [53] K. Hsieh et al., “Accelerating Pointer Chasing in 3D-Stacked Memory: Chal-
+     Processing,” in ISCA, 2015.                                                                 lenges, Mechanisms, Evaluation,” in ICCD, 2016.
+[14] J. Ahn et al., “PIM-Enabled Instructions: A Low-Overhead, Locality-Aware               [54] S. Huang et al., “Analysis and Modeling of Collaborative Execution Strategies
+     Processing-in-Memory Architecture,” in ISCA, 2015.                                          for Heterogeneous CPU-FPGA Architectures,” in ICPE, 2019.
+[15] B. Akin et al., “Data Reorganization in Memory Using 3D-stacked DRAM,” ISCA,           [55] Z. István et al., “Caribou: Intelligent Distributed Storage,” VLDB, 2017.
+     2015.                                                                                  [56] J. Jiang et al., “Boyi: A Systematic Framework for Automatically Deciding the
+[16] M. Alian et al., “Application-Transparent Near-Memory Processing Architecture               Right Execution Model of OpenCL Applications on FPGAs,” in FPGA, 2020.
+     with Memory Channel Network,” in MICRO, 2018.                                          [57] S.-W. Jun et al., “BlueDBM: An Appliance for Big Data Analytics,” in ISCA, 2015.
+[17] M. Alser et al., “Shouji: a fast and efficient pre-alignment filter for sequence       [58] Y. Kang et al., “Enabling Cost-effective Data Processing with Smart SSD,” in
+     alignment,” Bioinformatics, 2019.                                                           MSST, 2013.
+[18] M. Alser et al., “GateKeeper: A New Hardware Architecture for Accelerating             [59] K. Kara et al., “FPGA-accelerated Dense Linear Machine Learning: A Precision-
+     Pre-Alignment in DNA Short Read Mapping,” Bioinformatics, 2017.                             Convergence Trade-off,” in FCCM, 2017.
+[19] M. Alser et al., “SneakySnake: A Fast and Accurate Universal Genome Pre-               [60] S. Kehler et al., “High Resolution Deterministic Prediction System (HRDPS) Sim-
+     Alignment Filter for CPUs, GPUs, and FPGAs,” arXiv preprint, 2019.                          ulations of Manitoba Lake Breezes,” Atmosphere-Ocean, 2016.
+[20] J. Ansel et al., “OpenTuner: An Extensible Framework for Program Autotuning,”          [61] D. Kim et al., “Neurocube: A Programmable Digital Neuromorphic Architecture
+     in PACT, 2014.                                                                              with High-Density 3D Memory,” 2016.
+[21] A. Armejach et al., “Stencil Codes on a Vector Length Agnostic Architecture,” in       [62] J. Kim et al., “A 1.2 V 12.8 GB/s 2 Gb Mobile Wide-I/O DRAM With 4×128 I/Os
+     PACT, 2018.                                                                                 Using TSV Based Stacking,” JSSC, 2012.
+[22] H. Asghari-Moghaddam et al., “Chameleon: Versatile and Practical Near-DRAM             [63] J. S. Kim et al., “GRIM-Filter: Fast seed location filtering in DNA read mapping
+     Acceleration Architecture for Large Memory Systems,” in MICRO, 2016.                        using processing-in-memory technologies,” BMC Genomics, 2018.
+[23] O. O. Babarinsa and S. Idreos, “JAFAR: Near-Data Processing for Databases,” in         [64] G. Koo et al., “Summarizer: Trading Communication with Computing Near Stor-
+     SIGMOD, 2015.                                                                               age,” in MICRO, 2017.
+[24] B. Benton, “CCIX, Gen-Z, OpenCAPI: Overview and Comparison,” in OFA, 2017.             [65] D. U. Lee et al., “25.2 A 1.2V 8Gb 8-Channel 128GB/s High-Bandwidth Memory
+[25] M. Bianco et al., “A GPU Capable Version of the COSMO Weather Model,” ISC,                  (HBM) Stacked DRAM with Effective Microbump I/O Test Methods Using 29nm
+     2013.                                                                                       Process and TSV,” in ISSCC, 2014.
+[26] L. Bonaventura, “A Semi-implicit Semi-Lagrangian Scheme using the Height Co-           [66] D. Lee et al., “Simultaneous Multi-Layer Access: Improving 3D-Stacked Memory
+     ordinate for a Nonhydrostatic and Fully Elastic Model of Atmospheric Flows,”                Bandwidth at Low Cost,” ACM TACO, 2016.
+     JCP, 2000.                                                                             [67] J. Lee et al., “ExtraV: Boosting Graph Processing Near Storage with a Coherent
+[27] A. Boroumand et al., “Google Workloads for Consumer Devices: Mitigating Data                Accelerator,” 2017.
+     Movement Bottlenecks,” ASPLOS, 2018.                                                   [68] J. H. Lee et al., “BSSync: Processing Near Memory for Machine Learning Work-
+[28] A. Boroumand et al., “CoNDA: Efficient Cache Coherence Support for Near-Data                loads with Bounded Staleness Consistency Models,” in PACT, 2015.
+     Accelerators,” in ISCA, 2019.                                                          [69] V. T. Lee et al., “Application Codesign of Near-Data Processing for Similarity
+[29] A. Boroumand et al., “LazyPIM: An Efficient Cache Coherence Mechanism for                   Search,” in IPDPS, 2018.
+     Processing-in-Memory,” CAL, 2016.
+
+
+
+                                                                                        8
+
+
+===== Page 9 =====
+
+[70] J. Liu et al., “Processing-in-Memory for Energy-efficient Neural Network Train-        [91] G. Singh et al., “NAPEL: Near-Memory Computing Application Performance Pre-
+     ing: A Heterogeneous Approach,” in MICRO, 2018.                                             diction via Ensemble Learning,” in DAC, 2019.
+[71] Z. Liu et al., “Concurrent Data Structures for Near-Memory Computing,” in SPAA,        [92] R. Strzodka et al., “Cache Oblivious Parallelograms in Iterative Stencil Computa-
+     2017.                                                                                       tions,” in ICS, 2010.
+[72] D. Mayhew and V. Krishnan, “PCI Express and Advanced Switching: Evolution-             [93] J. Stuecheli et al., “IBM POWER9 opens up a new era of acceleration enablement:
+     ary Path to Building Next Generation Interconnects,” in HOTI, 2003.                         OpenCAPI,” IBM JRD, 2018.
+[73] J. Meng and K. Skadron, “A Performance Study for Iterative Stencil Loops on            [94] L. Szustak et al., “Using Intel Xeon Phi Coprocessor to Accelerate Computations
+     GPUs with Ghost Zone Optimizations,” IJPP, 2011.                                            in MPDATA Algorithm,” in PPAM, 2013.
+[74] A. Morad et al., “GP-SIMD Processing-in-Memory,” ACM TACO, 2015.                       [95] Y. Tang et al., “The Pochoir Stencil Compiler,” in SPAA, 2011.
+[75] O. Mutlu et al., “Processing Data Where It Makes Sense: Enabling In-Memory             [96] F. Thaler et al., “Porting the COSMO Weather Model to Manycore CPUs,” in
+     Computation,” MicPro, 2019.                                                                 PASC, 2019.
+[76] O. Mutlu et al., “Enabling Practical Processing in and near Memory for Data-           [97] L. Thomas, “Elliptic Problems in Linear Differential Equations over a Network,”
+     Intensive Computing,” in DAC, 2019.                                                         Watson Sci. Comput. Lab. Rept., Columbia University, 1949.
+[77] L. Nai et al., “GraphPIM: Enabling Instruction-Level PIM Offloading in Graph           [98] P.-A. Tsai et al., “Jenga: Software-Defined Cache Hierarchies,” in ISCA, 2017.
+     Computing Frameworks,” in HPCA, 2017.                                                  [99] J. van Lunteren et al., “Coherently Attached Programmable Near-Memory Accel-
+[78] R. Nair et al., “Active Memory Cube: A Processing-in-Memory Architecture for                eration Platform and its application to Stencil Processing,” in DATE, 2019.
+     Exascale Systems,” IBM JRD, 2015.                                                     [100] M. Wahib and N. Maruyama, “Scalable Kernel Fusion for Memory-Bound GPU
+[79] R. B. Neale et al., “Description of the NCAR Community Atmosphere Model                     Applications,” in SC, 2014.
+     (CAM 5.0),” NCAR Tech. Note, 2010.                                                    [101] H. M. Waidyasooriya et al., “OpenCL-Based FPGA-Platform for Stencil Compu-
+[80] A. Pattnaik et al., “Scheduling Techniques for GPU Architectures with                       tation and Its Optimization Methodology,” TPDS, 2017.
+     Processing-in-Memory Capabilities,” in PACT, 2016.                                    [102] Z. Wang et al., “Shuhai: Benchmarking High Bandwidth Memory on FPGAs,” in
+[81] J. T. Pawlowski, “Hybrid Memory Cube (HMC),” in HCS, 2011.                                  FCCM, 2020.
+[82] C. Pohl et al., “Joins on high-bandwidth memory: a new level in the memory            [103] L. Wenzel et al., “Getting Started with CAPI SNAP: Hardware Development for
+     hierarchy,” VLDB, 2019.                                                                     Software Engineers,” in Euro-Par, 2018.
+[83] S. H. Pugsley et al., “NDC: Analyzing the Impact of 3D-Stacked Memory+Logic           [104] S. Williams et al., “Roofline: An Insightful Visual Performance Model for Multi-
+     Devices on MapReduce Workloads,” in ISPASS, 2014.                                           core architectures,” CACM, 2009.
+[84] K. Rojek et al., “CFD Acceleration with FPGA,” in H2RC, 2019.                         [105] J. Xu et al., “Performance Tuning and Analysis for Stencil-Based Applications
+[85] K. Sano et al., “Multi-FPGA Accelerator for Scalable Stencil Computation with               on POWER8 Processor,” ACM TACO, 2018.
+     Constant Memory Bandwidth,” TPDS, 2014.                                               [106] D. Zhang et al., “TOP-PIM: Throughput-Oriented Programmable Processing in
+[86] P. C. Santos et al., “Operand Size Reconfiguration for Big Data Processing in               Memory,” in HPDC, 2014.
+     Memory,” in DATE, 2017.                                                               [107] J. A. Zhang et al., “Evaluating the Impact of Improvement in the Horizontal Dif-
+[87] V. Seshadri et al., “Gather-Scatter DRAM: In-DRAM Address Translation to Im-                fusion Parameterization on Hurricane Prediction in the Operational Hurricane
+     prove the Spatial Locality of Non-unit Strided Accesses,” in MICRO, 2015.                   Weather Research and Forecast (HWRF) Model,” Weather and Forecasting, 2018.
+[88] D. Sharma, “Compute Express Link,” CXL Consortium White Paper, 2019.                  [108] M. Zhu et al., “Performance Evaluation and Optimization of HBM-Enabled GPU
+[89] G. Singh et al., “Near-Memory Computing: Past, Present, and Future,” MicPro,                for Data-intensive Applications,” VLSI, 2018.
+     2019.
+[90] G. Singh et al., “NARMADA: Near-memory horizontal diffusion accelerator for
+     scalable stencil computations,” in FPL, 2019.
+
+
+
+
+                                                                                       9

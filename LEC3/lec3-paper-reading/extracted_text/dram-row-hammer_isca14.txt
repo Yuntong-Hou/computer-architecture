@@ -1,0 +1,980 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/dram-row-hammer_isca14.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/dram-row-hammer_isca14.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+               Flipping Bits in Memory Without Accessing Them:
+              An Experimental Study of DRAM Disturbance Errors
+                    Yoongu Kim1 Ross Daly Jeremie Kim1 Chris Fallin Ji Hye Lee1
+                        Donghyuk Lee1 Chris Wilkerson2 Konrad Lai Onur Mutlu1
+                                          1                                         2
+                                              Carnegie Mellon University                Intel Labs
+
+   Abstract. Memory isolation is a key property of a reliable         disturbance errors, DRAM manufacturers have been employ-
+and secure computing system — an access to one memory ad-             ing a two-pronged approach: (i) improving inter-cell isola-
+dress should not have unintended side effects on data stored          tion through circuit-level techniques [22, 32, 49, 61, 73] and
+in other addresses. However, as DRAM process technology               (ii) screening for disturbance errors during post-production
+scales down to smaller dimensions, it becomes more difficult          testing [3, 4, 64]. We demonstrate that their efforts to contain
+to prevent DRAM cells from electrically interacting with each         disturbance errors have not always been successful, and that
+other. In this paper, we expose the vulnerability of commodity        erroneous DRAM chips have been slipping into the field.1
+DRAM chips to disturbance errors. By reading from the same               In this paper, we expose the existence and the widespread
+address in DRAM, we show that it is possible to corrupt data          nature of disturbance errors in commodity DRAM chips sold
+in nearby addresses. More specifically, activating the same           and used today. Among 129 DRAM modules we analyzed
+row in DRAM corrupts data in nearby rows. We demonstrate              (comprising 972 DRAM chips), we discovered disturbance
+this phenomenon on Intel and AMD systems using a malicious            errors in 110 modules (836 chips). In particular, all modules
+program that generates many DRAM accesses. We induce                  manufactured in the past two years (2012 and 2013) were vul-
+errors in most DRAM modules (110 out of 129) from three               nerable, which implies that the appearance of disturbance er-
+major DRAM manufacturers. From this we conclude that                  rors in the field is a relatively recent phenomenon affecting
+many deployed systems are likely to be at risk. We identify           more advanced generations of process technology. We show
+the root cause of disturbance errors as the repeated toggling         that it takes as few as 139K reads to a DRAM address (more
+of a DRAM row’s wordline, which stresses inter-cell coupling          generally, to a DRAM row) to induce a disturbance error. As
+effects that accelerate charge leakage from nearby rows. We           a proof of concept, we construct a user-level program that
+provide an extensive characterization study of disturbance er-        continuously accesses DRAM by issuing many loads to the
+rors and their behavior using an FPGA-based testing plat-             same address while flushing the cache-line in between. We
+form. Among our key findings, we show that (i) it takes as            demonstrate that such a program induces many disturbance
+few as 139K accesses to induce an error and (ii) up to one in         errors when executed on Intel or AMD machines.
+every 1.7K cells is susceptible to errors. After examining var-          We identify the root cause of DRAM disturbance errors as
+ious potential ways of addressing the problem, we propose a           voltage fluctuations on an internal wire called the wordline.
+low-overhead solution to prevent the errors.                          DRAM comprises a two-dimensional array of cells, where
+                                                                      each row of cells has its own wordline. To access a cell within
+1. Introduction                                                       a particular row, the row’s wordline must be enabled by rais-
+   The continued scaling of DRAM process technology has               ing its voltage — i.e., the row must be activated. When there
+enabled smaller cells to be placed closer to each other. Cram-        are many activations to the same row, they force the word-
+ming more DRAM cells into the same area has the well-                 line to toggle on and off repeatedly. According to our obser-
+known advantage of reducing the cost-per-bit of memory.               vations, such voltage fluctuations on a row’s wordline have
+Increasing the cell density, however, also has a negative             a disturbance effect on nearby rows, inducing some of their
+impact on memory reliability due to three reasons. First,             cells to leak charge at an accelerated rate. If such a cell loses
+a small cell can hold only a limited amount of charge,                too much charge before it is restored to its original value (i.e.,
+which reduces its noise margin and renders it more vulner-            refreshed), it experiences a disturbance error.
+able to data loss [14, 47, 72]. Second, the close proximity              We comprehensively characterize DRAM disturbance er-
+of cells introduces electromagnetic coupling effects between          rors on an FPGA-based testing platform to understand their
+them, causing them to interact with each other in undesirable         behavior and symptoms. Based on our findings, we exam-
+ways [14, 42, 47, 55]. Third, higher variation in process tech-       ine a number of potential solutions (e.g., error-correction and
+nology increases the number of outlier cells that are excep-          frequent refreshes), which all have some limitations. We pro-
+tionally susceptible to inter-cell crosstalk, exacerbating the        pose an effective and low-overhead solution, called PARA,
+two effects described above.                                          that prevents disturbance errors by probabilistically refresh-
+   As a result, high-density DRAM is more likely to suffer            ing only those rows that are likely to be at risk. In contrast to
+from disturbance, a phenomenon in which different cells in-           other solutions, PARA does not require expensive hardware
+terfere with each other’s operation. If a cell is disturbed           structures or incur large performance penalties. This paper
+beyond its noise margin, it malfunctions and experiences a            makes the following contributions.
+disturbance error. Historically, DRAM manufacturers have
+been aware of disturbance errors since as early as the Intel               1The industry has been aware of this problem since at least 2012, which
+1103, the first commercialized DRAM chip [58]. To mitigate            is when a number of patent applications were filed by Intel regarding the
+                                                                      problem of “row hammer” [6, 7, 8, 9, 23, 24]. Our paper was under review
+    Work done while at Carnegie Mellon University.                   when the earliest of these patents was released to the public.
+             978-1-4799-4394-4/14/$31.00 c 2014 IEEE
+                                                                  1
+
+
+===== Page 2 =====
+
+ To our knowledge, this is the first paper to expose the                  cell
+  widespread existence of disturbance errors in commodity
+                                                                                                row 4                wordline
+  DRAM chips from recent years.                                                                 row 3
+                                                                                                row 2
+ We construct a user-level program that induces disturbance                                    row 1
+
+
+
+
+                                                                                                                                    bitline
+  errors on real systems (Intel/AMD). Simply by reading                                         row 0
+  from DRAM, we show that such a program could poten-
+  tially breach memory protection and corrupt data stored in                      row-buffer
+  pages that it should not be allowed to access.
+                                                                                  a. Rows of cells               b. A single cell
+ We provide an extensive characterization of DRAM dis-
+  turbance errors using an FPGA-based testing platform and                             Figure 1. DRAM consists of cells
+  129 DRAM modules. We identify the root cause of distur-               the cells — and immediately writes the charge back into the
+  bance errors as the repeated toggling of a row’s wordline.            cells [38, 41, 43]. Subsequently, all accesses to the row are
+  We observe that the resulting voltage fluctuation could dis-          served by the row-buffer on behalf of the row. When there
+  turb cells in nearby rows, inducing them to lose charge at            are no more accesses to the row, the wordline is lowered to
+  an accelerated rate. Among our key findings, we show that             a low voltage, disconnecting the capacitors from the bitlines.
+  (i) disturbable cells exist in 110 out of 129 modules, (ii)           A group of rows is called a bank, each of which has its own
+  up to one in 1.7K cells is disturbable, and (iii) toggling the        dedicated row-buffer. (The organization of a bank is simi-
+  wordline as few as 139K times causes a disturbance error.             lar to what was shown in Figure 1a.) Finally, multiple banks
+ After examining a number of possible solutions, we pro-               come together to form a rank. For example, Figure 2 shows
+  pose PARA (probabilistic adjacent row activation), a low-             a 2GB rank whose 256K rows are vertically partitioned into
+  overhead way of preventing disturbance errors. Every time             eight banks of 32K rows, where each row is 8KB (D64Kb)
+  a wordline is toggled, PARA refreshes the nearby rows                 in size [34]. Having multiple banks increases parallelism be-
+  with a very small probability (p1). As a wordline is tog-            cause accesses to different banks can be served concurrently.
+  gled many times, the increasing disturbance effects are off-                                                 64K cells
+  set by the higher likelihood of refreshing the nearby rows.
+2. DRAM Background                                                                                                    Bank7
+                                                                                                data
+
+
+
+
+                                                                                                                                Chip7
+                                                                                                             Chip0
+
+
+
+
+                                                                                                                                              256K
+  In this section, we provide the necessary background on                                       cmd                    •••
+DRAM organization and operation to understand the cause                                         addr
+and symptoms of disturbance errors.                                          Processor                                Bank0
+2.1. High-Level Organization                                                   MemCtrl                                     Rank
+   DRAM chips are manufactured in a variety of configura-
+tions [34], currently ranging in capacities of 1–8 Gbit and in              Figure 2. Memory controller, buses, rank, and banks
+data-bus widths of 4–16 pins. (A particular capacity does not
+imply a particular data-bus width.) By itself, an individual            2.3. Accessing DRAM
+DRAM chip has only a small capacity and a narrow data-bus.                An access to a rank occurs in three steps: (i) “opening” the
+That is why multiple DRAM chips are commonly ganged to-                 desired row within a desired bank, (ii) accessing the desired
+gether to provide a large capacity and a wide data-bus (typi-           columns from the row-buffer, and (iii) “closing” the row.
+cally 64-bit). Such a “gang” of DRAM chips is referred to as
+a DRAM rank. One or more ranks are soldered onto a circuit              1. Open Row. A row is opened by raising its wordline. This
+board to form a DRAM module.                                               connects the row to the bitlines, transferring all of its data
+                                                                           into the bank’s row-buffer.
+2.2. Low-Level Organization
+                                                                        2. Read/Write Columns. The row-buffer’s data is accessed
+   As Figure 1a shows, DRAM comprises a two-dimensional                    by reading or writing any of its columns as needed.
+array of DRAM cells, each of which consists of a capacitor
+and an access-transistor. Depending on whether its capaci-              3. Close Row. Before a different row in the same bank can
+tor is fully charged or fully discharged, a cell is in either the          be opened, the original row must be closed by lowering its
+charged state or the discharged state, respectively. These two             wordline. In addition, the row-buffer is cleared.
+states are used to represent a binary data value.                          The memory controller, which typically resides in the pro-
+   As Figure 1b shows, every cell lies at the intersection of           cessor (Figure 2), guides the rank through the three steps by
+two perpendicular wires: a horizontal wordline and a vertical           issuing commands and addresses as summarized in Table 1.
+bitline. A wordline connects to all cells in the horizontal di-         After a rank accepts a command, some amount of delay is re-
+rection (row) and a bitline connects to all cells in the vertical       quired before it becomes ready to accept another command.
+direction (column). When a row’s wordline is raised to a high           This delay is referred to as a DRAM timing constraint [34].
+voltage, it enables all of the access-transistors within the row,       For example, the timing constraint defined between a pair of
+which in turn connects all of the capacitors to their respective        ACTIVATEs to the same row (in the same bank) is referred to
+bitlines. This allows the row’s data (in the form of charge) to         as tRC (row cycle time), whose typical value is 50 nanosec-
+be transferred into the row-buffer shown in Figure 1a. Bet-             onds [34]. When trying to open and close the same row as
+ter known as sense-amplifiers, the row-buffer reads out the             quickly as possible, tRC becomes the bottleneck — limiting
+charge from the cells — a process that destroys the data in             the maximum rate to once every tRC .
+
+
+                                                                    2
+
+
+===== Page 3 =====
+
+  Operation                  Command                 Address(es)              electromagnetic coupling [15, 49, 55]. This partially enables
+                                                                              the adjacent row of access-transistors for a short amount of
+  1. Open Row                ACTIVATE (ACT)          Bank, Row                time and facilitates the leakage of charge. Second, bridges
+  2. Read/Write Column       READ/WRITE              Bank, Column             are a well-known class of DRAM faults in which conductive
+  3. Close Row               PRECHARGE (PRE)         Bank                     channels are formed between unrelated wires and/or capaci-
+  Refresh (Section 2.4)      REFRESH (REF)           —                        tors [3, 4]. One study on embedded DRAM (eDRAM) found
+                                                                              that toggling a wordline could accelerate the flow of charge
+       Table 1. DRAM commands and addresses [34]                              between two bridged cells [29]. Third, it has been reported
+                                                                              that toggling a wordline for hundreds of hours can perma-
+2.4. Refreshing DRAM                                                          nently damage it by hot-carrier injection [17]. If some of the
+   The charge stored in a DRAM cell is not persistent. This is                hot-carriers are injected into the neighboring rows, this could
+due to various leakage mechanisms by which charge can dis-                    modify the amount of charge in their cells or alter the charac-
+perse: e.g., subthreshold leakage [56] and gate-induced drain                 teristic of their access-transistors to increase their leakiness.
+leakage [57]. Eventually, the cell’s charge-level would de-                      Disturbance errors occur only when the cumulative inter-
+viate beyond the noise margin, causing it to lose data — in                   ference effects of a wordline become strong enough to disrupt
+other words, a cell has only a limited retention time. Be-                    the state of nearby cells. In the next section, we demonstrate
+fore this time expires, the cell’s charge must be restored (i.e.,             a small piece of software that achieves this by continuously
+refreshed) to its original value: fully charged or fully dis-                 reading from the same row in DRAM.
+charged. The DDR3 DRAM specifications [34] guarantee a
+retention time of at least 64 milliseconds, meaning that all
+                                                                              4. Real System Demonstration
+cells within a rank need to be refreshed at least once during                    We induce DRAM disturbance errors on Intel (Sandy
+this time window. Refreshing a cell can be accomplished by                    Bridge, Ivy Bridge, and Haswell) and AMD (Piledriver) sys-
+opening the row to which the cell belongs. Not only does                      tems using a 2GB DDR3 module. We do so by running
+the row-buffer read the cell’s altered charge value but, at the               Code 1a, which is a program that generates a read to DRAM
+same time, it restores the charge to full value (Section 2.2).                on every data access. First, the two mov instructions read from
+In fact, refreshing a row and opening a row are identical op-                 DRAM at address X and Y and install the data into a register
+erations from a circuits perspective. Therefore, one possible                 and also the cache. Second, the two clflush instructions
+way for the memory controller to refresh a rank is to issue an                evict the data that was just installed into the cache. Third,
+ACT command to every row in succession. In practice, there                    the mfence instruction ensures that the data is fully flushed
+exists a separate REF command which refreshes many rows                       before any subsequent memory instruction is executed.3 Fi-
+at a time (Table 1). When a rank receives a REF, it automati-                 nally, the code jumps back to the first instruction for another
+cally refreshes several of its least-recently-refreshed rows by               iteration of reading from DRAM. (Note that Code 1a does not
+internally generating ACT and PRE pairs to them. Within any                   require elevated privileges to execute any of its instructions.)
+given 64ms time window, the memory controller issues a suf-                      1 code1a:                             1 code1b:
+ficient number of REF commands to ensure that every row is                       2   mov (X), %eax                     2   mov (X), %eax
+refreshed exactly once. For a DDR3 DRAM rank, the mem-                           3   mov (Y), %ebx                     3   clflush (X)
+ory controller issues 8192 REF commands during 64ms, once                        4   clflush (X)                       4
+every 7.8us (D64ms/8192) [34].                                                   5   clflush (Y)                       5
+                                                                                 6   mfence                            6   mfence
+3. Mechanics of Disturbance Errors                                               7   jmp code1a                        7   jmp code1b
+   In general, disturbance errors occur whenever there is a                           a. Induces errors                b. Does not induce errors
+strong enough interaction between two circuit components
+(e.g., capacitors, transistors, wires) that should be isolated                 Code 1. Assembly code executed on Intel/AMD machines
+from each other. Depending on which component interacts
+with which other component and also how they interact, many                      On out-of-order processors, Code 1a generates multiple
+different modes of disturbance are possible.                                  DRAM read requests, all of which queue up in the mem-
+   Among them, we identify one particular disturbance mode                    ory controller before they are sent out to DRAM: (reqX , reqY ,
+that afflicts commodity DRAM chips from all three major                       reqX , reqY ,    ). Importantly, we chose the values of X and
+manufacturers. When a wordline’s voltage is toggled repeat-                   Y so that they map to the same bank, but to different rows
+edly, some cells in nearby rows leak charge at a much faster                  within the bank.4 As we explained in Section 2.3, this forces
+rate. Such cells cannot retain charge for even 64ms, the time                 the memory controller to open and close the two rows repeat-
+interval at which they are refreshed. Ultimately, this leads to               edly: (ACTX , READX , PREX , ACTY , READY , PREY ,    ). Using
+the cells losing data and experiencing disturbance errors.                    the address-pair (X, Y), we then executed Code 1a for mil-
+   Without analyzing DRAM chips at the device-level, we                       lions of iterations. Subsequently, we repeated this procedure
+cannot make definitive claims about how a wordline interacts                       3Without the mfence instruction, there was a large number of hits in the
+with nearby cells to increase their leakiness. We hypothe-                    processor’s fill-buffer [30] as shown by hardware performance counters [31].
+size, based on past studies and findings, that there may be                        4Whereas AMD discloses which bits of the physical address are used and
+three ways of interaction.2 First, changing the voltage of a                  how they are used to compute the DRAM bank address [5], Intel does not.
+wordline could inject noise into an adjacent wordline through                 We partially reverse-engineered the addressing scheme for Intel processors
+                                                                              using a technique similar to prior work [46, 60] and determined that setting
+     2At least one major DRAM manufacturer has confirmed these hypothe-       Y to XC8M achieves our goal for all four processors. We ran Code 1a within
+ses as potential causes of disturbance errors.                                a customized Memtest86+ environment [1] to bypass address translation.
+
+
+                                                                          3
+
+
+===== Page 4 =====
+
+using many different address-pairs until every row in the 2GB                           Testing Platform. We programmed eight Xilinx FPGA
+module was opened/closed millions of times. In the end, we                           boards [70] with a DDR3-800 DRAM memory con-
+observed that Code 1a caused many bits to flip. For each pro-                        troller [71], a PCIe 2.0 core [69], and a customized test en-
+cessor, Table 2 reports the total number of bit-flips induced                        gine. After equipping each FPGA board with a DRAM mod-
+by Code 1a for two different initial states of the module: all                       ule, we connected them to two host computers using PCIe
+‘0’s or all ‘1’s.5; 6 Since Code 1a does not write any data into                     extender cables. We then enclosed the FPGA boards inside a
+DRAM, we conclude that the bit-flips are the manifestation                           heat chamber along with a thermocouple and a heater that are
+of disturbance errors. We will show later in Section 6.1 that                        connected to an external temperature controller. Unless oth-
+this particular module — which we named A19 (Section 5) —                            erwise specified, all tests were run at 50˙2.0ı C (ambient).
+yields millions of errors under certain testing conditions.                             Tests. We define a test as a sequence of DRAM accesses
+                                                                                     specifically designed to induce disturbance errors in a mod-
+      Bit-Flip    Sandy Bridge     Ivy Bridge     Haswell    Piledriver
+                                                                                     ule. Most of our tests are derived from two snippets of pseu-
+      ‘0’  ‘1’        7;992         10;273       11;404           47                docode listed above (Code 2): TestBulk and TestEach. The
+      ‘1’  ‘0’        8;125         10;449       11;467           12                goal of TestBulk is to quickly identify the union of all cells
+                                                                                     that were disturbed after toggling every row many times. On
+Table 2. Bit-flips induced by disturbance on a 2GB module                            the other hand, TestEach identifies which specific cells are
+   As a control experiment, we also ran Code 1b which reads                          disturbed when each row is toggled many times. Both tests
+from only a single address. Code 1b did not induce any dis-                          take three input parameters: AI (activation interval), RI (re-
+turbance errors as we expected. For Code 1b, all of its reads                        fresh interval), and DP (data pattern). First, AI determines
+are to the same row in DRAM: (reqX , reqX , reqX ,    ). In this                  how frequently a row is toggled — i.e., the time it takes to
+case, the memory controller minimizes the number of DRAM                             execute one iteration of the inner for-loop. Second, RI de-
+commands by opening and closing the row just once, while is-                         termines how frequently the module is refreshed during the
+suing many column reads in between: (ACTX , READX , READX ,                          test. Third, DP determines the initial data values with which
+READX ,    , PREX ). As we explained in Section 3, DRAM                           the module is populated before errors are induced. TestBulk
+disturbance errors are caused by the repeated opening/clos-                          (Code 2a) starts by writing DP to the entire module. It then
+ing of a row, not by column reads — which is precisely why                           toggles a row at the rate of AI for the full duration of RI —
+Code 1b does not induce any errors.                                                  i.e., the row is toggled N D .2  RI/=AI times.7 This pro-
+   Disturbance errors violate two invariants that memory                             cedure is then repeated for every row in the module. Finally,
+should provide: (i) a read access should not modify data at                          TestBulk reads out the entire module and identifies all of the
+any address and (ii) a write access should modify data only                          disturbed cells. TestEach (Code 2b) is similar except that
+at the address being written to. As long as a row is repeatedly                      lines 6, 12, and 13 are moved inside the outer for-loop. Af-
+opened, both read and write accesses can induce disturbance                          ter toggling just one row, TestEach reads out the module and
+errors (Section 6.2), all of which occur in rows other than                          identifies the cells that were disturbed by the row.
+the one being accessed (Section 6.3). Since different DRAM                             1 TestBulk(AI; RI; DP)                1 TestEach(AI; RI; DP)
+rows are mapped (by the memory controller) to different soft-                          2   setAI(AI)                         2   setAI(AI)
+ware pages [35], Code 1a — just by accessing its own page                              3   setRI(RI)                         3   setRI(RI)
+— could corrupt pages belonging to other programs. Left                                4   N .2  RI/=AI                     4   N .2  RI/=AI
+unchecked, disturbance errors can be exploited by a malicious                          5                                     5
+program to breach memory protection and compromise the                                 6   writeAll(DP)                      6   for r 0    ROW MAX
+system. With some engineering effort, we believe we can de-                            7   for r 0    ROW MAX             7      writeAll(DP)
+velop Code 1a into a disturbance attack that injects errors into                       8      for i 0    N                8      for i 0    N
+other programs, crashes the system, or perhaps even hijacks                            9         ACT r th row                9         ACT r th row
+control of the system. We leave such research for the future                          10         READ 0th col.              10         READ 0th col.
+since the primary objective in this work is to understand and                         11         PRE r th row               11         PRE r th row
+                                                                                      12   readAll()                        12      readAll()
+prevent DRAM disturbance errors.                                                      13   findErrors()                     13      findErrors()
+5. Experimental Methodology                                                              a. Test all rows at once             b. Test one row at a time
+   To develop an understanding of disturbance errors, we                                 Code 2. Two types of tests synthesized on the FPGA
+characterize 129 DRAM modules on an FPGA-based testing
+platform. Our testing platform grants us precise control over                           Test Parameters. In most of our tests, we set AI=55ns
+how and when DRAM is accessed on a cycle-by-cycle basis.                             and RI=64ms, for which the corresponding value of N is
+Also, it does not scramble the data it writes to DRAM.6                              2:33  106 . We chose 55ns for AI since it approaches the
+                                                                                     maximum rate of toggling a row without violating the tRC
+      5The faster a processor accesses DRAM, the more bit-flips it has. Ex-          timing constraint (Section 2.3). In some tests, we also sweep
+pressed in the unit of accesses-per-second, the four processors access DRAM          AI up to 500ns. We chose 64ms for RI since it is the default
+at the following rates: 11.6M, 11.7M, 12.3M, and 6.1M. (It is possible that          refresh interval specified by the DDR3 DRAM standard (Sec-
+not all accesses open/close a row.)                                                  tion 2.4). In some tests, we also sweep RI down to 10ms and
+      6We initialize the module by making the processor write out all ‘0’s or        up to 128ms. For DP, we primarily use two data patterns [65]:
+all ‘1’s to memory. But before this data is actually sent to the module, it
+is scrambled by the memory controller to avoid electrical resonance on the                7Refresh intervals for different rows are not aligned with each other
+DRAM data-bus [31]. In other words, we do not know the exact “data” that             (Section 2.4). Therefore, we toggle a row for twice the duration of RI to
+is received by the module. We examine the significance of this in Section 6.4.       ensure that we fully overlap with at least one refresh interval for the row.
+
+
+                                                                                 4
+
+
+===== Page 5 =====
+
+                       Date          Timing            Organization                  Chip                       Victims-per-Module            RI th (ms)
+Manufacturer Module
+                      (yy-ww) Freq (MT/s) tRC (ns) Size (GB) Chips        Size (Gb)   Pins   DieVersion   Average     Minimum Maximum           Min
+             A1        10-08       1066       50.625      0.5       4         1        16        B         0           0           0              –
+             A2        10-20       1066       50.625       1        8         1        8         F         0           0           0              –
+             A3-5      10-20       1066       50.625      0.5       4         1        16        B         0           0           0              –
+             A6-7      11-24       1066       49.125       1        4         2        16        D         7:8  101   5:2  101   1:0  102     21:3
+             A8-12     11-26       1066       49.125       1        4         2        16        D         2:4  102   5:4  101   4:4  102     16:4
+             A13-14    11-50       1066       49.125       1        4         2        16        D         8:8  101   1:7  101   1:6  102     26:2
+    A        A15-16    12-22       1600       50.625       1        4         2        16        D         9:5         9           1:0  101     34:4
+             A17-18    12-26       1600       49.125       2        8         2        8         M         1:2  102   3:7  101   2:0  102     21:3
+  Total of
+             A19-30    12-40       1600       48.125       2        8         2        8         K         8:6  106   7:0  106   1:0  107      8:2
+43 Modules
+             A31-34    13-02       1600       48.125       2        8         2        8         –         1:8  106   1:0  106   3:5  106     11:5
+             A35-36    13-14       1600       48.125       2        8         2        8         –         4:0  101   1:9  101   6:1  101     21:3
+             A37-38    13-20       1600       48.125       2        8         2        8         K         1:7  106   1:4  106   2:0  106      9:8
+             A39-40    13-28       1600       48.125       2        8         2        8         K         5:7  104   5:4  104   6:0  104     16:4
+             A41       14-04       1600       49.125       2        8         2        8         –         2:7  105   2:7  105   2:7  105     18:0
+             A42-43    14-04       1600       48.125       2        8         2        8         K         0:5         0           1             62:3
+             B1        08-49       1066       50.625       1        8         1        8         D         0           0           0              –
+             B2        09-49       1066       50.625       1        8         1        8         E         0           0           0              –
+             B3        10-19       1066       50.625       1        8         1        8         F         0           0           0              –
+             B4        10-31       1333       49.125       2        8         2        8         C         0           0           0              –
+             B5        11-13       1333       49.125       2        8         2        8         C         0           0           0              –
+             B6        11-16       1066       50.625       1        8         1        8         F         0           0           0              –
+             B7        11-19       1066       50.625       1        8         1        8         F         0           0           0              –
+             B8        11-25       1333       49.125       2        8         2        8         C         0           0           0              –
+    B        B9        11-37       1333       49.125       2        8         2        8         D         1:9  106   1:9  106   1:9  106     11:5
+             B10-12    11-46       1333       49.125       2        8         2        8         D         2:2  106   1:5  106   2:7  106     11:5
+  Total of   B13       11-49       1333       49.125       2        8         2        8         C         0           0           0              –
+54 Modules   B14       12-01       1866       47.125       2        8         2        8         D         9:1  105   9:1  105   9:1  105      9:8
+             B15-31    12-10       1866       47.125       2        8         2        8         D         9:8  105   7:8  105   1:2  106     11:5
+             B32       12-25       1600       48.125       2        8         2        8         E         7:4  105   7:4  105   7:4  105     11:5
+             B33-42    12-28       1600       48.125       2        8         2        8         E         5:2  105   1:9  105   7:3  105     11:5
+             B43-47    12-31       1600       48.125       2        8         2        8         E         4:0  105   2:9  105   5:5  105     13:1
+             B48-51    13-19       1600       48.125       2        8         2        8         E         1:1  105   7:4  104   1:4  105     14:7
+             B52-53    13-40       1333       49.125       2        8         2        8         D         2:6  104   2:3  104   2:9  104     21:3
+             B54       14-07       1333       49.125       2        8         2        8         D         7:5  103   7:5  103   7:5  103     26:2
+             C1        10-18       1333       49.125       2        8         2        8         A         0           0           0              –
+             C2        10-20       1066       50.625       2        8         2        8         A         0           0           0              –
+             C3        10-22       1066       50.625       2        8         2        8         A         0           0           0              –
+             C4-5      10-26       1333       49.125       2        8         2        8         B         8:9  102   6:0  102   1:2  103     29:5
+             C6        10-43       1333       49.125       1        8         1        8         T         0           0           0              –
+             C7        10-51       1333       49.125       2        8         2        8         B         4:0  102   4:0  102   4:0  102     29:5
+             C8        11-12       1333       46.25        2        8         2        8         B         6:9  102   6:9  102   6:9  102     21:3
+             C9        11-19       1333       46.25        2        8         2        8         B         9:2  102   9:2  102   9:2  102     27:9
+             C10       11-31       1333       49.125       2        8         2        8         B         3           3           3             39:3
+             C11       11-42       1333       49.125       2        8         2        8         B         1:6  102   1:6  102   1:6  102     39:3
+    C        C12       11-48       1600       48.125       2        8         2        8         C         7:1  104   7:1  104   7:1  104     19:7
+  Total of   C13       12-08       1333       49.125       2        8         2        8         C         3:9  104   3:9  104   3:9  104     21:3
+32 Modules   C14-15    12-12       1333       49.125       2        8         2        8         C         3:7  104   2:1  104   5:4  104     21:3
+             C16-18    12-20       1600       48.125       2        8         2        8         C         3:5  103   1:2  103   7:0  103     27:9
+             C19       12-23       1600       48.125       2        8         2        8         E         1:4  105   1:4  105   1:4  105     18:0
+             C20       12-24       1600       48.125       2        8         2        8         C         6:5  104   6:5  104   6:5  104     21:3
+             C21       12-26       1600       48.125       2        8         2        8         C         2:3  104   2:3  104   2:3  104     24:6
+             C22       12-32       1600       48.125       2        8         2        8         C         1:7  104   1:7  104   1:7  104     22:9
+             C23-24    12-37       1600       48.125       2        8         2        8         C         2:3  104   1:1  104   3:4  104     18:0
+             C25-30    12-41       1600       48.125       2        8         2        8         C         2:0  104   1:1  104   3:2  104     19:7
+             C31       13-11       1600       48.125       2        8         2        8         C         3:3  105   3:3  105   3:3  105     14:7
+             C32       13-35       1600       48.125       2        8         2        8         C         3:7  104   3:7  104   3:7  104     21:3
+
+             We report the manufacture date marked on the chip packages, which is more accurate than other dates that can be gleaned from a module.
+          We report timing constraints stored in the module’s on-board ROM [33], which is read by the system BIOS to calibrate the memory controller.
+                                                                            The maximum DRAM chip size supported by our testing platform is 2Gb.
+             We report DRAM die versions marked on the chip packages, which typically progress in the following manner: M  A  B  C     .
+ Table 3. Sample population of 129 DDR3 DRAM modules, categorized by manufacturer and sorted by manufacture date
+
+                                                                         5
+
+
+===== Page 6 =====
+
+RowStripe (even/odd rows populated with ‘0’s/‘1’s) and its in-                      boundaries are 2011-24, 2011-37, and 2010-26. Except for
+verse RowStripe. As Section 6.4 will show, these two data                          A42 , B13 , and C6 , every module manufactured on or after these
+patterns induce the most errors. In some tests, we also use                         dates exhibits errors. These date boundaries are likely to in-
+Solid, ColStripe, Checkered, as well as their inverses [65].                        dicate process upgrades since they also coincide with die ver-
+    DRAM Modules. As listed in Table 3, we tested for distur-                       sion upgrades. Using manufacturer B as an example, 2Gb8
+bance errors in a total of 129 DDR3 DRAM modules. They                              chips before the boundary have a die version of C, whereas
+comprise 972 DRAM chips from three manufacturers whose                              the chips after the boundary (except B13 ) have die versions of
+names have been anonymized to A, B, and C.8 The three man-                          either D or E. Therefore, we conclude that disturbance er-
+ufacturers represent a large share of the global DRAM mar-                          rors are a relatively recent phenomenon, affecting almost all
+ket [20]. We use the following notation to reference the mod-                       modules manufactured within the past 3 years.
+         yyww
+ules: Mi       (M for the manufacturer, i for the numerical iden-                      Using the data from Table 3, Figure 3 plots the normal-
+tifier, and yyww for the manufacture date in year and week).9                       ized number of errors for each family of modules versus their
+Some of the modules are indistinguishable from each other in                        manufacture date. The error bars denote the minimum and
+terms of the manufacturer, manufacture date, and chip type                          maximum for each family. From the figure, we see that mod-
+(e.g., A3-5 ). We collectively refer to such a group of modules                     ules from 2012 to 2013 are particularly vulnerable. For each
+as a family. For multi-rank modules, only the first rank is re-                     manufacturer, the number of victims per 109 cells can reach
+flected in Table 3, which is also the only rank that we test. We                    up to 5:9  105 , 1:5  105 , and 1:9  104 . Interestingly, Fig-
+will use the terms module and rank interchangeably.                                 ure 3 reveals a jigsaw-like trend in which sudden jumps in the
+                                                                                    number of errors are followed by gradual descents. This may
+6. Characterization Results                                                         occur when a manufacturer migrates away from an old-but-
+   We now present the results from our characterization study.                      reliable process to a new-but-unreliable process. By making
+Section 6.1 explains how the number of disturbance errors in                        adjustments over time, the new process may eventually again
+a module varies greatly depending on its manufacturer and                           become reliable — which could explain why the most recent
+manufacture date. Section 6.2 confirms that repeatedly acti-                        modules from manufacturer A (A42-43 ) have little to no errors.
+vating a row is indeed the source of disturbance errors. In ad-                                                     A Modules      B Modules    C Modules
+dition, we also measure the minimum number of times a row                                                    106
+must be activated before errors start to appear. Section 6.3
+shows that the errors induced by such a row (i.e., the aggres-                                               105
+                                                                                      Errors per 109 Cells
+
+
+
+
+sor row) are predominantly localized to two other rows (i.e.,                                                104
+the victim rows). We then provide arguments for why the vic-
+tim rows are likely to be the immediate neighbors. Section 6.4                                               103
+demonstrates that disturbance errors affect only the charged                                                 102
+cells, causing them to lose data by becoming discharged.
+                                                                                                             101
+6.1. Disturbance Errors are Widespread
+   For every module in Table 3, we tried to induce disturbance                                               100
+errors by subjecting them to two runs of TestBulk:                                                            0
+                                                                                                                   2008   2009 2010 2011 2012 2013     2014
+  1. TestBulk(55ns, 64ms, RowStripe)
+                                                                                                                             Module Manufacture Date
+  2. TestBulk(55ns, 64ms, RowStripe)                                               Figure 3. Normalized number of errors vs. manufacture date
+If a cell experienced an error in either of the runs, we refer to
+it as a victim cell for that module. Interestingly, virtually no                    6.2. Access Pattern Dependence
+cell in any module had errors in both runs — meaning that the
+                                                                                       So far, we have demonstrated disturbance errors by repeat-
+number of errors summed across the two runs is equal to the
+                                                                                    edly opening, reading, and closing the same row. We express
+number of unique victims for a module.10 (This is an impor-
+                                                                                    this access pattern using the following notation, where N is a
+tant observation that will be examined further in Section 6.4.)
+   For each family of modules, three right columns in Table 3                       large number: (open–read–close)N. However, this is not the
+report the avg/min/max number of victims among the mod-                             only access pattern to induce errors. Table 4 lists a total of
+ules belonging to the family. As shown in the table, we were                        four different access patterns, among which two induced er-
+able to induce errors in all but 19 modules, most of which                          rors on the modules that we tested: A23 , B11 , and C19 . These
+are also the oldest modules from each manufacturer. In fact,                        three modules were chosen because they had the most errors
+there exist date boundaries that separate the modules with er-                      (A23 and B11 ) or the second most errors (C19 ) among all mod-
+rors from those without. For A, B, and C, their respective date                     ules from the same manufacturer. What is in common be-
+                                                                                    tween the first two access patterns is that they open and close
+      8We tried to avoid third-party modules since they sometimes obfuscate         the same row repeatedly. The other two, in contrast, do so just
+the modules, making it difficult to determine the actual chip manufacturer or       once and did not induce any errors. From this we conclude
+the exact manufacture date. Modules B14-31 are engineering samples.                 that the repeated toggling of the same wordline is indeed the
+      9Manufacturers do not explicitly provide the technology node of the           cause of disturbance errors.11
+chips. Instead, we interpret recent manufacture dates and higher die versions
+as rough indications of more advanced process technology.                               11For write accesses, a row cannot be opened and closed once every tRC
+     10In some of the B modules, there were some rare victim cells (15) that       due to an extra timing constraint called tWR (write recovery time) [34]. As a
+had errors in both runs. We will revisit these cells in Section 6.3.                result, the second access pattern in Table 4 induces fewer errors.
+
+
+                                                                                6
+
+
+===== Page 7 =====
+
+                Access Pattern              Disturbance Errors?                   given enough time to “recover” after performing its job.12
+                                                                                  When a wordline is raised every 60ns, we hypothesize that
+                1. (open–read–close)N                Yes                          the charge-pump is unable to regain its full strength by the
+                2. (open–write–close)N               Yes                          end of each interval, which leads to a slow voltage transition
+                3. open–readN –close                 No                           on the wordline and, ultimately, a weak disturbance effect.
+                4. open–writeN –close                No                           In contrast, an AI of 55ns appears to be immune to this phe-
+                                                                                  nomenon, since there is a large jump in the number of errors.
+     Table 4. Access patterns that induce disturbance errors                      We believe this to be an artifact of how our memory controller
+   Refresh Interval (RI). As explained in Section 5, our tests                    schedules refresh commands. At 55ns, our memory controller
+open a row once every 55ns. For each row, we sustain this                         happens to run at 100% utilization, meaning that it always has
+rate for the full duration of an RI (default: 64ms). This is                      a DRAM request queued in its buffer. In an attempt to min-
+so that the row can maximize its disturbance effect on other                      imize the latency of the request, the memory controller de-
+cells, causing them to leak the most charge before they are                       prioritizes a pending refresh command by 64us. This tech-
+next refreshed. As the RI is varied between 10–128ms, Fig-                        nique is fully compliant with the DDR3 DRAM standard [34]
+ure 4 plots the numbers of errors in the three modules. Due                       and is widely employed in general-purpose processors [31].
+to time limitations, we tested only the first bank. For shorter                   As a result, the effective refresh interval is slightly length-
+RIs, there are fewer errors due to two reasons: (i) a victim cell                 ened, which again increases the number of errors.
+has less time to leak charge between refreshes; (ii) a row is                                               A1240
+                                                                                                             23          B1146
+                                                                                                                          11           C1223
+                                                                                                                                        19
+opened fewer times between those refreshes, diminishing the                                 107
+disturbance effect it has on the victim cells. At a sufficiently                            106                                  yA = 5.63e6 × 1.04-x
+short RI — which we refer to as the threshold refresh inter-                                                                     y = 1.06e6 × 1.04-x
+val (RIth ) — errors are completely eliminated not in just the                              105                                   B
+
+first bank, but for the entire module. For each family of mod-                              104                                  yC = 1.90e5 × 1.05-x
+ules, the rightmost column in Table 3 reports the minimum                          Errors
+                                                                                            103
+RIth among the modules belonging to the family. The family
+with the most victims at RI D 64ms is also likely to have the                               102
+lowest RIth : 8.2ms, 9.8ms, and 14.7ms. This translates into                                101
+7.8, 6.5, and 4.3 increase in the frequency of refreshes.
+                                                                                            100
+                           A1240
+                            23           B1146
+                                          11           C1223
+                                                        19                                   0
+          108                                                                                     0   50 100 150 200 250 300 350 400 450 500
+          107                                                                                                Activation Interval (ns)
+          106                                                                     Figure 5. Number of errors as the activation interval is varied
+          105
+                                                                                     Number of Activations. We have seen that disturbance
+          104
+ Errors
+
+
+
+
+                                                                                  errors are heavily influenced by the lengths of RI and AI. In
+          103                                                                     Figure 6, we compare their effects by superimposing the two
+                                                 yA = 4.39e-6 × x6.23
+          102                                                                     previous figures on top of each other. Both figures have been
+          101                                    yB = 1.23e-8 × x7.3              normalized onto the same x-axis whose values correspond to
+          100                                    yC = 8.11e-10 × x7.3             the number of activations per refresh interval: RI=AI.13 (Only
+                                                                                  the left-half is shown for Figure 4, where RI  64ms.) In
+            0                                                                     Figure 6, the number of activations reaches a maximum of
+                0   16     32       48    64    80     96      112      128
+                                                                                  1:14  106 (D64ms/55ns) when RI and AI are set to their de-
+                                 Refresh Interval (ms)
+                                                                                  fault lengths. At this particular point, the numbers of errors
+ Figure 4. Number of errors as the refresh interval is varied                     between the two studies degenerate to the same value. It is
+   Activation Interval (AI). As the AI is varied between 55–                      clear from the figure that fewer activations induce fewer er-
+500ns, Figure 5 plots the numbers of errors in the three mod-                     rors. For the same number of activations, having a long RI
+ules. (Only the first bank is tested, and the RI is kept constant                 and a long AI is likely to induce more errors than having a
+at 64ms.) For longer AIs, there are fewer errors because a row                    short RI and a short AI. We define the threshold number of
+is opened less often, thereby diminishing its disturbance ef-                     activations (Nth ) as the minimum number of activations that
+fect. When the AI is sufficiently long, the three modules have                    is required to induce an error when RID64ms. The three mod-
+no errors: 500ns, 450ns, and 250ns. At the shortest AIs,                       ules (for only their first banks) have the following values for
+however, there is a notable reversal in the trend: B11 and C19                    Nth : 139K, 155K, and 284K.
+have fewer errors at 60ns than at 65ns. How can there be
+fewer errors when a row is opened more often? This anomaly                             12The charge-pump “up-converts” the DRAM chip’s supply voltage into
+                                                                                  an even higher voltage to ensure that the wordline’s access-transistors are
+can be explained only if the disturbance effect of opening a
+                                                                                  completely switched on. A charge-pump is essentially a large reservoir of
+row is weaker at 60ns than at 65ns. In general, row-coupling                      charge which is slowly refilled after being tapped into.
+effects are known to be weakened if the wordline voltage is                            13The actual formula we used is (RI 8192  tRFC /=AI, where tRFC
+not raised quickly while the row is being opened [55]. The                        (refresh cycle time) is the timing constraint between a REF and a subsequent
+wordline voltage, in turn, is raised by a circuit called the                      ACT to the same module [34]. Our testing platform sets tRFC to 160ns, which
+wordline charge-pump [38], which becomes sluggish if not                          is a sufficient amount of time for all of our modules.
+
+
+                                                                              7
+
+
+===== Page 8 =====
+
+                   Variable RI:         A1240
+                                         23          B1146
+                                                      11            C1223
+                                                                     19
+                                                                                  the three modules. Aggressor rows in A23 are the most potent,
+                                                                                  disturbing as many as 110 cells at once. (We cannot explain
+                   Variable AI:         A1240        B1146          C1223         the two peaks in the graph.) On the other hand, aggressors in
+                                         23           11             19
+          107                                                                     B11 and C19 can disturb up to 28 and 5 cells, respectively.
+          106
+                                                                                                               A1240
+                                                                                                                23       B1146
+                                                                                                                          11       C1223
+                                                                                                                                    19
+          105                                                                              105
+          104                                                                              104
+ Errors
+
+
+
+
+          103                                                                              103
+
+
+
+
+                                                                                   Count
+                                                                                           102
+          102
+                                                                                           101
+          101                             Shorter RI ←−−−−−−− 64ms                         100
+          100                             Longer AI ←−−−−−−− 55ns                            0
+                                                                                                 0   10 20 30 40 50 60 70 80 90 100 110 120
+            0
+             0.0       0.2       0.4      0.6     0.8      1.0          1.2                              Victim Cells per Aggressor Row
+                             Activations per RI (millions)                        Figure 7. How many cells are affected by an aggressor row?
+      Figure 6. Number of errors vs. number of activations                           Similarly, we can associate each aggressor row with a set
+                                                                                  of victim rows to which the victim cells belong. Figure 8 plots
+6.3. Address Correlation: Aggressor & Victim                                      the size distribution of this set. We see that the victim cells
+   Most rows in A23 , B11 , and C19 have at least one cell that                   of an aggressor row are predominantly localized to two rows
+experienced an error: 100%, 99.96%, and 41.54%. We ana-                           or less. In fact, only a small fraction of aggressor rows affect
+lyzed the addresses of such victim cells to determine whether                     three rows or more: 2.53%, 0.0122%, and 0.00649%.
+they exhibit any spatial locality. We were unable to identify                                                 A1240        B1146       C1223
+                                                                                                               23           11          19
+any distinct pattern or skew. By chance, however, some vic-                                 105
+tim cells could still end up being located near each other. For                             104
+the three modules, Table 5 shows how many 64-bit words
+                                                                                            103
+in their full address-space (0–2GB) contain 1, 2, 3, or 4
+                                                                                    Count
+
+
+
+
+victim cells. While most words have just a single victim,                                   102
+there are also some words with multiple victims. This has                                   101
+an important consequence for error-correction codes (ECC).                                  100
+For example, SECDED (single error-correction, double error-                                   0
+                                                                                                     1   2      3    4   5    6   7    8   9   10
+detection) can correct only a single-bit error within a 64-bit
+word. If a word contains two victims, however, SECDED                                                        Victim Rows per Aggressor Row
+cannot correct the resulting double-bit error. And for three or                   Figure 8. How many rows are affected by an aggressor row?
+more victims, SECDED cannot even detect the multi-bit er-
+ror, leading to silent data corruption. Therefore, we conclude                       To see whether any correlation exists between the ad-
+that SECDED is not failsafe against disturbance errors.                           dress of an aggressor row and those of its victim rows, we
+                                                                                  formed every possible pair between them. For each such
+                             Number of 64-bit words with X errors                 pair, we then computed the row-address difference as fol-
+          Module                                                                  lows: VictimRowaddr AggressorRowaddr : The histogram of
+                        XD1           XD2           XD3             XD4
+                                                                                  these differences is shown in Figure 9. It is clear from the
+           A23       9;709;721       181;856         2;248            18          figure that an aggressor causes errors in rows only other than
+           B11       2;632;280        13;638            47             0          itself. This is understandable since every time an aggressor is
+           C19         141;821            42             0             0
+                                                                                  opened and closed, it also serves to replenish the charge in all
+           Table 5. Uncorrectable multi-bit errors (in bold)                      of its own cells (Section 2.4). Since the aggressor’s cells are
+                                                                                  continuously being refreshed, it is highly unlikely that they
+   Most rows in A23 , B11 , and C19 cause errors when they are                    could leak enough charge to lose their data.
+repeatedly opened. We refer to such rows as aggressor rows.
+We exposed the aggressor rows in the modules by subjecting                                                    A1240
+                                                                                                               23          B1146
+                                                                                                                            11         C1223
+                                                                                                                                        19
+them to two runs of TestEach for only the first bank:                                      106
+                                                                                           105
+  1. TestEach(55ns, 64ms, RowStripe)                                                       104
+                                                                                  Count
+
+
+
+
+  2. TestEach(55ns, 64ms, RowStripe)                                                      103
+                                                                                           102
+The three modules had the following numbers of aggressor                                   101
+rows: 32768, 32754, and 15414. Considering that a bank in                                  100
+the modules has 32K rows, we conclude that large fractions                                  0
+of the rows are aggressors: 100%, 99.96%, and 47.04%.                                            ≤-8 -7 -6 -5 -4 -3 -2 -1 0 1 2 3 4 5 6 7 8≤
+   Each aggressor row can be associated with a set of victim                                                   Row Address Difference
+cells that were disturbed by the aggressor during either of the                      Figure 9. Which rows are affected by an aggressor row?
+two tests. Figure 7 plots the size distribution of this set for
+
+
+                                                                              8
+
+
+===== Page 9 =====
+
+   For all three modules, Figure 9 shows strong peaks at ˙1,                          victim cells in module B11 with two aggressor rows were also
+suggesting that an aggressor and its victims are likely to have                       the same cells that had errors for both runs of the test pair
+consecutive row-addresses, i.e., they are logically adjacent.                         described in Section 6.1. These cells were the only cases in
+Being logically adjacent, however, does not always imply                              which we observed both ‘0’‘1’ and ‘1’‘0’ errors in the
+that the rows are placed next to each other on the silicon die,                       same cell. Except for such rare exceptions found only in B
+i.e., physically adjacent. Although every logical row must be                         modules, every other victim cell had an error in just a single
+mapped to some physical row, it is entirely up to the DRAM                            preferred direction, for reasons we next explain.
+manufacturer to decide how they are mapped [65]. In spite
+of this, we hypothesize that aggressors cause errors in their                         6.4. Data Pattern Dependence
+physically adjacent rows due to three reasons.                                           Until now, we have treated all errors equally without mak-
+ Reason 1. Wordline voltage fluctuations are likely to place                         ing any distinction between the two different directions of
+  the greatest electrical stress on the immediately neighbor-                         errors: ‘0’‘1’. When we categorized the errors in Ta-
+  ing rows [49, 55].                                                                  ble 3 based on their direction, an interesting trend emerged.
+                                                                                      Whereas A modules did not favor one direction over the other,
+ Reason 2. By definition, a row has only two immediate                               B and C modules heavily favored ‘1’‘0’ errors. Averaged
+  neighbors, which may explain why disturbance errors are                             on a module-by-module basis, the relative fraction of ‘1’‘0’
+  localized mostly to two rows.                                                       errors is 49.9%, 92.8%, and 97.1% for A, B, and C.15
+ Reason 3. Logical adjacency may highly correlate with                                  The seemingly asymmetric nature of disturbance errors is
+  physical adjacency, which we infer from the strong peaks                            related to an intrinsic property of DRAM cells called orien-
+  at ˙1 in Figure 9.                                                                  tation. Depending on the implementation, some cells repre-
+                                                                                      sent a logical value of ‘1’ using the charged state, while other
+  However, we also see discrepancies in Figures 8 and 9,
+                                                                                      cells do so using the discharged state — these cells are re-
+whereby an aggressor row appears to cause errors in non-
+                                                                                      ferred to as true-cells and anti-cells, respectively [44]. If a
+adjacent rows. We hypothesize that this is due to two reasons.
+                                                                                      true-cell loses charge, it experiences a ‘1’‘0’ error. When
+ Reason 1. In Figure 8, some aggressors affect more than                             we profiled two modules (B11 and C19 ), we discovered that
+  just two rows. This may be an irregularity caused by re-                            they consist mostly of true-cells by a ratio of 1000s-to-1.16
+  mapped rows. Referring back to Figure 2 (Section 2.1),                              For these two modules, the dominance of true-cells and their
+  the i th “row” of a rank is formed by taking the i th row                           ‘1’‘0’ errors imply that victim cells are most likely to lose
+  in each chip and concatenating them. But if the row in                              charge when they are disturbed. The same conclusion also ap-
+  one of the chips is faulty, the manufacturer re-maps it to a                        plies to A23 , whose address-space is divided into large swaths
+  spare row (e.g., i j ) [28]. In this case, the i th “row” has                      of true- and anti-cells that alternate every 512 rows. For this
+  four immediate neighbors: i˙1th rows in seven chips and                             module, we found that ‘1’‘0’ errors are dominant (>99.8%)
+  j ˙1th rows in the re-mapped chip.                                                  in rows where true-cells are dominant: rows 0–511, 1024–
+ Reason 2. In Figure 9, some aggressors affect rows that                             1535, 2048–2559,    . In contrast, ‘0’‘1’ errors are domi-
+  are not logically-adjacent: e.g., side peaks at ˙3 and ˙7.                          nant (>99.7%) in the remainder of the rows where anti-cells
+  This may be an artifact of manufacturer-dependent map-                              are dominant. Regardless of its orientation, a cell can lose
+  ping, where some physically-adjacent rows have logical                              charge only if it was initially charged — explaining why a
+  row-addresses that differ by ˙3 or ˙7 — for example,                                given cell did not have errors in both runs of the test in Sec-
+  when the addresses are gray-encoded [65]. Alternatively,                            tion 6.1. Since the two runs populate the module with inverse
+  it could be that aggressors affect rows farther away than                           data patterns, a cell cannot be charged for both runs.
+  the immediate neighbors — a possibility that we cannot                                 Table 6 reports the numbers of errors that were induced in
+  completely rule out. However, if that were the case, then                           three modules using four different data patterns and their in-
+  it would be unlikely for the peaks to be separated by gaps                          verses: Solid, RowStripe, ColStripe, and Checkered. Among
+  at ˙2, ˙4, and ˙6.14                                                                them, RowStripe (even/odd rows ‘0’s/‘1’s) induces the most
+                                                                                      errors for A23 and B11 , as well as the second most errors for
+   Double Aggressor Rows. Most victim cells are disturbed                             C19 . In contrast, Solid (all ‘0’s) has the fewest errors for all
+by only a single aggressor row. However, there are some vic-                          three modules by an order of magnitude or more. Such a large
+tim cells that are disturbed by two different aggressor rows. In                      difference cannot be explained if the requirements for a dis-
+the first bank of the three modules, the numbers of such vic-                         turbance error are only two-fold: (i) a victim cell is in the
+tim cells were 83, 2, and 0. In module A23 , for example, the                         charged state, and (ii) its aggressor row is toggled. This is
+victim cell at (row 1464, column 50466) had a ‘1’‘0’ error                           because the same two requirements are satisfied by all four
+when either row 1463 or row 1465 was toggled. In mod-                                 pairs of data patterns. Instead, there must be other factors at
+ule B11 , the victim cell at (row 5907, column 32087) had a                           play than just the coupling of a victim cell with an aggressor
+‘0’‘1’ error when row 5906 was toggled, whereas it had                               wordline. In fact, we discovered that the behavior of most
+a ‘1’‘0’ error when row 5908 was toggled. Within these
+two modules respectively, the same trend applies to the other                              15For manufacturer C, we excluded modules with a die version of B.
+victim cells with two aggressor rows. Interestingly, the two                          Unlike other modules from the same manufacturer, these modules had errors
+                                                                                      that were evenly split between the two directions.
+     14Figure 9 presents further indications of re-mapping, where some mod-                16At 70ı C, we wrote all ‘0’s to the module, disabled refreshes for six
+ules have non-zero values for ˙8 or beyond. Such large differences — which            hours and read out the module. We then repeated the procedure with all ‘1’s.
+in some cases reach into the thousands — may be caused when a faulty row              A cell was deemed to be true (or anti) if its outcome was ‘0’ (or ‘1’) for both
+is re-mapped to a spare row that is far away, which is typically the case [28].       experiments. We could not resolve the orientation of every cell.
+
+
+                                                                                  9
+
+
+===== Page 10 =====
+
+victim cells is correlated with the data stored in some other                         However, only a few weak cells were also victim cells: 700,
+cells.17 A victim cell may have aggressor cell(s) — typically                         220, and 19. Therefore, we conclude that the coupling path-
+residing in the aggressor row — that must be discharged for                           way responsible for disturbance errors may be independent of
+the victim to have an error. A victim cell may also have pro-                         the process variation responsible for weak cells.
+tector cell(s) — typically residing in either the aggressor row                          Not Strongly Affected by Temperature. When temper-
+or the victim row — that must be charged or discharged for                            ature increases by 10ı C, the retention time for each cell is
+the victim to have a lower probability of having an error. In                         known to decrease by almost a factor of two [39, 45]. To
+its generalized form, disturbance errors appear to be a com-                          see whether this would drastically increase the number of er-
+plicated “N-body” phenomenon involving the interaction of                             rors, we ran a single iteration of the test pair for the three
+multiple cells, the net result of which would only explain the                        modules at 70˙2.0ı C, which is 20ı C higher than our default
+differences in Table 6.                                                               ambient temperature. Compared to an iteration at 50ı C, the
+                         TestBulk(DP) C TestBulk(DP)                                 number of errors did not change greatly: C10.2%, 0.553%,
+  Module                                                                              and C1.32%. We also ran a single iteration of the test pair for
+                     Solid     RowStripe       ColStripe      Checkered               the three modules at 30˙2.0ı C with similar results: 14.5%,
+     A23         112;123       1;318;603         763;763         934;536
+                                                                                      C2.71%, and 5.11%. From this we conclude that distur-
+                                                                                      bance errors are not strongly influenced by temperature.
+     B11          12;050         320;095           9;610         302;306
+     C19              57          20;770             130          29;283              8. Solutions to Disturbance Errors
+     Table 6. Number of errors for different data patterns                               We examine seven solutions to tolerate, prevent, or mit-
+                                                                                      igate disturbance errors. Each solution makes a different
+7. Sensitivity Results                                                                trade-off between feasibility, cost, performance, power, and
+                                                                                      reliability. Among them, we believe our seventh and last solu-
+   Errors are Mostly Repeatable. We subjected three mod-                              tion, called PARA, to be the most efficient and low-overhead.
+ules to ten iterations of testing, where each iteration consists                      Section 8.1 discusses each of the first six solutions. Sec-
+of the test pair described in Section 6.1. Across the ten itera-                      tion 8.2 analyzes our seventh solution (PARA) in detail.
+tions, the average numbers of errors (for only the first bank)
+were the following: 1.31M, 339K, and 21.0K. There were                                8.1. Six Potential Solutions
+no iterations that deviated by more than ˙0:25% from the                                  1. Make better chips. Manufacturers could fix the problem
+average for all three modules. The ten iterations revealed                            at the chip-level by improving circuit design. However, the
+the following numbers of unique victim cells: 1.48M, 392K,                            problem could resurface when the process technology is up-
+and 24.4K. Most victim cells were repeat offenders, meaning                           graded. In addition, this may get worse in the future as cells
+that they had an error in every iteration: 78.3%, 74.4%, and                          become smaller and more vulnerable.
+73.2%. However, some victim cells had an error in just a sin-                             2. Correct errors. Server-grade systems employ ECC mod-
+gle iteration: 3.14%, 4.86%, and 4.76%. This implies that                             ules with extra DRAM chips, incurring a 12.5% capacity
+an exhaustive search for every possible victim cell would re-                         overhead. However, even such modules cannot correct multi-
+quire a large number of iterations, necessitating several days                        bit disturbance errors (Section 6.3). Due to their high cost,
+(or more) of continuous testing. One possible way to reduce                           ECC modules are rarely used in consumer-grade systems.
+the testing time is to increase the RI beyond the standardized                            3. Refresh all rows frequently. Disturbance errors can be
+value of 64ms as we did in Figure 4 (Section 6.2). However,                           eliminated for sufficiently short refresh intervals (RI  RIth )
+multiple iterations could still be required since a single itera-                     as we saw in Section 6.2. However, frequent refreshes also
+tion at RID128ms does not provide 100% coverage of all the                            degrade performance and energy-efficiency. Today’s mod-
+victim cells at RID64ms: 99.77%, 99.87%, and 99.90%.                                  ules already spend 1.4–4.5% of their time just performing
+   Victim Cells ¤ Weak Cells. Although the retention time                             refreshes [34]. This number would increase to 11.0–35.0%
+of every DRAM cell is required to be greater than the 64ms                            if the refresh interval is shortened to 8.2ms, which is required
+minimum, different cells have different retention times. In                           by A20 (Table 3). Such a high overhead is unlikely to be ac-
+this context, the cells with the shortest retention times are re-                     ceptable for many systems.
+ferred to as weak cells [45]. Intuitively, it would appear that                           4. Retire cells (manufacturer). Before DRAM chips are
+the weak cells are especially vulnerable to disturbance errors                        sold, the manufacturer could identify victim cells and re-map
+since they are already leakier than others. On the contrary,                          them to spare cells [28]. However, an exhaustive search for
+we did not find any strong correlation between weak cells and                         all victim cells could take several days or more (Section 7).
+victim cells. We searched for a module’s weak cells by nei-                           In addition, if there are many victim cells, there may not be
+ther accessing nor refreshing a module for a generous amount                          enough spare cells for all of them.
+of time (10 seconds) after having populated it with either all
+                                                                                          5. Retire cells (end-user). The end-users themselves could
+‘0’s or all ‘1’s. If a cell was corrupted during this procedure,
+                                                                                      test the modules and employ system-level techniques for
+we considered it to be a weak cell [45]. In total, we were able
+                                                                                      handling DRAM reliability problems: disable faulty ad-
+to identify 1M weak cells for each module (984K, 993K,
+                                                                                      dresses [2, 27, 62, 67], re-map faulty addresses to reserved
+and 1.22M), which is on par with the number of victim cells.
+                                                                                      addresses [52, 53], or refresh faulty addresses more fre-
+    17We comprehensively tested the first 32 rows in module A19 using hun-            quently [44, 67]. However, the first/second approaches are in-
+dreds of different random data patterns. Through statistical analysis on the          effective when every row in the module is a victim row (Sec-
+experimental results, we were able to identify almost certain correlations be-        tion 6.3). On the other hand, the third approach is inefficient
+tween a victim cell and the data stored in some other cells.                          since it always refreshes the victim rows more frequently —
+
+
+                                                                                 10
+
+
+===== Page 11 =====
+
+even when the module is not being accessed at all. In all three                      p=2). An error occurs in the adjacent row only if it is never
+approaches, the end-user pays for the cost of identifying and                        refreshed during any of the Nth coin-flips (i.e., XD0). Such an
+storing the addresses of the aggressor/victim rows.                                  event has the following probability of occurring: .1 p=2/Nth .
+   6. Identify “hot” rows and refresh neighbors. Perhaps the                         When pD0.001, we evaluate this probability in Table 7 for
+most intuitive solution is to identify frequently opened rows                        different values of Nth . The table shows two error probabili-
+and refresh only their neighbors. The challenge lies in mini-                        ties: one in which the adversarial access pattern is sustained
+mizing the hardware cost to identify the “hot” rows. For ex-                         for 64ms and the other for one year. Recall from Section 6.2
+ample, having a counter for each row would be too expensive                          that realistic values for Nth in our modules are in the range of
+when there are millions of rows in a system.18 The gener-                            139K–284K. For pD0.001 and Nth D100K, the probability of
+alized problem of identifying frequent items (from a stream                          experiencing an error in one year is negligible at 9:4  10 14.
+of items) has been extensively studied in other domains. We
+applied a well-known method [37] and found that while it re-                              Duration        Nth D50K          Nth D100K         Nth D200K
+duces the number of counters, it also requires expensive oper-                             64ms           1:4  10   11     1:9  10   22     3:6  10 44
+ations to query the counters (e.g., highly-associative search).                            1 year         6:8  10 3        9:4  10 14       1:8  10 35
+We also analyzed approximate methods which further reduce
+the storage requirement: Bloom Filters [11], Morris Coun-                                Table 7. Error probabilities for PARA when pD0.001
+ters [50], and variants thereof [18, 21, 66]. These approaches,
+                                                                                        Adjacency Information. For PARA to work, the memory
+however, rely heavily on hash functions and, therefore, in-
+                                                                                     controller must know which rows are physically adjacent to
+troduce hash collisions. Whenever one counter exceeds the
+                                                                                     each other. This is also true for alternative solutions based on
+threshold value, many rows are falsely flagged as being “hot,”
+                                                                                     “hot” row detection (Section 8.1). Without this information,
+leading to a torrent of refreshes to all of their neighbors.
+                                                                                     rows cannot be selectively refreshed, and the only safe resort
+8.2. Seventh Solution: PARA                                                          is to blindly refresh all rows in the same bank, incurring a
+                                                                                     large performance penalty. To enable low-overhead solutions,
+   Our main proposal to prevent DRAM disturbance errors is
+                                                                                     we argue for the manufacturers to disclose how they map logi-
+a low-overhead mechanism called PARA (probabilistic adja-
+                                                                                     cal rows onto physical rows.19 Such a mapping function could
+cent row activation). The key idea of PARA is simple: every
+                                                                                     possibly be as simple as specifying the bit-offset within the
+time a row is opened and closed, one of its adjacent rows is
+                                                                                     logical row-address that is used as the least-significant-bit of
+also opened (i.e., refreshed) with some low probability. If
+                                                                                     the physical row-address. Along with other metadata about
+one particular row happens to be opened and closed repeat-
+                                                                                     the module (e.g., capacity, and bus frequency), the mapping
+edly, then it is statistically certain that the row’s adjacent rows
+                                                                                     function could be stored in a small ROM (called the SPD)
+will eventually be opened as well. The main advantage of
+                                                                                     that exists on every DRAM module [33]. The manufacturers
+PARA is that it is stateless. PARA does not require expen-
+                                                                                     should also disclose how they re-map faulty physical rows
+sive hardware data-structures to count the number of times
+                                                                                     (Section 6.3). When a faulty physical row is re-mapped, the
+that rows have been opened or to store the addresses of the
+                                                                                     logical row that had mapped to it acquires a new set of phys-
+aggressor/victim rows.
+                                                                                     ical neighbors. The SPD could also store the re-mapping
+   Implementation. PARA is implemented in the memory                                 function, which specifies how the logical row-addresses of
+controller as follows. Whenever a row is closed, the con-                            those new physical neighbors can be computed. To account
+troller flips a biased coin with a probability p of turning up                       for the possibility of re-mapping, PARA can be configured
+heads, where p  1. If the coin turns up heads, the controller                       to (i) have a higher value of p and (ii) choose a row to re-
+opens one of its adjacent rows where either of the two adja-                         fresh from a wider pool of candidates, which includes the re-
+cent rows are chosen with equal probability (p=2). Due to its                        mapped neighbors in addition to the original neighbors.
+probabilistic nature, PARA does not guarantee that the adja-                            Performance Overhead. Using a cycle-accurate DRAM
+cent will always be refreshed in time. Hence, PARA cannot                            simulator, we evaluate PARA’s performance impact on 29
+prevent disturbance errors with absolute certainty. However,                         single-threaded workloads from SPEC CPU2006, TPC, and
+its parameter p can be set so that disturbance errors occur at                       memory-intensive microbenchmarks (We assume a reason-
+an extremely low probability — many orders of magnitude                              able system setup [41] with a 4GHz out-of-order core and
+lower than the failure rates of other system components (e.g.,                       dual-channel DDR3-1600.) Due to re-mapping, we conser-
+more than 1% of hard-disk drives fail every year [54, 59]).                          vatively assume that a row can have up to ten different rows
+   Error Rate. We analyze PARA’s error probability by con-                           as neighbors, not just two. Correspondingly, we increase the
+sidering an adversarial access pattern that opens and closes a                       value of p by five-fold to 0:005.20 Averaged across all 29
+row just enough times (Nth ) during a refresh interval but no                        benchmarks, there was only a 0.197% degradation in instruc-
+more. Every time the row is closed, PARA flips a coin and                            tion throughput during the simulated duration of 100ms. In
+refreshes a given adjacent row with probability p=2. Since the                       addition, the largest degradation in instruction throughput for
+coin-flips are independent events, the number of refreshes to                        any single benchmark was 0.745%. From this, we conclude
+one particular adjacent row can be modeled as a random vari-
+able X that is binomially-distributed with parameters B(Nth ,                             19Bains et al. [6] make the same argument. As an alternative, Bains et
+                                                                                     al. [7, 8] propose a new DRAM command called “targeted refresh”. When
+    18Several patent applications propose to maintain an array of counters           the memory controller sends this command along with the target row address,
+(“detection logic”) in either the memory controller [7, 8, 24] or in the DRAM        the DRAM chip is responsible for refreshing the row and its neighbors.
+chips themselves [6, 9, 23]. If the counters are tagged with the addresses                20We do not make any special considerations for victim cells with two
+of only the most recently activated rows, their number can be significantly          aggressor rows (Section 6.3). Although they could be disturbed by either
+reduced [24].                                                                        aggressor row, they could also be refreshed by either aggressor row.
+
+
+                                                                                11
+
+
+===== Page 12 =====
+
+that PARA has a small impact on performance, which we be-                                [20] DRAMeXchange. TrendForce: 3Q13 Global DRAM Revenue Rises by 9%, Sam-
+                                                                                              sung Shows Most Noticeable Growth, Nov. 12, 2013.
+lieve is justified by the (i) strong reliability guarantee and (ii)                      [21] L. Fan et al. Summary Cache: A Scalable Wide-Area Web Cache Sharing Proto-
+low design complexity resulting from its stateless nature.                                    col. Transactions on Networking, 8(3), 2000.
+                                                                                         [22] J. A. Fifield and H. L. Kalter. Crosstalk-Shielded-Bit-Line DRAM. US Patent
+                                                                                              5,010,524, Apr. 23, 1991.
+9. Other Related Work                                                                    [23] Z. Greenfield et al. Method, Apparatus and System for Determining a Count of
+                                                                                              Accesses to a Row of Memory. US Patent App. 13/626,479, Mar. 27 2014.
+   Disturbance errors are a general class of reliability problem                         [24] Z. Greenfield et al.        Row Hammer Condition Monitoring.            US Patent
+                                                                                              App. 13/539,417, Jan. 2, 2014.
+that afflicts not only DRAM, but also other memory and stor-                             [25] L. M. Grupp et al. Characterizing Flash Memory: Anomalies, Observations, and
+age technologies: SRAM [16, 26, 40], flash [10, 12, 13, 19,                                   Applications. In MICRO, 2009.
+                                                                                         [26] Z. Guo et al. Large-Scale SRAM Variability Characterization in 45 nm CMOS.
+25], and hard-disk [36, 63, 68]. Van de Goor and de Neef [64]                                 JSSC, 44(11), 2009.
+                                                                                         [27] D. Henderson and J. Mitchell. IBM POWER7 System RAS, Dec. 2012.
+present a collection of production tests that can be employed                            [28] M. Horiguchi and K. Itoh. Nanoscale Memory Repair. Springer, 2011.
+by DRAM manufacturers to screen faulty chips. One such                                   [29] R.-F. Huang et al. Alternate Hammering Test for Application-Specific DRAMs
+                                                                                              and an Industrial Case Study. In DAC, 2012.
+test is the “hammer,” where each cell is written a thousand                              [30] Intel. Intel 64 and IA-32 Architectures Optimization Reference Manual, 2012.
+times to verify that it does not disturb nearby cells. In 2013,                          [31] Intel. 4th Generation Intel Core Processor Family Desktop Datasheet, 2013.
+                                                                                         [32] K. Itoh. Semiconductor Memory. US Patent 4,044,340, Apr. 23, 1977.
+one test equipment company mentioned the “row hammer”                                    [33] JEDEC. Standard No. 21C. Annex K: Serial Presence Detect (SPD) for DDR3
+                                                                                              SDRAM Modules, Aug. 2012.
+phenomenon in the context of DDR4 DRAM [48], the next                                    [34] JEDEC. Standard No. 79-3F. DDR3 SDRAM Specification, July 2012.
+generation of commodity DRAM. To our knowledge, no pre-                                  [35] M. K. Jeong et al. Balancing DRAM Locality and Parallelism in Shared Memory
+                                                                                              CMP Systems. In HPCA, 2012.
+vious work demonstrated and characterized the phenomenon                                 [36] W. Jiang et al. Cross-Track Noise Profile Measurement for Adjacent-Track Inter-
+of disturbance errors in DRAM chips from the field.                                           ference Study and Write-Current Optimization in Perpendicular Recording. Jour-
+                                                                                              nal of Applied Physics, 93(10), 2003.
+                                                                                         [37] R. M. Karp et al. A Simple Algorithm for Finding Frequent Elements in Streams
+10. Conclusion                                                                                and Bags. Transactions on Database Systems, 28(1), 2003.
+                                                                                         [38] B. Keeth et al. DRAM Circuit Design. Fundamental and High-Speed Topics.
+   We have demonstrated, characterized, and analyzed the                                      Wiley-IEEE Press, 2007.
+                                                                                         [39] S. Khan et al. The Efficacy of Error Mitigation Techniques for DRAM Retention
+phenomenon of disturbance errors in modern commodity                                          Failures: A Comparative Experimental Study. In SIGMETRICS, 2014.
+                                                                                         [40] D. Kim et al. Variation-Aware Static and Dynamic Writability Analysis for
+DRAM chips. These errors happen when repeated accesses to                                     Voltage-Scaled Bit-Interleaved 8-T SRAMs. In ISLPED, 2011.
+a DRAM row corrupts data stored in other rows. Based on our                              [41] Y. Kim et al. A Case for Exploiting Subarray-Level Parallelism (SALP) in
+                                                                                              DRAM. In ISCA, 2012.
+experimental characterization, we conclude that disturbance                              [42] Y. Konishi et al. Analysis of Coupling Noise between Adjacent Bit Lines in
+errors are an emerging problem likely to affect current and                                   Megabit DRAMs. JSSC, 24(1), 1989.
+                                                                                         [43] D. Lee et al. Tiered-Latency DRAM: A Low Latency and Low Cost DRAM
+future computing systems. We propose several solutions, in-                                   Architecture. In HPCA, 2013.
+                                                                                         [44] J. Liu et al. RAIDR: Retention-Aware Intelligent DRAM Refresh. In ISCA, 2012.
+cluding a new stateless mechanism that provides a strong sta-                            [45] J. Liu et al. An Experimental Study of Data Retention Behavior in Modern DRAM
+tistical guarantee against disturbance errors by probabilisti-                                Devices: Implications for Retention Time Profiling Mechanisms. In ISCA, 2013.
+                                                                                         [46] L. Liu et al. A Software Memory Partition Approach for Eliminating Bank-level
+cally refreshing rows adjacent to an accessed row. As DRAM                                    Interference in Multicore Systems. In PACT, 2012.
+process technology scales down to smaller feature sizes, we                              [47] J. A. Mandelman et al. Challenges and Future Directions for the Scaling of Dy-
+                                                                                              namic Random-Access Memory (DRAM). IBM Journal of R&D, 46(2.3), 2002.
+hope that our findings will enable new system-level [51] ap-                             [48] M. Micheletti. Tuning DDR4 for Power and Performance. In MemCon, 2013.
+                                                                                         [49] D.-S. Min et al. Wordline Coupling Noise Reduction Techniques for Scaled
+proaches to enhance DRAM reliability.                                                         DRAMs. In Symposium on VLSI Circuits, 1990.
+                                                                                         [50] R. Morris. Counting Large Numbers of Events in Small Registers. Communica-
+Acknowledgments                                                                               tions of the ACM, 21(10), 1978.
+                                                                                         [51] O. Mutlu. Memory Scaling: A Systems Architecture Perspective. In MemCon,
+                                                                                              2013.
+   We thank the reviewers and SAFARI members for their                                   [52] P. J. Nair et al. ArchShield: Architectural Framework for Assisting DRAM Scal-
+feedback. We acknowledge the support of IBM, Intel, and                                       ing by Tolerating High Error Rates. In ISCA, 2013.
+                                                                                         [53] C. Nibby et al. Remap Method and Apparatus for a Memory System Which Uses
+Qualcomm. This research was partially supported by ISTC-                                      Partially Good Memory Devices. US Patent 4,527,251, July 2 1985.
+CC, NSF (CCF 0953246, CCF 1212962, and CNS 1065112),                                     [54] E. Pinheiro et al. Failure Trends in a Large Disk Drive Population. In FAST, 2007.
+                                                                                         [55] M. Redeker et al. An Investigation into Crosstalk Noise in DRAM Structures. In
+and SRC. Yoongu Kim is supported by an Intel fellowship.                                      MTDT, 2002.
+                                                                                         [56] K. Roy et al. Leakage Current Mechanisms and Leakage Reduction Techniques
+References                                                                                    in Deep-Submicrometer CMOS Circuits. Proc. of the IEEE, 91(2), 2003.
+                                                                                         [57] K. Saino et al. Impact of Gate-Induced Drain Leakage Current on the Tail Distri-
+                                                                                              bution of DRAM Data Retention Time. In IEDM, 2000.
+ [1] Memtest86+ v4.20. http://www.memtest.org.                                           [58] J. H. Saltzer and M. F. Kaashoek. Principles of Computer Design: An Introduc-
+ [2] The GNU GRUB Manual. http://www.gnu.org/software/grub.                                   tion. Chapter 8, p. 58. Morgan Kaufmann, 2009.
+ [3] Z. Al-Ars. DRAM Fault Analaysis and Test Generation. PhD thesis, TU Delft,          [59] B. Schroeder and G. A. Gibson. Disk Failures in the Real World: What Does an
+     2005.                                                                                    MTTF of 1,000,000 Hours Mean to You? In FAST, 2007.
+ [4] Z. Al-Ars et al. DRAM-Specific Space of Memory Tests. In ITC, 2006.                 [60] N. Suzuki et al. Coordinated Bank and Cache Coloring for Temporal Protection
+ [5] AMD. BKDG for AMD Family 15h Models 10h-1Fh Processors, 2013.                            of Memory Accesses. In ICESS, 2013.
+ [6] K. Bains et al. Method, Apparatus and System for Providing a Memory Refresh.        [61] A. Tanabe et al. A 30-ns 64-Mb DRAM with Built-In Self-Test and Self-Repair
+     US Patent App. 13/625,741, Mar. 27 2014.                                                 Function. JSSC, 27(11), 1992.
+ [7] K. Bains et al. Row Hammer Refresh Command. US Patent App. 13/539,415,              [62] D. Tang et al. Assessment of the Effect of Memory Page Retirement on System
+     Jan. 2 2014.                                                                             RAS Against Hardware Faults. In DSN, 2006.
+ [8] K. Bains et al. Row Hammer Refresh Command. US Patent App. 14/068,677,              [63] Y. Tang et al. Understanding Adjacent Track Erasure in Discrete Track Media.
+     Feb. 27 2014.                                                                            Transactions on Magnetics, 44(12), 2008.
+ [9] K. Bains and J. Halbert. Distributed Row Hammer Tracking. US Patent App.            [64] A. J. van de Goor and J. de Neef. Industrial Evaluation of DRAM Tests. In DATE,
+     13/631,781, Apr. 3 2014.                                                                 1999.
+[10] R. Bez et al. Introduction to Flash Memory. Proc. of the IEEE, 91(4), 2003.         [65] A. J. van de Goor and I. Schanstra. Address and Data Scrambling: Causes and
+[11] B. H. Bloom. Space/Time Trade-offs in Hash Coding with Allowable Errors.                 Impact on Memory Tests. In DELTA, 2002.
+     Communications of the ACM, 13(7), 1970.                                             [66] B. Van Durme and A. Lall. Probabilistic Counting with Randomized Storage. In
+[12] Y. Cai et al. Error Patterns in MLC NAND Flash Memory: Measurement, Char-                IJCAI, 2009.
+     acterization, and Analysis. In DATE, 2012.                                          [67] R. Venkatesan et al. Retention-Aware Placement in DRAM (RAPID): Software
+[13] Y. Cai et al. Program Interference in MLC NAND Flash Memory: Characteriza-               Methods for Quasi-Non-Volatile DRAM. In HPCA, 2006.
+     tion, Modeling and Mitigation. In ICCD, 2013.                                       [68] R. Wood et al. The Feasibility of Magnetic Recording at 10 Terabits Per Square
+[14] S. Y. Cha. DRAM and Future Commodity Memories. In VLSI Technology Short                  Inch on Conventional Media. Transactions on Magnetics, 45(2), 2009.
+     Course, 2011.                                                                       [69] Xilinx. Virtex-6 FPGA Integrated Block for PCI Express, Mar. 2011.
+[15] M.-T. Chao et al. Fault Models for Embedded-DRAM Macros. In DAC, 2009.              [70] Xilinx. ML605 Hardware User Guide, Oct. 2012.
+[16] Q. Chen et al. Modeling and Testing of SRAM for New Failure Mechanisms Due          [71] Xilinx. Virtex-6 FPGA Memory Interface Solutions, Mar. 2013.
+     to Process Variations in Nanoscale CMOS. In VLSI Test Symposium, 2005.              [72] J. H. Yoon et al. Flash & DRAM Si Scaling Challenges, Emerging Non-Volatile
+[17] P.-F. Chia et al. New DRAM HCI Qualification Method Emphasizing on Repeated              Memory Technology Enablement. In Flash Memory Summit, 2013.
+     Memory Access. In Integrated Reliability Workshop, 2010.                            [73] T. Yoshihara et al. A Twisted Bit Line Technique for Multi-Mb DRAMs. In
+[18] S. Cohen and Y. Matias. Spectral Bloom Filters. In SIGMOD, 2003.                         ISSCC, 1988.
+[19] J. Cooke. The Inconvenient Truths of NAND Flash Memory. In Flash Memory
+     Summit, 2007.
+
+
+
+                                                                                    12

@@ -1,0 +1,970 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/heterogeneous-reliability-memory-for-data-centers_dsn14.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/heterogeneous-reliability-memory-for-data-centers_dsn14.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+                   Characterizing Application Memory Error Vulnerability to
+                 Optimize Datacenter Cost via Heterogeneous-Reliability Memory
+                 Yixin Luo  Sriram Govindan* Bikash Sharma*                           Mark Santaniello* Justin Meza
+                   Aman Kansal* Jie Liu* Badriddine Khessib*                          Kushagra Vaid* Onur Mutlu
+                           Carnegie Mellon University, yixinluo@cs.cmu.edu, {meza, onur}@cmu.edu
+            *
+                Microsoft Corporation, {srgovin, bsharma, marksan, kansal, jie.liu, bkhessib, kvaid}@microsoft.com
+
+  Abstract—Memory devices represent a key component of                    processors and memory represents the key component—
+datacenter total cost of ownership (TCO), and techniques used             around 60% in modern servers [6]. Furthermore, the cost
+to reduce errors that occur on these devices increase this                of the memory in today’s servers is comparable to that of
+cost. Existing approaches to providing reliability for memory
+devices pessimistically treat all data as equally vulnerable              the processors, and is likely to exceed processor cost for
+to memory errors. Our key insight is that there exists a                  data-intensive applications such as web search and social
+diverse spectrum of tolerance to memory errors in new                     media services, which use in-memory caching to improve
+data-intensive applications, and that traditional one-size-fits-all       response time (e.g., a popular key–value store, Memcached,
+memory reliability techniques are inefficient in terms of cost.           has been used at Google and Facebook [7] for this purpose).
+For example, we found that while traditional error protection
+increases memory system cost by 12.5%, some applications                   Exacerbating the cost of memory in modern servers is the
+can achieve 99.00% availability on a single server with a large           use of memory devices (such as dynamic random access
+number of memory errors without any error protection. This                memory, or DRAM) that provide error detection and cor-
+presents an opportunity to greatly reduce server hardware cost            rection. This cost arises from two components: (1) quality
+by provisioning the right amount of memory reliability for                assurance testing performed by memory vendors to ensure
+different applications.
+  Toward this end, in this paper, we make three main con-                 devices sold to customers are of a high enough caliber
+tributions to enable highly-reliable servers at low datacenter            and (2) additional memory capacity for error detection and
+cost. First, we develop a new methodology to quantify the                 correction. Device testing has been shown to account for an
+tolerance of applications to memory errors. Second, using our             increasing fraction of the cost of memory for DRAM [8, 9].
+methodology, we perform a case study of three new data-                   The cost of additional memory capacity, on the other hand,
+intensive workloads (an interactive web search application, an
+in-memory key–value store, and a graph mining framework)                  depends on the technique used to provide error detection and
+to identify new insights into the nature of application memory            correction.
+error vulnerability. Third, based on our insights, we propose              Table 1 compares several common memory error detection
+several new hardware/software heterogeneous-reliability mem-              and correction techniques in terms of which types of errors
+ory system designs to lower datacenter cost while achieving               they are able to detect/correct and the additional amount
+high reliability and discuss their trade-offs. We show that our
+new techniques can reduce server hardware cost by 4.7% while              of capacity/logic they require (which, for DRAM devices,
+achieving 99.90% single server availability.                              whose design is fiercely cost-driven, is proportional to
+                                                                          cost). Techniques range from the relatively low-cost (and
+ Keywords—memory errors, software reliability, memory ar-
+chitectures, soft errors, hard errors, datacenter cost, DRAM.             widely employed) Parity, SEC-DED, Chipkill, and DEC-
+                                                                          TED, which use different error correction codes (ECC) to
+                         I. Introduction                                  detect and correct a small number of bits or chip errors,
+                                                                          to the more expensive RAIM and Mirroring techniques that
+  Warehouse-scale datacenters each consist of many thou-                  replicate some (or all) of memory to tolerate the failure of
+sands of machines running a diverse set of applications and               an entire DRAM dual in-line memory module (DIMM). The
+comprise the foundation of the modern web [1]. While these                additional cost of memory with high error-tolerance can be
+datacenters are vital to the operation of companies such                  significant (e.g., 12.5% with SEC-DED ECC and Chipkill
+as Facebook, Google, Microsoft, and Yahoo!, reducing the                  and as high as 125% with Mirroring).
+cost of such large-scale deployments of machines poses a                   Yet even with well-tested and error-tolerant memory de-
+significant challenge to these and other companies. Recently,             vices, recent studies from the field have observed a ris-
+the need for reduced datacenter cost has driven companies to              ing rate of memory error occurrences [13–15]. This trend
+examine more energy-efficient server designs [2] and build                presents an increasing challenge for ensuring high perfor-
+their datacenter installations in cold environments to reduce             mance and high reliability in future systems, as memory
+cooling costs [3, 4] or use built-in power plants to reduce               errors can be detrimental to both.
+electricity supply costs [5].                                              In terms of performance, existing error detection and
+  There are two main components of the total cost of                      correction techniques incur a slowdown on each memory
+ownership (TCO) of a datacenter [1]: (1) capital costs (those             access due to their additional circuitry [15, 16] and up to
+associated with server hardware) and (2) operational costs
+(those associated with providing electricity and cooling). Re-            Technique        Error detection (correction)   Added capacity Added logic
+cent studies have shown that capital costs can account for the            Parity             2n-1/64 bits (None)              1.56%         Low
+majority (e.g., around 57% in [1]) of datacenter TCO, and                 SEC-DED               2/64 bits (1/64 bits)         12.5%         Low
+thus represent the main impediment for reducing datacenter                DEC-TED               3/64 bits (2/64 bits)         23.4%         Low
+TCO. In addition, this component of datacenter TCO is only                Chipkill [10]         2/8 chips (1/8 chips)         12.5%         High
+                                                                          RAIM [11]          1/5 modules (1/5 modules)        40.6%         High
+expected to increase going forward as companies adopt more                Mirroring [12]        2/8 chips (1/2 modules)       125%          Low
+efficient cooling and power supply techniques.
+  Of the dominant component of datacenter TCO (capital                    Table 1: Memory error detection and correction techniques. “X/Y Z”
+costs associated with server hardware), the cost of server                means a technique can detect/correct X out of every Y failures of Z.
+
+
+                                                                      1
+
+
+===== Page 2 =====
+
+ an additional 10% slowdown due to techniques that operate             Over time, the charge in DRAM cells leaks and must be
+ DRAM at a slower speed to reduce the chances of random bit            refreshed (every 64 ms in current devices). When data is
+ flips due to electrical interference in higher-density devices        accessed in DRAM, cell charge is sensed, amplified, and
+ that pack more and more cells per square nanometer [17].              transmitted across a memory channel. In case any of the
+ In addition, whenever an error is detected or corrected on            components used to store or transmit data fails, a memory
+ modern hardware, the processor raises an interrupt that must          error can occur.1
+ be serviced by the system firmware (BIOS), incurring up                 There are two main types of memory errors: (1) soft
+ to 100 µs latency—roughly 2000× a typical 50 ns memory                or transient errors and (2) hard or recurring errors.2 Soft
+ access latency [18]—leading to unpredictable slowdowns.               memory errors occur at random due to charged particle
+   In terms of reliability, memory errors can cause an applica-        emissions from chip packaging or the atmosphere [28].
+ tion to slow down, crash, or produce incorrect results [19].          Hard memory errors may occur from physical device defects
+ Software-level techniques such as the retirement of regions           or wearout [13–15], and are influenced by environmental
+ of memory with errors [15, 20–22] have been proposed                  factors such as humidity, temperature, and utilization [13, 29,
+ to reduce the rate of memory error correction and prevent             30]. Hard errors typically affect multiple bits (for example,
+ correctable errors from turning into uncorrectable errors over        large memory regions and entire DRAM chips have been
+ time. Hardware-level techniques, such as those listed in Ta-          shown to fail [14, 15, 29]).
+ ble 1, are used to detect and correct errors without software           Various error correcting codes have been designed to
+ intervention (but with additional hardware cost). All of these        mitigate these errors. ECC methods differ based on the
+ techniques are applied homogeneously to memory systems                amount of additional memory capacity required to detect and
+ in a one-size-fits-all manner.                                        correct errors of different severity (Table 1 lists some of these
+   Our goal in this paper is to understand how tolerant                techniques, discussed in Section I). The effects of hard errors
+ different data-intensive applications are to memory errors            can be mitigated in the operating system (OS) or BIOS by
+ and design a new memory system organization that matches              retiring affected memory regions when the number of errors
+ hardware reliability to application tolerance in order to             in the region exceeds a certain threshold [15, 20–22]. Region
+ reduce system cost. Our key insight is that data-intensive            retirement is typically done at the memory page granularity,
+ applications exhibit a diverse spectrum of tolerance to mem-          ∼4 KB. Retiring pages eliminates the performance overhead
+ ory errors—both within an application’s data and among                of the processor repeatedly performing detection and correc-
+ different applications—and that one-size-fits all solutions are       tion and also helps to prevent correctable errors from turning
+ inefficient in terms of cost. The main idea of our approach           into uncorrectable errors.
+ leverages this observation to classify applications based               A memory error will remain latent until the erroneous
+ on their memory error tolerance and map applications to               memory is accessed. The amount of time an error remains
+ heterogeneous-reliability memory system designs managed               latent depends on how applications’ data are mapped to
+ cooperatively between hardware and software (for example,             physical memory and on the program’s memory access
+ error-tolerant portions of data from an application may               pattern. For example, the frequency at which data is read
+ reside in inexpensive less-tested memory with no ECC with             determines how often errors are detected and corrected and
+ software-assisted data checkpointing, but error-vulnerable            the frequency at which data is written determines how often
+ portions of its data should be placed in ECC memory)                  errors are masked by overwrites to the erroneous data.
+ to reduce system cost. Toward this end, we provide the
+ following contributions:                                              B. Related Work
+• A new methodology to quantify the tolerance of applica-                We categorize related research literature in memory error
+    tions to memory errors. Our approach measures the effect           vulnerability and DRAM architecture into five broad classes:
+    of memory errors on application correctness and quantifies         (1) characterizing application error tolerance, (2) hardware-
+    an application’s ability to mask or recover from memory            based memory reliability techniques, (3) software-based
+    errors.                                                            memory reliability techniques, (4) exploiting application
+• A comprehensive case study of the memory error toler-                error tolerance, and (5) heterogeneous (hybrid) memory
+    ance of three data-intensive workloads: an interactive web         architectures. We next discuss these each in turn.
+    search application, an in-memory key–value store, and a              Classifying application error tolerance. Controlled error
+    graph mining framework. We find that there exists an order         injection techniques based on hardware watchpoints [16,
+    of magnitude difference in memory error tolerance across           31], binary instrumentation [32], and architectural simu-
+    these three applications.                                          lation [33], have been used to investigate the impacts of
+• An exploration of the design space of new memory system              memory errors on application behavior, including execution
+    organizations, which combine a heterogeneous mix of reli-          times, application/system crashes, and output correctness.
+    ability techniques that leverage application error tolerance       These works have studied a range of applications includ-
+    to reduce system cost. We show that our techniques can             ing SPEC CPU benchmarks, web servers, databases, and
+    reduce server hardware cost by 4.7%, while achieving               scientific applications. In general, these works conclude that
+    99.90% single server availability.                                 not all memory errors cause application/system crashes and
+                                                                       can be tolerated with minimal difference in their outputs.
+             II. Background and Related Work                             1 For a detailed background on DRAM operation, we refer the reader
+
+A. Memory Errors and Mitigation Techniques                             to [23–25].
+                                                                         2 Two recent studies [26, 27] examined the effects of intermittent and
+ Modern devices use DRAM as their main memory. DRAM                    access-pattern dependent errors, which are increasingly common as DRAM
+stores its data in cells in the form of charge in a capacitor.         technology scales down to smaller technology nodes.
+
+
+                                                                   2
+
+
+===== Page 3 =====
+
+We generalize this observation to data-intensive applications                                   Memory Error
+and leverage it to reduce datacenter TCO. Approximate
+computing techniques [34–36], where the precision of pro-                        1                     2
+gram output can be relaxed to achieve better performance or                          Masked by             Consumed by
+energy efficiency, offer further opportunities for leveraging                        Overwrite              Application
+the error-tolerance of application data, though these typically
+require changes to program source code.                                              2.1               2.2                2.3
+  Hardware-based memory reliability techniques. Various                                    Masked by         Incorrect           System/
+                                                                                             Logic           Response           App Crash
+memory ECC techniques have been proposed (we list the
+most dominant ones in Table 1). Using eight bits, SEC-
+DED can correct a single bit flip and detect up to two bit                      Correct Result           Incorrect Result
+flips out of every 64. DEC-TED is a generalization of SEC-                               (a) Memory
+                                                                                      Figure        Error Fates
+                                                                                               1: Memory   error outcomes.
+DED that uses fourteen bits to correct two and detect three
+flipped bits out of every 64. Chipkill improves reliability           masked by applications. As such, our work studies memory
+by interleaving error detection and correction data among             error vulnerability for a new set of applications and proposes
+multiple DRAM chips [10]. RAIM [11] is able to tolerate en-           a new heterogeneous memory architecture to optimize dat-
+tire DIMMs failing by storing detection and correction data           acenter cost.
+across multiple DIMMs. Virtualized ECC [37] maps ECC
+to software-visible locations in memory so that software                III. Quantifying Application Memory Error Tolerance
+can decide what ECC protection to use. While Virtualized               We begin by discussing our methodology for quantifying
+ECC can help reduce the DRAM hardware cost of memory                  the tolerance of applications to memory errors. Our method-
+reliability, it requires modification to the processor’s memory       ology consists of three components: (1) characterizing the
+management unit and cache(s).                                         outcomes of memory errors on an application based on how
+  Software-based memory reliability techniques. Previous              they propagate through an application’s code and data, (2)
+works (e.g., [15, 22, 38]) have shown that the OS retiring            characterizing how safe or unsafe it is for memory errors
+memory pages after a certain number of errors can eliminate           to occur in different regions of an application’s data, and
+up to 96.8% of detected memory errors. These techniques,              (3) determining how amenable an application’s data is to
+though they improve system reliability, still require costly          recovery in the event of an error. We next discuss each
+ECC hardware for detecting and identifying memory pages               of these components in turn and describe their detailed
+with errors. Other works have attempted to reduce the impact          implementation in Section IV.
+of memory errors on system reliability by writing more
+reliable software [39], modifying the OS memory alloca-               A. Characterizing the Outcomes of a Memory Error
+tor [40], or using a compiler to generate a more error-tolerant         We characterize an application’s vulnerability to a memory
+version of the program [41, 42]. Other algorithmic solutions          error based on its behavior after a memory error is intro-
+(e.g., memory bounds checks [43], watchdog timers [43],               duced (we assume for the moment that no error detection or
+and checkpoint recovery [44–46]) have also been applied to            correction is being performed). Figure 1 shows a taxonomy
+achieve resilience to memory errors.                                  of memory error outcomes. Our taxonomy is mutually exclu-
+  Exploiting application error tolerance. Flikker [47] pro-           sive (no two outcomes occur simultaneously) and exhaustive
+posed a technique to trade off DRAM reliability for energy            (it captures all possible outcomes). At a high level, a memory
+savings. It relies on the programmer to separate application          error may be either (1) masked by an overwrite, in which
+data into vulnerable or tolerant data. Less reliable mobile           case it is never detected and causes no change in application
+DIMMs have been proposed [48, 49] as a replacement for                behavior or (2) consumed by the application. In the case that
+ECC DIMMs in servers to improve energy efficiency.                    an error is consumed by the application, it may either (2.1)
+  Heterogeneous (hybrid) memory architectures. Several                be masked by application logic, in which case it is never
+works (e.g., [50–54]) explored the use of heterogeneous               detected and causes no change in application behavior, (2.2)
+memory architectures, consisting of multiple different types          cause the application to generate an incorrect response, or
+of memories. These works were mainly concerned with                   (2.3) cause the application or system to crash.
+either mitigating the overheads of emerging technologies or             When we refer to the tolerance of an application to memory
+improving performance and power efficiency. They did not              errors, we mean the likelihood that an error occurring in
+investigate the use of multiple devices with different error          some data results in outcomes (1) or (2.1). Conversely, when
+correction capabilities.                                              we refer to the vulnerability of an application to memory
+  Compared to prior research, our work is the first to (1)            errors, we mean the likelihood that an error occurring in
+perform a comprehensive analysis of memory error vul-                 some data results in outcomes (2.2) or (2.3).
+nerability for data-intensive datacenter applications across
+a range of different memory error types and (2) evaluate              B. Characterizing Safe Data Regions
+the cost-effectiveness of different heterogeneous-reliability           An application’s data is typically spread across multi-
+memory organizations with hardware/software cooperation.              ple logical regions of memory to simplify OS-level mem-
+Although our error injection-based vulnerability character-           ory management and protection. For example, a statically-
+ization methodology is similar to [16, 31], our analysis is           allocated variable would be placed in a memory region
+done on a wider range of application parameters (such as              called the stack, while a dynamically-allocated variable
+memory write frequency and application access patterns).              would be placed in a memory region called the heap. Table 2
+We also provide additional insights as to how errors are              lists several key memory regions and describes the types of
+
+                                                                  3
+
+
+===== Page 4 =====
+
+  Region The types of data that it stores                                     Explicit recoverability is enabled by the system software
+                                                                            automatically maintaining a clean copy of an application’s
+  Heap Memory for dynamically-allocated data.                               memory pages in persistent storage. This can be realized by
+  Stack Memory used to store function parameters and local variables.       updating pages in persistent storage in tandem with updates
+  Private Pre-allocated private memory managed by the user (allocated       to main memory. This may affect application performance
+          by VirtualAlloc on Windows or mmap on Linux).
+                                                                            and therefore may need to be applied only sparingly, to the
+  Other Program code, managed heap, and so on, which are relatively
+          small in size, and which we do not examine.
+                                                                            most unsafe regions of memory.
+                                                                              We characterize data recoverability of a memory region
+           Table 2: Different application memory regions.                   by measuring the percentage of memory pages that are
+                                                                            either implicitly or explicitly recoverable. A memory page
+data that they store. How an application manipulates data                   is implicitly recoverable if the operating system can identify
+in each of these regions ultimately determines its tolerance                its mapped location on disk. A memory page is explicitly
+or vulnerability to memory errors, and so ideally we would                  recoverable if, on average, it is written to less than once
+like to quantify, for every address A in every region, how                  every five minutes.
+safe or unsafe it is (in terms of application vulnerability) for              Regardless of an application’s recoverability strategy, for
+an error to occur at A.                                                     persistent hard errors (which cannot be corrected by recover-
+  Recall from Section II-A that the frequency at which data                 ing a clean copy of data), a technique such as page retirement
+is read determines how often errors are detected (exposing                  can be used in conjunction with data recovery.
+an application to a potentially unsafe memory error) and
+the frequency at which data is written determines how                                    IV. Characterization Frameworks
+often errors are masked by overwrites to the erroneous data
+                                                                             We had three design goals when implementing our method-
+(making the data safe for application consumption). For an
+                                                                            ology for quantifying application memory error tolerance.
+address A, we define an address A’s unsafe duration as the
+                                                                            First, due to the sporadic and inconsistent nature of memory
+sum of time, across an application’s execution time, between
+                                                                            errors in the field, we wanted to design a framework to
+each read to A and the previous memory reference to A.
+                                                                            emulate the occurrence of a memory error in an application’s
+Similarly, we define an address A’s safe duration as the sum
+                                                                            data in a controlled manner (to characterize its outcomes).
+of time, across an application’s execution time, between each
+                                                                            Second, we wanted an efficient way to measure how an
+write to A and the previous memory reference to A. Then, the
+                                                                            application accesses its data (to characterize safe and unsafe
+safe ratio = safe duration/(safe duration + unsafe duration)
+                                                                            durations and determine data recoverability). Third, we
+for an address A is the fraction of time for which an error at
+                                                                            wanted our framework to be easily adapted to other work-
+A was never consumed by an application over its execution
+                                                                            loads or system configurations. To achieve all of these goals,
+time.
+                                                                            we leveraged the support of existing software debuggers
+  A safe ratio closer to 1 implies that the address A is more
+                                                                            for modifying and monitoring arbitrary application memory
+frequently written than read, increasing the chances that an
+                                                                            locations. We next describe the details of the error emulation
+error at A will be masked; a safe ratio closer to 0 implies
+                                                                            and access monitoring frameworks that we developed.
+that the address A is more frequently read than written,
+increasing the chances that an error at A will be consumed                  A. Memory Error Emulation Framework
+by the application. We can generalize the concept of a safe
+ratio to regions of memory by computing the average safe                     Software debuggers (such as WinDbg [55] in Windows
+ratio for all the addresses (or a representative sampling of                and GDB [56] in Linux) are typically used to examine and
+the addresses) in a region.                                                 diagnose problems in application code. They run alongside
+                                                                            a program and provide a variety of debugging features
+C. Determining Data Recoverability                                          for software developers to analyze program behavior. For
+                                                                            example, these debuggers can read and write the contents of
+  Even if an application is vulnerable to memory errors and                 an arbitrary memory location in an application. We leverage
+its data is not particularly safe, it can still potentially recover         this ability to emulate both soft and hard errors.
+from a memory error in its data by loading a clean copy of its
+                                                                            1: addr = getMappedAddr()         1: addr = getMappedAddr()
+data from persistent storage (i.e., flash or disk). This requires
+                                                                            2: data = ∗addr                   2: awatch(addr):
+that a system is able to detect memory errors in hardware
+                                                                            3: bit = getRandBit()             3: print ∗addr
+with Parity/ECC or in software by computing checksums                       4: data = data ∧ (1 << bit)       4: print loadOrStore
+over application data regions [19]. For example, once an                    5: ∗addr = data                   5: print time
+error is detected, the OS can perform a recovery of clean data                           (a)                               (b)
+before repeating the memory access and returning control
+                                                                            Algorithm 1: Debugger pseudocode for (a) emulating single-bit soft
+to the program. As such, data recoverability can improve                    memory errors and (b) measuring application memory access patterns.
+application memory error tolerance. We have identified two
+strategies for data recoverability in applications: implicit                 Algorithm 1(a) lists the pseudocode for emulating a single-
+recoverability and explicit recoverability.                                 bit soft memory error in a random location in an application.
+  Implicit recoverability is enabled by an application already              In line 1, the getMappedAddr() function that we implement
+maintaining a clean copy of its data in persistent storage. For             uses the debugger’s ability to determine which memory
+example, the contents of a memory-mapped file can be re-                    addresses a program has data stored in to randomly select
+read from disk. Though recovering data incurs the additional                a valid byte-aligned application memory address, which it
+latency of reading from persistent storage, it only happens                 stores in the variable addr. In line 2, the value of the byte
+in the relatively uncommon case of a memory error.                          at addr is read and stored in the variable data. In line 3, the
+
+                                                                        4
+
+
+===== Page 5 =====
+
+getRandBit() function that we implement uses a random                                to outcome (2.2) in Figure 1, we log this outcome and
+number generator to select a bit index that determines which                         proceed to step (1) to test again.
+bit in a byte will contain an error, and stores this index in                         We stop testing after a statistically-significant number of
+the variable bit. Line 4 performs the actual injection of the                        errors have been emulated. While testing all of the memory
+error by flipping the bit at index bit in data (using a left shift                   addresses of data-intensive applications may not be feasible
+and an XOR operation). Finally, line 5 stores the modified                           due to their sheer size, in our experiments we ensured
+version of data back to the location addr.                                           that we sampled at least 0.1% of the memory addresses
+  We generalize Algorithm 1(a) to generate multi-bit soft                            in the applications we examine. This translates to over
+errors by repeatedly performing lines 3–4 with different                             10,000 experiments for an application with 32 GB of in-
+values of bit. To emulate single- and multi-bit hard errors we                       memory data (the average amount of in-memory data for the
+perform the same approach, but to ensure that an application                         applications we tested was ∼28 GB). We can then process
+does not overwrite the emulated hard error, every 30 ms we                           the logged information to quantify an application’s tolerance
+check if the contents of data has changed, and if it has,                            or vulnerability to memory errors (Section III-A).
+we re-apply the hard error. We chose this approach so as to
+keep our emulation infrastructure reasonably fast while still                        B. Memory Access Monitoring Framework
+emulating the features of hard errors.                                                 To monitor application memory access behavior, we use
+  Note that Algorithm 1(a) always flips the bit selected by bit                      processor watchpoints, available on x86 processors, to ex-
+in data. While it is true that some failure modes may only                           ecute logging code on individual loads/stores from/to arbi-
+cause the value of a DRAM cell to change in one direction                            trary memory addresses. Algorithm 1(b) lists the pseudocode
+(only from 0 → 1 or only from 1 → 0 [28]), modern DRAM                               for tracking memory access patterns to a random location
+devices have been shown to contain regions of cells that can                         in an application. In line 1, similar to Algorithm 1(a), we
+be induced to flip in either direction [27, 57], and so we do                        randomly select a valid byte-aligned memory address and
+not impose any constraints on the direction of bit flips.                            store this address in the variable addr. In line 2, we register
+  One difference between the errors that we emulate in soft-                         a watchpoint in the debugger (e.g., using awatch in GDB).
+ware and memory errors in hardware is that our technique                             From then on, whenever the processor loads data from that
+immediately makes memory errors visible throughout the                               address or stores data to that address, our logging code in
+system. In contrast, memory errors in hardware may take a                            lines 3–5 will get called to print out the data at addr, whether
+while to become visible to system as processor caches may                            the access was a load or a store (loadOrStore), and the time
+prevent the erroneous data in memory from being accessed                             of access (time).
+by serving the correct data from the cache data store. Due to                          We can then process the information logged by Algo-
+this, our methodology provides a more conservative estimate                          rithm 1(b), to compute the safe ratio for a region of an appli-
+of application memory error tolerance.                                               cation’s data (Section III-B). To quantify the recoverability
+  Tying everything together, Figure 2                   Start
+                                                                                     of an application’s data (Section III-C), we first use the
+shows a flow diagram illustrating the          1                                     debugger to identify any read-only file-mapped data, which
+five steps involved in our error em-               (Re)Start App                     we classify as recoverable. Additionally, we process the
+ulation framework. We assume that                                                    data logged by Algorithm 1(b) to measure how frequently
+the application under examination                                                    different regions of memory are written to, and classify any
+                                               2
+has already been run outside of the                 Inject Errors                    regions of memory that are written to every ≥ 5 minutes on
+framework and its expected output                    (Soft/Hard)                     average as recoverable (as storing a backup copy of their
+                                                  Repeat
+
+
+
+
+has been recorded. The framework                                                     data in persistent storage would likely not pose a significant
+proceeds as follows. (1) We start the          3
+                                                      Run Client                     performance impediment).
+application under the error injection                 Workload
+framework. (2) The debugger injects                                                   V. Data-Intensive Application Memory Error Tolerance
+the desired number and type of er-             4
+rors. (3) We initiate the connection                     App                           We next use our methodology to quantify the tolerance
+                                                       Crash?       YES              of three data-intensive applications to memory errors. We
+of a client and start performing the
+desired workload. (4) Throughout the                       NO                        use the insights developed in this section to inform the
+                                               5
+course of the application’s execution,           Compare Result                      new memory system organizations that we propose in Sec-
+                                                  with Expected                      tion VI-B to reduce system cost.
+we check to see if the machine has                     Output
+crashed (we deem an application in
+                                               (b)2:
+                                                  Error   Injectionerror             A. Data-Intensive Applications
+a crashed state if it fails to respond Figure          Memory
+to ≥ 50% of the client’s requests), emulationFramework  framework.                     We examined three data-intensive applications as part of
+corresponding to outcome (2.3) in Figure 1; if it has, we                            our case study: an interactive web search application (Web-
+log this outcome and proceed to step (1) to begin testing                            Search), an in-memory key–value store (Memcached), and a
+once again. (5) If the application finishes its workload, we                         graph mining framework (GraphLab). While these applica-
+check to see if its output matches the expected results,                             tions all operate on large amounts of memory (Table 3 lists
+corresponding to either outcome (1) or (2.1) in Figure 1.3 If
+its output does not match the expected results, corresponding                                 Applications   Private   Heap     Stack     Total
+                                                                                              WebSearch      36 GB      9 GB   60 MB      46 GB
+ 3 Note
+                                                                                              Memcached      0 GB      35 GB   132 KB     35 GB
+         that we ignore responses to the client that time out due to                          GraphLab        0 GB      4 GB   132 KB      4 GB
+performance variations (e.g., all of an application’s threads are busy serving
+other requests). In our tests, this occurred for 1.5% of the total requests.             Table 3: The size of different applications’ memory regions.
+
+
+                                                                                 5
+
+
+===== Page 6 =====
+
+                           15     WebSearch                                                     WebSearch                                                    14    Private       Heap    Stack                                     1E+8   Private   Heap   Stack
+
+
+
+
+                                                                # Incorrect/Billion Queries
+
+
+
+
+                                                                                                                                                                                                     # Incorrect/Billion Queries
+Probability of Crash (%)
+
+
+
+
+                                                                                                                                  Probability of Crash (%)
+                                  Memcached                                          1E+8       Memcached                                                    12
+                                  GraphLab                                                      GraphLab                                                     10                                                                    1E+6
+                           10                                                        1E+6                                                                     8
+                                                                                                                                                                                                                                   1E+4
+                                                                                                                                                              6
+                                                                                     1E+4                                                                     4
+                           5                                                                                                                                                                                                       1E+2
+                                                                                                                                                              2
+                                                                                     1E+2                                                                             0      0            0      0                                            0     0 0      0     0
+                                                                                                                                                              0                                                                    1E+0
+                           0                                                         1E+0
+                                    Soft Error     Hard Error                                      Soft Error    Hard Error
+                                                                                                                                                                   Soft Error           Hard Error                                          Soft Error     Hard Error
+                                (a) Application vulnerability                                 (b) Application incorrectness
+                                                                                                                                                              (a) Memory region vulnerability                                       (b) Memory region incorrectness
+  Figure 3: Inter-application variations in vulnerability to single-bit                                                              Figure 4: Memory region variations in vulnerability to single-bit soft
+  soft and hard memory errors for the three applications in terms of (a)                                                             and hard memory errors for the applications in terms of (a) probability
+  probability of crash and (b) frequency of incorrect results.                                                                       of crash and (b) frequency of incorrect results.
+
+  the sizes of their various regions of memory), they differ in
+  several ways that we describe next.                                                                                                errors in their memory (i.e., application vulnerability). Error
+   WebSearch implements the index searching component of                                                                             bars on the figure show the 90% confidence interval of each
+  a production search engine described in [58]. It does this by                                                                      probability. In terms of how these errors affect application
+  storing several hundred gigabytes of index data in persistent                                                                      correctness, Figure 3(b) plots the rate of incorrect results
+  storage and uses DRAM as a read-only cache for around                                                                              per billion queries under the same conditions. Error bars on
+  36 GB of frequently-accessed data. We use a real-world trace                                                                       the figure label the maximum number of incorrect queries
+  of 200,000 queries as the client workload. The result of a                                                                         during a test per billion queries (the minimum number of
+  query is a set of the top four most relevant documents to the                                                                      incorrect queries during a test per billion was 0). We draw
+  query. We use number of documents returned, the relevance                                                                          two key observations from these results.
+  of the documents to the query, and the popularity score of                                                                           First, there exists a significant variance in vulnerability
+  the documents as the expected outputs.                                                                                             among the three applications both in terms of crash proba-
+   To evaluate WebSearch, we used 40 Intel Xeon two-                                                                                 bility and in terms of incorrect result rate, which varies by
+  socket servers with 64 GB DDR3 memory and conducted                                                                                up to six orders of magnitude. Second, these characteristics
+  our experiments for over two months. In total, we sampled                                                                          may differ depending on whether errors are soft or hard
+  20,576 unique memory addresses for our experiments across                                                                          (for example, the number of incorrect results for WebSearch
+  different memory regions, executing a total of over five                                                                           differs by over two orders of magnitude between soft and
+  billion queries.                                                                                                                   hard errors). We therefore conclude that memory reliability
+   Memcached [59] is an in-memory key–value store for a                                                                              techniques that treat all applications the same are inefficient
+  30 GB Twitter dataset. It primarily uses DRAM to improve                                                                           because there exists significant variation in error tolerance
+  the performance of read requests. We run a synthetic client                                                                        among applications.
+  workload that consists of 90% read requests and 10% write                                                                          Finding 2: Error Tolerance Varies Within an Application.
+  requests. We use the contents of the value fetched by read                                                                         Figure 4(a) plots the probability of each of the three applica-
+  requests as the expected outputs.                                                                                                  tions crashing due to the occurrence of single-bit soft or hard
+   To evaluate Memcached, we used an Intel Xeon two-socket                                                                           errors in different regions of their memory (with error bars
+  server with 48 GB DDR3 memory and sampled more than                                                                                showing the 90% confidence interval of each probability).
+  983 unique memory addresses for our experiments across                                                                             Figure 4(b) plots the rate of incorrect results per billion
+  different memory regions, executing a total of over six                                                                            queries under the same conditions (with error bars showing
+  billion queries.                                                                                                                   the maximum number of incorrect queries during a test per
+   GraphLab [60] is a framework designed to perform com-                                                                             billion queries, with the minimum number being 0). Two
+  putation over large datasets consisting of nodes and edges.                                                                        observations are in order.
+  We use a 1.3 GB dataset of 11 million Twitter users as                                                                               First, for some regions, the probability of an error leading
+  nodes with directed edges between the nodes representing                                                                           to a crash is much lower than for others (for example, in
+  whether one Twitter user follows another. Our workload runs                                                                        WebSearch the probability of a hard error leading to a crash
+  an algorithm called TunkRank [61] that assigns each node                                                                           in the heap or private memory regions is much lower than
+  in a graph a floating-point popularity score corresponding                                                                         in the stack memory region). Second, even in the presence
+  to that user’s influence. We use the scores of the 100 most                                                                        of memory errors, some regions of some applications are
+  influential users as the expected outputs.                                                                                         still able to tolerate memory errors (perhaps at reduced
+   To evaluate GraphLab, we used an Intel Xeon two-socket                                                                            correctness). This may be acceptable for applications such as
+  server with 48 GB DDR3 memory and sampled more than                                                                                WebSearch that aggregate results from several servers before
+  2,159 unique memory addresses for our experiments across                                                                           presenting them to the user, in which case the likelihood of
+  different memory regions.                                                                                                          the user being exposed to an error is much lower than the
+  B. Application Characterization Results                                                                                            reported probabilities. We therefore conclude that memory
+                                                                                                                                     reliability techniques that treat all memory regions within
+    We applied our characterization methodology from Sec-                                                                            an application the same are inefficient because there exists
+  tion IV to our applications and next present the results and                                                                       significant variance in the error tolerance among different
+  insights from this study.                                                                                                          memory regions.
+  Finding 1: Error Tolerance Varies Across Applications.                                                                               For the remainder of this section, we use WebSearch as our
+  Figure 3(a) plots the probability of each of the three applica-                                                                    exemplar data-intensive application and perform an in-depth
+  tions crashing due to the occurrence of single-bit soft or hard                                                                    analysis of its tolerance behavior.
+
+                                                                                                                              6
+
+
+===== Page 7 =====
+
+              0.4               Incorrect Response                   1                                                                        Single-bit Soft                                                      Single-bit Soft
+
+
+
+
+                                                                                                                                                                              # Incorrect/Billion Queries
+                                                                                                           Probability of Crash (%)
+                                System/App Crash                   0.8                                                                        Single-bit Hard                                               1E+6   Single-bit Hard
+Probability
+
+                                                                                                                                      10
+
+
+
+
+                                                      Safe Ratio
+              0.2
+                                                                   0.6                                                                        Multi-bit Hard                                                       Multi-bit Hard
+                                                                   0.4                                                                                                                                      1E+4
+                                                                   0.2                                                                5
+               0
+                                                                     0                                                                                                                                      1E+2
+                  1 6 11 16 21 26 31 36                                  Private    Heap       Stack
+               Time after Error Injection (Minutes)                             Memory Regions                                        0                                                                     1E+0
+                    (a) Temporal variation                                    (b) Safe ratio                                                 Private      Heap        Stack                                        Private    Heap    Stack
+
+ Figure 5: (a) Temporal variation in vulnerability for WebSearch,                                                                          (a) WebSearch vulnerability                                         (b) WebSearch incorrectness
+ presented as frequency distribution function of time between a memory                                       Figure 6: Vulnerability of WebSearch to types of errors in terms of
+ error is injected and a corresponding effect of that error (either an                                       (a) probability of crash and (b) frequency of incorrect result.
+ incorrect result or a crash) is observed. (b) Safe ratio distribution for
+ different memory regions of WebSearch.                                                                      robust against memory errors (with crash probabilities of
+                                                                                                             1.04% and 0.64%, respectively, in Figure 4a and low rates
+ Finding 3: Quick-to-Crash vs. Periodically Incorrect Be-                                                    of incorrect results in Figure 4b). Prior works have examined
+ havior. Figure 5(a) shows the probability of a particular                                                   techniques to identify how applications mask errors due to
+ type of outcome occurring after a certain number of minutes                                                 their control flow [62, 63]. These can potentially be used in
+ given that it occurs during an application’s execution time.                                                conjunction with our technique to further characterize the
+ For this analysis, we focus on soft errors and note that hard                                               safety of memory regions.
+ errors would likely shift these distributions to the right, as                                                We conclude that some application memory regions are
+ hard errors would continue to be detected over time. We                                                     safer than others because either application access pattern
+ draw two key conclusions from this figure.                                                                  or application logic can be the dominant factor in different
+   First, more-severe failures of an application or system due                                               memory regions to mask a majority of memory errors.
+ to a memory error appear to be exponentially distributed and
+ exhibit a quick-to-crash behavior: they are detected early-                                                 Finding 5: More Severe Errors Mainly Decrease Correct-
+ on (within the first ten minutes for WebSearch) and result                                                  ness. We next examine how error severity affects application
+ in an easily-detectable failure mode. Second, less-severe                                                   vulnerability. To do so, we emulated three common error
+ failures of an application due to a memory error appear to                                                  types: single-bit soft errors and single-/two-bit hard errors.
+ be uniformly distributed and exhibit periodically incorrect                                                 Figure 6(a) shows the how different error types affect the
+ behavior: they arise more evenly distributed over time as                                                   probability of a crash and Figure 6(b) shows how the
+ incorrect data is accessed.                                                                                 different error types affect the rate of incorrect results. We
+                                                                                                             find that while the probability of a crash is relatively similar
+ Finding 4: Some Memory Regions Are Safer Than Others.                                                       among the different error types (without any conclusive
+ Recall from Section III-B that the safe ratio quantifies the                                                trend), the rate of incorrect results can increase by multiple
+ relative frequency of writes to a memory region versus                                                      orders of magnitude. Especially large is the increase in
+ all accesses to the memory region as a way to gauge the                                                     incorrect result rates from single-bit soft errors to single-
+ likelihood of an error being masked by an overwrite in                                                      bit hard errors, which may vary by around three orders
+ an application. We sampled the addresses of the memory                                                      of magnitude. Thus, more severe errors seem to have a
+ regions of WebSearch and plot the distribution of their safe                                                larger effect on application correctness as opposed to an
+ ratios in Figure 5(b) (we sampled 1590 addresses in total,                                                  application’s probability of crashing.
+ with the number of sampled addresses in each memory
+ region roughly proportional to the size of that region). In                                                 Finding 6: Data Recoverability Varies Across Memory
+ Figure 5(b), the width of each colored region indicates the                                                 Regions. We used our methodology from Section IV-B to
+ probability density for a given safe ratio of the memory                                                    measure the amount of memory in WebSearch that was
+ region indicated at the bottom. The line on each distribution                                               implicitly recoverable (read-only data with a copy on persis-
+ denotes the average safe ratio value for that region. We make                                               tent storage) and explicitly recoverable (data that is written
+ two observations from these results.                                                                        to every ≥5 minutes on average) and show our results in
+   First, we notice a difference in the safe ratios between the                                              Table 5. Note that the same data may be both implicitly
+ regions of the application that contain programmer-managed                                                  and explicitly recoverable, so the percentages in Table 5
+ data, the private and heap regions, and the region of the                                                   may sum to greater than 100%. We make three observations
+ application that contains compiler-managed data, the stack.                                                 from this data. First, we find that for a significant fraction of
+ The programmer-managed regions (private and heap), which                                                    the address space (at least 82.1%, pessimistically assuming
+ in WebSearch contain mainly read-only web index data, have                                                  the implicitly recoverable and explicitly recoverable data
+ a smaller potential to mask memory errors with overwrites                                                   completely overlap) of WebSearch, it is feasible to recover
+ due to their lower write intensity. The compiler-managed                                                    a clean copy from disk with low overhead. This suggests
+ region (stack), on the other hand, contains data that is                                                    that there is ample opportunity for correcting memory errors
+ frequently expanded and discarded whenever new functions                                                    in software with low overhead. Second, we find that, for
+ are called or returned from, giving it a high potential to mask                                                                       Memory region            Implicitly recoverable                              Explicitly recoverable
+ memory errors with overwrites (cf. Figure 1 outcome 1).
+                                                                                                                                              Private                   88%                                                  63.4%
+   Second, we note that though memory regions may have                                                                                         Heap                     59%                                                  28.4%
+ relatively low safe ratios (such as private and heap), errors                                                                                 Stack                     1%                                                  16.7%
+ in these regions may still be masked by application logic
+                                                                                                                                             Overall                   82.1%                                                 56.3%
+ (cf. Figure 1 outcome 2.1). For example, the private and
+ heap regions, despite their low safe ratios, are still quite                                                                                     Table 5: Recoverable memory in WebSearch.
+
+
+                                                                                                       7
+
+
+===== Page 8 =====
+
+Design dimension        Technique                       Benefits                                        Trade-offs
+                    No detection/correction             No associated overheads (low cost)              Unpredictable crashes and silent data corruption
+                    Parity                              Relatively low cost with detection capability   No hardware correction capability
+Hardware techniques SEC-DED/DEC-TED                     Tolerate common single-/double-bit errors       Increased cost and memory access latency
+                    Chipkill [10]                       Tolerate single-DRAM-chip errors                Increased cost and memory access latency
+                    Mirroring [12]                      Tolerate memory module failure                  100% capacity overhead
+                    Less-Tested DRAM                    Saved testing cost during manufacturing         Increased error rates
+                        Consume errors in application Simple, no performance overhead                    Unpredictable crashes and data corruption
+                        Automatically restart application Can prevent unpredictable application behavior May make little progress if error is frequent
+Software responses      Retire memory pages               Low overhead, effective for repeating errors Reduces memory space (usually very little)
+                        Conditionally consume errors Flexible, software vulnerability-aware              Memory management overhead to make decision
+                        Software correction               Tolerates detectable memory errors             Usually has performance overheads
+                        Physical machine                Simple, uniform usage across memory space       Costly depending on technique used
+                        Virtual machine                 More fine-grained, flexible management          Host OS is still vulnerable to memory errors
+Usage granularity       Application                     Manageable by the OS                            Does not leverage different region tolerance
+                        Memory region                   Manageable by the OS                            Does not leverage different page tolerance
+                        Memory page                     Manageable by the OS                            Does not leverage different data object tolerance
+                        Cache line                      Most fine-grained management                    Large management overhead; software changes
+
+                    Table 4: Heterogeneous reliability design dimensions, techniques, and their potential benefits and trade-offs.
+
+WebSearch, more data is implicitly recoverable than explic-                     used. Table 4 lists the techniques we considered in each of
+itly recoverable. This is likely due to the fact that most                      the dimensions along with their potential benefits and trade-
+of WebSearch’s working set of data is an in-memory read-                        offs. In addition to discussing system designs, we discuss
+only cache of web document indices stored on disk. Thus,                        (1) the metrics we use to evaluate the benefits and costs
+a large portion of the data in applications like WebSearch                      of the designs, and (2) the memory error model we use to
+that cache persistent data in memory can tolerate memory                        examine the effectiveness of the designs. We discuss each of
+errors in software, without any additional need to maintain                     these components of our design space exploration in turn.
+a separate copy of data on disk. Third, even if WebSearch                        Hardware Techniques. Hardware techniques to detect and
+did not maintain a copy of its data on disk, the majority                       correct errors determine the amount of protection provided
+of its data (56.3%) could still be recovered with relatively                    by the memory devices in a system. These techniques
+low overhead. We therefore conclude that for data-intensive                     typically trade hardware cost for additional memory error
+applications like WebSearch, software-only memory error                         detection and correction capabilities, and so we would like
+tolerance techniques are a promising direction for enabling                     to use them as sparingly as possible to achieve a particular
+reliable system designs.                                                        amount of reliability in our system designs. We briefly
+  Based on the results of our case study of data-intensive ap-                  review the various techniques next.
+plications, we next explore how to design systems composed                       One technique employed in consumer laptops and desktops
+of heterogeneous hardware/software techniques to enable                         to reduce cost is to not use any memory error detection
+high reliability at low system cost.                                            and correction capabilities in memory. While this technique
+                                                                                can save greatly on cost, it can also cause unpredictable
+      VI. Heterogeneous-Reliability Memory Systems                              crashes and data corruption, as has been documented in
+ Overview. The goals for our heterogeneous-reliability                          studies across a large number of consumer PCs [64]. Other
+memory system design methodology are (1) to provide high                        techniques (discussed in Section II) that store additional
+memory system reliability (e.g., enabling 99.90% single                         data in order to detect and/or correct memory errors include
+server availability) at (2) low cost. To achieve these goals,                   storing parity information, SEC-DED, Chipkill, and Mirror-
+our methodology consists of three steps. First, motivated by                    ing. These more costly techniques are typically employed
+the fact that memory error vulnerability and recoverability                     homogeneously in existing servers to achieve a desired
+varies widely among different applications and memory                           amount of reliability. Another technique that is orthogonal to
+regions, we perform an exploration of the design space for                      those we have discussed so far is to employ memory devices
+systems that could employ heterogeneous hardware/software                       that use less-tested DRAM chips. The testing performed
+reliability techniques. Second, we examine how ways of                          by vendors in order to achieve a certain quality of DRAM
+mapping applications with different reliability characteristics                 device can add a substantial amount of cost [8], though it
+to system configurations in the heterogeneous-reliability                       can increase the average reliability of DRAM devices.
+design space can achieve the right amount of reliability at                      Software Responses. Software responses to errors deter-
+low cost, using the WebSearch application as an example.                        mine any actions that are taken by the software to potentially
+Third, we discuss some of the required hardware/software                        tolerate or correct a memory error. These techniques typi-
+support for the proposed new system designs. We describe                        cally trade application/OS performance and implementation
+each of these steps in detail next.                                             complexity for improved reliability. Notice that some of
+                                                                                these software responses can potentially enable lower-cost
+A. Design Space, Metrics, and Error Models                                      hardware techniques to be employed in a system, while still
+ We examine three dimensions in the design space for sys-                       achieving a desired amount of reliability. We discuss each
+tems with heterogeneous reliability: (1) hardware techniques                    of these techniques next.
+to detect and correct errors, (2) software responses to errors,                  The simplest (but potentially least effective) software re-
+and (3) the granularity at which different techniques are                       sponse to a memory error is to allow the application to
+
+
+                                                                            8
+
+
+===== Page 9 =====
+
+consume the error and experience unpredictable behavior or                                Memory Error           Application              Metrics/
+data corruption [65]. As we have seen, however, some data-                                  Models              Access Pattern           Constraints
+intensive applications (such as WebSearch) can consume and
+                                                                                                           Design Space Exploration
+tolerate a considerable amount of errors without substantial
+consequences. Another software response is to automati-                                          Hardware Mappings                      Software
+cally restart applications once an error has been detected                                 Memory Regions     Hardware                 Responses
+(whether through hardware or software techniques or other                                                    Techniques
+indicators, such as an application crash), which can reduce                                  WebSearch                                  Software
+                                                                                               Heap           SEC-DED                  Correction
+the likelihood that applications experience unpredictable
+behavior. Retiring memory pages is a technique used in                                       WebSearch
+                                                                                              Private         No Detection              Consume
+some operating systems [15, 20–22] to help tolerate memory                                                                            Errors in App
+                                                                                             WebSearch         /Correction
+errors by not allowing a physical page that has experienced                                    Stack
+a certain number of errors to be allocated to applications.
+                                                                                                                 Parity               Conditionally
+ Other software responses may require additional soft-                                       Memcached                                 Consume
+ware/OS modification in order to implement. Allowing ap-                                       Heap
+plications to conditionally consume errors once they have                                    Memcached        Untested
+                                                                                               Stack         DRAM+Parity              Retire Page
+been identified can potentially allow the software/OS to
+make informed decisions about how tolerable errors in cer-
+tain memory locations may be. Recent work that allows the                             Figure 7: Mapping of applications to a heterogeneous-reliability
+                                                                                      memory system design, arrows show an example mapping.
+programmer to annotate the tolerance of their data structures
+(e.g., [47]) is one way of allowing software to conditionally                         hard errors. We then examine how such rates of occurrence
+consume errors. Finally, the software/OS may be able to                               affect application reliability and single server availability
+perform its own correction of memory errors once they are                             based on the measured results from our case studies of
+detected in the hardware by storing additional data required                          applications.
+to repair corrupted data. Though these techniques require                               Note that though we do not explicitly model how error
+software changes and may reduce performance, they have                                rates change depending on DRAM density, capacity, speed,
+the potential to reduce hardware cost by making up for the                            power, and other characteristics, our methodology is compat-
+deficiencies of less reliable, but cheaper, hardware devices.                         ible with other more complex, and potentially more precise,
+ Usage Granularity. The usage granularity determines                                  ways of modeling the rate of memory error occurrence.
+where hardware techniques or software responses are ap-                                 Tying everything together, Figure 7 illustrates the high
+plied. Applying hardware techniques or software responses                             level operation of our methodology. At the top of the figure
+at coarser granularities may require less overhead to manage,                         are the inputs to our technique: memory error models,
+but may not leverage the diversity of tolerance among                                 application memory access information (such as an appli-
+different applications and memory regions. For example, the                           cation’s spatial and temporal locality of reference), and the
+coarsest granularity, applying techniques across the entire                           various metrics under evaluation and their constraints (e.g.,
+physical machine, is what is typically used in servers, and                           99.90% single server availability). We choose as our usage
+may be inefficient for applications or memory regions that                            granularity memory regions for their good balance between
+have different reliability requirements (like the examples we                         diversity of memory error tolerance and lower manage-
+have examined in data-intensive applications).                                        ment complexity. Based on the inputs, we explore different
+ Finer granularities for using hardware techniques and soft-                          mappings of memory regions to hardware techniques and
+ware responses than the entire physical machine include                               which software responses to use. Finally, we choose the
+across individual virtual machines, applications, memory re-                          heterogeneous-reliability memory system design that best
+gions/pages, and cache lines. Each increasingly finer granu-                          suits our needs. We next examine the results of performing
+larity of usage provides more opportunities for how different                         this process on the WebSearch application and the resulting
+hardware techniques and software responses are used across                            implications for hardware/software design.
+data, but may also require more complexity to manage the
+increased number of techniques and responses used.                                     B. Design Space Exploration
+ Metrics. When evaluating a particular system configuration                             In this section, we use the results of our case study
+in the design space, we examine three metrics to quantify the                          presented in Section V and the design space parameters
+effectiveness of a design: (1) cost, the amount spent on server                        discussed in Section VI to evaluate the effectiveness and cost
+hardware for a particular system design, (2) single server                             of several memory system design points for the WebSearch
+availability, the fraction of time a server is functioning                             application. We chose five design points to compare against
+correctly over a certain period of time,4 and (3) reliability,                         to illustrate the inefficiencies of traditional homogeneous
+the likelihood of incorrect behavior occurring.                                        approaches to memory system reliability as well as show
+ Error Models. To evaluate the reliability and availability                            some of the benefits of heterogeneous-reliability memory
+of a particular design, we use information from prior studies                          system designs, which we next describe and contrast.
+(e.g., [13, 15]) to derive the rate of occurrence of soft and                         • Typical Server: A configuration resembling a typical
+  4 Note that this is different from application availability, which measures
+                                                                                         server deployed in a modern datacenter. All memory is
+                                                                                         homogeneously protected using SEC-DED ECC.
+the fraction of time an application is functioning correctly, typically across
+multiple servers. In fact, for our applications, application availability would       • Consumer PC: Consumer PCs typically have no hardware
+likely be much higher than single server availability because our applica-               protection against memory errors, reducing both their cost
+tions rely on software-level techniques that can tolerate server failures.               and reliability.
+
+                                                                                  9
+
+
+===== Page 10 =====
+
+           Design parameters                                       Mapping                                     Metrics
+
+ DRAM/server HW cost                 30%    Configuration                                                Server     Crashes/ Single      # incorrect/
+                                                            Private Heap Stack  Memory cost
+ NoECC memory cost savings 11.1%                                                                       HW cost      server/ server avail- million
+                                                            (36GB) (9GB) (60MB) savings (%)
+ Parity memory cost savings          9.7%                                                             savings (%)   month     ability      queries
+ L memory cost savings         18%±12%      Typical Server   ECC   ECC   ECC         0.0            0.0                0     100.00%          0
+ Crash recovery time              10 mins   Consumer PC     NoECC NoECC NoECC       11.1            3.3               19     99.55%          33
+ Par+R flush threshold             5 mins   Detect&Recover Par+R NoECC NoECC         9.7            2.9               3       99.93%          9
+ Errors/server/month [13]            2000   Less-Tested (L) NoECC NoECC NoECC 27.1 (16.4-37.8) 8.1 (4.9-11.3)         96      97.78%         163
+ Target single server availability 99.9%    Detect&Recover/L ECC Par+R NoECC 15.5 (3.1-27.9) 4.7 (0.9-8.4)             4      99.90%          12
+
+Table 6: Mapping of WebSearch address space to different hardware/software design points and the corresponding trade-off in cost, single server
+availability, and reliability. (ECC = SEC-DED memory; NoECC = no detection/correction; Par+R = parity memory and recovery from disk; L
+= less-tested memory.)
+• Detect&Recover: Based on our observation that some                            as disk failure or power supply failure, here, we examine
+   memory regions are safer than others (Section V), we con-                    server availability from the perspective of only memory
+   sider a memory system design that, for the private region,                   errors. We also show the number of incorrect responses per
+   uses parity in hardware to detect errors and responds by                     million queries (column 9).
+   correcting them with a clean copy of data from disk in                         We take the Typical Server configuration as our baseline.
+   software (Par+R, parity and recovery), and uses neither                      Notice that the memory design common in consumer PCs,
+   error detection nor correction for the rest of its data.                     which uses no error detection or correction in memory,
+• Less-Tested (L): Testing increases both the cost and aver-                    is able to reduce memory cost by 11.1% (reducing server
+   age reliability of memory devices. This system examines                      hardware cost by 3.3%). This comes at the penalty of
+   the implications of using less-thoroughly-tested memory                      19 crashes per server per month (reducing single server
+   throughout the entire system.                                                availability to 99.55%). When the server is operational, it
+• Detect&Recover/L: This system evaluates the De-                               generates 33 incorrect results per million queries.
+   tect&Recover design with less-tested memory. ECC is                            In contrast, the Detect&Recover design, which leverages a
+   used in the private region and Par+R in the heap to                          heterogeneous-reliability memory system, is able to reduce
+   compensate for the reduced reliability of the less-tested                    memory cost by 9.7% compared to the baseline (leading to
+   memory.                                                                      a server hardware cost reduction of 2.9%), while causing
+   Table 6 (left) shows the design parameters that we use for                   only 3 crashes per server per month (leading to a single
+ our study. We estimate the fraction of DRAM cost compared                      server availability of 99.93%, above the target availability of
+ to server hardware cost based on [6]. We derive the cost                       99.90%). In addition, during operation, the Detect&Recover
+ of ECC DRAM, non-ECC DRAM (NoECC), and parity-                                 design generates only 9 incorrect results per million queries.
+ based DRAM using “Added capacity” from Table 1. We                               Using less-tested DRAM devices has the potential to reduce
+ estimate the cost of less-tested DRAM based on the trends                      memory costs substantially—in the range of 16.4% to 37.8%
+ shown in [8, 9] and examine a range of costs for less-                         (leading to server hardware cost reduction in the range of
+ tested DRAM because we are not aware of any recently                           4.9% to 11.3%). Unfortunately, this reduction in cost comes
+ documented costs from vendors. Crash recovery time is                          with a similarly substantial reduction in server availability
+ based on our observations during testing and we assume that                    and reliability, with 96 crashes per server per month, a single
+ data that is written in memory for regions protected by parity                 server availability of only 97.78%, and 163 incorrect queries
+ and recovery (Par+R) is copied to a backup on disk every                       per million.
+ five minutes. We assume 2000 errors per server per month                         The Detect&Recover/L technique uses a heterogeneous-
+ based on a prior study of DRAM errors in the field [13]                        reliability memory system on top of less-tested DRAM to
+ and target single server availability of 99.90%. Since we do                   achieve both memory cost savings and high single server
+ not examine the occurrence of hard errors in our analysis                      availability/reliability. While using less-tested DRAM lowers
+ (only their ongoing effects), we treat all memory errors as                    the cost of the memory by 3.1% to 27.9% (reducing cost of
+ soft errors for this analysis.                                                 server hardware by 0.9% to 8.4%), using hardware/software
+   Table 6 (right) shows, for each of the five designs we                       reliability techniques tailored to the needs of each partic-
+ evaluate, how their memory regions are mapped to different                     ular memory region reduces crashes to only 4 per server
+ hardware/software reliability techniques (columns 2–4), and                    per month (meeting the target single server availability of
+ the resulting effects on the metrics that we evaluate (columns                 99.90%), with only 12 incorrect queries per million. We
+ 5–9). We break down cost savings into two components:                          therefore conclude that heterogeneous-reliability memory
+ the cost savings of the memory system (column 5) and the                       system designs can enable systems to achieve both high cost
+ cost savings of the entire server hardware (column 6). Note                    savings and high single server availability/reliability at the
+ that we compute capital cost as it represents the dominant                     same time.
+ cost component of the server.5 We also list the average                          While we performed our analysis on the WebSearch appli-
+ number of crashes per server per month (column 7) and the                      cation, we believe that other data-intensive applications may
+ associated fraction of single server availability (column 8).                  benefit from the heterogeneous-reliability memory system
+ While server availability also depends on other factors, such                  designs we have proposed. To illustrate this fact, Figure 8
+                                                                                shows for each data-intensive application we examined in
+ 5 We also expect memory system energy savings to be proportional to            Section V, the maximum number of tolerable errors re-
+memory capacity savings. This is due to the eliminated dynamic energy of        quired to still achieve a particular amount of reliability,
+moving and storing the ECC bits used for error detection or correction.
+
+
+                                                                           10
+
+
+===== Page 11 =====
+
+ Number of Memory Errors   1E+4   WebSearch   Memcached   GraphLab                       Mem Channel 0      DIMM ECC        DIMM ECC
+                                  2,000                                                  Ctrl 0
+   Tolerable per Month                                                                   Mem Channel 1
+                                                                                                         *
+                           1E+3                                                   CPU Ctrl 1*               DIMM            DIMM
+                                                                                                         *
+                           1E+2                                                          Mem Channel 2      DIMM            DIMM
+                                                                                        Ctrl 2*
+                           1E+1                                                   * Memory controller/channel without ECC support
+                                                                           Figure 9: Minimal changes in today’s memory controller can achieve
+                           1E+0                                            heterogeneous memory provisioning at the channel granularity.
+                                     99.99%
+                                     99.90%            99.00%
+                            Single Server Availability                       Feasibility. A primary concern associated with using mem-
+Figure 8: Number of memory errors tolerable per month to ensure            ory without error detection/correction is the fear of the
+different single server availability requirements are met for three        effects of memory errors propagating to persistent storage.
+applications.                                                              Based on our analysis, we believe that, in general, the use of
+derived from the results in Figure 4. We make two ob-                      memory without error detection/correction (and the subse-
+servations from this figure. First, even at the error rate of              quent propagation of errors to persistent storage) is suitable
+2000 errors per month that we assume, without any error                    for applications with the following two characteristics: (1)
+detection/correction, two of the applications (WebSearch                   application data is mostly read-only in memory (i.e., errors
+and Memcached) are able to achieve 99.00% single server                    have a low likelihood of propagating to persistent storage),
+availability. Second, there exists an order of magnitude                   and (2) the result from the application is transient in nature
+difference in the amount of errors that can be tolerated per               (i.e., consumed immediately by a user and then discarded).
+month to achieve a particular availability across the applica-             There are several large-scale data-intensive applications that
+tions. Based on these, we believe that there is significant                conform to these characteristics such as web search (which
+opportunity in these and other applications for reducing                   we have analyzed), media streaming, online games, collab-
+server hardware cost while achieving high single server                    orative editing (e.g., Wikipedia), and social networking.
+availability/reliability using our heterogeneous-reliability de-             Applications that do not have these two characteristics
+sign methodology.                                                          should be carefully inspected and possibly re-architected
+                                                                           before deciding to use memory without detection/correction
+C. Required Hardware/Software Support                                      capabilities. As an example, applications could divide their
+                                                                           data into persistent and transient, and map persistent data
+  We next discuss the hardware and software changes                        to more reliable memory. To avoid incorrect results from
+required to enable heterogeneous-reliability memory sys-                   remaining in memory indefinitely, applications may period-
+tems and the feasibility of foregoing memory error detec-                  ically invalidate and recompute their working set of data.
+tion/correction in servers.                                                  Another concern with using less reliable memory devices
+  Hardware Support. In hardware, our techniques require                    is their inability to detect (and thus retire [20–22]) memory
+the ability for memory modules with different hardware                     pages with permanent faults. To alleviate this issue, software
+reliability techniques to coexist in the same system (e.g.,                designed to detect memory errors, such as memtest [69], can
+no detection/correction, parity detection, and SEC-DED).                   be run periodically on servers with memory devices without
+We believe that this is achievable using existing memory                   error detection and pages can be retired as usual.
+controllers at the granularity of memory channels without                    Finally, the use of less reliable memory may result in single
+much modification. Figure 9 shows an example of how such                   server unavailability, and hence, may only be applicable for
+a technique could be employed on a processor that uses                     applications that possess inherent slack in their availability
+separate memory controllers for each channel, each con-                    requirements. Server models such as scale-out and stateless
+trolling DIMMs that employ different hardware reliability                  models, which tolerate single server failures by diverting
+techniques. Furthermore, techniques such as memory disag-                  work to other available servers, are well-suited to handle
+gregation [66] can be leveraged to provide heterogeneous-                  occasional single server unavailability, and thus can even
+reliability memory over remote direct memory access pro-                   more efficiently leverage heterogeneous-reliability memory
+tocols to a variety of servers.                                            system designs.
+  Software Support. In software, our techniques require the
+ability to identify memory regions with distinct reliability                                    VII. Conclusions
+requirements and map them to locations on hardware devices                  In this paper, we developed a new methodology to quantify
+employing appropriate reliability techniques. Although we                  the tolerance of applications to memory errors. Using this
+examined OS-visible memory regions in this work (private,                  methodology, we performed a case study of three new
+heap, and stack), our technique can easily be extended to                  data-intensive workloads that showed, among other new
+other usage granularities, potentially by leveraging hints                 insights, that there exists a diverse spectrum of memory
+from the programmer (as in [47, 67]). Alternatively, it is                 error tolerance both within and among these applications.
+foreseeable with our technique that infrastructure service                 We proposed several new hardware/software heterogeneous-
+providers, such as Amazon EC2 and Windows Azure, could                     reliability memory system designs and evaluated them to
+provide different reliability domains for users to configure               show that the one-size-fits-all approach to reliability in
+their virtual machines with depending on the amount of                     modern servers is inefficient in terms of cost, and that
+availability they desire (e.g., 99.90% versus 99.00% avail-                heterogeneous-reliability systems can achieve the benefits of
+ability). In addition, techniques like virtual machine migra-              both low cost and high single server availability/reliability.
+tion [68] can be used to dynamically change the provided                   We hope that our techniques can enable the use of lower-
+memory reliability over time (e.g., in response to changes                 cost memory devices to reduce the server hardware cost of
+in application utilization).                                               datacenters and that our analyses will spur future research
+
+                                                                      11
+
+
+===== Page 12 =====
+
+on heterogeneous-reliability memory systems. As DRAM                              [28] T. C. May et al., “Alpha-Particle-Induced Soft Errors in Dynamic
+technology scales into small feature sizes and becomes less                            Memories,” IEEE T-ED, 1979.
+                                                                                  [29] V. Sridharan et al., “Feng Shui of Supercomputer Memory: Positional
+reliable, we believe such system-level hardware/software                               Effects in DRAM and SRAM Faults,” in SC, 2013.
+cooperative heterogeneous-reliability solutions will become                       [30] T. Siddiqua et al., “Analysis and Modeling of Memory Errors from
+                                                                                       Large-scale Field Data Collection,” in SELSE, 2013.
+more important in the future [70].                                                [31] A. Messer et al., “Susceptibility of Commodity Systems and Software
+ As part of our future efforts, we plan to extend our                                  to Memory Soft Errors,” IEEE TC, 2004.
+                                                                                  [32] D. Li et al., “Classifying Soft Error Vulnerabilities in Extreme-Scale
+characterization framework to cover a more diverse set                                 Scientific Applications Using a Binary Instrumentation Tool,” in SC,
+of memory failure modes (e.g., failures correlated across                              2012.
+                                                                                  [33] X. Li et al., “Application-Level Correctness and Its Impact on Fault
+DRAM banks, rows, and columns), and to explore lighter-                                Tolerance,” in HPCA, 2007.
+weight characterization methodologies to make characteriz-                        [34] H. Esmaeilzadeh et al., “Architecture Support for Disciplined Ap-
+ing application memory error tolerance cheaper for a wider                             proximate Programming,” in ASPLOS, 2012.
+                                                                                  [35] J. Bornholt et al., “Uncertain<T>: A First-order Type for Uncertain
+set of applications. We also intend to implement and further                           Data,” in ASPLOS, 2014.
+evaluate the heterogeneous hardware detection and software                        [36] “Intel iACT,” http://www.github.com/IntelLabs/iACT.
+                                                                                  [37] D. H. Yoon et al., “Virtualized and Flexible ECC for Main Memory,”
+recovery designs we propose in this paper.                                             in ASPLOS, 2010.
+                                                                                  [38] H. Schirmeier et al., “RAMpage: Graceful Degradation Management
+                     VIII. Acknowledgments                                             for Memory Errors in Commodity Linux Servers,” in PRDC, 2011.
+                                                                                  [39] C. Borchert et al., “Generative Software-Based Memory Error Detec-
+ We thank the anonymous reviewers and the members of                                   tion and Correction for Operating System Data Structures,” in DSN,
+                                                                                       2013.
+SAFARI research group for feedback. We acknowledge                                [40] K. Pattabiraman et al., “Samurai: Protecting Critical Data in Unsafe
+the support of Microsoft and Samsung. This research was                                Languages,” in EuroSys, 2008.
+                                                                                  [41] J. Chang et al., “Automatic Instruction-Level Software-Only Recov-
+partially supported by grants from Intel Science and Tech-                             ery,” in DSN, 2006.
+nology Center for Cloud Computing, NSF Awards 0953246,                            [42] A. Benso et al., “A C/C++ Source-to-Source Compiler for Depend-
+                                                                                       able Applications,” in DSN, 2000.
+1065112, 1212962. This research was started as an intern-                         [43] L. Leem et al., “ERSA: Error Resilient System Architecture for
+ship project at Microsoft Research.                                                    Probabilistic Applications,” in DATE, 2010.
+                                                                                  [44] M.-L. Li et al., “Trace-Based Microarchitecture-level Diagnosis of
+                                                                                       Permanent Hardware Faults,” in DSN, 2008.
+                              References                                          [45] X. Xu et al., “Understanding Soft Error Propagation Using Efficient
+ [1] L. A. Barroso et al., The Datacenter as a Computer: An Introduction               Vulnerability-Driven Fault Injection,” in DSN, 2012.
+     to the Design of Warehouse-Scale Machines. Morgan & Claypool                 [46] M.-L. Li et al., “Understanding the Propagation of Hard Errors to
+     Publishers, 2009.                                                                 Software and Implications for Resilient System Design,” in ASPLOS,
+ [2] E. M. Elnozahy et al., “Energy-Efficient Server Clusters,” in PACS,               2008.
+     2003.                                                                        [47] S. Liu et al., “Flikker: Saving DRAM Refresh-Power Through Critical
+ [3] P. Jobin, “Cloud Computing Shifting to Cooler Climates,” 2012,                    Data Partitioning,” in ASPLOS, 2011.
+     http://tinyurl.com/mfrlrtl.                                                  [48] D. H. Yoon et al., “BOOM: Enabling Mobile Memory Based Low-
+ [4] S. Grundberg et al., “For Data Center, Google Goes for the Cold,”                 power Server DIMMs,” in ISCA, 2012.
+     2011, http://tinyurl.com/ml55nh5.                                            [49] K. T. Malladi et al., “Towards Energy-proportional Datacenter Mem-
+ [5] A. C. Riekstin et al., “No More Electrical Infrastructure: Towards                ory with Mobile DRAM,” in ISCA, 2012.
+     Fuel Cell Powered Data Centers,” in HotPower, 2013.                          [50] M. K. Qureshi et al., “Scalable High Performance Main Memory
+ [6] C. Kozyrakis et al., “Server Engineering Insights for Large-Scale                 System Using Phase-Change Memory Technology,” in ISCA, 2009.
+     Online Services,” IEEE Micro, 2010.                                          [51] H. Yoon et al., “Row Buffer Locality Aware Caching Policies for
+ [7] R. Nishtala et al., “Scaling Memcache at Facebook,” in NSDI, 2013.                Hybrid Memories,” in ICCD, 2012.
+ [8] Z. Al-Ars, “DRAM Fault Analysis and Test Generation,” Ph.D.                  [52] S. Phadke et al., “MLP Aware Heterogeneous Memory System,” in
+     dissertation, Delft, 2005.                                                        DATE, 2011.
+ [9] “Memory Test Background,” 2000, http://tinyurl.com/m7c3wf7.                  [53] N. Chatterjee et al., “Leveraging Heterogeneity in DRAM Main
+[10] T. J. Dell, “A White Paper on the Benefits of Chipkill-Correct ECC                Memories to Accelerate Critical Word Access,” in MICRO, 2012.
+     for PC Server Main Memory,” IBM Microelectronics Division, 1997.             [54] J. Meza et al., “Enabling efficient and scalable hybrid memories
+[11] P. J. Meaney et al., “IBM zEnterprise Redundant Array of Independent              using fine-granularity dram cache management,” IEEE Computer
+     Memory Subsystem,” IBM JRD, 2012.                                                 Architecture Letters, 2012.
+[12] D. Henderson et al., “POWER7 System RAS,” 2012.                              [55] “Windows Debugging,” http://tinyurl.com/l6zsqzv.
+[13] B. Schroeder et al., “DRAM Errors in the Wild: A Large-Scale Field           [56] “GDB: The GNU Project Debugger,” http://www.sourceware.org/gdb/.
+     Study,” in SIGMETRICS Performance, 2009.                                     [57] J. Liu et al., “An Experimental Study of Data Retention Behavior in
+[14] V. Sridharan et al., “A Study of DRAM Failures in the Field,” in SC,              Modern DRAM Devices: Implications for Retention Time Profiling
+     2012.                                                                             Mechanisms,” in ISCA, 2013.
+[15] A. A. Hwang et al., “Cosmic Rays Don’t Strike Twice: Understanding           [58] V. J. Reddi et al., “Web Search Using Mobile Cores: Quantifying and
+     the Nature of DRAM Errors and the Implications for System Design,”                Mitigating the Price of Efficiency,” in ISCA, 2010.
+     in ASPLOS, 2012.                                                             [59] “Memcached,” http://memcached.org/.
+[16] X. Li et al., “A Realistic Evaluation of Memory Hardware Errors and          [60] Y. Low et al., “Distributed GraphLab: A Framework for Machine
+     Software System Susceptibility,” in USENIX ATC, 2010.                             Learning and Data Mining in the Cloud,” PVLDB, 2012.
+[17] J. Stuecheli et al., “Elastic refresh: Techniques to mitigate refresh        [61] D. Tunkelang, “A Twitter Analog to PageRank,” 2009,
+     penalties in high density memory,” in MICRO, 2010.                                http://tinyurl.com/9byt4z.
+[18] JEDEC Solid State Technology Association, “JEDEC Standard:                   [62] S. K. S. Hari et al., “Relyzer: Exploiting Application-Level Fault
+     DDR3 SDRAM, JESD79-3C,” 2008.                                                     Equivalence to Analyze Application Resiliency to Transient Faults,”
+[19] D. Fiala et al., “Detection and Correction of Silent Data Corruption              in ASPLOS, 2012.
+     for Large-scale High-performance Computing,” in SC, 2012.                    [63] N. J. Wang et al., “Characterizing the Effects of Transient Faults on
+[20] “Predictive Failure Analysis (PFA),” http://tinyurl.com/n34z657.                  a High-Performance Processor Pipeline,” in DSN, 2004.
+[21] “Mcelog: Memory Error Handling in User Space,” http://ww                     [64] E. B. Nightingale et al., “Cycles, Cells and Platters: An Empirical
+     w.halobates.de/lk10-mcelog.pdf.                                                   Analysis of Hardware Failures on a Million Consumer PCs,” in
+[22] D. Tang et al., “Assessment of the Effect of Memory Page Retirement               EuroSys, 2011.
+     on System RAS Against Hardware Faults,” in DSN, 2006.                        [65] M. C. Rinard et al., “Enhancing Server Availability and Security
+[23] Y. Kim et al., “A Case for Exploiting Subarray-Level Parallelism                  Through Failure-Oblivious Computing,” in OSDI, 2004.
+     (SALP) in DRAM,” in ISCA, 2012.                                              [66] K. Lim et al., “Disaggregated Memory for Expansion and Sharing in
+[24] D. Lee et al., “Tiered-Latency DRAM: A Low Latency and Low Cost                   Blade Servers,” in ISCA, 2009.
+     DRAM Architecture,” in HPCA, 2013.                                           [67] A. Sampson et al., “EnerJ: Approximate Data Types for Safe and
+[25] V. Seshadri et al., “RowClone: Fast and Efficient In-DRAM Copy and                General Low-Power Computation,” in PLDI, 2011.
+     Initialization of Bulk Data,” in MICRO, 2013.                                [68] Y. Du et al., “A Rising Tide Lifts All Boats: How Memory Error Pre-
+[26] S. Khan et al., “The Efficacy of Error Mitigation Techniques for                  diction and Prevention Can Help with Virtualized System Longevity,”
+     DRAM Retention Failures: A Comparative Experimental Study,” in                    in HotDep, 2010.
+     SIGMETRICS, 2014.                                                            [69] “Memtest86+,” http://www.memtest.org/.
+[27] Y. Kim et al., “Flipping Bits in Memory Without Accessing Them: An           [70] O. Mutlu, “Memory Scaling: A Systems Architecture Perspective,” in
+     Experimental Study of DRAM Disturbance Errors,” in ISCA, 2014.                    MEMCON, 2013.
+
+
+                                                                             12

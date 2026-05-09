@@ -1,0 +1,1279 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/staged-memory-scheduling_isca12.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/staged-memory-scheduling_isca12.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+         Staged Memory Scheduling: Achieving High Performance and Scalability
+                             in Heterogeneous Systems
+         Rachata Ausavarungnirun† Kevin Kai-Wei Chang† Lavanya Subramanian†                     Gabriel H. Loh‡           Onur Mutlu†
+                 † Carnegie Mellon University                                          ‡ Advanced Micro Devices, Inc.
+         {rachata,kevincha,lsubrama,onur}@cmu.edu                                             gabe.loh@amd.com
+                           Abstract                                  cation has a much smaller number of outstanding requests, due
+When multiple processor (CPU) cores and a GPU integrated             to the sequential execution model and limited instruction win-
+together on the same chip share the off-chip main mem-               dow size of CPU cores.
+ory, requests from the GPU can heavily interfere with re-                Recent memory scheduling research has focused on mem-
+quests from the CPU cores, leading to low system performance         ory interference between applications in CPU-only scenarios.
+and starvation of CPU cores. Unfortunately, state-of-the-art         These past proposals are built around a single centralized re-
+application-aware memory scheduling algorithms are ineffec-          quest buffer at each MC.1 The scheduling algorithm imple-
+tive at solving this problem at low complexity due to the large      mented in the MC analyzes the stream of requests in the cen-
+amount of GPU traffic. A large and costly request buffer is          tralized request buffer to determine application memory charac-
+needed to provide these algorithms with enough visibility across     teristics, decides on a priority for each core, and then enforces
+the global request stream, requiring relatively complex hard-        these priorities. Observable memory characteristics may include
+ware implementations.                                                the number of requests that result in row-buffer hits [15], the
+   This paper proposes a fundamentally new approach that de-         bank-level parallelism of each core [15, 25], memory request
+couples the memory controller’s three primary tasks into three       rates [14, 15], overall fairness metrics [24, 25], and other in-
+significantly simpler structures that together improve system        formation. Figure 1(a) shows the CPU-only scenario where the
+performance and fairness, especially in integrated CPU-GPU           request buffer holds requests only from the CPU cores. In this
+systems. Our three-stage memory controller first groups re-          case, the MC sees a number of requests from the CPU cores and
+quests based on row-buffer locality. This grouping allows the        has visibility into their memory behavior. On the other hand,
+second stage to focus only on inter-application request schedul-     when the request buffer is shared between the CPU cores and
+ing. These two stages enforce high-level policies regarding per-     the GPU, as shown in Figure 1(b), the large volume of requests
+formance and fairness, and therefore the last stage consists of      from the GPU occupies a significant fraction of the MC’s re-
+simple per-bank FIFO queues (no further command reordering           quest buffer, thereby limiting the MC’s visibility of the CPU
+within each bank) and straightforward logic that deals only with     applications’ differing memory behavior.
+low-level DRAM commands and timing.                                         (a)                                             CPU Requests
+   We evaluate the design trade-offs involved in our Staged
+Memory Scheduler (SMS) and compare it against three                         (b)    xxxx    xxxx     x                 x     GPU Requests
+state-of-the-art memory controller designs. Our evaluations
+show that SMS improves CPU performance without degrad-                      (c)    xxxx    xxxx     xxxxx      xxx                xxxxx
+ing GPU frame rate beyond a generally acceptable level, while
+being significantly less complex to implement than previous          Figure 1. Limited visibility example due to small buffer size. (a) CPU-only
+                                                                     case, (b) MC’s visibility when CPU and GPU are combined, (c) Improved
+application-aware schedulers. Furthermore, SMS can be con-           visibility with a larger request buffer
+figured by the system software to prioritize the CPU or the GPU
+at varying levels to address different performance needs.                One approach to increasing the MC’s visibility is to increase
+                                                                     the size of its request buffer. This allows the MC to observe
+1   Introduction                                                     more requests from the CPU cores to better characterize their
+                                                                     memory behavior, as shown in Figure 1(c). For instance, with
+With increasing number of cores in modern chip multiprocessor        a large request buffer, the MC can identify and service multi-
+(CMP) systems, the main memory system has become a critical          ple requests from one CPU core to the same row such that they
+shared resource. Memory requests from multiple cores inter-          become row-buffer hits, however, with a small request buffer as
+fere with each other, and this inter-application interference is a   shown in Figure 1(b), the MC may not even see these requests
+significant impediment to individual application and overall sys-    at the same time because the GPU’s requests have occupied the
+tem performance. Previous work on application-aware memory           majority of the request buffer entries.
+scheduling [14, 15, 24, 25] has addressed the problem by mak-            Unfortunately, very large request buffers impose significant
+ing the memory controller (MC) aware of application character-       implementation challenges: analyzing many requests, and as-
+istics and appropriately prioritizing memory requests to improve     signing and enforcing priorities require large structures with
+system performance and fairness.                                     high circuit complexity that consume significant die area and
+    Recent systems [4, 10, 27] present an additional challenge by    power. Therefore, while building a very large, centralized MC
+introducing integrated graphics processing units (GPUs) on the       request buffer could lead to good application-aware memory
+same die with CPU cores. GPU applications typically demand           scheduling decisions, the resulting area, power, timing and com-
+significantly more memory bandwidth than CPU applications            plexity costs are unattractive.
+due to a GPU’s ability to execute a large number of parallel             In this work, we propose the Staged Memory Scheduler
+threads. A GPU uses single-instruction multiple-data (SIMD)          (SMS), a decentralized architecture for application-aware mem-
+pipelines to concurrently execute multiple threads, where a          ory scheduling in the context of integrated multi-core CPU-GPU
+group of threads executing the same instruction is called a wave-    systems. The key idea in SMS is to decouple the functional tasks
+front or a warp. When a wavefront stalls on a memory instruc-        of an application-aware memory controller and partition these
+tion, a GPU core hides this memory access latency by switching       tasks across several simpler hardware structures in a staged fash-
+to another wavefront to avoid stalling the pipeline. Therefore,      ion. The three primary functions of the MC, which map to the
+there can be thousands of outstanding memory requests from
+across all of the wavefronts. This is fundamentally more mem-           1 This buffer can be partly partitioned across banks, but each bank buffer is
+ory intensive than CPU memory traffic, where each CPU appli-         centralized for all applications.
+
+
+===== Page 2 =====
+
+three stages of our proposed MC architecture, are: 1) detection        that controls that memory channel is responsible for schedul-
+of basic within-application memory characteristics (e.g., row-         ing commands such that each bus is used by only one bank
+buffer locality), 2) prioritization across applications running on     at a time. Operations on multiple banks may occur in parallel
+both CPU cores and GPU, and enforcement of policies to reflect         (e.g., opening a row in one bank while reading data from an-
+the application priorities, and 3) low-level command schedul-          other bank’s row buffer) so long as the commands are properly
+ing (e.g., activate, precharge, read/write), enforcement of device     scheduled and any other DRAM timing constraints are obeyed.
+timing constraints (e.g., tRAS , tFAW , etc.), and resolution of re-   An MC can improve memory system throughput by scheduling
+source conflicts (e.g., data bus arbitration).                         requests such that bank-level parallelism, or BLP (i.e., the num-
+   Our specific SMS implementation makes widespread use                ber of banks simultaneously busy responding to commands), is
+of distributed FIFO structures to maintain a simple imple-             increased. A key challenge in the implementation of modern,
+mentation. SMS can at the same time provide fast service               high-performance MCs is to effectively improve system perfor-
+to low memory-intensity (likely latency-sensitive) applications        mance by maximizing both row-buffer hits and BLP while si-
+and effectively exploit row-buffer locality and bank-level par-        multaneously providing fairness among multiple CPU cores and
+allelism for high memory-intensity (bandwidth-demanding) ap-           the GPU.
+plications. While SMS provides a specific implementation of a          2.2    Memory Request Scheduling
+multi-stage memory controller, our staged approach for MC or-
+ganization provides a general framework for exploring scalable         Accessing off-chip memory is a major performance bottleneck
+memory scheduling algorithms capable of handling the diverse           in microprocessors. The MC is responsible for buffering and
+memory needs of integrated CPU-GPU systems and other het-              servicing memory requests from the different cores and the
+erogeneous systems of the future.                                      GPU. Typical implementations make use of a memory request
+   This work makes the following contributions:                        buffer to hold and keep track of all in-flight requests. Schedul-
+                                                                       ing logic then decides which requests should be serviced and
+   • We identify and present the challenges posed to existing          issues the corresponding commands to the DRAM devices.
+      memory scheduling algorithms due to the high memory-                As all of the cores must share the limited off-chip memory
+      bandwidth demands of GPU applications.                           bandwidth, a large number of outstanding requests greatly in-
+   • We propose a new decentralized, multi-stage approach to           creases contention for the memory data and command buses.
+      application-aware memory scheduling that effectively han-        Because a bank can only process one command at a time, a
+      dles the interference caused by bandwidth-intensive appli-       large number of requests also increases bank contention, where
+      cations to other applications, while simplifying the hard-       requests must wait for busy banks to finish servicing other re-
+      ware implementation by decoupling different functional           quests. A request from one core can also cause a row buffer
+      tasks of a memory controller across multiple stages.             containing data for another core to be closed, thereby reducing
+   • We evaluate our proposed approach against three previous          the row-buffer hit rate of that other core (and vice-versa). All of
+      memory scheduling algorithms [14, 15, 31] across a wide          these effects increase the latency of memory requests by both in-
+      variety of workloads and CPU-GPU systems and show                creasing queuing delays (time spent waiting for the MC to start
+      that it improves CPU performance without degrading GPU           servicing a request) and DRAM device access delays (due to
+      frame rate beyond an acceptable level, while providing a         decreased row-buffer hit rates and bus contention). As a result,
+      design that is significantly less complex to implement. Fur-     different memory scheduling algorithms have been designed to
+      thermore, SMS can be dynamically configured by the sys-          service memory requests in an order different from the order in
+      tem software to prioritize the CPU or the GPU at varying         which the requests arrived at the MC, to increase row-buffer hit
+      levels to address different performance needs.                   rates, bank level parallelism, fairness, or to achieve other goals.
+2     Background                                                       2.3    Memory Request Scheduling in CPU-
+In this section, we provide a review of DRAM organization and
+                                                                              only Systems
+discuss how past research dealt with the challenges of providing       Memory scheduling algorithms can improve system perfor-
+performance and fairness for modern memory systems.                    mance by reordering memory requests to deal with the differ-
+                                                                       ent constraints of DRAM. The first-ready first-come-first-serve
+2.1    Main Memory Organization                                        (FR-FCFS) [31, 37] algorithm prioritizes requests that result in
+DRAM is organized as two-dimensional arrays of bitcells.               row-buffer hits, and otherwise prioritizes older requests. FR-
+Reading or writing data to DRAM requires that a row of bitcells        FCFS increases DRAM throughput, but it can cause fairness
+from the array first be read into a row buffer. This is required       problems by unfairly deprioritizing applications with low row-
+because the act of reading the row destroys the row’s contents.        buffer locality and low memory-intensity, as shown in previ-
+Reads and writes operate directly on the row buffer. Eventually        ous work [21, 24]. Several application-aware memory schedul-
+the row is “closed” whereby the data in the row buffer is written      ing algorithms [14, 15, 23, 24, 25] have been proposed to bal-
+back into the DRAM array. Accessing data already loaded in the         ance both performance and fairness. Parallelism-aware Batch
+row buffer, also called a row-buffer hit, incurs a shorter latency     Scheduling (PAR-BS) [25] batches requests based on their ar-
+than when the corresponding row must first be “opened” from            rival times and prioritizes the oldest batch over others, to pro-
+the DRAM array. A modern memory controller (MC) must or-               vide fairness. In a batch, applications are ranked to preserve
+chestrate the sequence of commands to open, read, write, and           bank-level parallelism (BLP) within an application’s requests.
+close rows. Servicing requests in an order that increases row-         ATLAS [14] prioritizes applications that have received the least
+buffer hits improves data throughput and reduces the average           memory service. As a result, applications with low memory-
+latency to service requests. The MC is also responsible for en-        intensity, which typically attain low memory service, are pri-
+forcing a wide variety of timing constraints imposed by mod-           oritized, improving system throughput. However, applications
+ern DRAM standards (e.g., DDR3), such as limiting the rate of          with high memory-intensity are deprioritized and hence slowed
+page-open operations (tFAW ) and ensuring a minimum amount             down significantly, resulting in unfairness [14]. Thread Clus-
+of time between writes and reads (tWTR ).                              ter Memory scheduling (TCM) [15] addresses this unfairness
+   Each two-dimensional array of DRAM cells constitutes a              problem by dynamically clustering applications into low and
+bank. A DRAM chip consists of multiple banks. Multiple                 high memory-intensity clusters based on their memory inten-
+DRAM chips are put together and operated in lockstep to form a         sities. To improve system throughput, TCM always prioritizes
+rank. One or more ranks form a channel. All banks on a channel         applications in the low memory-intensity cluster. To prevent un-
+share a common set of command and data buses, and the MC               fairness, TCM periodically shuffles priorities of high memory-
+
+
+===== Page 3 =====
+
+                                                                                                                                                               8     64                     25                             100
+intensity applications. TCM was shown to achieve high system
+
+
+
+
+                                                                                                                                             CPU Performance
+
+
+
+
+                                                                                                                                                                                                          GPU Frame Rate
+                                                                                                                                                               7    128
+                                                                                                                                                                    256                     20                              90
+performance and fairness in multi-core systems.                                                                                                                6
+
+
+
+
+                                                                                                                                                                               Unfairness
+                                                                                                                                                                    384
+                                                                                                                                                               5    512                     15                              80
+2.4                             Analysis of GPU Memory Accesses                                                                                                4
+                                                                                                                                                               3                            10                              70
+A typical CPU application has a relatively small number of out-                                                                                                2
+                                                                                                                                                               1
+                                                                                                                                                                                             5                              60
+standing memory requests at any time. The size of a processor’s                                                                                                0                             0                              50
+instruction window bounds the number of misses that can be si-
+
+
+
+
+                                                                                                                                                                     FR
+                                                                                                                                                                     PA CF
+                                                                                                                                                                     A BS
+                                                                                                                                                                     TC AS
+
+
+
+
+                                                                                                                                                                                                 FR
+                                                                                                                                                                                                 PA CF
+                                                                                                                                                                                                 A BS
+                                                                                                                                                                                                 TC AS
+
+
+
+
+                                                                                                                                                                                                                                 FR
+                                                                                                                                                                                                                                 PA CF
+                                                                                                                                                                                                                                 A BS
+                                                                                                                                                                                                                                 TC AS
+                                                                                                                                                                      TL
+
+
+
+
+                                                                                                                                                                                                  TL
+
+
+
+
+                                                                                                                                                                                                                                  TL
+                                                                                                                                                                        -F
+
+
+
+
+                                                                                                                                                                                                    -F
+
+
+
+
+                                                                                                                                                                                                                                    -F
+                                                                                                                                                                        R S
+
+
+                                                                                                                                                                        M
+
+
+
+
+                                                                                                                                                                                                    R S
+
+
+                                                                                                                                                                                                    M
+
+
+
+
+                                                                                                                                                                                                                                    R S
+
+
+                                                                                                                                                                                                                                    M
+multaneously exposed to the memory system. Branch prediction
+accuracy limits how large the instruction window size can be                                                                                Figure 3. Performance and unfairness of different memory scheduling al-
+usefully increased. In contrast, GPU applications have very dif-                                                                            gorithms with varying request buffer sizes, averaged over 35 workloads.
+ferent access characteristics. They generate significantly more
+memory requests than CPU applications. A GPU application                                                                                    requires a significant amount of memory bandwidth far exceed-
+can consist of many thousands of parallel threads, where mem-                                                                               ing even the most memory-intensive CPU applications, as we
+ory stalls in one group of threads can be hidden by switching                                                                               have shown in Figure 2. Previous works [2, 3, 35] have pro-
+execution to one of the many other groups of threads. GPUs                                                                                  posed memory request scheduling policies for GPUs and GPG-
+also use fixed-function units (e.g., texture units, z (depth) units,                                                                        PUs. However, to our knowledge, no previous work has ex-
+and color units) that are responsible for a large number of mem-                                                                            plored application-aware memory scheduling in the context of
+ory requests.                                                                                                                               integrated CPU-GPU systems. In particular, as described in
+    Figure 2 (a) shows the memory request rates for a represen-                                                                             Section 2.4, GPU memory accesses can cause significant inter-
+tative subset of our GPU applications and SPEC2006 (CPU)                                                                                    ference to other CPU applications since GPU applications have
+applications, as measured by memory requests per thousand                                                                                   the combination of high memory intensity, high RBL, and high
+                                                                                                                                            BLP. Our goal in this work is to design a new application-aware
+instructions when each application runs alone on the system.2                                                                               scheduler that mitigates inter-application interference to im-
+The memory access intensity of the GPU applications is often                                                                                prove system performance and fairness in heterogeneous CPU-
+multiple times higher than that of the SPEC benchmarks. The                                                                                 GPU systems.
+most intensive CPU application we study (mcf) has 42.8% of
+the memory intensity of the least memory-intensive GPU appli-                                                                               3                      Challenges with Existing Memory Controllers
+cation we study (Bench01). Figure 2 (b) shows the row-buffer                                                                                3.1                      Shortcomings of Previous Mechanisms
+hit rates (also called row-buffer locality or RBL). The GPU ap-
+plications show consistently high levels of RBL, whereas the                                                                                As discussed in Section 2,                previously proposed
+SPEC benchmarks exhibit more variability. The GPU applica-                                                                                  application-aware memory scheduling algorithms (for
+tions have high levels of spatial locality, often due to access pat-                                                                        CPU-only systems) are designed to improve system per-
+terns related to large sequential memory accesses (e.g., frame                                                                              formance and fairness by prioritizing some applications over
+buffer updates). Figure 2(c) shows the average BLP for each ap-                                                                             others, based on applications’ memory access characteristics.
+plication, demonstrating that the GPU applications access many                                                                              However, when faced with CPU and GPU applications that
+banks at the same time.                                                                                                                     have vastly disparate memory access characteristics, these
+                                     (a)                                             (b)                                           (c)      scheduling algorithms are non-robust, due to specific aspects
+                                                                                              Bank-Level Parallelism (BLP)
+Memory Intensity (MPKI)
+
+
+
+
+                                                 Row-Buffer Locality (RBL)
+
+
+
+
+                          400                                                 1                                              6
+                                                                                                                             5
+                                                                                                                                            in each of their designs, and perform poorly. Figure 3 shows
+                          320                                                0.8
+                                                                                                                             4
+                                                                                                                                            CPU performance, unfairness, and GPU frame rate of different
+                          240                                                0.6                                                            previously proposed memory schedulers with varying request
+                                                                                                                             3
+                          160                                                0.4                                                            buffer sizes for a 16-core CPU/1-GPU system. These data are
+                                                                                                                             2
+                           80                                                0.2                                             1              averaged over 35 workloads; details of our methodology are
+                            0                                                 0                                              0              in Section 5. FR-FCFS [31] provides high GPU frame rate.
+                                                                                                                                            However, it provides poor CPU performance and fairness, as it
+                                Ga
+                                Game01
+                                Game03
+                                Be me05
+                                gronch02
+                                cacmacs
+                                mc tusA
+
+
+
+
+                                                                                   Ga
+                                                                                   Game01
+                                                                                   Game03
+                                                                                   Be me05
+                                                                                   gronch02
+                                                                                   cacmacs
+                                                                                   mc tusA
+
+
+
+
+                                                                                                                                 Ga
+                                                                                                                                 Game01
+                                                                                                                                 Game03
+                                                                                                                                 Be me05
+                                                                                                                                 gronch02
+                                                                                                                                 cacmacs
+                                                                                                                                 mc tusA
+                                   f DM
+
+
+
+
+                                                                                      f DM
+
+
+
+
+                                                                                                                                    f DM
+
+
+
+
+                                                                                                                                            always prioritizes the row-buffer hits of the GPU. ATLAS [14]
+                                                                                                                                            provides high CPU performance and fairness compared to other
+Figure 2. Memory access characteristics. (a) Memory intensity, mea-                                                                         scheduling mechanisms; however, it significantly degrades the
+sured by memory requests per thousand instructions, (b) row-buffer local-                                                                   frame rate of the GPU. As CPU applications have lower mem-
+ity, measured by the fraction of accesses that hit in the row buffer, and (c)                                                               ory intensities than their GPU counterparts, ATLAS prioritizes
+bank-level parallelism, measured by average number of banks kept busy
+when there is at least one request outstanding.                                                                                             CPU applications over GPU applications, which leads to lower
+                                                                                                                                            GPU frame rate. TCM [15] provides good CPU performance
+   In addition to the high-intensity memory traffic of GPU ap-                                                                              and GPU frame rate; however, it is highly unfair because of the
+plications, there are other properties that distinguish GPU appli-                                                                          way it clusters applications. TCM places some high-memory-
+cations from CPU applications. Kim et al. [15] observed that                                                                                intensity CPU applications in the low memory-intensity cluster,
+CPU applications with streaming access patterns typically ex-                                                                               unfairly prioritizing them over other high-memory-intensity
+hibit high RBL but low BLP, while applications with less uni-                                                                               applications that are placed in the high-memory-intensity
+form access patterns typically have low RBL but high BLP. In                                                                                cluster. In the light of these shortcomings of previous memory
+contrast, GPU applications have both high RBL and high BLP.                                                                                 scheduling algorithms, we aim to design a fundamentally
+The combination of high memory intensity, high RBL and high                                                                                 new memory scheduler that can robustly provide good system
+BLP means that the GPU will cause significant interference                                                                                  performance (both CPU performance and GPU performance
+to other applications across all banks, especially when using a                                                                             together) as well as high fairness to CPU applications.
+memory scheduling algorithm that preferentially favors requests
+that result in row-buffer hits.                                                                                                             3.2                      The Need for Request Buffer Capacity
+2.5                             Memory Request Scheduling in GPU-                                                                           The non-robustness of previously proposed CPU-only schedul-
+                                                                                                                                            ing algorithms is further magnified when there are a small num-
+                                only Systems                                                                                                ber of entries in the request buffer, as the memory-intensive
+As opposed to CPU applications, GPU applications are not very                                                                               GPU application hogs a large number of request buffer entries.
+latency sensitive, as there are a large number of independent                                                                               The results from Figure 2 show that a typical GPU application
+threads to tolerate long memory latencies. However, the GPU                                                                                 has a very high memory intensity. As discussed in Section 1,
+                                                                                                                                            the large number of GPU memory requests occupy many of the
+                          2 Section 5 describes our simulation methodology.                                                                 MC’s request buffer entries, thereby making it difficult for the
+
+
+===== Page 4 =====
+
+MC to properly determine the memory access characteristics of                         4     The Staged Memory Scheduler
+each of the CPU applications. Figure 3 shows the performance                          Overview: Our proposed SMS architecture introduces a new
+impact of increasing the MC’s request buffer size for a variety                       memory controller (MC) design that provides 1) scalability and
+of memory scheduling algorithms. As can be observed, with                             simpler implementation by decoupling the primary functions of
+increased visibility within larger request buffers, CPU perfor-                       an application-aware MC into a simpler multi-stage MC, and
+mance improves (while GPU performance does not degrade be-                            2) performance and fairness improvement by reducing the in-
+yond a generally acceptable level).                                                   terference from bandwidth-intensive applications. Specifically,
+                                                                                      SMS provides these benefits by introducing a three-stage design.
+3.3      Implementation Challenges in Providing                                       The first stage is the batch formation stage that groups requests
+         Request Buffer Capacity                                                      from the same application that access the same row to improve
+Figure 3 shows that when the MC has enough visibility across                          row-buffer locality. The second stage is the batch scheduler that
+the global memory request stream to properly characterize the                         schedules batches of requests across different applications. The
+behavior of each core, a sophisticated application-aware al-                          last stage is the DRAM command scheduler that schedules re-
+gorithm like TCM improves CPU performance and fairness                                quests while satisfying all DRAM constraints.
+by making better scheduling decisions compared to FR-FCFS,                               The staged organization of SMS lends directly to a
+which is application-unaware. Unfortunately, implementing a                           low-complexity hardware implementation. Figure 4 illustrates
+sophisticated algorithm like TCM over such a large request                            the overall hardware organization of the SMS.
+
+
+
+                                                                                                                                    {
+                                                                                                              Batch Boundary               Source1 Source2 Source3 Source4
+buffer introduces significant implementation challenges. For                                                                                 Req     Req
+                                                                                                                                                             Req
+all algorithms that use a centralized request buffer and prior-                                                                                                      Req
+
+itize requests that result in row-buffer hits (FR-FCFS, PAR-                                          Batch Formation                        Req     Req     Req
+                                                                                                                                                                     Req
+                                                                                                                                                     Req     Req
+                                                                                                                                             Req                     Req
+BS, ATLAS, TCM), content associative memories (CAMs) are                                     Batch Scheduler                                Req     Req      Req     Req
+needed for each request buffer entry, to compare its requested                               Memory Request
+                                                                                                 Counters
+row against the currently open row in the corresponding DRAM
+
+
+
+
+                                                                                                              Scheduling
+                                                                                            Source1
+                                                                                                                           source select
+
+
+
+
+                                                                                                                Logic
+bank. For all algorithms that prioritize requests based on                                  Source2
+rank/age (FR-FCFS, PAR-BS, ATLAS, TCM), a large com-                                        Source3
+
+
+
+
+                                                                                                                                {
+parison tree (priority encoder) is needed to select the highest                             Source4                                 Bank1 Bank2 Bank3 Bank4
+
+ranked/oldest request from all request buffer entries. The size                                                                             Req     Req     Req     Req
+of this comparison tree grows with request buffer size. Further-                                  DRAM Command
+                                                                                                                                            Req     Req     Req     Req
+more, in addition to this logic for reordering requests and en-                                     Scheduler                               Req     Req     Req     Req
+
+forcing ranking/age, TCM also requires additional logic to con-                                                                             Req     Req     Req     Req
+
+tinually monitor each core’s last-level cache MPKI (note that                                             Figure 4. Organization of the SMS.
+a CPU core’s instruction count is not typically available at the                         In Sections 4.1 and 4.2, we describe the algorithm used in
+MC), each core’s RBL, which requires additional shadow row                            each stage. Section 4.3 describes the rationale behind these al-
+buffer index tracking [6, 24], and each core’s BLP.                                   gorithms. Section 4.4 describes the hardware implementation
+    Apart from the logic required to implement the policies of the                    of SMS. Section 4.5 qualitatively compares SMS to previously
+specific memory scheduling algorithms, all of these MC designs                        proposed scheduling algorithms.
+need additional logic to enforce DRAM timing constraints. Note
+that different timing constraints will apply depending on the                         4.1    The SMS Algorithm
+state of each memory request. For example, if a memory re-                            Stage 1 - Batch Formation: The goal of this stage is to com-
+quest’s target bank currently has a different row loaded in its                       bine individual memory requests from each source into batches
+row buffer, then the MC must ensure that a precharge (row close)                      of row-buffer hitting requests. It consists of several simple FIFO
+command is allowed to issue to that bank (e.g., has tRAS elapsed                      structures, one per source (i.e., a CPU core or the GPU). Each
+since the row was opened?), but if the row is already closed, then                    request from a given source is initially inserted into its respec-
+different timing constraints will apply. For each request buffer                      tive FIFO upon arrival at the MC. A batch is simply one or more
+entry, the MC will determine whether or not the request can is-                       memory requests from the same source that access the same
+sue a command to the DRAM based on the current state of the                           DRAM row. That is, all requests within a batch, except perhaps
+request and the current state of the DRAM system. The DRAM                            for the first one, would be row-buffer hits if scheduled consecu-
+timing-constraint checking logic (including data and command                          tively. A batch is deemed complete or ready when an incoming
+bus availability tracking) needs to keep track of the commands                        request accesses a different row, when the oldest request in the
+that come from every request buffer entry. This type of mono-                         batch has exceeded a threshold age, or when the FIFO is full.
+lithic MC effectively implements a large out-of-order sched-                          Only ready batches are considered by the second stage of SMS.
+uler. Note that typical instruction schedulers in modern out-                         Stage 2 - Batch Scheduler: The batch scheduler deals directly
+of-order processors have only 32 to 64 entries [9]. Even after                        with batches, and therefore need not worry about scheduling to
+accounting for the clock speed differences between CPU core                           optimize for row-buffer locality. Instead, the batch scheduler
+and DRAM command frequencies, it is very difficult to imple-                          can focus on higher-level policies regarding inter-application
+ment a fully-associative,3 age-ordered/prioritized, out-of-order                      interference and fairness. The goal of the batch scheduler is
+scheduler with hundreds of entries [28]; the resulting complex-                       to prioritize batches from applications that are latency critical,
+ity, cycle time, and power consumption would be unnecessarily                         while making sure that bandwidth-intensive applications (e.g.,
+or prohibitively high.                                                                the GPU) still make reasonable progress.
+    Our goal in this paper is to devise an easier-to-implement,                          The batch scheduler operates in two states: pick (a batch to
+scalable, application-aware memory scheduling algorithm that                          send downstream) and drain (the picked batch of requests). In
+provides high system performance and fairness in heteroge-                            the pick state, the batch scheduler considers every source FIFO
+neous CPU-GPU systems. To this end, we devise both 1) a                               (from stage 1) that contains a ready batch. It picks one ready
+new scheduling algorithm and 2) new principles with which a                           batch based on either a shortest job first (SJF) or a round-robin
+memory scheduler can be organized and simply implemented.                             policy. Using the SJF policy, the batch scheduler chooses the
+                                                                                      oldest ready batch from the source with the fewest total in-flight
+                                                                                      memory requests across all three stages of the SMS. SJF prioriti-
+   3 Fully associative in the sense that a request in any one of the request buffer   zation reduces average request service latency, and it tends to fa-
+entries could be eligible to be scheduled in a given cycle.                           vor latency-sensitive applications, which tend to have fewer total
+
+
+===== Page 5 =====
+
+requests. Using the round-robin policy, the batch scheduler sim-                   memory-intensity, as described in Section 4.1 and 2) all appli-
+ply picks the next ready batch in a round-robin manner across                      cations’ requests when the system is lightly loaded, such that
+the source FIFOs. This ensures that high memory-intensity ap-                      requests are not unnecessarily delayed in the batch formation
+plications receive adequate service. Overall, the batch scheduler                  FIFOs, while banks are potentially idle. This latter bypass is
+uses the SJF policy with a probability p and the round-robin pol-                  enabled whenever the total number of in-flight requests (across
+icy otherwise. p is a configurable parameter, which is explained                   all sources) in the DCS is less than sixteen.
+in detail in Section 4.2.                                                          SJF Probability: As described above, the batch scheduler uses
+   After picking a batch, the batch scheduler enters a drain state                 the SJF policy with probability p and the round-robin policy
+where it forwards the requests from the selected batch to the                      with probability 1 − p. The value of p determines whether the
+final stage of the SMS. The batch scheduler simply dequeues                        CPU or the GPU receives higher priority. When p is high, the
+one request per cycle until all requests from the batch have been                  SJF policy is applied more often and applications with fewer
+removed from the selected FIFO. The batch scheduler then re-                       outstanding requests are prioritized. Hence, the batches of the
+enters the pick state to select the next batch to drain.                           likely less memory-intensive CPU applications are prioritized
+Stage 3 - DRAM Command Scheduler (DCS): The DCS                                    over the batches of the GPU application. On the other hand,
+consists of one FIFO queue per DRAM bank (e.g., eight                              when p is low, request batches are scheduled in a round-robin
+banks/FIFOs per rank for DDR3). The drain state of the batch                       fashion more often. Hence, the memory-intensive GPU appli-
+scheduler places the memory requests directly into these FIFOs.                    cation’s request batches are likely scheduled more frequently,
+Note that because batches are moved into the DCS FIFOs one                         and the GPU is prioritized over the CPU. Different systems
+batch at a time, row-buffer locality within a batch is preserved                   (and maybe even the same system at different times) could have
+within a DCS FIFO. At this point, any higher-level policy deci-                    different performance needs. In some systems, CPU perfor-
+sions have already been made by the batch scheduler; therefore,                    mance could matter more than GPU performance, while in other
+the DCS simply issues low-level DRAM commands, ensuring                            systems, GPU performance could matter more. Therefore, we
+DRAM protocol compliance.                                                          make p a dynamically configurable parameter that can be tuned
+   In any given cycle, the DCS considers only the requests at the                  to appropriately prioritize the CPU or the GPU based on the sys-
+head of each of the per-bank FIFOs. For each request, the DCS                      tem’s needs. We evaluate sensitivity to p and its configurability
+determines whether that request can issue a command based on                       in Section 6.2.1.
+the request’s current row-buffer state (e.g., is the row buffer al-                4.3     SMS Rationale
+ready open with the requested row?) and the current DRAM
+state (e.g., time elapsed since a row was opened in a bank, and                    In-Order Batch Formation: It is important to note that batch
+data bus availability). If more than one request is eligible to is-                formation occurs in the order of request arrival. This poten-
+sue a command in any given cycle, the DCS arbitrates across                        tially sacrifices some row-buffer locality, as requests to the
+each DRAM bank in a round-robin fashion.                                           same row may be interleaved with requests to other rows. We
+                                                                                   considered many variations of batch formation that allowed
+4.2      Additional Algorithm Details                                              out-of-order grouping of requests, to maximize the length of
+Batch Formation Thresholds: The batch formation stage                              a run of row-buffer hitting requests, but the overall perfor-
+holds requests in the per-source FIFOs until a complete batch                      mance benefit was not significant.5 First, constructing very large
+is ready. This could unnecessarily delay requests, as the batch                    batches of row-buffer hitting requests can introduce significant
+will not be marked ready until a request to a different row arrives                unfairness as other requests may need to wait a long time for
+at the MC, or the FIFO becomes full. This additional queuing                       a bank to complete its processing of a long run of row-buffer
+delay can be particularly detrimental to the performance of low                    hitting requests [21, 24]. Second, row-buffer locality across
+memory-intensity, latency-sensitive applications.                                  batches may still be exploited by the DCS. For example, con-
+    SMS considers an application’s memory intensity in form-                       sider a core that has three batches accessing row X, row Y, and
+ing batches. For applications with low memory-intensity (<1                        then row X again. If X and Y map to different DRAM banks,
+miss per thousand cycles (MPKC)), SMS completely bypasses                          say banks A and B, then the batch scheduler will send the first
+the batch formation and batch scheduler stages, and forwards                       and third batches (row X) to bank A, and the second batch (row
+requests directly to the DCS per-bank FIFOs. For these latency-                    Y) to bank B. Within the DCS’s FIFO for bank A, the requests
+sensitive applications, such a bypass policy minimizes the de-                     for the first and third batches could still all be one after the other,
+lay to service their requests. Note that this bypass operation                     thereby exposing the row-buffer locality across the batches.
+will not interrupt an on-going drain from the batch scheduler,                     In-Order Batch Scheduling from a Per-Source FIFO: Due to
+which ensures that any separately scheduled batches maintain                       contention and back-pressure in the system, it is possible that a
+their row-buffer locality.                                                         FIFO in the batch formation stage contains more than one valid
+    For medium memory-intensity (1-10 MPKC) and high                               batch. In such a case, it could be desirable for the batch sched-
+memory-intensity (>10 MPKC) applications, the batch forma-                         uler to pick one of the batches not currently at the head of the
+tion stage uses age thresholds of 50 and 200 cycles, respectively.                 FIFO. For example, the bank corresponding to the head batch
+That is, regardless of how many requests are in the current batch,                 may be busy while the bank for another batch is idle. Schedul-
+when the oldest request’s age exceeds the threshold, the entire                    ing batches out of order could decrease the service latency for
+batch is marked ready (and consequently, any new requests that                     the later batches, but in practice we found that it does not make a
+arrive, even if accessing the same row, will be grouped into a                     big difference6 and adds significant implementation complexity.
+new batch).4                                                                       It is important to note that even though batches are dequeued
+Request Bypass: We observe that there are two instances when                       from the batch formation stage in arrival order per FIFO, re-
+it is beneficial to let requests bypass the batch formation and                    quest ordering can still slip between FIFOs. For example, the
+scheduling stages and proceed directly to the DCS per-bank                         batch scheduler may choose a recently arrived (and formed)
+FIFOs: 1) the latency-sensitive requests of applications with low                  batch from a high-priority (i.e., latency-sensitive) source even
+                                                                                   though an older, larger batch from a different source is ready.
+    4 Note that while TCM uses the MPKI metric to classify memory intensity,
+                                                                                   In-Order DRAM Command Scheduling: For each of the
+SMS uses misses per thousand cycles (MPKC) since the per-application instruc-         5 We evaluated our mechanism with out-of-order batch formation. Out-of-
+tion counts are not typically available in the MC. While it would not be overly
+difficult to expose this information, this is just one more implementation over-   order provides <5% performance difference over in-order batch formation.
+head that SMS can avoid. We also evaluated our mechanism using MPKI, and              6 We found there is less than 1% performance difference because per-source
+we found that it provides similar results.                                         FIFOs already keep batches in age order.
+
+
+===== Page 6 =====
+
+           Storage                         Description                                                      Size
+           Storage Overhead of Stage 1: Batch formation stage
+           CPU FIFO queues                 A CPU core’s FIFO queue                                          Ncore × Queue Sizecore = 160 entries
+           GPU FIFO queues                 A GPU’s FIFO queue                                               NGPU × Queue SizeGPU = 20 entries
+           MPKC counters                   Counts per-core MPKC                                             Ncore × log2 MPKCmax = 160 bits
+           Last request’s row index        Stores the row index of the last request to the FIFO             (Ncore + NGPU ) × log2 Row Index Size = 204 bits
+           Storage Overhead of Stage 2: Batch Scheduler
+           CPU memory request counters     Counts the number of outstanding memory requests of a CPU core   Ncore × log2Countmax CPU = 80 bits
+           GPU memory request counter      Counts the number of outstanding memory requests of the GPU      NGPU × log2Countmax GPU = 10 bits
+           Storage Overhead of Stage 3: DRAM Command Scheduler
+           Per-Bank FIFO queues            Contains a FIFO queue per bank                                   Nbanks × Queue Sizebank = 120 entries
+                                                         Table 1. Hardware storage required for SMS.
+per-bank FIFOs in the DCS, the requests are already grouped                          uses a 15-entry FIFO for each of the eight DDR3 banks. For
+by row-buffer locality (because the batch scheduler drains an                        sixteen CPU cores and a GPU, the aggregate capacity of all
+entire batch at a time), and arranged in an order that reflects                      of these FIFOs is 300 requests, although at any point in time,
+per-source priorities. Further reordering at the DCS could undo                      the SMS logic can only consider or act on a small subset of
+the prioritization decisions made by the batch scheduler. The                        the entries (i.e., the seventeen batches at the heads of the batch
+in-order nature of each of the DCS per-bank FIFOs does not                           formation FIFOs and the requests at the heads of the per-bank
+prevent out-of-order scheduling at the global level. A CPU’s                         DCS FIFOs). In addition to these primary structures, there are a
+requests may be scheduled to the DCS in arrival order, but the                       small number of bookkeeping counters. One counter per source
+requests may get scattered across different banks, and the issue                     is needed to track the number of in-flight requests. Counters
+order among banks may be out-of-order relative to each other.                        are also needed to track per-source MPKC rates for memory-
+                                                                                     intensity classification, which are periodically reset to adapt to
+4.4    Hardware Implementation                                                       phase changes.7 Table 1 summarizes the hardware overhead re-
+Batch Formation: The batch formation stage consists of one                           quired for each stage of SMS.
+FIFO per source. Each FIFO maintains an extra register that
+records the row index of the last request inserted into the FIFO,                    4.5      Qualitative Comparison with Previous
+so that any incoming request’s row index can be compared to                                   Scheduling Algorithms
+determine if the request can be added to the existing batch. Note                    We described recently proposed application-aware memory
+that this requires only a single comparator (used only once at                       schedulers (PAR-BS [25], ATLAS [14], and TCM [15]) in Sec-
+insertion) per FIFO. Contrast this to a conventional monolithic                      tion 2. We now qualitatively compare SMS with these sched-
+request buffer where comparisons on every request buffer entry                       ulers.
+are made every cycle, potentially against all currently open                             PAR-BS batches memory requests based on their ages and
+rows across all banks.                                                               cores, and prioritizes all requests from one batch over others.
+Batch Scheduler: The batch scheduling stage consists pri-                            As a result, the bandwidth-intensive GPU’s requests in the old-
+marily of combinatorial logic to implement the batch selection                       est batch are prioritized over all CPU requests that are not in
+rules. When using the SJF policy, the batch scheduler needs                          the oldest batch. This leads to significant CPU performance and
+to pick the batch corresponding to the source with the fewest                        fairness loss compared to SMS, which keeps the slowdown of
+in-flight requests, which can be easily performed with a tree                        CPU applications in check by employing the SJF batch schedul-
+of MIN operators (a priority encoder). Note that this tree                           ing policy described in Section 4.
+is relatively shallow since it grows as a function of only the                           ATLAS ranks applications based on their attained memory
+number of FIFOs. Contrast this to the monolithic scheduler                           service and prioritizes higher-ranked (low-attained-service) ap-
+where the various ranking trees grow as a function of the total                      plications over lower-ranked ones. As a result, it effectively
+number of request buffer entries.                                                    deprioritizes the GPU, which has high memory bandwidth de-
+DRAM Command Scheduler: The DCS stage consists of the                                mand, for most of the time. ATLAS prioritizes the GPU over
+per-bank FIFOs. The logic to track and enforce the various                           a CPU application only when the attained service of that ap-
+DRAM timing and power constraints is identical to the case of                        plication becomes higher than that of the GPU. While this
+the monolithic scheduler, but the scale is drastically different.                    attained-service based behavior of ATLAS was shown to lead
+The DCS’ DRAM command-processing logic considers only                                to high unfairness in CPU-only systems (due to its almost-
+the requests at the head of each of the per-bank FIFOs (eight                        consistent deprioritization of heavily memory-intensive appli-
+per rank for DDR3), whereas the monolithic scheduler requires                        cations) [14], we found that ATLAS provides the best fairness
+logic to consider every request buffer entry.                                        (and the best performance) among previous algorithms because
+                                                                                     of the shortcomings of TCM we describe next. However, as
+Request Bypass: Bypass for a low memory-intensity applica-                           it consistently deprioritizes the GPU and has a strict rank order
+tion is enabled by setting its threshold age for batching to zero.                   between applications, ATLAS reduces the row-buffer locality of
+This allows incoming requests of the application to fall through                     the GPU and leads to unfairness among CPU applications. SMS
+the first stage into the batch scheduler. The batch scheduler, by                    overcomes these two problems by 1) servicing GPU requests in
+design, prioritizes low memory-intensity applications using the                      batches, and 2) prioritizing requests at the batch level instead
+SJF policy. Therefore, no additional logic/wiring is required to                     of enforcing a rank order among applications (which improves
+bypass low memory-intensity applications’ requests. Bypassing                        fairness).
+requests of all applications when the system is lightly loaded                           TCM was shown to provide the best performance and
+can be accomplished by simply setting both SJF probability and                       fairness in CPU-only systems [15]. Grouping applications
+threshold age to zero. This will allow requests from every appli-                    into latency-sensitive or bandwidth-sensitive clusters based on
+cation to proceed directly into the DCS FIFOs in a round-robin                       their memory intensities and employing a throughput oriented
+fashion at a rate of one request per cycle. However, request by-                     scheduling policy for the former cluster and a fairness ori-
+pass in both of these cases incurs a minimum two-cycle delay as                      ented policy for the latter leads to both high system perfor-
+a request needs to spend at least one cycle in the batcher and at                    mance and fairness in CPU-only systems. However, in an in-
+least one cycle in the DCS.                                                          tegrated CPU-GPU system, the GPU generates a significantly
+Overall Configuration and Hardware Cost: The final con-                              larger number of memory requests compared to the CPU cores,
+figuration of SMS that we use in this paper consists of the fol-
+lowing hardware structures whose sizes are empirically deter-                           7 In a 16-core CPU/1-GPU design, SMS requires sixteen 10-bit counters, six-
+mined. The batch formation stage uses 10-entry FIFOs for each                        teen 5-bit counters, and one 10-bit counter. In our experiment, we reset every
+of the CPU cores, and a 20-entry FIFO for the GPU. The DCS                           10,000 cycles.
+
+
+===== Page 7 =====
+
+    Parameter            Setting               Parameter                   Setting          Parameter               Setting           Parameter                Setting
+    CPU Clock Speed      3.2GHz                GPU Clock Speed             800Mhz           Channels/Ranks/Banks    4/1/8             DRAM Row buffer size     2KB
+    CPU reorder buffer   128 entries           GPU Max Throughput          1600 ops/cycle   DRAM Bus                64 bits/channel   tRCD/tCAS/tRP            12.5/12.5/12.5 ns
+    CPU L1 cache         32KB Private, 4-way   GPU Texture/Z/Color units   80/128/32        tRAS/tRC/tRRD           35/47.5/6.25 ns   tWTR/tRTP/tWR            7.5/7.5/15 ns
+    CPU L2 cache         8MB Shared, 16-way                                                 CPU Cache Rep. Policy   LRU               MC request buffer size   300
+                                                                      Table 2. Simulation parameters.
+which makes it difficult for TCM to appropriately group ap-                                 shows the memory intensity of GPU applications, measured in
+plications into two clusters using a single threshold value. As                             terms of misses per kilo instructions (MPKI)8 and also the per-
+a result, TCM ends up grouping the GPU together with other                                  centage of memory requests that come from fixed function units.
+memory-intensive CPU applications in the bandwidth-sensitive                                GPU memory accesses are collected after having first been fil-
+cluster. The fairness-oriented policy employed in this cluster                              tered through the GPU’s internal cache hierarchy; therefore, we
+causes the GPU to be prioritized over the memory-intensive                                  do not further model internal GPU caches in our hybrid CPU-
+CPU applications, thereby leading to high slowdowns for the                                 GPU simulation framework.
+deprioritized CPU applications and thus low fairness. In addi-                                      Name          Description          MPKI       % of Requests from FFUs
+tion, we found that TCM makes non-robust clustering decisions,                                     Bench01         3D Mark 1           204.0              62.3%
+which classify some applications with high memory-intensity                                        Bench02         3D Mark 2           267.0              54.2%
+into the latency-sensitive cluster, again due to the fact that the                                 Bench03         3D Mark 3           419.7              99.6%
+                                                                                                   Game01       Shooting Game 1        304.7              80.2%
+intensity of the GPU skews the bandwidth measurements TCM                                          Game02       Shooting Game 2        173.5              51.0%
+uses to form the clusters. These misclassified memory-intensive                                    Game03       Shooting Game 3        345.8              60.3%
+applications that are admitted to the latency-sensitive cluster                                    Game04       Adventure Game         206.6              61.0%
+                                                                                                   Game05      Role-playing Game       321.2              78.5%
+cause significant slowdowns to memory-non-intensive applica-
+                                                                                                                       Table 3. GPU benchmarks.
+tions, leading to high unfairness and low system performance
+compared to ATLAS and SMS.                                                                     We classify CPU benchmarks into three categories (Low,
+   In contrast to all these previous schedulers, SMS prioritizes                            Medium, and High) based on their memory intensities, mea-
+shorter batches of row-buffer-hit requests over longer batches                              sured as last-level cache misses per thousand instructions
+(as determined by the SJF probability, p). As a result, SMS                                 (MPKI). Table 4 shows the MPKI for each CPU benchmark.
+1) preserves row-buffer locality, and most of the time, priori-                             Benchmarks with less than or equal to 1 MPKI are classi-
+tizes the CPU applications which have shorter batches than the                              fied as low memory intensity, between 1 and 15 MPKI as
+GPU (for sufficiently high values of p), leading to high system                             medium memory intensity, and greater than 15 as high mem-
+performance, and 2) does not result in a strict ranking of CPU                              ory intensity. Based on these three categories, we randomly
+applications among each other, leading to high fairness. As we                              choose a number of benchmarks from each category to form
+will quantitatively demonstrate in Section 6, SMS provides the                              workloads with seven different intensity mixes: L (All Low),
+best CPU performance and fairness compared to these previous                                ML (Medium/Low), M (All Medium), HL (High/Low), HML
+schedulers, while maintaining GPU frame rate above an accept-                               (High/Medium/Low), HM (High/Medium) and H (All High).
+able level, at a lower hardware cost and with simpler scheduling                            The co-running GPU benchmark is randomly selected for each
+logic.                                                                                      workload.
+                                                                                                    Name       MPKI          Name         MPKI          Name         MPKI
+5      Experimental Methodology                                                                    povray      0.01          gobmk         0.51          milc        16.18
+                                                                                                    tonto      0.01         gromacs        1.12      xalancbmk       18.32
+We use an in-house cycle-level simulator to perform our eval-                                      calculix    0.04         h264ref        1.22        omnetpp       19.20
+uations. For our performance evaluations, we model a system                                       perlbench    0.08          hmmer         2.82      GemsFDTD        24.70
+                                                                                                    dealII     0.11           bzip2        4.10      libquantum      26.24
+with sixteen x86-like CPU cores and a GPU. Each CPU core                                            namd       0.11       cactusADM        4.74         soplex       27.96
+is a three-wide out-of-order processor with a cache hierarchy                                        wrf       0.12           astar        5.19          lbm         28.30
+including per-core L1 caches and a shared L2 cache. The GPU                                          gcc       0.22         sphinx3       13.21          mcf         74.35
+                                                                                                    sjeng      0.37         leslie3d      14.79
+does not share the CPU caches. The specification of the GPU we
+                                                                                            Table 4. L2 Cache Misses Per Kilo-Instruction (MPKI) of 26 SPEC 2006
+model is similar to the AMD Radeon 5870 specification [1]. The                              benchmarks.
+GPU has 20 cores, and each core consists of 16 SIMD functional
+units. A SIMD functional unit can process a VLIW instruction                                Performance Metrics: We measure the performance of the
+that can span up to 5 scalar operations, every cycle. As a result,                          multi-core CPU using the weighted speedup metric [8, 33], as
+the GPU has the capability to provide a maximum throughput                                  shown in Equation 1. We measure the performance of the GPU
+of 1600 scalar operations per cycle. Table 2 shows the detailed                             by calculating the frame rate (frames per second), a commonly
+system parameters for the evaluated CPU and GPU.                                            used graphics performance metric [16, 32]. We compute the
+   The parameters for the main memory system (DDR3                                          GPU speedup as the ratio of its frame rate when it is sharing the
+SDRAM-1600 [20]) are shown in Table 2. Unless stated oth-                                   system with the CPU over the GPU’s frame rate when it is run
+erwise, we use four memory controllers (one channel per mem-                                alone on the same baseline system, as shown in Equation 2.
+ory controller) for all experiments. In order to prevent the GPU                                              NumCores                          shared
+requests from occupying the vast majority of the request buffer                                                    IPCishared               GPUFrameRate
+                                                                                                CPUW S =        ∑              GPUSpeedup =
+entries, we reserve half of the request buffer entries for CPU                                               i=1    IPCialone                   alone
+                                                                                                                                            GPUFrameRate
+requests for non-SMS MCs. To model the memory bandwidth                                                                    (1)                         (2)
+used by the GPU accurately, we perform coalescing of GPU
+memory requests before they are sent to the MC as is done in                                    Measuring overall system performance in an integrated CPU-
+current GPUs [17].                                                                          GPU system is not straightforward. Using the conventional
+                                                                                            weighted speedup metric for this purpose weights the GPU as
+Workloads: We evaluate our system with a set of 105 multi-                                  equivalent to a single CPU core. However, having the same
+programmed workloads, each simulated for 500 million cycles.                                weight for the GPU as a single CPU core does not allow for flex-
+Each workload consists of sixteen SPEC CPU2006 benchmarks                                   ibility in quantifying the system performance of different sys-
+and one GPU application selected from a mix of video games                                  tems that have different performance requirements. In some sys-
+and graphics performance benchmarks described in Table 3. For                               tems (e.g., those used by video gaming enthusiasts), GPU per-
+each CPU benchmark, we use Pin [18] with PinPoints [29] to se-                              formance could be much more important than CPU performance
+lect the representative phase. Our GPU traces are collected from
+GPU benchmarks and recent games through a proprietary GPU                                      8 MPKI of a GPU application is calculated as the total number of memory
+simulator. Note that our GPU memory traces include mem-                                     accesses divided by the number of scalar GPU operations, where a scalar GPU
+ory requests coming from fixed function units (FFUs). Table 3                               operation is the closest unit of work to a CPU instruction.
+
+
+===== Page 8 =====
+
+                                  12                                                                                                                120
+
+
+
+           CPU Weighted Speedup
+                                        FR-FCFS              CTCM
+                                                                                                                                          -18.1%
+                                  10   CFR-FCFS              SMS0.9
+                                                                                                                                    -35.5% -26.7%
+                                                                                                                                                    105
+
+
+
+
+                                                                                                                                                          GPU Frame Rate
+                                         ATLAS                SMS0
+                                           TCM                                                                                                      90
+                                   8                                       22.1%                                                                    75
+                                                                      69.9% 35.7%
+                                   6                                                                                                                60
+                                   4                                                                                                                45
+                                                                                                                                                    30
+                                   2                                                                                                                15
+                                   0                                                                                                                0
+                       L     ML    M   HL HML HM          H Avg                L    ML     M     HL HML HM            H   Avg
+    Figure 5. Performance of CPU and GPU for 7 workload categories (105 workloads). % values are gains of SMS0.9 over FR-FCFS, ATLAS, and TCM.
+
+to the end-user. In contrast, in some other systems (e.g., those                     is round-robin). Results are presented across 105 workloads of 7
+with interactive applications running together with graphics or                      intensity categories described in Section 5, with workload mem-
+in mobile systems), CPU performance could be much more im-                           ory intensities increasing from left to right.
+portant than GPU performance. Therefore, we need a metric                                Figure 5 shows the performance of the CPU (weighted
+that is flexible to evaluate the performance of different heteroge-                  speedup), and the individual performance of the GPU (frame
+neous systems, given different end-user needs. To this end, we                       rate) separately. Three major conclusions are in order. First,
+propose an integrated CPU-GPU Weighted Speedup (CGWS)                                SMS0.9 improves CPU performance by 22.1%/ 35.7% over the
+metric (Eqn. 3) where the GPU’s speedup is weighted by a pa-                         two best previous scheduling policies, ATLAS and TCM, on av-
+rameter GPUweight .                                                                  erage. This is because ATLAS, TCM, and other previously pro-
+            CGW S = CPUW S + GPUweight ∗ GPUSpeedup             (3)                  posed scheduling policies10 are not designed to robustly han-
+    The GPUweight parameter determines the weight of the GPU                         dle the high degree of disparity in memory access intensities
+relative to a CPU core. When the GPUweight is set to 1, the GPU                      present between CPU and GPU applications in an integrated
+                                                                                     CPU-GPU system, as we explained in Section 4.5. Previous
+is treated as equivalent to a single CPU core, and CPU perfor-                       scheduling policies allocate a large fraction of the system mem-
+mance (weighted speedup) becomes an important factor in de-                          ory bandwidth to the GPU, thereby penalizing the CPU ap-
+termining system performance. On the other hand, when the                            plications. Second, CFR-FCFS provides better CPU perfor-
+GPUweight is set to a large value (e.g., 1000), CPU performance                      mance than FR-FCFS as it prioritizes CPU requests, prevent-
+becomes negligible, and GPU performance becomes the domi-                            ing the GPU’s row-buffer hits from hogging memory bandwidth.
+nant factor. Section 6.2.1 shows the performance of our system                       CTCM performs similarly as TCM because the baseline TCM
+for a wide range of values of the GPUweight parameter.                               is already application-aware as it prioritizes low-intensity ap-
+    In addition to system performance, we measure Unfairness                         plications over others. However, SMS0.9 still provides better
+(Eqn. 4) using maximum slowdown [5, 14, 15, 34] over all of the                      CPU performance than both CFR-FCFS and CTCM, on average
+CPU cores and the GPU. We report the harmonic mean instead                           across all workloads. Third, SMS0.9 achieves this CPU perfor-
+of arithmetic mean for Unfairness in our evaluations because                         mance improvement over previous schedulers and their variants
+slowdown is the inverse metric of speedup.                                           by appropriately restricting the fraction of system bandwidth al-
+                          (
+                                       alone       alone
+                                                             )                       located to the GPU, resulting in 18.1%/ 26.7% reduction in GPU
+                                  IPCCore   i   GPUFrameRate                         frame rate as compared to ATLAS and TCM, on average. Al-
+     Un f airness = max max                   ,                 (4)                  though SMS0.9 reduces the frame rate of the GPU, it still main-
+                               i IPCshared GPU shared
+                                      Corei        FrameRate                         tains a frame rate greater than 30 frames per second (for all
+Parameters of Evaluated Algorithms: For SMS, we set the                              workload categories except the HM category), which is likely
+batching FIFO queue size for each CPU core to 10 entries, and                        acceptable for a large number of applications and users. In sys-
+for the GPU to 20 entries. The DCS FIFO queue size for each                          tems and use cases that require a higher GPU frame rate, we
+bank is 15 entries. In addition to the age thresholds given in Sec-                  can adjust the value of p, the SJF probability, to ensure that an
+tion 4.2, the thresholds for a low-intensity CPU application (<                      adequate frame rate is achieved. In particular, Figure 5 shows
+1 MPKC) and the GPU are 0 and 800 cycles, respectively. We                           that SMS0 (p = 0) provides a significantly higher GPU frame
+use a QuantumLength of 1M cycles and HistoryWeight of 0.875                          rate, at the cost of lower CPU performance. In Section 6.2.1, we
+for ATLAS. We use a ClusterThresh of 0.1 and ShuffleCycles of                        present further analysis on the tradeoff between CPU and GPU
+800 for TCM.                                                                         performance by configuring the SJF probability appropriately.
+Area and Power Modeling: We use Verilog models synthe-
+sized with a commercial 180nm design library. The standard-                          6.2      Combined CPU-GPU Performance
+cell synthesis models area, leakage power and timing of FR-                          6.2.1 Effect of Configurable SJF Probability
+FCFS and SMS scheduling logic and buffers.9 In Section 6.4,                          In this section, we present and analyze the combined CPU-GPU
+we report the area and leakage power of SMS normalized to                            performance of the 16-core CPU/1 GPU system and the effect
+FR-FCFS.                                                                             of changing the parameter p (SJF probability).
+6     Experimental Evaluation                                                           Figure 6 (a) shows the performance of SMS at different val-
+6.1      Individual CPU and GPU Performance                                          ues of p, the SJF probability, when the GPUweight is varied from
+                                                                                     0.001 to 1000. This weight represents the relative importance
+First, we compare the individual CPU and GPU performance                             of GPU performance vs. CPU performance in the combined
+of SMS with three state-of-the-art memory scheduler configu-                         CPU-GPU Weighted Speedup (CGWS) metric. Two key con-
+rations: FR-FCFS, ATLAS and TCM, and their variants, CFR-                            clusions are in order. First, SMS0.9 has higher CGWS than FR-
+FCFS and CTCM, which are similar to FR-FCFS and TCM re-                              FCFS, ATLAS and TCM, for low values of GPUweight (< 7.5).
+spectively, but always prioritize the CPU cores’ requests over
+the GPU’s requests. We present SMS with two values of p,                             However, as GPUweight increases, SMS0.9 has lower CGWS than
+the SJF probability: SMS0.9 denotes the configuration where                          previous scheduling policies like FR-FCFS, ATLAS and TCM.
+p = 0.9 (i.e., with 90% probability the application with fewest                      This is because previous scheduling policies prioritize the GPU
+total requests is selected to be scheduled), and SMS0 denotes                        at varying levels, while penalizing CPU cores, hence provid-
+the configuration where p = 0 (i.e., the batch scheduler always                      ing higher GPU performance, as illustrated in Figure 5 and de-
+   9 Each buffer is modeled using a flip-flop. Neither logic nor buffers are opti-      10 We do not show PAR-BS in these figures so as not to clutter the graphs, but
+mized for area and power.                                                            it consistently has lower performance and fairness than that of ATLAS/TCM.
+
+
+===== Page 9 =====
+
+                                                   1                                                    1                                                   25
+                                                           FR-FCFS                                              FR-FCFS                                              FR-FCFS
+                                                  0.9      ATLAS                                       0.9                                                           ATLAS
+                                                           TCM                                                  ATLAS                                                TCM
+                                                  0.8                                                  0.8                                                  20
+                                                           SMS0.9                                                                                                    SMSMax
+
+
+
+
+                                                                                     Normalized CGWS
+                                                                                                                TCM
+
+
+
+
+                                Normalized CGWS
+                                                  0.7      SMS0.05                                     0.7
+                                                           SMS0.02                                              SMSMax
+
+
+
+
+                                                                                                                                               Unfairness
+                                                  0.6                                                  0.6                                                  15
+                                                           SMS0
+                                                  0.5                                                  0.5
+                                                  0.4                                                  0.4                                                  10
+                                                  0.3                                                  0.3
+                                                  0.2                                                  0.2                                                   5
+                                                                            (a)                                                       (b)                                               (c)
+                                                  0.1                                                  0.1
+                                                   0                                                    0                                                    0
+                                                   0.001     0.1       10         1000                  0.001         0.1        10         1000             0.001      0.1        10         1000
+                                                               GPUweight                                                 GPUweight                                         GPUweight
+Figure 6. Combined performance of the CPU-GPU system (a) for different SMS configurations with different SJF probability, (b) for the SMS configuration
+that provides the maximum CGWS, and (c) unfairness for the configuration that provides the maximum CGWS.
+             14                                                                                                                       105
+         CGWS (GPUweight = 1)
+
+
+
+
+                                FR-FCFS              CTCM
+             12                CFR-FCFS              SMS0.9                                                                           90
+
+
+
+
+                                                                                                                                                                                                     (Lower is Better)
+                                 ATLAS                SMS0
+             10                                                                                                                       75
+
+
+
+
+                                                                                                                                                                                                        Unfairness
+                                   TCM
+              8                                                  17.2%                                                                60
+                                                             46.4% 25.7%                                                 244.6%
+              6                                                                                                                205.7%
+                                                                                                                                      45
+              4                                                                                                            47.6%      30
+              2                                                                                                                       15
+              0                                                                                                                       0
+                     L   ML      M      HL HML HM           H Avg             L    ML      M     HL HML HM           H     Avg
+ Figure 7. System performance and fairness for 7 workload categories (105 workloads). % values are gains of SMS0.9 over FR-FCFS, ATLAS, and TCM.
+
+scribed qualitatively in Section 4.5. Therefore, they provide                                                                6.2.2 Performance & Fairness Analysis (GPUweight = 1)
+higher CGWS than SMS, when the contribution of the GPU                                                                       We study the system performance and fairness of SMS when the
+to the CGWS metric is weighted significantly higher. Sec-                                                                    GPUweight has a low value of 1. This represents a system or a
+ond, although SMS0.9 provides a lower value of CGWS com-                                                                     dynamic use case where CPU performance matters significantly
+pared to previous algorithms when GPUweight is higher than 7.5,                                                              to the user, e.g., a typical system running a GPU application
+SMS0 leads to higher CGWS than all previous algorithms. A                                                                    alongside multiple CPU applications.
+small p value enables SMS to prioritize GPU requests much                                                                        Figure 7 shows the system performance (measured as
+more often than CPU requests (due to round-robin scheduling of                                                               CGWS) and fairness of the previously proposed algorithms,
+batches and long batches for the GPU), thereby largely improv-                                                               SMS0.9 , and SMS0 for all workload categories, when the
+ing GPU performance over other algorithms except FR-FCFS                                                                     GPUweight is 1. SMS0.9 provides 46.4%/17.2%/25.7% sys-
+(which achieves a similar effect by prioritizing the row hit re-                                                             tem performance improvement and 244.6%/47.6%/205.7%
+quests, which are much more common in the GPU than in the                                                                    fairness improvement over FR-FCFS/ATLAS/TCM. SMS0
+CPU).                                                                                                                        provides 6.8%/33.4%/24.3% system performance degra-
+    Note that p is an adjustable knob provided by our SMS                                                                    dation and 15.2%/89.7%/36.7% fairness degradation over
+design, which can be statically or dynamically configured to                                                                 FR-FCFS/ATLAS/TCM, respectively. As discussed in Sec-
+trade off between CPU and GPU performance, depending on                                                                      tion 4, SMS0.9 improves system performance and fairness for
+the needs of the system. If a designer or system software care                                                               a low GPUweight of 1, as it prioritizes the short batches of the
+more about GPU performance, they can set p to be very low                                                                    CPU cores over the long batches of the GPU, while SMS0
+(causing the SMS algorithm to implicitly favor the GPU over                                                                  degrades system performance, as it selects between CPU and
+the CPU, as we have seen in Figure 6(a)). On the other hand,                                                                 GPU batches in merely a round-robin fashion. Therefore, we
+if they care more about CPU performance, they can set p to be                                                                conclude that for a GPUweight of 1, SMS with an appropriately
+very high (causing the SMS algorithm to favor the CPU cores                                                                  selected p value of 0.9 provides better system performance and
+over the GPU). Therefore, one can determine and select at de-                                                                fairness than all previously proposed scheduling policies.
+sign time the best SJF probability, p for a given GPUweight . This                                                               Based on the results for each workload category, we
+means that for each GPUweight , we can find an SJF probability                                                               make the following major observations. First, SMS0.9 con-
+that maximizes CGWS.11                                                                                                       sistently outperforms previously proposed algorithms both in
+    Figures 6 (b) and (c) show the performance and fairness of                                                               terms of system performance and fairness across most of
+SMSMax , which is defined as SMS with a p value that maxi-                                                                   the workload categories. Second, in the “H” category with
+mizes CGWS for each given GPUweight . Two key observations                                                                   only high memory-intensity applications, SMS0.9 underper-
+are in order. First, as we increase the GPUweight , a p value that                                                           forms ATLAS and TCM by 16.7% and 12.5%, but it still pro-
+maximizes CGWS favors the GPU over CPU cores, increasing                                                                     vides 7.1% higher system performance than FR-FCFS. ATLAS’
+the slowdown of CPU applications, and thus leading to higher                                                                 attained service based scheduling tends to prioritize all CPU ap-
+unfairness. However, for smaller values of GPUweight (i.e., when                                                             plications equally, as all CPU applications in a “H” category
+CPU performance is important), SMS provides the highest fair-                                                                workload have similar memory intensities. This leads to high
+ness across all schedulers. Second, SMSMax provides the best                                                                 performance and fairness for ATLAS (SMS achieves similar
+CPU-GPU Weighted Speedup (CGWS) compared to FR-FCFS,                                                                         fairness). TCM, on the other hand, improves performance by
+ATLAS and TCM across all values of GPUweight considered.                                                                     unfairly prioritizing certain applications over others, which is re-
+                                                                                                                             flected by its higher unfairness in the “H” category, as compared
+Therefore, we conclude that SMS can be configured to consis-                                                                 to other workload categories. Specifically, TCM misclassifies
+tently provide better system performance than state-of-the-art                                                               some high memory-intensity applications into the low memory-
+memory schedulers regardless of how important the CPU or the                                                                 intensity cluster, which starves the requests of applications in
+GPU is to system performance.                                                                                                the high memory-intensity cluster. On the other hand, SMS pre-
+   11 In fact, new instructions can be added to the ISA to change p dynamically                                              serves fairness in all workload categories by using its proba-
+to achieve the best performance in cases where GPUweight (importance of the                                                  bilistic SJF batch scheduling policy described in Section 4. As
+GPU) varies dynamically.                                                                                                     a result, SMS provides 205.7% better fairness relative to TCM.
+
+
+===== Page 10 =====
+
+6.2.3 Performance & Fairness Analysis (GPUweight =1000)                                 FR-FCFS/ATLAS/TCM (averaged over 75 workloads12 ) with
+We also study the system performance and fairness of SMS                                the same number of request buffers, as the number of CPU
+when the GPUweight is 1000. This represents a system or                                 cores is varied. We make the following observations. First,
+a use case where CPU performance matters less to the user                               SMS always provides better CPU performance and fairness
+than GPU performance does, e.g., a system intended for                                  than FR-FCFS/ATLAS/TCM. Second, the fairness gains
+gaming or watching high definition video. Figure 8 shows                                increase as the number of CPU cores increases to 16, as this
+the system performance (measured as CGWS) of the previ-                                 significantly reduces the memory bandwidth per core given the
+ously proposed algorithms, SMS0 , and SMS0.9 for all work-                              same memory system configuration. With lower bandwidth
+load categories when the GPUweight is 1000. SMS0 pro-                                   per core, the interference between applications becomes more
+                                                                                        severe. SMS mitigates the interference by effectively throttling
+vides 1.6%/32.7%/16.4% system performance improvement,                                  back the GPU. Third, similar to the observation made in
+while SMS0.9 provides 44.3%/13.3%/27.7% system perfor-                                  Section 6.1, SMS reduces GPU frame rate compared to other
+mance degradation, over FR-FCFS/ATLAS/TCM. Fairness of                                  memory schedulers. However, SMS still maintains a frame rate
+these algorithms was already shown in Figure 7 (note that the                           above 30 frames per second for all systems. In general, SMS
+unfairness measure does not depend on GPUweight ). However,                             provides consistent improvement in CPU performance and
+when GPUweight is high, fairness is not an important concern                            fairness relative to other memory schedulers while maintaining
+because the goal is to optimize for GPU performance. Two                                likely acceptable GPU performance (30 frames per second)
+key observations are in order from Figure 8. First, when the                            across systems with different numbers of CPU cores. SMS’
+GPUweight is very high, FR-FCFS, which predominantly priori-                            benefits are likely to become more significant as CPU core
+tizes the GPU owing to the GPU’s very high row-buffer locality                          counts in future technology nodes increase, as this would lead
+and very high memory intensity, provides the best system per-                           to higher interference between the CPU cores and the GPU,
+formance among previous techniques. Second, SMS0 provides                               which previous scheduling algorithms like ATLAS and TCM
+similar system performance as FR-FCFS, on average, across all                           do not handle robustly.
+workload categories, as it predominantly prioritizes the GPU
+
+
+                                                                                        CPU Weighted Speedup
+                                                                                                               8 FR-FCFS                                     120                                               20
+requests when a low value of p is used. Therefore, we con-                                                                                                                                                                                 47.4%
+
+
+
+
+                                                                                          (Higher is Better)
+
+
+
+
+                                                                                                                                              (Higher is Better)
+                                                                                                                                              GPU Frame Rate
+
+
+
+
+                                                                                                                                                                                                (Lower is Better)
+                                                                                                                      ATLAS                                             -3.8%
+                                                                                                                        TCM                                  100             -5.4%-7.3%
+clude that for a GPUweight of 1000, SMS with an appropriately                                                  6                                                                                               15
+
+
+
+
+                                                                                                                                                                                                   Unfairness
+                                                                                                                        SMS           22.1%                                            -35.8%
+                                                                                                                                                              80
+selected p value of 0 provides better system performance than                                                  4               17.7%                          60                                               10
+                                                                                                                                                                                                                                    22.8%
+                                                                                                                                                                                                                              32.3%
+previously proposed scheduling policies.                                                                       2
+                                                                                                                          25.2%                               40
+                                                                                                                                                                                                                    5     25.6%
+                                                                                                                      21.2%                                   20
+ CGWS (GPUweight = 1000)
+
+
+
+
+                           1400    FR-FCFS             TCM         SMS0                                        0                                               0                                                    0
+                                                                                                                       2   4      8   16                                 2    4    8   16                                  2 4 8 16
+                           1200   CFR-FCFS            CTCM                  32.7%                                     Number of Cores                                  Number of Cores                                    Number of Cores
+                                    ATLAS             SMS0.9              1.6%
+                           1000                                                 16.4%   Figure 9. Performance and fairness vs. number of CPU cores. % values
+                            800                                                         are gains of SMS0.9 over the best previous algorithms (ATLAS for weighted
+                                                                                        speedup and fairness, and FR-FCFS for GPU frame rate).
+                            600
+                            400
+                                                                                            Figure 10 shows the CPU performance (weighted speedup),
+                                                                                        GPU performance (frame rate), and fairness of SMS compared
+                            200                                                         against FR-FCFS, ATLAS, and TCM as the number of mem-
+                              0                                                         ory channels is varied. Three key observations are in order.
+                                     L       ML   M    HL HML HM      H      Avg
+                                                                                        First, SMS provides consistent improvement in CPU perfor-
+Figure 8. System performance for 7 workload categories (105 workloads).                 mance and fairness across a wide range of system configu-
+% values are gains of SMS0 over FR-FCFS, ATLAS, and TCM.
+                                                                                        rations with different numbers of channels. Second, as the
+    Observing the results for each workload category, we see that                       number of memory channels increases to eight, the available
+SMS0 performs better as the CPU workload intensity increases.                           memory bandwidth increases, and hence SMS is able to pro-
+In the high-intensity workloads that have high interference be-                         vide GPU frame rates that are within 13.4%/7.6%/10.5% of
+tween the CPU and GPU, SMS0 allows the GPU to form batches                              FR-FCFS/ATLAS/TCM, while improving CPU system perfor-
+with high row-buffer locality without being interfered by re-                           mance by 54.7%/22.2%/38.5%, respectively. Third, the GPU
+quests from high-intensity CPU applications. On the other hand,                         frame rate of SMS drops below 30 frames per second in a
+FR-FCFS performs better at lower CPU workload intensities.                              two-channel system. However, these results are without an ap-
+When the CPU applications in a workload have low memory in-                             propriate reconfiguration of p. As described in Section 6.2.1,
+tensities, they seldom interfere with the GPU application. Thus,                        SMS can provide more adequate GPU frame rates by adjust-
+merely prioritizing row-buffer hits favors the GPU application,                         ing the SJF probability, p, while trading off CPU performance.
+which has high row-buffer locality, thereby providing high GPU                          We conclude that SMS provides high CPU performance and
+performance (which is good in this scenario as GPUweight is                             high fairness compared to previously proposed scheduling al-
+1000). However, the wait time for batch formation in SMS0                               gorithms without degrading the GPU frame rate below a usually
+can sometimes throttle back the GPU application unnecessar-                             acceptable level, across a wide range of system configurations
+ily, leading to a slight performance degradation for the GPU.                           with different core and memory channel counts.
+On the other hand, when the CPU applications in a workload
+                                                                                               CPU Weighted Speedup
+
+
+
+
+                                                                                                                 10    FR-FCFS                                 100                  -13.4%                      60
+have high memory intensities, these applications sometimes in-
+                                                                                                 (Higher is Better)
+
+
+
+
+                                                                                                                                                  (Higher is Better)
+                                                                                                                                                  GPU Frame Rate
+
+
+
+
+                                                                                                                                                                                                (Lower is Better)
+
+
+
+
+                                                                                                                        ATLAS                                                 -35.8%                            50
+                                                                                                                  8        TCM                                  80                                                           229.8%
+terfere with the GPU application in the row buffers when a naive
+                                                                                                                                                                                                   Unfairness
+
+
+
+
+                                                                                                                           SMS                                           -58.7%
+                                                                                                                                   38.5%                                                                        40
+                                                                                                                  6          22.2%                              60
+application-unaware scheduling policy like FR-FCFS is used. In                                                           54.7%                                                                                  30
+contrast, SMS explicitly prioritizes the GPU application by us-                                                   4                                             40                                              20              47.8%
+                                                                                                                                                                                                                                    87.2%
+ing a very low value of the parameter p, which improves GPU’s                                                     2                                             20                                              10
+row buffer locality, leading to a larger improvement in GPU per-                                                  0                                              0                                               0
+                                                                                                                         2 4 8                                            2    4 8                                          2   4      8
+formance and, thus, CGWS than FR-FCFS.                                                                                Number of Channels                               Number of Channels                               Number of Channels
+                                                                                        Figure 10. Performance and fairness vs. number of channels. % values
+6.3                          Scalability with CPU Cores and Memory                      are gains of SMS0.9 over the best previous algorithms (ATLAS for weighted
+                             Channels                                                   speedup and fairness, and FR-FCFS for GPU frame rate).
+Figure 9 compares the CPU performance (weighted                                           12 We use 75 randomly selected workloads per core count. We could not use
+speedup), GPU performance (frame rate), and fairness of                                 the same workloads/categorizations as earlier because those were for 16-core
+SMS (we use SMS0.9 for our sensitivity studies) against                                 systems, whereas we are now varying the number of CPU cores.
+
+
+===== Page 11 =====
+
+6.4            Power and Area                                                                           same system parameters as described in Section 5, except that
+We present the power and area of FR-FCFS and SMS in Ta-                                                 the system does not have a GPU. We present results for only
+ble 5 for a system with 300 request buffers. Two major con-                                             workload categories with at least some high memory-intensity
+clusions are in order. First, SMS consumes 66.7% less leak-                                             applications, as the performance and fairness of SMS in the
+age power than FR-FCFS, the simplest of all evaluated pre-                                              other workload categories are quite similar to that of ATLAS
+vious memory schedulers. Second, SMS requires 46.3% less                                                and TCM. First, we observe that SMS degrades performance by
+area than FR-FCFS. The majority of the power and area sav-                                              only 8.8% and 4% respectively compared to ATLAS and TCM,
+ings of SMS over FR-FCFS comes from the decentralized re-                                               while it improves fairness by 1.2% and 25.7% respectively, on
+quest buffer queues and simpler scheduling logic in SMS, as                                             average across all workloads, compared to ATLAS and TCM.
+compared to centralized request buffer queues, CAMs, and                                                Compared to ATLAS, SMS improves fairness in “HL”, “HML”
+complex scheduling logic in FR-FCFS. Because ATLAS and                                                  and “HM” categories but reduces the performance in those cat-
+TCM require more complex ranking and scheduling logic than                                              egories slightly. However, ATLAS provides the best fairness in
+FR-FCFS does, SMS provides likely more significant power and                                            the “H” workload category, as ATLAS’ attained service based
+area reductions over ATLAS and TCM.                                                                     prioritization mechanism achieves the same effect as shuffling
+                                      Data Type                   FR-FCFS            SMS                request priorities between applications, when they have simi-
+                                 Leakage (Normalized)                1               0.667              lar memory intensities. Compared to TCM, SMS’ performance
+                                  Area (Normalized)                  1               0.463              degradation mainly comes from the “H” workload category; as
+                                  Table 5. Power and area comparison.                                   discussed in our main evaluations in Section 6, TCM places
+6.5            Analysis of SMS Algorithm Parameters                                                     some high memory-intensity applications into the low memory-
+                                                                                                        intensity cluster, which results in the strict prioritization of such
+Figure 11 shows CPU performance, fairness and GPU frame                                                 applications over those (slightly more intensive applications)
+rate (all normalized to SMS0.9 ), when we vary threshold age                                            placed in the high memory-intensity cluster. Therefore, TCM
+(left) for applications in all intensity categories from 0% (no                                         gains performance at the cost of unfairness to the memory-
+batching) to 300% of the default values specified in Section 5                                          intensive applications that fall into the latter cluster. On the other
+and DCS FIFO queue size (right) from 5 to 20 entries. Three                                             hand, SMS reduces unfairness with its probabilistic SJF policy,
+observations are in order. First, as threshold age increases, the                                       while still maintaining good system performance. We conclude
+GPU frame rate increases. However, CPU performance de-                                                  that SMS can be employed in CPU-only systems as an effec-
+grades, when threshold age is increased beyond a point. This                                            tive, low-complexity, and scalable memory scheduling policy to
+is because as threshold age increases, SMS takes longer to form                                         provide high fairness and reasonably high performance.
+a batch. While longer batches help improve the GPU’s row-
+                                                                                                                                          10                                               40
+buffer hit rate and hence its frame rate, they increase the wait                                                                                 FR-FCFS
+                                                                                                                    System Performance
+                                                                                                                     (Higher is Better)
+
+
+
+
+                                                                                                                                                                                                (Lower is Better)
+time of latency-sensitive CPU applications, degrading CPU per-                                                                             8      ATLAS
+                                                                                                                                                    TCM                                    30
+
+
+
+
+                                                                                                                                                                                                   Unfairness
+formance. Second, as threshold age decreases, batches become                                                                               6         SMS
+                                                                                                                                                                                           20
+smaller, degrading row-buffer locality. This reduces both GPU                                                                              4
+performance and CPU performance; however, GPU perfor-                                                                                      2                                               10
+mance degrades more than CPU performance because SMS0.9
+                                                                                                                                           0
+prioritizes CPU requests over GPU requests, leading to addi-                                                                                   HL HML HM   H   Avg   HL HML HM   H   Avg
+
+tional interference from the CPU cores to the GPU. Third, CPU                                               Figure 12. Results on a 16-core CPU system for 4 workload categories.
+performance and fairness increase while GPU performance de-
+creases as we lower DCS FIFO queue size. When DCS FIFO                                                  7      Related Work
+queue size becomes smaller, the DCS FIFOs can hold a smaller                                            Memory Scheduling: We have already compared SMS to
+number of batches. Hence, once a few batches are scheduled to a                                         state-of-the-art memory schedulers designed for CPU-only sys-
+DCS FIFO, other batches would need to wait until the batches in                                         tems (FR-FCFS [31, 37], ATLAS [14], PAR-BS [25], and
+the DCS FIFO are drained. This particularly impacts the GPU,                                            TCM [15]). SMS outperforms these schedulers in terms of both
+as SMS0.9 prioritizes CPU requests over GPU requests. This                                              system performance and fairness as explained in Sections 4.5
+reduction in GPU performance leads to lower interference from                                           and 6. Other memory schedulers (e.g., [11, 19, 21, 22, 24, 26,
+the GPU, and hence increases CPU performance. We also found                                             30, 35, 36]) that are either aware or unaware of applications have
+that increasing the DCS FIFO size beyond 20 entries provides                                            been proposed for CPU-only systems. However, none of these
+only very small performance benefit.                                                                    works has been shown to provide better performance and fair-
+                                Threshold Age                                     DCS FIFO Size
+                          1.6                                               1.6                         ness than TCM, which SMS outperforms across a wide range of
+                                  0%
+       Normalized Value
+
+
+
+
+                                                         Normalized Value
+
+
+
+
+                          1.4    50%                                        1.4
+                                                                                         5
+                                                                                        10
+                                                                                                        workloads. Furthermore, previous works [2, 3, 35] have also
+                          1.2
+                                100%
+                                200%                                        1.2
+                                                                                        15              explored memory scheduling for GPUs/GPGPUs. However,
+                                                                                        20
+                            1   300%
+                                                                              1                         these works are not targeted toward integrated CPU-GPU sys-
+                          0.8                                               0.8                         tems and are application-unaware. On the other hand, SMS is
+                          0.6                                               0.6                         a new application-aware memory scheduler that mitigates inter-
+                          0.4    CP      U    F                             0.4    CP   U    F
+                                                                                                        ference between CPU and GPU applications in heterogeneous
+                                      U- nfai ram                                    U- nfai ram        CPU-GPU systems.
+                                        Pe rne eR                                      Pe rne eR
+                                          rf.   ss ate                                   rf.   ss ate   Parallel Application Memory Scheduling: Ebrahimi et al. [7]
+                                                                                                        propose a memory scheduler to explicitly manage inter-thread
+       Figure 11. Sensitivity of SMS to different design parameters.                                    memory interference in parallel applications. However, the pro-
+6.6            Analysis of CPU-only Systems                                                             posed memory scheduler is not designed to mitigate interfer-
+In Sections 6.1-6.3, we showed that SMS effectively mitigates                                           ence between heterogeneous applications in CPU-GPU systems.
+inter-application interference in a CPU-GPU integrated sys-                                             Their proposed principles can be combined with our work to
+tem. In this section, we evaluate the performance of SMS in                                             prioritize limiter threads in CPU-GPU systems. We aim to in-
+                                                                                                        vestigate the interaction between parallel CPU applications and
+a CPU-only scenario.13 Figure 12 shows the system perfor-                                               GPU applications as part of future work.
+mance and fairness of SMS on a 16-core system with exactly the                                          QoS for CPU-GPU heterogeneous systems: A concurrent
+   13 In view of simulation bandwidth and time constraints, we reduce the simu-                         work by Jeong et al. proposes a QoS-aware memory controller
+lation time to 300M cycles for these studies. We did not tune the configuration                         that has the explicit goal of providing QoS for the GPU by ad-
+parameters of ATLAS, TCM and SMS for CPU-only cases.                                                    justing the priority of the CPU and the GPU based on whether
+
+
+===== Page 12 =====
+
+the GPU meets its target frame rate [12]. Our goal, in contrast, is   from NSF (CAREER Award CCF-0953246 and CCF-1147397),
+to provide high system performance and fairness, which makes          GSRC, and Intel ARO Memory Hierarchy Program. Rachata
+our approach complementary. Principles from [12] can be ap-           Ausavarungnirun is supported by the Royal Thai Government
+plied to SMS to dynamically adjust the priority of the GPU (p         Scholarship, and was an intern at AMD while he did part of this
+value), which can provide QoS to the GPU and further improve          work.
+system performance.
+Sub-row Interleaving: In order to preserve row-buffer local-          References
+ity and prevent applications from monopolizing the row buffer          [1] Advanced Micro Devices.             AMD Radeon HD 5870 Graphics.
+                                                                           http://www.amd.com/us/products/desktop/graphics/ati-radeon-hd-
+when an open-page policy is used, Kaseridis et al. [13] propose            5000/hd-5870.
+a scheme that interleaves data at a sub-row granularity across         [2] N. B Lakshminarayana et al. DRAM scheduling policy for GPGPU archi-
+channels and banks. Our batch formation process provides sim-              tectures based on a potential function. IEEE CAL, 2011.
+ilar qualitative benefits to the sub-row interleaving approach of      [3] N. B. Lakshminarayana and H. Kim. Effect of instruction fetch and mem-
+                                                                           ory scheduling on GPU performance. GPGPU Workshop, 2010.
+limiting row-buffer hit streaks. However, their proposal still         [4] B. Burgess et al. Bobcat: AMD’s low-power x86 processor. IEEE Micro,
+needs a large centralized scheduler that requires complex logic            2011.
+to support the memory access demands of the vastly different           [5] R. Das et al. Application-aware prioritization mechanisms for on-chip
+CPU and GPU applications.                                                  networks. In MICRO-42, 2009.
+                                                                       [6] E. Ebrahimi et al. Fairness via source throttling: a configurable and
+Memory Channel Partitioning: Instead of mitigating mem-                    high-performance fairness substrate for multi-core memory systems. In
+ory interference between applications by intelligently prioritiz-          ASPLOS-15, 2010.
+ing requests at the memory controller, Muralidhara et al. [23]         [7] E. Ebrahimi et al. Parallel application memory scheduling. In MICRO-44,
+propose memory channel partitioning (MCP) to map the data                  2011.
+of badly interfering applications to different channels. Our ap-       [8] S. Eyerman and L. Eeckhout. System-level performance metrics for mul-
+                                                                           tiprogram workloads. In MICRO-41, 2008.
+proach is complementary to MCP, as it has been shown that              [9] A. Fog.       The Microarchitecture of Intel, AMD and VIA CPUs.
+MCP can be integrated with different memory schedulers to fur-             http://www.agner.org/optimize/#manuals.
+ther improve system throughput and fairness [23].                     [10] Intel. Sandy Bridge Intel processor graphics performance developer’s
+                                                                           guide. http://software.intel.com/file/34436.
+Source Throttling: Ebrahimi et al. [6] mitigate inter-                [11] E. Ipek et al. Self-optimizing memory controllers: A reinforcement learn-
+application interference in a shared-memory system by throt-               ing approach. In ISCA, 2008.
+tling the request injection rates of interference-causing appli-      [12] M. K. Jeong et al. A QoS-aware memory controller for dynamically bal-
+cations at the source. This approach is complementary to                   ancing GPU and CPU bandwidth use in an MPSoC. In DAC-49, 2012.
+SMS which reduces inter-application interference via memory           [13] D. Kaseridis et al. Minimalist open-page: A DRAM page-mode schedul-
+                                                                           ing policy for the many-core era. In MICRO-44, 2011.
+scheduling. Note that, the staged nature of SMS allows throt-         [14] Y. Kim et al. ATLAS: a scalable and high-performance scheduling algo-
+tling of sources at the source FIFOs.                                      rithm for multiple memory controllers. In HPCA-16, 2010.
+                                                                      [15] Y. Kim et al. Thread cluster memory scheduling: Exploiting differences
+8   Conclusion                                                             in memory access behavior. In MICRO-43, 2010.
+                                                                      [16] V. W. Lee et al. Debunking the 100x GPU vs. CPU myth: an evaluation of
+While many advances in memory scheduling policies have been                throughput computing on CPU and GPU. In ISCA-37, 2010.
+made to deal with multi-core processors, the integration of           [17] E. Lindholm et al. NVidia Tesla: A unified graphics and computing archi-
+GPUs on the same chip as CPUs has created new system de-                   tecture. IEEE Micro, 2008.
+                                                                      [18] C. Luk et al. Pin: Building customized program analysis tools with dy-
+sign challenges. We demonstrate how the inclusion of GPU                   namic instrumentation. In PLDI, 2005.
+memory traffic can cause severe difficulties for existing memory      [19] S. A. McKee et al. Dynamic access ordering for streamed computations.
+controller designs in terms of performance, fairness and design            IEEE Transactions on Computers, 2000.
+complexity. To solve this problem, we propose a fundamentally         [20] Micron Technology Inc. 1Gb: x4, x8, x16 DDR3 SDRAM Fea-
+                                                                           tures. http://download.micron.com/pdf/datasheets/dram/ddr3/
+new approach to memory scheduler design, the Staged Memory                 1Gb_DDR3_SDRAM.pdf.
+Scheduler (SMS). The key idea of SMS is to decouple the pri-          [21] T. Moscibroda and O. Mutlu. Memory performance attacks: Denial of
+mary functions of an application-aware memory controller into              memory service in multi-core systems. In USENIX Security, 2007.
+three stages: (1) per-source FIFO queues that group requests to       [22] T. Moscibroda and O. Mutlu. Multi-level DRAM controller to manage
+                                                                           access to DRAM. U.S. Patent Number 8001338, Aug 2011.
+the same row into batches for each source/application, to im-         [23] S. Muralidhara et al. Reducing memory interference in multi-core systems
+prove row-buffer locality, (2) the batch scheduler that prioritizes        via application-aware memory channel partitioning. In MICRO-44, 2011.
+between the batches of different sources, to maximize perfor-         [24] O. Mutlu and T. Moscibroda. Stall-time fair memory access scheduling
+mance and fairness and (3) the DRAM command scheduler that                 for chip multiprocessors. In MICRO-40, 2007.
+simply issues requests to DRAM in the order it receives them          [25] O. Mutlu and T. Moscibroda. Parallelism-aware batch scheduling: En-
+                                                                           hancing both performance and fairness of shared DRAM systems. In
+(as the previous stages have already made application-aware                ISCA-35, 2008.
+and row-buffer locality aware batch scheduling decisions). This       [26] K. J. Nesbit et al. Fair queuing memory systems. In MICRO, 2006.
+staged design provides two benefits. First, it is simpler and         [27] NVIDIA. Tegra 2 Tech. Ref. Manual. http://www.nvidia.com/object/tegra-
+more scalable than previous application-aware memory sched-                2.html.
+                                                                      [28] S. Palacharla et al. Complexity-effective superscalar processors. In ISCA-
+ulers with large monolithic request buffers. Second, it provides           24, 1997.
+a new memory scheduling algorithm by composing these three            [29] H. Patil et al. Pinpointing representative portions of large Intel Itanium
+separate stages. Our evaluations show that SMS delivers better             programs with dynamic instrumentation. In MICRO-37, 2004.
+performance and fairness compared to state-of-the-art memory          [30] N. Rafique et al. Effective management of DRAM bandwidth in multicore
+                                                                           processors. In PACT, 2007.
+schedulers, while providing a design that is significantly sim-       [31] S. Rixner et al. Memory access scheduling. In ISCA-27, 2000.
+pler to implement. We conclude that the new staged approach to        [32] C. J. Rossbach et al. PTask: operating system abstractions to manage
+memory scheduling can provide a scalable substrate for memory              GPUs as compute devices. In SOSP-23, 2011.
+controller design for future heterogeneous systems.                   [33] A. Snavely and D. M. Tullsen. Symbiotic jobscheduling for a simultaneous
+                                                                           multithreaded processor. In ASPLOS-9, 2000.
+Acknowledgments                                                       [34] H. Vandierendonck and A. Seznec. Fairness metrics for multi-threaded
+                                                                           processors. IEEE CAL, 2011.
+We thank Stephen Somogyi and Fritz Kruger at AMD for their            [35] G. L. Yuan et al. Complexity effective memory access scheduling for
+                                                                           many-core accelerator architectures. In MICRO-42, 2009.
+assistance with the modeling of the GPU applications. We also         [36] Z. Zhu and Z. Zhang. A performance comparison of DRAM memory
+thank Antonio Gonzalez, anonymous reviewers and members                    system optimizations for SMT processors. In HPCA-11, 2005.
+of the SAFARI group at CMU for their feedback. We ac-                 [37] W. K. Zuravleff and T. Robinson. Controller for a synchronous DRAM
+knowledge the generous support of AMD, Intel, Oracle, and                  that maximizes throughput by allowing memory requests and commands
+                                                                           to be issued out of order. U.S. Patent Number 5,630,096, May 1997.
+Samsung. This research was also partially supported by grants

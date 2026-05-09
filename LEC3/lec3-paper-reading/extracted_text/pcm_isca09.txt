@@ -1,0 +1,787 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/paper reading/sources/LEC3/pcm_isca09.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC3/pcm_isca09.pdf
+Accessed: 2026-05-09 06:57:53 UTC
+
+
+
+===== Page 1 =====
+
+                          Architecting Phase Change Memory as a
+                                 Scalable DRAM Alternative
+
+                                 Benjamin C. Lee† Engin Ipek† Onur Mutlu‡ Doug Burger†
+                      †Computer Architecture Group                                                   ‡Computer Architecture Laboratory
+                          Microsoft Research                                                             Carnegie Mellon University
+                             Redmond, WA                                                                       Pittsburgh, PA
+                 {blee, ipek, dburger}@microsoft.com                                                          onur@cmu.edu
+
+ABSTRACT                                                                                 ory scaling, a first-order technology objective, is in jeop-
+Memory scaling is in jeopardy as charge storage and sensing                              ardy for conventional technologies. Storage mechanisms in
+mechanisms become less reliable for prevalent memory tech-                               prevalent memory technologies require inherently unscalable
+nologies, such as DRAM. In contrast, phase change memory                                 charge placement and control. In the non-volatile space,
+(PCM) storage relies on scalable current and thermal mecha-                              Flash memories must precisely control the discrete charge
+nisms. To exploit PCM’s scalability as a DRAM alternative,                               placed on a floating gate. In volatile main memory, DRAM
+PCM must be architected to address relatively long laten-                                must not only place charge in a storage capacitor but must
+cies, high energy writes, and finite endurance.                                          also mitigate sub-threshold charge leakage through the ac-
+   We propose, crafted from a fundamental understanding of                               cess device. Capacitors must be sufficiently large to store
+PCM technology parameters, area-neutral architectural en-                                charge for reliable sensing and transistors must be suffi-
+hancements that address these limitations and make PCM                                   ciently large to exert effective control over the channel.
+competitive with DRAM. A baseline PCM system is 1.6x                                     Given these challenges, manufacturable solutions for scal-
+slower and requires 2.2x more energy than a DRAM sys-                                    ing DRAM beyond 40nm are unknown [1].
+tem. Buffer reorganizations reduce this delay and energy                                    Phase change memory (PCM) provides a non-volatile stor-
+gap to 1.2x and 1.0x, using narrow rows to mitigate write                                age mechanism amenable to process scaling. During writes,
+energy and multiple rows to improve locality and write coa-                              an access transistor injects current into the storage mate-
+lescing. Partial writes enhance memory endurance, provid-                                rial and thermally induces phase change, which is detected
+ing 5.6 years of lifetime. Process scaling will further reduce                           during reads. PCM, relying on analog current and ther-
+PCM energy costs and improve endurance.                                                  mal effects, does not require control over discrete electrons.
+                                                                                         As technologies scale and heating contact areas shrink, pro-
+                                                                                         gramming current scales linearly. This PCM scaling mecha-
+Categories and Subject Descriptors                                                       nism has been demonstrated in a 20nm device prototype and
+B.3.3 [Memory Structures]: Performance Analysis and                                      is projected to scale to 9nm [1, 23]. As a scalable DRAM al-
+Design Aids—Simulation; B.6.1 [Logic Design]: Design                                     ternative, PCM could provide a clear roadmap for increasing
+Styles—Memory control and access                                                         main memory density and capacity.
+                                                                                            To realize this vision, however, we must first overcome
+                                                                                         PCM’s disadvantages relative to DRAM. Access latencies,
+General Terms                                                                            although tens of nanoseconds, are several times slower than
+Design                                                                                   those of DRAM. At present technology nodes, PCM writes
+                                                                                         require energy intensive current injection. Moreover, writes
+Keywords                                                                                 induce thermal expansion and contraction within the stor-
+                                                                                         age element, degrading injection contacts and limiting en-
+PCM, phase change memory, DRAM alternative, scalability,                                 durance to hundreds of millions of writes per cell at current
+performance, power, energy, endurance                                                    processes. These limitations are significant, which is why
+                                                                                         PCM is currently positioned only as a Flash replacement; in
+1.     INTRODUCTION                                                                      this market, PCM properties are drastic improvements. For
+Memory technology scaling drives increasing density, in-                                 a DRAM alternative, however, we must architect PCM for
+creasing capacity, and falling price-capability ratios. Mem-                             feasibility in main memory within general-purpose systems.
+                                                                                            Current prototype designs are not designed to mitigate
+                                                                                         PCM latencies, energy costs, and finite endurance. This
+                                                                                         paper rethinks PCM subsystem architecture to bring the
+Permission to make digital or hard copies of all or part of this work for                technology within competitive range of DRAM. Since area
+personal or classroom use is granted without fee provided that copies are                translates directly into memory manufacturing cost, we en-
+not made or distributed for profit or commercial advantage and that copies               sure proposed solutions are area neutral. Drawn from a
+bear this notice and the full citation on the first page. To copy otherwise, to          rigorous survey of PCM device and circuit prototypes pub-
+republish, to post on servers or to redistribute to lists, requires prior specific       lished within the last five years (Section 2) and comparing
+permission and/or a fee.
+                                                                                         against modern DRAM memory subsystems (Section 3), we
+ISCA’09, June 20–24, 2009, Austin, Texas, USA.
+Copyright 2009 ACM 978-1-60558-526-0/09/06 ...$5.00.                                     examine the following:
+
+
+                                                                                     1
+
+
+===== Page 2 =====
+
+                             Horri       Ahn       Bedeschi    Oh        Pellizer     Chen     Kang    Bedeschi     Lee    Parameters
+                             [11]          [2]        [6]     [20]        [21]         [8]      [12]       [7]      [15]   [this work]
+       Year                  2003        2004        2004     2005        2006        2006     2006      2008      2008         **
+       Process (nm, F )        **         120         180      120         90          **       100        90        90         90
+       Array Size (Mb)         **          64           8       64         **          **       256       256       512         **
+       Material            GST, N-d    GST, N-d      GST      GST         GST       GS, N-d    GST       GST       GST      GST,N-d
+       Cell Size (µm2 )        **        0.290       0.290      **        .097      60 sq-nm   0.166     0.097     0.047   0.065-0.097
+       Cell Size (F 2 )        **         20.1        9.0       **        12.0         **       16.6      12.0       5.8     9.0-12.0
+       Access Device           **          **        BJT      FET         BJT          **      FET       BJT       diode       BJT
+       Read T (ns)             **          70          48       68         **          **        62        **        55         48
+       Read I (uA)             **          **          40       **         **          **        **        **        **         40
+       Read V (V)              **          3.0        1.0      1.8         1.6         **        1.8       **        1.8        1.0
+       Read P (uW)             **          **          40       **         **          **        **        **        **         40
+       Read E (pJ)             **          **         2.0       **         **          **        **        **        **         2.0
+       Set T (ns)             100         150         150      180         **          80       300        **       400        150
+       Set I (uA)             200          **         300      200         **          55        **        **        **        150
+       Set V (V)               **          **         2.0       **         **         1.25       **        **        **         1.2
+       Set P (uW)              **          **         300       **         **         34.4       **        **        **         90
+       Set E (pJ)              **          **          45       **         **          2.8       **        **        **        13.5
+       Reset T (ns)            50          10          40       10         **          60        50        **        50         40
+       Reset I (uA)           600         600         600      600         400         90       600       300       600        300
+       Reset V (V)             **          **         2.7       **         1.8         1.6       **        1.6       **         1.6
+       Reset P (uW)            **          **        1620       **         **         80.4       **        **        **        480
+       Reset E (pJ)            **          **        64.8       **         **          4.8       **        **        **        19.2
+       Write                1E+07       1E+09       1E+06       **       1E+08       1E+04       **     1E+05     1E+05      1E+08
+       Endurance                                                                                        (MLC)
+
+Table 1: Technology Survey. ** denotes information not available in cited publication. The last column
+identifies parameters derived for this work.
+
+
+
+     • Buffer Organization: We examine PCM buffer or-                     trogen doping increases resistivity and lowers programming
+       ganizations that satisfy DRAM imposed area con-                    current while GS offers lower latency phase changes [8, 11].
+       straints. Narrow buffers mitigate high energy PCM                  We derive parameters for Nitrogen-doped GST, given its
+       writes. Multiple buffer rows exploit locality to coalesce          widespread adoption.
+       writes, hiding their latency and energy. PCM buffer re-               Phase changes are induced by injecting current into the
+       organizations reduce application execution time from               resistor-chalcogenide junction and heating the chalcogenide
+       1.6x to 1.2x and memory energy from 2.2x to 1.0x,                  to 650 ◦ C. Current and voltage characteristics of the chalco-
+       relative to DRAM-based systems. (Section 4)                        genide are identical regardless of its initial phase, which low-
+                                                                          ers programming complexity and latency [14]. The ampli-
+     • Partial Writes: We propose partial writes, which                   tude and width of the injected current pulse determines the
+       track data modifications and write only modified cache             programmed state.
+       lines or words to the PCM array. Using an endurance                   Phase change memory cells are 1T/1R devices, comprised
+       model to estimate lifetime, we expect write coalesc-               of the resistive storage element and an access transistor (Fig-
+       ing and partial writes to deliver an memory module                 ure 1C). Access is typically controlled by one of three de-
+       average lifetime of 5.6 years. Scaling improves PCM                vices: field-effect transistor (FET), bipolar junction tran-
+       endurance, extending lifetimes by four orders of mag-              sistor (BJT), or diode. In future, FET scaling and large
+       nitude at 32nm. (Section 5)                                        voltage drops across the cell will adversely affect gate oxide
+                                                                          reliability for unselected wordlines [22]. BJTs are faster and
+Collectively, these results indicate PCM is a viable DRAM
+                                                                          expected to scale more robustly without this vulnerability
+alternative, with architectural solutions providing competi-
+                                                                          [7, 22]. Diodes occupy smaller areas and potentially enable
+tive performance, comparable energy, and feasible lifetimes.
+                                                                          greater cell densities, but require higher operating voltages
+                                                                          [15]. We derive parameters with BJT access devices, given
+2.    PCM TECHNOLOGY                                                      their balance between speed and scalability.
+Given the still speculative state of PCM technology, re-
+searchers have made several different manufacturing and de-               2.2 Writes
+sign decisions. We survey device and circuit prototypes pub-              Phase change memory typically operates in two states. The
+lished within the last five years (Table 1). From the survey,             SET and RESET states are defined as the crystalline (low-
+we derive conservative PCM technology parameters, which                   resistance) and amorphous (high-resistance) phases of the
+are identified in the last column.                                        chalcogenide, respectively. Illustrated in Figure 1R, the
+                                                                          storage element is RESET by a high, short current pulse.
+2.1     Memory Cells                                                      The short pulse abruptly discontinues current flow, quickly
+The storage element is comprised of two electrodes sepa-                  quenching the heat generation and freezing the chalcogenide
+rated by a resistor and phase change material, which is typ-              into the amorphous state. In contrast, the storage element is
+ically a chalcogenide (Figure 1L). Ge2 Sb2 Te5 (GST) is most              SET by a moderate, long current pulse, which ramps down
+commonly used, but other chalcogenides offer higher resis-                over the duration of the write. The ramp down gradually
+tivity and improve the device’s electrical characteristics. Ni-           cools the chalcogenide and induces crystal growth.
+
+
+                                                                     2
+
+
+===== Page 3 =====
+
+Figure 1: Phase Change Memory. Storage element with heating resistor and chalcogenide between electrodes
+(L). Cell structure with storage element and BJT access device (C). RESET to an amorphous (high resistance)
+state with a high, short current pulse. SET to a crystalline (low resistance) state with moderate, long current
+pulse. Slope of SET current ramp down determines the state in multi-level cells (R).
+
+
+   As the longer of the two, SET latency determines write           memory. When injecting current into a volume of phase
+performance. We derive a SET latency of 150ns as sepa-              change material, thermal expansion and contraction de-
+rately demonstrated by Ahn et al. and Bedeschi et al. [2,           grades the electrode-storage contact, such that programming
+6]. We extrapolate across process generations to identify a         currents are no longer reliably injected into the cell. Since
+SET current and voltage of 150 µA and 1.2V.1 We com-                material resistivity is highly dependent on current injection,
+pute average power by integrating current over time and             current variability causes resistance variability. This greater
+multiplying by voltage. A SET dissipates 90 µW for 150ns,           variability degrades the read window, the difference between
+consuming approximately 13.5pJ.                                     programmed minimum and maximum resistance.
+   RESET latency is a determinant of write energy. We de-             Write endurance, the number of writes performed before
+rive a RESET latency of 40ns as demonstrated by Bedeschi            the cell cannot be programmed reliably, ranges from 1E+04
+et al. [6]. We further determine RESET requires 300 µA              to 1E+09. Write endurance depends on manufacturing tech-
+at 1.6V by extrapolating across process generations using           niques and differs across manufacturers. 1E+04 is likely
+current scaling rules (Section 2.5, [6, 7]). RESET dissipates       an outlier specific to a speculative, new cell technology [8].
+480 µW for 40ns and consumes approximately 19.2 pJ.                 1E+05, the low end of surveyed endurance, is comparable
+   We derive conservative write latencies and currents al-          to Flash endurance [13]. However, PCM is more likely to
+though other prototypes demonstrate more aggressive pa-             exhibit greater write endurance by several orders of magni-
+rameters. Shorter SET latencies of 80 and 100ns are demon-          tude (e.g., 1E+07 to 1E+08). The ITRS roadmap projects
+strated for emerging cell technologies and not for array pro-       improved endurance of 1E+12 writes at 32nm [1], but we
+totypes [8, 11]. Longer SET latencies of 180 to 400ns arise         conservatively model 1E+08. We propose differential writes
+from a choice of dense but slow access devices [12, 15, 20].        (Section 5), which can combine with previously proposed
+Chen et al, demonstrates a 90 µA RESET, which uses a                techniques for Flash memories [10, 13], so that write limits
+new, speculative phase change material [8].                         are not exposed to the system during a memory’s lifetime.
+   Although most PCM prototypes consider only two states
+per storage element (i.e., crystalline and amorphous) to pro-       2.4 Reads
+duce single-level cells (SLC), recent research demonstrates         Prior to reading the cell, the bitline is precharged to the
+additional intermediate states, which enables multi-level           read voltage. The wordline is active low when using a BJT
+cells [7, 19]. Multi-level cells (MLC) store multiple bits by       access transistor. If a selected cell is in a crystalline state,
+programming the cell to produce intermediate resistances.           the bitline is discharged with current flowing through the
+Smaller current slopes (i.e., slow ramp down) produce lower         storage element and access transistor. Otherwise, the cell is
+resistances and larger slopes (i.e., fast ramp down) produce        in an amorphous state, preventing or limiting bitline current.
+higher resistances. Varying slopes induce partial phase tran-          We derive a cell read latency of 48ns as demonstrated by
+sitions and/or change the size and shape of the amorphous           Bedeschi et al. [6]. This latency includes bitline precharge
+material produced at the contact area, giving rise to re-           and assumes BJT access and current sensing. This same pro-
+sistances between those observed from fully amorphous or            totype requires 40 µA of read current at 1.0V. In this imple-
+fully crystalline chalcogenide. The difficulty of differenti-       mentation, a cell read dissipates 40 µW for 48ns, consuming
+ating between a large number of resistances typically con-          approximately 2pJ of energy. Other prototypes demonstrate
+strains MLC cells to two bits per cell.                             higher read latencies, which range from 55 to 70ns. How-
+                                                                    ever, these other prototypes implement FET or diode access
+2.3   Write Endurance                                               devices, which produce slower response times.
+Writing is the primary wear mechanism in phase change               2.5 Process Scaling
+1
+  Bedeschi et al, produce two prototypes at 180 and 90nm,           PCM scaling reduces required programming current injected
+illustrating linear write current and voltage scaling [6, 7].       via the electrode-storage contact. As the contact area de-
+We apply this scaling to obtain 90nm SET parameters from            creases with feature size, thermal resistivity increases and
+those at 180nm.                                                     the volume of phase change material that must be melted to
+
+
+                                                                3
+
+
+===== Page 4 =====
+
+Figure 2: PCM RESET energy scaling. Lai exam-
+ines prototypes [14]. Pirovano et al. examines scal-
+ing rules [22]. PCM is projected to scale to 9nm,
+while DRAM is projected to scale to 40nm [1].                         Figure 3: Array Architecture. A hierarchical mem-
+                                                                      ory organization includes banks, blocks, and sub-
+                                                                      blocks with local, global decoding for row, col-
+completely block current flow decreases. These effects en-            umn addresses. Sense amplifiers (S/A’s) and word
+able smaller access devices for current injection. As shown           drivers (W/D’s) are multiplexed across blocks.
+for energy in Figure 2, Pirovano et al., outline PCM scaling
+rules [22], which are confirmed empirically in a survey by
+Lai [14]. Specifically, as feature size scales down by k, con-        rent differences to create a differential voltage at the ampli-
+tact area decreases quadratically (1/k2 ). Reduced contact            fier’s output nodes. Although current sensing is faster since
+area causes resistivity to increase linearly (k), which causes        it does not discharge bitline parasitic capacitances, these
+programming current to decrease linearly (1/k).                       amplifier circuits are larger [25]. We use current sensing to
+   These trends assume SET/RESET voltage does not scale               derive 48ns PCM reads for this work. These larger sense
+[22]. SET current is typically 40 to 80 percent of RESET              amplifiers affect PCM area (Section 4).
+current and these currents scale together [23]. Process scal-            Within this memory architecture, a row is activated by
+ing does not impact read and write latencies. Write laten-            reading it from the array and latching it in a buffer. Mem-
+cies, in particular, are determined primarily by the phase            ory accesses read data from and write data to the buffer.
+change material [8].                                                  Accesses that require an unbuffered row must evict the cur-
+   Operational issues arise with aggressive PCM technology            rent row and read the desired row. Destructive DRAM reads
+scaling. As contact area decreases, lateral thermal coupling          require array writes during every eviction to restore buffered
+may cause programming currents for one cell to influence              data. In contrast, PCM reads are non-destructive and array
+the states of adjacent cells. Lai’s survey of the state of PCM        writes are required to update the array only when evicting
+finds these effects negligible in measurement and simulation          dirty buffer contents.
+[14]. Temperatures fall exponentially with distance from                 In DRAM, sense amplifiers both sense and buffer data us-
+programmed cell, suggesting no appreciable impact from                ing cross-coupled inverters. In contrast, we explore PCM
+thermal coupling. Increasing resistivity from smaller con-            architectures with separate sensing and buffering; sense am-
+tact areas may reduce signal strength (i.e., smaller resis-           plifiers drive banks of explicit latches. These latches provide
+tivity difference between crystalline and amorphous states).          greater flexibility in row buffer organization by enabling mul-
+However, these signal strengths are well within the sense             tiple buffered rows. However, these latches incur area over-
+circuit capabilities of modern memory architectures [14].             heads, which affect PCM area (Section 4).
+                                                                         Separate sensing and buffering enables multiplexed sense
+2.6    Array Architecture                                             amplifiers. Local wordline decoders activate lines across
+                                                                      multiple sub-blocks. A subset of these sub-blocks’ data pass
+As shown in Figure 3, phase change memory array struc-
+                                                                      through local and global bitline decoders for sensing and
+tures are similar to those for existing memory technologies.
+                                                                      buffering. This distributed bitline decode enables buffer
+PCM cells might be hierarchically organized into banks,
+                                                                      widths narrower than the total number of bitlines. Buffer
+blocks, and sub-blocks. Row and column addresses are of-
+                                                                      width is a critical design parameter, determining the re-
+ten decoded at local sub-blocks. Peripheral circuitry, such as
+                                                                      quired number of expensive current sense amplifiers.
+sense amplifiers and write drivers are shared among blocks.
+Despite similarities to conventional memory array architec-
+tures, PCM-specific design issues must be addressed.                  3.   BASELINE PCM/DRAM COMPARISON
+  Choice of bitline sense amplifiers affect the read access           We express PCM device and circuit characteristics within
+time of the array. Voltage sense amplifiers are cross-coupled         conventional DDR timing and energy parameters, thereby
+inverters which require differential discharging of bitline ca-       quantifying PCM in the context of more familiar DRAM
+pacitances. In contrast, current sense amplifiers rely on cur-        parameters while facilitating a direct comparison.
+
+
+                                                                  4
+
+
+===== Page 5 =====
+
+                                     PCM     DRAM
+                                                                         read/write commands and an array write of that
+                        Delay & Timing
+                                                                         buffered data. tWR, tRTP ensure data stability in the
+          tRCD (cy)                  22      5
+          tCL (cy)                   5       5
+                                                                         cross-coupled inverters that feed array write drivers
+          tWL (cy)                   4       4                           and are independent of memory cell technology.
+          tCCD (cy)                  4       4
+          tWTR (cy)                  3       3                         • tRP specifies the delay between an array write and a
+          tWR (cy)                   6       6                           following array read. Since an array read proceeds only
+          tRTP (cy)                  3       3
+          tRP (cy)                   60      5
+                                                                         after previously buffered data is successfully written
+          tRRDact (cy)               2       3                           back to the array, tRP quantifies array write latency.
+          tRRDpre (cy)               11      3                           The longer SET delay of 150ns determines PCM write
+                             Energy                                      latency (Table 1) and tRP is 60 cycles at 400MHz.
+          Array read (pJ/bit)        2.47    1.17
+          Array write (pJ/bit)       16.82   0.39                      • tRRDact, tRRDpre specify constraints on the frequency
+          Buffer read (pJ/bit)       0.93    0.93                        of PCM array accesses to meet power budgets. The
+          Buffer write (pJ/bit)      1.02    1.02
+          Background power (pJ/bit)  0.08    0.08                        parameters distinguish between array read (tRRDact)
+                                                                         and write (tRRDpre) since a read is non-destructive
+      Table 2: Memory subsystem parameters.                              and a write is required only when a read evicts dirty
+                                                                         buffer contents. Furthermore, given asymmetric read
+                                                                         and write energy costs, no single timing constraint can
+                                                                         satisfy both read and write power budgets. PCM read
+3.1   Experimental Methodology                                           energy and delay is 2.1x and 4.4x greater than that of
+We evaluate a four-core chip multiprocessor using the SESC               DRAM. Because power is energy divided by delay, a
+simulator [24]. The 4-way superscalar, out-of-order cores                PCM read dissipates 0.47x the power of DRAM reads,
+operate at 4.0GHz. This datapath is supported by 32KB,                   which produces a tRRDact of 2 cycles (0.47x of 3 cycle
+direct-mapped instruction and 32KB, 4-way data L1 caches,                tRRD in DRAM). Similarly, tRRDpre is 11 cycles for
+which may be accessed in 2 to 3 cycles. A 4MB, 8-way L2                  PCM writes.
+cache with 64B lines is shared between the four cores and
+                                                                    Thus, we estimate PCM read, write latencies are approxi-
+may be accessed in 32 cycles.
+                                                                    mately 4.4x, 12.0x greater than those for DRAM. PCM array
+   Below the caches is a 400 MHz SDRAM memory subsys-
+                                                                    reads may occur 2.1x more frequently and array writes must
+tem modeled after Micron’s DDR2-800 technical specifica-
+                                                                    occur 3.6x less frequently than those for DRAM.
+tions [16]. We consider one channel, one rank, four x16 chips
+                                                                       Energy. DRAM energy costs are calculated according
+per rank to achieve the standard 8B interface. Internally,
+                                                                    to Micron technical notes and specifications [17]. However,
+each chip is organized into four banks to facilitate through-
+                                                                    these notes do not explicitly differentiate read and write
+put as data are interleaved across banks and accessed in par-
+                                                                    energy since writes must follow every destructive DRAM
+allel. We model a burst length of eight blocks. The memory
+                                                                    read. A current diagram in the technical note indicates ar-
+controller has a 64-entry transaction queue.
+                                                                    ray read current is much greater than array write current.
+   We consider parallel workloads from the SPLASH-2 suite
+                                                                    From this current diagram, we derive array write and read
+(fft, radix, ocean), SPEC OpenMP suite (art, equake, swim),
+                                                                    energy costs, which are 25 and 75 percent of the total 1.56pJ
+and NAS parallel benchmarks (cg, is, mg) [3, 4, 27]. Each
+                                                                    per DRAM bit.
+application is simulated to completion. Regarding input
+                                                                       From Table 1, PCM array reads consume 2.0 pJ of energy
+sets, we use 1M points for FFT, 514x514 grid for ocean,
+                                                                    per bit. Furthermore, we use CACTI to estimate energy
+and 2M integers for radix. SPEC OpenMP workloads run
+                                                                    consumed by peripheral circuitry to obtain approximately
+MinneSpec-Large data set and NAS parallel benchmarks run
+                                                                    2.5pJ of total array read energy per bit [18]. Array writes
+with Class A problem sizes. All applications are compiled
+                                                                    consume 13.5pJ or 19.2pJ when writing a zero or one. On
+using gcc and Fortran compilers at the O3 optimization level.
+                                                                    average, zeros and ones are equally likely and writes require
+Particular applications in each benchmark suite are chosen
+                                                                    16.35pJ of energy in addition to 0.53pJ peripheral circuit
+for their memory intensity. We did not consider a bench-
+                                                                    energy. Thus, we derive PCM array read and write energies,
+mark if system performance or energy was not impacted by
+                                                                    which are 2.1x and 43.1x greater than those for DRAM.
+replacing DRAM with PCM.
+                                                                       Reads and writes to buffered data will consume similar en-
+   Delay and Timing. DDR defines its command inter-
+                                                                    ergy costs for PCM and DRAM since mechanisms for buffer
+face with a series of timing constraints, which dictate when
+                                                                    access are independent of memory technology. Although
+a command can issue. In Table 2, DRAM timing parame-
+                                                                    various power modes exist for DRAM, in practice, we ob-
+ters are provided by Micron specifications [16] and analogous
+                                                                    serve only one power mode while an application executes;
+PCM timing parameters are derived from Table 1.
+                                                                    there are no opportunities to enter low power modes during
+   • tRCD specifies the delay between an array read and             computation. This mode consumes 0.08pJ per buffered bit
+     buffer read/write command. This parameter is deter-            per memory cycle while clocks are enabled and memory is
+     mined by the 60ns array read latency, which includes           ready to receive commands [17]. This background energy
+     48ns read (Table 1) and 7.5ns row decode [15]. At              is consumed by peripheral circuitry common to both PCM
+     400MHz, tRCD for PCM is 22 cycles, 4.4x greater than           and DRAM.
+     the DRAM value of 5 cycles.                                    3.2 Evaluation: Baseline
+   • tCL, tWL, tCCD, and tWTR constrain consecutive buffer          We consider a PCM baseline architecture, which implements
+     commands and are independent of memory cell tech-              DRAM-style buffering with a single 2048B-wide buffer. Fig-
+     nology. tWR, tRTP specify the delay between buffer             ure 4L illustrates end-to-end application performance when
+
+
+                                                                5
+
+
+===== Page 6 =====
+
+Figure 4: Application delay and energy when using PCM as a DRAM replacement (L). With non-destructive
+PCM reads, only a fraction of reads first require a write for dirty data evicted from buffer (R).
+
+
+PCM replaces DRAM as main memory. Application de-                     reduce PCM write energy but negatively impact spatial lo-
+lay increases with penalties relative to DRAM ranging from            cality, opportunities for write coalescing, and application
+1.2x (radix) to 2.2x (ocean, swim). On average, we observe a          performance. However, these penalties may be mitigated
+1.6x delay penalty. The energy penalties are larger, ranging          by the additional buffer rows. We examine these fundamen-
+from 1.4x (cg) to 3.4x (ocean), due to the highly expensive           tal trade-offs by identifying designs that meet a DRAM-
+array writes required when buffer contents are evicted. On            imposed area budget before optimizing delay and energy.
+average, we observe a 2.2x energy penalty.                              We consider buffer widths ranging from the original 2048B
+   The end-to-end delay and energy penalties are more mod-            to 64B, which is the line size of the lowest level cache. We
+est than the underlying technology parameters might sug-              consider buffer rows ranging from the original single row
+gest. Even memory intensive workloads mix memory ac-                  to a maximum of 32 rows. At present, we consider a fully
+cesses with computation. Furthermore, the long latency,               associative buffer and full associativity likely becomes in-
+high energy array writes manifest themselves much less of-            tractable beyond 32 rows. Buffers with multiple rows use
+ten in PCM than in DRAM; non-destructive PCM reads do                 a least recently used (LRU) eviction policy implemented in
+not require subsequent writes whereas destructive DRAM                the memory controller.
+reads do. Figure 4R indicates only 28 percent of PCM array
+reads first require an array write of a dirty buffer.                 4.1 Area and Density Analysis
+   To enable PCM for use below the lowest level processor             We estimate the net area impact of every buffer organi-
+cache in general-purpose systems, we must close the delay             zation, considering only array components affected by the
+and energy gap between PCM and DRAM. Figure 4 indi-                   organization. Specifically, we consider the bitline periph-
+cates non-destructive PCM reads help mitigate underlying              eral circuitry (e.g., sense amplifiers), additional decoding
+delay and energy disadvantages by default. We seek to elim-           required by multiple buffer rows, and explicit latches. We
+inate the remaining PCM-DRAM differences with architec-               neglect area of components unrelated to the buffer, such as
+tural solutions. In particular, the baseline analysis considers       wordline decode.
+a single 2048B-wide buffer per bank. Such wide buffering is              Table 3 summarizes the parameters in our area model,
+inexpensive in DRAM, but incurs unnecessary energy costs              which this section details. We consider area in units of tran-
+in PCM given the expensive current injection required when            sistors (T) converted to square feature sizes (F 2 ), which
+writing buffer contents back into the array.                          makes our analysis independent of process technology.2 We
+                                                                      estimate the number of transistors in each circuit and es-
+                                                                      timate transistor density using guidelines from Weste and
+4.   BUFFER ORGANIZATION                                              Harris [26]. These guidelines differentiate between dense
+We examine whether PCM subsystems can close the gap                   datapath circuits (e.g., 250 λ2 /T) and sparse control cir-
+with DRAM application performance and memory subsys-                  cuits (e.g., 1000 λ2 /T). Datapaths operate on multi-bit data
+tem energy using area-neutral buffer reorganizations. To be           words and perform the same function for every bit. As a
+a viable DRAM alternative, buffer organizations must hide             result, they consist of identical circuits repeated in one di-
+long PCM latencies, while minimizing PCM energy costs.                mension. In contrast, control circuits have less structure
+Effective organizations would also mitigate PCM wear mech-            and, therefore, lower density.
+anisms (Section 5).                                                      DRAM Area Model. 8F 2 DRAM cells provide a suf-
+  To achieve area neutrality, we consider narrower buffers            ficiently wide pitch to enable a folded bitline architecture,
+and additional buffer rows. The number of sense amplifiers
+                                                                      2
+decreases linearly with buffer width, significantly reducing            In a 90nm process, feature size F is 90nm and layout design
+area as fewer of these large circuits are required. We utilize        λ = F/2 is 45nm. For example, a 14T sense amplifer im-
+this area by implementing multiple rows with latches much             plemented with a density of 250λ2 /T occupies 3500λ2 area.
+smaller than the removed sense amplifiers. Narrow widths              Converting to F 2 , each amplifier occupies 875F 2 area.
+
+
+                                                                  6
+
+
+===== Page 7 =====
+
+                                       PCM             DRAM             requires two amplifiers for the least and most significant bits
+                             Array                                      [5]. Amplifiers feed explicit LP =8T latches, which are two
+ A    bank size (MB)                   16              16               inverters in series (4T) accessed via two pass gates (4T) that
+ C    cell size (F 2 )                 9MLC, 12MLC     6
+                          Periphery                                     select the input from either the sense amplifier or the previ-
+ S    sense amplifer (T @ 250λ2 /T)    44              14
+                                                                        ously latched value. Both amplifiers and latches are regular
+      sense amplifer (F 2 )            2750            875              datapath circuitry, capable of high transistor density (e.g.,
+ L    latch (T @ 250λ2 /T)             8               0                250 λ2 /T ).
+      latch (F 2 )                     500             0
+ D    decode 2-AND (T @ 1000λ2 /T)     6               0
+      decode 2-AND (F 2 )              250             0                    ÂP    =     A·CP + WP ·SP + RP ·WP ·LP +
+                       Buffer Organization                                               | {z } | {z }   |   {z   }
+                                                                                          array            sense      latch
+ W    buffer width (B)                 64::2x::2048    2048
+ R    buffer rows (ea)                 1::2x::32       1                                 RP ·G(log2 R, 2)·DP                        (2)
+                                                                                         |       {z        }
+                                                                                                  decode
+Table 3: Area parameters where T refers to transis-
+tor counts, λ refers to layout density, and F 2 refers                  A buffer with multiple rows requires a decoder to direct sense
+to square feature sizes. Sense amplifier transistor                     amplifier outputs to the correct row. A buffer with Rp rows
+count from Sinha et al. [25]. Transistor densities                      requires Rp control signals each generated by an AND gate
+from Weste and Harris, Table 1.10 [26]. Notation                        with log2 R inputs. Avoiding slow, large fan-in gates, we
+i::j::k describes range of i to k in steps of j.                        compute the number of gates in an equivalent 2-AND im-
+                                                                        plementation. G(n, k) computes the number of k-AND gates
+                                                                        required to implement a single n-AND gate. Each 2-AND
+                                                                        occupies Dp = 6T area, arising from a 4T NAND and a 2T
+which is resilient against bitline noise during voltage sens-           inverter. The low density of decoders arise from its relatively
+ing. However, since manufacturers often choose the den-                 irregular tree structure.
+sity of 6F 2 DRAM cells, we derive models using 6F 2 as a                  This area analysis favors multiple narrow buffers. We il-
+conservative point of reference that favors DRAM. The nar-              lustrate with a qualitative example, which is supported by
+row pitch in 6F 2 designs preclude folded bitlines, increasing          our detailed equations. Suppose widths are reduced by a fac-
+vulnerability to noise and requiring unconventional array de-           tor of R and the number of rows is increased by a factor of R.
+signs. For example, Samsung’s 6F 2 implements array blocks              The width reduction means expensive sense amplifier area
+with 320 wordlines, which is not a power of two, to improve             (2750F 2 each) is reduced by a factor of R while inexpensive
+reliability [9].                                                        latches (500F 2 each) are increased by a factor of R. Given
+                                                                        negligible decoder overhead for modest R, such buffer reor-
+               ÂD = A·CD + WD ·SD                            (1)       ganizations produce a net reduction in buffer area. However,
+                     | {z } | {z }                                      we find these buffer reorganizations significantly impact the
+                         array        sense
+                                                                        degree of exploited memory access locality and the costs of
+Equation (1) estimates array and sense amplifier area for the           array writes.
+baseline DRAM organization. ÂD defines the area budget
+and PCM buffer organizations exceeding this budget are not              4.2 Buffer Design Space
+considered. We consider a conservative DRAM cell size of                Figure 5 illustrates the delay and energy characteristics of
+CD = 6F 2 . Given the engineering effort required to opti-              the buffer design space for representative benchmarks. The
+mize 6F 2 DRAM arrays, we expect a buffer reorganization                triangles illustrate PCM and DRAM baselines, which imple-
+for DRAM to be prohibitively expensive. Thus, the buffer                ment a single 2048B buffer. Circles illustrate various buffer
+width WD and rows RD are fixed at 2048B and 1; RD = 1                   organizations. Open circles indicating organizations that re-
+does not impact ÂD and does not appear in Equation (1).                quire less area than the DRAM baseline when using 12F 2
+This derivation uses a SD = 14T voltage sense amplifier,                cells. Closed circles indicate additional designs that become
+which consists of cross-coupled inverters with supporting               viable when considering smaller 9F 2 cells. By default, the
+transistors for precharge and equalization [25].                        PCM baseline (green triangle) does not satisfy the area bud-
+   PCM Area Model. As surveyed in Table 1, PCM cells                    get due to larger current sense amplifiers and explicit latches.
+occupy between 6-20F 2 . Part of this spread is due to differ-             Figure 5L illustrates the delay and energy trends for the
+ences in design and fabrication expertise for the new tech-             ocean benchmark. Reorganizing a single, wide buffer into
+nology. However, we also observe a correlation between cell             multiple, narrow buffers reduces both energy costs and delay.
+size and access device (e.g., the 6F 2 cell uses the relatively         Examining the Pareto frontier, we observe Pareto optima
+small diode). In contrast, we favor larger BJTs for their               shift PCM delay and energy into the neighborhood of the
+low access times. Cells with BJTs occupy between 9-12F 2 .              DRAM baseline. Furthermore, among these Pareto optima,
+For 9-12F 2 PCM to be as dense as 6F 2 DRAM, multi-level                we observe a knee that minimizes both energy and delay. For
+cells are necessary. Such cells have an effective density of            ocean, this organization is four 512B-wide buffers. Such an
+4.5-6.0F 2 per bit, which we use for PCM cell area CP .                 organization reduces the PCM delay, energy disadvantages
+   Equation (2) estimates PCM area ÂP from array, sense,               from 2.2x, 3.4x to more modest 1.2x, 1.05x.
+latch, and decode contributions given buffer widths WP and                 These observations generalize to the average across all
+rows RP . We model a SP = 44T MLC current sense ampli-                  benchmarks illustrated in Figure 5R. Although smaller 9F 2
+fier, which is larger than the SD = 14T voltage sense ampli-            PCM cells provide opportunities for wider buffers and ad-
+fier in the DRAM model [25]. A larger 22T current amplifier             ditional rows, the associated energy costs are not justified.
+is necessary for low read times in PCM and two-bit MLC                  In general, diminishing marginal reductions in delay suggest
+
+
+                                                                    7
+
+
+===== Page 8 =====
+
+Figure 5: Pareto analysis for ocean (L) and benchmark average (R). Open circles indicate designs satisfying
+area constraints assuming 12F 2 PCM multi-level cells. Closed circles indicate additional designs satisfying
+area constraints assuming smaller 9F 2 PCM multi-level cells.
+
+
+area savings from 9F 2 cells should go toward improving den-            linear energy growth as we increase the number of rows. For
+sity, not additional buffering.                                         example, energy costs for one and two rows are comparable.
+   Figure 6 illustrates memory subsystem effects from reor-             Although two rows consume twice the background energy,
+ganized buffers averaged across all workloads. Although our             the second row significantly reduces the number of array
+design space considers Rp up to 32 rows, we illustrate trends           reads/writes (Figure 6UL) and the effectiveness of write co-
+up to Rp = 4 since we observe diminishing marginal delay                alescing in the buffer (Figure 6UR). These effects on array
+and energy effects beyond Rp = 4. Figure 6UL illustrates                accesses reduce dynamic energy much more rapidly than any
+the number of array reads, which increases very slowly as               increase in background energy. We observe near-linear en-
+buffer width decreases exponentially from 2048B to 64B. For             ergy reductions as buffer width narrows since array read and
+a single row, a 32x reduction in buffer width produces only a           write energy is directly proportional to width.
+2x increase in array reads, suggesting very little spatial local-
+ity within wide rows for the memory intensive workloads we
+consider. The single row is evicted too quickly after its first         4.3 Evaluation: Buffer Organization
+access, limiting opportunities for spatial reuse. However,              Optimizing average delay and energy across the workloads,
+we do observe significant temporal adaptivity. A 2048B-                 we find four 512B-wide buffers most effective. Figure 7L
+wide buffer with two rows requires 0.4x the array reads as a            illustrates the impact of reorganized PCM buffers. Delay
+2048B-wide buffer with only a single row.                               penalties are reduced from the original 1.60x to 1.16x. The
+   Figure 6UR illustrates increasing opportunities for write            delay impact ranges from 0.88x (swim) to 1.56x (fft) relative
+coalescing, quantified by the number of array writes per                to a DRAM-based system. Executing on effectively buffered
+buffer write. As the number of rows in a 2048B-wide buffer              PCM, more than half the benchmarks achieve within 5 per-
+increases from one to two and four rows, array writes per               cent of their DRAM performance. Benchmarks that perform
+buffer write falls by 0.51x and 0.32x, respectively; the buffers        less effectively exhibit low write coalescing rates. For exam-
+coalesce 49 and 68 percent of memory writes. Coalescing                 ple, buffers cannot coalesce any writes in the fft workload.
+opportunities fall as buffer widths narrow beyond 256B. Re-                Buffering and write coalescing also reduces memory sub-
+garding 64B-wide buffers, since we use 64B lines in the low-            system energy from the original 2.2x of Figure 4L to 1.0x
+est level cache, there are no coalescing opportunities from             parity with DRAM. Although each PCM array write re-
+spatial locality within a row buffered for a write. Increasing          quires 43.1x more energy than a DRAM array write, these
+the number of 64B rows has no impact since additional rows              energy costs are mitigated by narrow buffer widths and addi-
+exploit temporal locality, but any temporal locality in writes          tional rows, which reduce the granularity of buffer evictions
+are already exploited by coalescing in the lowest level cache.          and expose opportunities for write coalescing, respectively.
+   Figure 6LL illustrates delay trends. The delay trends                   Thus, we demonstrate area-neutral buffering that miti-
+confirm a lack of spatial locality within a row; row widths             gates fundamental PCM constraints and provide compet-
+may be narrowed with little impact on application perfor-               itive performance and energy characteristics relative to
+mance. Increasing the number of rows exploits temporal                  DRAM-based systems. Narrow buffers mitigate high energy
+locality with great effect. The sensitivity of buffer width for         PCM writes and multiple rows to exploit locality. This local-
+Rp > 1 suggests a temporal component to spatial reuse. If               ity not only improves performance, but also reduces energy
+we only buffer one row, that row is likely evicted by a buffer          by exposing additional opportunities for write coalescing.
+conflict before any spatial reuse. However, if we buffer mul-           We evaluate PCM buffering using technology parameters at
+tiple rows, buffer conflicts decrease, opportunities for spatial        90nm. As PCM technology matures, baseline PCM laten-
+reuse increase, and buffer width becomes more important.                cies may improve. Moreover, process technology scaling will
+   Figure 6LR illustrates energy trends. We observe sub-                drive linear reductions in PCM energy.
+
+
+                                                                    8
+
+
+===== Page 9 =====
+
+Figure 6: Memory subsystem effects and trends from PCM buffer organizations. Array reads increase sub-
+linearly buffer width (UL), while array write coalescing opportunities are greater with additional rows (UR).
+Diminishing marginal reductions in delay (LL), energy (LR) are observed at a width of 512B.
+
+
+
+
+Figure 7: Application delay and energy when using PCM with optimized buffering as a DRAM replacement
+(L). Memory subsystem energy projections for 40nm (R).
+
+
+
+
+                                                     9
+
+
+===== Page 10 =====
+
+4.4    Evaluation: Scaling Comparison                                  We consider partial writes at two granularities: lowest level
+DRAM scaling faces many significant technical challenges               cache line size (64B) and word size (4B).
+as scaling attacks weaknesses in both components of the                   These granularities are least invasive since dirty words
+one transistor, one capacitor (1T1C) cell. Capacitor scal-             are tracked by store instructions from the microprocessor
+ing is constrained by the DRAM storage mechanism, which                pipeline. In contrast, bit-level granularity requires knowl-
+requires maintaining charge on a capacitor. In future, pro-            edge of previous data values and expensive comparators.
+cess scaling is constrained by manufacturing small capacitors          We analyze a conservative implementation of partial writes,
+that store sufficient charge for reliably sensing despite large        which does not exploit cases where stores write the same
+parasitic capacitances on the bitline.                                 data values already stored. Detecting such cases would re-
+   The scaling scenarios are also bleak for the access transis-        quire comparators.
+tor. As this transistor scales down, increasing sub-threshold             Partial writes are supported by adding state to each cache
+leakage will make it increasingly difficult to ensure DRAM             line, tracking stores using fine-grained dirty bits. At the
+retention times. Not only is less charge stored in the ca-             dirty line granularity, 64B modifications are tracked begin-
+pacitor, that charge is stored less reliably. These trends im-         ning at the lowest level cache and requires only 1b per 64B
+pact the reliability and energy efficiency of DRAM in future           L2 line. At the dirty word granularity, 4B modifications are
+process technologies. According to ITRS, “manufacturable               tracked beginning at the L1 cache with 8b per 32B L1 line
+solutions are not known” for DRAM beyond 40nm [1].                     and propagated to the L2 cache, which requires 16b per 64B
+   In contrast, ITRS projects PCM scaling mechanisms will              L2 line. Overheads are 0.2 percent and 3.1 percent of each
+extend to 9nm, after which other scaling mechanisms might              cache line when tracking dirty lines and words, respectively.
+apply [1]. PCM scaling mechanisms have already been                       When the L2 cache issues writebacks to memory, it must
+demonstrated up to 20nm with a novel device structure fab-             communicate its state to the memory controller and across
+ricated by Raoux [23]. Although both DRAM and PCM are                  the memory bus. Delay overheads for transmitting 16b of
+expected to be viable at 40nm technologies, energy scaling             state is no more than one cycle in a DDR interface. Latched
+trends strongly favor PCM. Figure 2 projects a 2.4x reduc-             at the addressed bank, this state controls pass gates placed
+tion in PCM energy from 80 to 40nm. In contrast, ITRS                  before write drivers. Latched state for 64B and 4B partial
+projects DRAM energy falls by only 1.5x at 40nm [1], which             writes require WP RP /64 and WP RP /4 latches where WP is
+reflects the technical challenges of DRAM scaling.                     buffer width and RP is the number of buffered rows. The
+   Since PCM energy scales down 1.6x faster than DRAM                  cost of pass gates for word drivers is WP ·2T .
+energy, PCM subsystems significantly outperforms DRAM                     Our buffer reorganizations achieve a net area savings,
+subsystems at 40nm. Figure 7R indicates PCM subsystem                  which accommodate these overheads. We reduce large sense
+energy is 61.3 percent that of DRAM averaged across work-              amplifiers (2750F 2 each) by a factor of R and increase the
+loads. Switching from DRAM to PCM reduces energy costs                 number small latches (500F 2 each) by a factor of R. Partial
+by at least 22.1 percent (art) and by as much as 68.7 per-             writes require a 3.1 percent latch overhead, increasing the
+cent (swim). Note this analysis does not account for refresh           effective area cost for every latched bit (525F 2 each). How-
+energy, which would further increase DRAM energy costs.                ever, these overheads are dwarfed by area reductions from
+Although ITRS projects constant retention time of 64ms                 using narrower buffers and eliminating large sense amplifiers.
+as DRAM scales to 40nm [1], less effective access transis-
+tor control may reduce retention times. If retention times             5.2 Endurance
+fall, DRAM refresh energy will increase as a fraction of total
+DRAM energy costs.                                                     Equation (3) estimates the lifetime of a memory module
+                                                                       driven with access patterns observed in our memory inten-
+                                                                       sive workloads. Table 4 summarizes the model parameters.
+5.    PARTIAL WRITES                                                   The model estimates the number of writes per second Ŵ
+In addition to architecting PCM to offer competitive de-               for any given bit. We first estimate memory bus occu-
+lay and energy characteristics relative to DRAM, we must               pancy, which has a theoretical peak command bandwidth
+also consider PCM wear mechanisms. To mitigate these ef-               of fm · (B/2)−1 . Each command requires B/2 bus cycles to
+fects, we propose partial writes, which reduce the number              transmit its burst length B in a DDR interface, which pre-
+of writes to the PCM array by tracking dirty data from the             vents commands from issuing at memory bus speeds fm . We
+L1 cache to the memory banks. This architectural solution              then scale this peak bandwidth by application-specific uti-
+adds a modest amount of cache state to drastically reduce              lization. Utilization is computed by measuring the number
+the number of bits written. We derive an analytical model              of memory operations Nw +Nr and calculating the processor
+to estimate memory module lifetime from a combination of               cycles spent on these operations (B/2)·Mf . The processor is
+fundamental PCM technology parameters and measured ap-                 Mf faster than fm . The time spent on memory operations
+plication characteristics. Partial writes, combined with an            is divided by total execution time T .
+effective buffer organization, increases memory module life-
+times to a degree that makes PCM below the lowest level
+processor cache feasible.                                                         fm (Nw + Nr )·(B/2)·Mf                  Nw
+                                                                        Ŵ   =       ·                    ×                              ×
+                                                                                 B/2          T                         Nw + Nr
+                                                                                 |         {z           }               | {z }
+5.1    Mechanism                                                                             memBusOcc                  writeIntensity
+                                                                                                 
+Partial writes track data modifications, propagating this in-                           Nwa                     1
+formation from the L1 cache down to the buffers at the                           8WP ·                ·δ ×                               (3)
+                                                                                        Nwb                   C/2
+memory banks. When a buffered row is evicted and writes                          |     {z              }      | {z }
+content to the PCM array, only modified data is written.                              bufferOrg              capacity
+
+
+
+
+                                                                  10
+
+
+===== Page 11 =====
+
+  Figure 8: PCM endurance with effective buffer organization (four 512B-wide buffers) and partial writes.
+
+                           Endurance
+                                                                        for write coalescing, eliminating only 2.3 percent of writes
+      Ŵ          writes per second per bit             calc            emerging from the memory bus. Frequent row replacements
+      L̂          memory module lifetime (s)            calc
+      E           write endurance                       1E+08           in the single buffer limit opportunities for coalescing.
+                        Memory Module                                      Figure 8 indicates significant endurance gains from reorga-
+      C           logical capacity (Gb)                 2               nized buffers and partial writes. 64B and 4B partial writes
+                    Memory Bus Bandwidth                                improve endurance to 0.7 and 5.6 years, respectively. On
+      fm          memory bus frequency (MHz)            400             average, the four 512B-wide buffers coalesce 38.9 percent of
+      Mf          processor frequency multiplier        10              writes emerging from the memory bus, which is 47.0 percent
+      B           burst length (blocks)                 8
+                  Application Characteristics                           utilized. Writes alone utilize 11.0 percent of the bus. Buffers
+      Nw , Nr     number of writes, reads               sim             use partial writes so that only a fraction of the buffer’s bits
+      T           execution time (cy)                   sim             is written to the array. As shown in Figure 9, only 59.3 and
+                     Buffer Characteristics                             7.6 percent of the buffer must be written to the array for
+      WP , RP     buffer width (B), rows                512, 4          64B and 4B partial writes.
+      Nwb , Nwa   buffer, array writes                  sim
+      δ           fraction of buffer written to array   sim                Considering only memory intensive workloads, this anal-
+                                                                        ysis is conservative. PCM subsystems would more likely ex-
+Table 4: Endurance model parameters with simu-                          perience a mix of compute and memory intensive workloads.
+lated application-specific characteristics.                             Expected lifetimes would be higher had we considered, for
+                                                                        example, single-threaded SPEC integer workloads. How-
+                                                                        ever, such workloads are less relevant for a study of memory
+                                                                        subsystems. Moreover, within memory intensive workloads,
+   Since only a fraction of memory bus activity reaches the             we would expect to see a mix of read and write intensive
+PCM to induce wear, we scale occupancy by write intensity               applications, which may further increase lifetimes.
+to estimate the number of write operations arriving at the                 Endurance might be further improved by using single-level
+row buffers. In the worst case, the entire buffer must be               instead of multi-level cells. This would improve the expected
+written to the array. However, not all buffer writes cause              lifetime since more physical bits deliver the same number
+array writes due to coalescing. Nwa /Nwb measures the coa-              of logical bits. Endurance would also benefit from more
+lescing effectiveness of the buffer, which filters writes to the        fine-grained partial writes. Partial bit writes would require
+array. Lastly, partial writes mean only the dirty fraction δ            additional overheads for shadow buffers to track previous
+of a buffer’s 8WP bits are written to the array. Assuming               data values and comparators to determine the difference,
+effective wear-leveling as done in Flash [13], writes will be           improving endurance at the cost of density.
+spread across the C/2 physical bits in the module, which                   Scalability is projected to improve PCM endurance from
+                                                                        the current 1E+08 writes per bit to 1E+12 writes per bit at
+is half the logical bits in two-bit multi-level PCM. Given Ŵ
+                                                                        32nm with known manufacturable solutions [1]. This higher
+writes per second, a bit will fail in L̂ = E/Ŵ seconds, where
+                                                                        endurance increases lifetime by four orders of magnitude in
+E is the characterized endurance of PCM cells.
+                                                                        our models. ITRS also anticipates 1E+15 PCM writes at
+                                                                        22nm although the source of these projections is less clear
+5.3       Evaluation: Partial Writes                                    since manufacturable solutions are currently unknown.
+In a baseline architecture with a single 2048B-wide buffer,
+average module lifetime is approximately 525 hours as calcu-
+lated by Equation (3). For our memory intensive workloads,              6.   CONCLUSION
+we observe 32.8 percent memory bus utilization. Scaling by                We provide a rigorous survey and derivation of phase
+application-specific write intensity, we find 6.9 percent of            change memory properties to drive architectural studies and
+memory bus cycles are utilized by writes. At the memory                 enhancements. Architecturally relevant parameters are ex-
+banks, the single 2048B buffer provides limited opportunities           pressed within a DDR framework to facilitate a DRAM com-
+
+
+                                                                   11
+
+
+===== Page 12 =====
+
+                                                                      [8] Y. Chen et al. Ultra-thin phase-change bridge memory
+                                                                          device using GeSb. In International Electron Devices
+                                                                          Meeting, 2006.
+                                                                      [9] Y. Choi. Under the hood: DRAM architectures: 8F2
+                                                                          vs. 6F2. EE Times, February 2008.
+                                                                     [10] R. Hamming. Error detecting and error correcting
+                                                                          codes. Bell System Technical Journal, 29(2), April
+                                                                          1950.
+                                                                     [11] H. Horii et al. A novel cell technology using N-doped
+                                                                          GeSbTe films for phase change RAM. In Symposium
+                                                                          on VLSI Technology, 2003.
+                                                                     [12] S. Kang et al. A 0.1um 1.8V 256Mb 66MHz
+                                                                          synchronous burst PRAM. In International Solid-State
+                                                                          Circuits Conference, 2006.
+                                                                     [13] T. Kgil and T. Mudge. FlashCache: A NAND flash
+                                                                          memory file cache for low power web servers. In
+Figure 9: Partial writes and fraction of dirty data                       International Conference on Compilers on Compilers,
+in four 512B-wide buffers.                                                Architecture, and Synthesis for Embedded Systems,
+                                                                          October 2006.
+                                                                     [14] S. Lai. Current status of the phase change memory
+parison. This comparison found that PCM’s long latencies,                 and its future. In International Electron Devices
+high energy, and finite endurance can be effectively miti-                Meeting, 2003.
+gated. Effective buffer organizations and partial writes make        [15] K.-J. Lee et al. A 90nm 1.8V 512Mb diode-switch
+PCM competitive with DRAM at current technology nodes.                    PRAM with 266 MB/s read throughput. Journal of
+Moreover, these complexity effective solutions are area neu-              Solid-State Circuits, 43(1), January 2008.
+tral, a critical constraint in memory manufacturing.                 [16] Micron. 512Mb DDR2 SDRAM component data sheet:
+   The proposed memory architecture lays the foundation                   MT47H128M4B6-25. In www.micron.com, March 2006.
+for exploiting PCM scalability and non-volatility in main            [17] Micron. Technical note TN-47-04: Calculating
+memory. PCM scalability implies lower main memory en-                     memory system power for DDR2. In www.micron.com,
+ergy and greater write endurance. Furthermore, non-volatile               June 2006.
+main memories will fundamentally change the landscape of             [18] N. Muralimanohar et al. Optimizing NUCA
+computing. Software cognizant of this newly provided per-                 organizations and wiring alternatives for large caches
+sistance can provide qualitatively new capabilities. For ex-              with CACTI 6.0. In International Symposium on
+ample, system boot/hibernate will be perceived as instan-                 Microarchitecture, December 2007.
+taneous; application checkpointing will be inexpensive; file         [19] T. Nirschl et al. Write strategies for 2 and 4-bit
+systems will provide stronger safety guarantees. Thus, the                multi-level phase-change memory. In International
+analysis in this work is a step towards a fundamentally                   Electron Devices Meeting, 2008.
+new memory hierarchy with deep implications across the
+                                                                     [20] H. Oh et al. Enhanced write performance of a 64mb
+hardware-software interface.
+                                                                          phase-change random access memory. In International
+                                                                          Solid-State Circuits Conference, 2005.
+7.   REFERENCES                                                      [21] F. Pellizzer et al. A 90nm phase change memory
+                                                                          technology for stand-alone non-volatile memory
+ [1] Process integration, devices & structures.                           applications. In Symposium on VLSI Circuits, 2006.
+     International Technology Roadmap for                            [22] A. Pirovano et al. Scaling analysis of phase-change
+     Semiconductors, 2007.                                                memory technology. In International Electron Devices
+ [2] S. Ahn et al. Highly manufacturable high density                     Meeting, 2003.
+     phase change memory of 64Mb and beyond. In
+                                                                     [23] S. Raoux et al. Phase-change random access memory:
+     International Electron Devices Meeting, 2004.
+                                                                          A scalable technology. IBM Journal of Research and
+ [3] V. Aslot and R. Eigenmann. Quantitative                              Development, 52(4/5), Jul/Sept 2008.
+     performance analysis of the SPEC OMPM2001                       [24] J. Renau et al. SESC simulator. In
+     benchmarks. Scientific Programming, 11(2), 2003.                     http://sesc.sourceforge.net, 2005.
+ [4] D. Bailey et al. NAS parallel benchmarks. In Technical          [25] M. Sinha et al. High-performance and low-voltage
+     Report RNR-94-007, NASA Ames Research Center,                        sense-amplifier techniques for sub-90nm sram. In
+     March 1994.
+                                                                          International Systems-on-Chip Conference, 2003.
+ [5] M. Bauer et al. A multilevel-cell 32mb flash memory.
+                                                                     [26] N. Weste and D. Harris. CMOS VLSI Design. Pearson
+     In International Solid-State Circuits Conference, 1995.
+                                                                          Education, 3 edition, 2005.
+ [6] F. Bedeschi et al. An 8Mb demonstrator for
+                                                                     [27] S. Woo et al. The SPLASH-2 programs:
+     high-density 1.8V phase-change memories. In
+                                                                          Characterization and methodological considerations.
+     Symposium on VLSI Circuits, 2004.
+                                                                          In International Symposium on Computer
+ [7] F. Bedeschi et al. A multi-level-cell bipolar-selected               Architecture, June 1995.
+     phase-change memory. In International Solid-State
+     Circuits Conference, 2008.
+
+
+                                                                12
