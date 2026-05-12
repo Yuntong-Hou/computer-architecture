@@ -1,0 +1,1095 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/lec4-paper-reading/sources/original-paper/pim-enabled-instructons-for-low-overhead-pim_isca15.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC4/original-paper/pim-enabled-instructons-for-low-overhead-pim_isca15.pdf
+Raw URL: https://raw.githubusercontent.com/Yuntong-Hou/computer-architecture/main/LEC4/original-paper/pim-enabled-instructons-for-low-overhead-pim_isca15.pdf
+Accessed: 2026-05-11 11:24:29 UTC
+
+
+
+===== Page 1 =====
+
+                    PIM-Enabled Instructions: A Low-Overhead, Locality-Aware
+                              Processing-in-Memory Architecture
+
+                          Junwhan Ahn Sungjoo Yoo Onur Mutlu† Kiyoung Choi
+                  junwhan@snu.ac.kr, sungjoo.yoo@gmail.com, onur@cmu.edu, kchoi@snu.ac.kr
+                                                                                  †
+                                          Seoul National University                   Carnegie Mellon University
+
+
+                                Abstract                                              1. Introduction
+   Processing-in-memory (PIM) is rapidly rising as a viable                       Performance and energy consumption of modern computer
+solution for the memory wall crisis, rebounding from its unsuc-                   systems are largely dominated by their memory hierarchy.
+cessful attempts in 1990s due to practicality concerns, which                     This memory bottleneck is expected to be aggravated due
+are alleviated with recent advances in 3D stacking technolo-                      to two trends. First, computational power has been continu-
+gies. However, it is still challenging to integrate the PIM                       ously increasing through architectural innovations (e.g., chip
+architectures with existing systems in a seamless manner due                      multiprocessors, specialized accelerators, etc.), whereas the
+to two common characteristics: unconventional programming                         memory bandwidth cannot be easily increased due to the pin
+models for in-memory computation units and lack of ability to                     count limitation. Second, emerging data-intensive workloads
+utilize large on-chip caches.                                                     require large volumes of data to be transferred fast enough
+   In this paper, we propose a new PIM architecture that                          to keep computation units busy, thereby putting even higher
+(1) does not change the existing sequential programming mod-                      pressure on the memory hierarchy.
+els and (2) automatically decides whether to execute PIM                             The widening discrepancy between computation speed and
+operations in memory or processors depending on the local-                        data transfer speed, commonly known as the memory wall [49],
+ity of data. The key idea is to implement simple in-memory                        motivates the need for a different computing paradigm. In par-
+computation using compute-capable memory commands and                             ticular, processing-in-memory (PIM) is regaining attention
+use specialized instructions, which we call PIM-enabled in-                       because it can minimize data movement by placing the compu-
+structions, to invoke in-memory computation. This allows                          tation close to where data resides. Although the PIM concept
+PIM operations to be interoperable with existing program-                         itself was already studied by many researchers decades ago, it
+ming models, cache coherence protocols, and virtual memory                        is worth revisiting it in a new context today: (1) 3D stacking
+mechanisms with no modification. In addition, we introduce a                      technology now enables cost-effective integration of logic and
+simple hardware structure that monitors the locality of data                      memory and (2) many new applications are data-intensive and
+accessed by a PIM-enabled instruction at runtime to adap-                         demand great amounts of memory bandwidth [1, 2, 32].
+tively execute the instruction at the host processor (instead                        To date, most of the existing PIM architectures are based
+of in memory) when the instruction can benefit from large                         on general-purpose computation units inside memory for flex-
+on-chip caches. Consequently, our architecture provides the                       ibility across different applications [14–16, 25, 28, 35, 39–41,
+illusion that PIM operations are executed as if they were host                    46, 48, 50]. However, this introduces two major challenges
+processor instructions.                                                           in seamlessly integrating such architectures into conventional
+   We provide a case study of how ten emerging data-intensive                     systems in the near term. First, prior proposals require new
+workloads can benefit from our new PIM abstraction and its                        programming models for in-memory computation units, which
+hardware implementation. Evaluations show that our archi-                         is often significantly different from what is used today. Main
+tecture significantly improves system performance and, more                       memory products with integrated full-fledged processors with
+importantly, combines the best parts of conventional and PIM                      new programming models may also not be available in the
+architectures by adapting to data locality of applications.                       near future because of the associated design complexity and
+                                                                                  changes required across the hardware/software stack.
+                                                                                     Second, prior proposals do not utilize the benefits of on-
+                                                                                  chip caches and virtual memory provided by host processors.
+Permission to make digital or hard copies of all or part of this work for         Specifically, they offload computation to memory with no
+personal or classroom use is granted without fee provided that copies are not
+made or distributed for profit or commercial advantage and that copies bear       consideration of on-chip cache locality, thereby significantly
+this notice and the full citation on the first page. Copyrights for components    degrading performance when the applications exhibit high data
+of this work owned by others than ACM must be honored. Abstracting with           locality. Moreover, most prior approaches perform in-memory
+credit is permitted. To copy otherwise, or republish, to post on servers or to    computation on noncacheable, physically addressed memory
+redistribute to lists, requires prior specific permission and/or a fee. Request
+permissions from Permissions@acm.org.
+                                                                                  regions, which inevitably sacrifices efficiency and safety of all
+ISCA’15, June 13–17, 2015, Portland, OR, USA                                      memory accesses from host processors to memory regions that
+ c 2015 ACM. ISBN 978-1-4503-3402-0/15/06$15.00                                   can potentially be accessed by PIM. In particular, the lack of
+DOI: http://dx.doi.org/10.1145/2749469.2750385                                    interoperability with on-chip caches is critical considering that
+
+
+
+===== Page 2 =====
+
+commercial processors already integrate large last-level caches     can be utilized to integrate memory controllers and high-speed
+on chip (e.g., Intel Ivytown has a 37.5 MB L3 cache [42]).          signaling circuits inside memory. This enables the realiza-
+   To overcome these two major limitations, this paper pro-         tion of an abstract, packetized memory interface (instead of
+poses to enable simple PIM operations by extending the ISA          low-level DRAM commands) and higher off-chip memory
+of the host processor with PIM-enabled instructions (PEIs),         bandwidth [20]. Third, TSV-based vertical interconnect facili-
+without changing the existing programming model. We define          tates low-latency, high-bandwidth, and energy-efficient data
+a PEI as an instruction that can be executed either on the host     transfer between different dies in a package [8].
+processor or on the in-memory computation logic. By provid-            Among these three major benefits of 3D-stacked DRAM,
+ing PIM capability as part of the existing programming model,       this paper concentrates on exploiting especially the last two.
+conventional architectures can exploit the PIM concept with         When 3D-stacked DRAM is used as off-chip main memory,
+no changes in their programming interface. The approach of          it provides much higher memory bandwidth inside a DRAM
+using PEIs also facilitates our architecture to support cache co-   chip (between the logic die and the DRAM die) than between
+herence and virtual memory seamlessly: existing mechanisms          processors and DRAM chips because TSVs are much more
+in place for cache coherence and virtual memory can be used         cost-effective than off-chip wires and package pins. Moreover,
+without modification, unlike other approaches to PIM. We de-        vertical data transfer inside a 3D-stacked DRAM chip between
+velop a hardware-based scheme that can adaptively determine         logic and memory is more energy-efficient than off-chip trans-
+the location to execute PEIs by considering data locality: a        fer due to the much shorter wire length.
+PEI can be selectively executed on the host processor (instead         Our approach to leveraging such advantages is to move
+of on the in-memory computation logic) when large on-chip           computation inside its logic die, which is called processing-in-
+caches are beneficial for its execution.                            memory (PIM). This reduces the latency and energy overhead
+   This paper makes the following major contributions:              caused by off-chip data transfer and, more importantly, enables
+• We introduce the concept of PIM-enabled instructions              utilizing high internal memory bandwidth. Moreover, unlike
+   (PEIs), which enable simple PIM operations to be inter-          PIM architectures in 1990s that required significant modifica-
+   faced as simple ISA extensions. We show that the judicious       tion to DRAM dies (e.g., [14, 16, 25, 28, 39, 40]), such integra-
+   usage of PEIs can achieve significant speedup with min-          tion can now be realized in a much more cost-effective manner
+   imal programming effort and no changes to the existing           due to the existence of logic dies in 3D-stacked DRAM. These
+   programming model.                                               benefits can potentially improve system performance and en-
+• We design an architecture that supports implementing PEIs         ergy efficiency in a practical manner, but only with careful
+   as part of the host-PIM interface in order to provide the        design of PIM architectures.
+   illusion that PIM operations are executed as if they were           Past work on PIM, including early proposals [16, 25, 35, 39,
+   host processor instructions. Unlike previous PIM proposals,      40, 46] and more recent ones [1, 15, 41, 50], mostly relies on
+   PEIs are fully interoperable with existing cache coherence       fully programmable computation units (e.g., general-purpose
+   and virtual memory mechanisms.                                   processors, programmable logic, etc.) in memory. While
+                                                                    programmability gives the benefit of broad applicability across
+• We propose a mechanism to dynamically track locality of
+                                                                    different workloads, such approaches may not be suitable for
+   data accessed by PEIs and execute PEIs with high data
+                                                                    a near-term solution due to (1) high design effort required
+   locality on host processors instead of offloading them to
+                                                                    to integrate such complex modules into memory and (2) new
+   memory, in order to exploit large on-chip caches.
+                                                                    programming models for in-memory computation units, which
+• We evaluate our architecture using ten emerging data-             require significant changes to software code to exploit PIM.
+   intensive workloads and show significant performance im-            Motivated by these difficulties, we explore possibilities of
+   provements over conventional systems. We also show that          integrating simple PIM operations by minimally extending
+   our architecture is able to adapt to data locality at runtime,   the ISA of host processors. Compared to PIM architectures
+   thereby outperforming PIM-only systems as well.                  based on fully programmable computation units, our approach
+2. Background and Motivation                                        improves the practicality of the PIM concept by reducing the
+                                                                    implementation overhead of in-memory computation units
+2.1. 3D-Stacked DRAM and Processing-in-Memory                       and facilitating the use of existing programming models.1
+Recent advances in die stacking technologies facilitate low-        However, despite these advantages, no prior work, to our
+cost integration of logic and memory dies in a single package.      knowledge, explored the methods and their effectiveness of
+Considering the Hybrid Memory Cube (HMC) [23] as a con-             utilizing simple in-memory computation.
+crete example: each cube consists of multiple DRAM dies             2.2. Potential of ISA Extensions as the PIM Interface
+and one logic die connected via high-bandwidth links called
+through-silicon vias (TSVs). Such a 3D-stacked organization         To evaluate the potential of introducing simple PIM operations
+of logic and memory brings multiple opportunities in optimiz-       as ISA extensions, let us consider a parallel implementation
+ing main memory subsystems. First, main memory density can               1 Due to these advantages, simple in-memory computation mechanisms
+be improved over conventional 2D designs by stacking multi-         are already starting to become available from the industry, e.g., the in-memory
+ple DRAM dies on a single chip. Second, the base logic die          8/16-byte arithmetic/bitwise/boolean/comparison atomics in HMC 2.0 [21].
+
+
+
+===== Page 3 =====
+
+ 1    parallel_for (v: graph.vertices) {                           requires only 8 bytes of off-chip communication per update.
+ 2      v.pagerank = 1.0 / graph.num_vertices;                        Unfortunately, memory-side addition sometimes incurs sig-
+ 3      v.next_pagerank = 0.15 / graph.num_vertices;               nificant performance degradation as well (up to 20%). This
+ 4    }
+ 5    count = 0;                                                   happens when most of next_pagerank updates can be served
+ 6    do {                                                         by on-chip caches, in which case host-side addition does not
+ 7      parallel_for (v: graph.vertices) {                         consume off-chip memory bandwidth at all. In such a situa-
+ 8        delta = 0.85 * v.pagerank / v.out_degree;
+ 9        for (w: v.successors) {
+                                                                   tion, memory-side addition degrades both performance and
+10          atomic w.next_pagerank += delta;                       energy efficiency since it always accesses DRAM to update
+11        }                                                        data (e.g., memory-side addition causes 50x DRAM accesses
+12      }
+                                                                   over host-side addition in p2p-Gnutella31). Thus, one needs
+13      diff = 0.0;
+14      parallel_for (v: graph.vertices) {                         to be careful in using memory-side operations as their benefit
+15        atomic diff += abs(v.next_pagerank - v.pagerank);        greatly depends on the locality of data in on-chip caches.
+16        v.pagerank = v.next_pagerank;                               In summary, simple PIM operations interfaced as ISA exten-
+17        v.next_pagerank = 0.15 / graph.num_vertices;
+18      }                                                          sions have great potential for accelerating memory-intensive
+19    } while (++count < max_iteration && diff > e);               workloads. However, in order to maximize the effectiveness
+                                                                   of simple PIM operations, a host processor should be smart
+     Figure 1: Pseudocode of parallel PageRank computation.
+                                                                   enough in utilizing these operations (e.g., importantly, by
+of the PageRank algorithm [17], shown in Figure 1, as an           considering data locality of applications). Based on these
+example. PageRank [5] is widely used in web search engines,        observations, in the following sections, we describe our new,
+spam detection, and citation ranking to compute the impor-         simple PIM interface consisting of simple ISA extensions and
+tance of nodes based on their relationships. For large graphs,     the architectural support required to integrate such simple PIM
+the performance bottleneck of this workload is in updating         operations into conventional systems.
+next_pagerank of successor vertices (line 10) since it gener-
+                                                                   3. PIM Abstraction: PIM-Enabled Instructions
+ates a very large amount of random memory accesses across
+the entire graph [34]. Due to its high memory intensity and        In this section, we explain our abstraction model for simple
+computational simplicity, this operation in PageRank is a good     PIM operations, called PIM-enabled instructions (PEIs). Our
+candidate for implementation as a simple PIM operation.            goal is to provide the illusion that PIM operations are executed
+   Figure 2 shows speedup achieved by implementing an              as if they were host processor instructions. This section de-
+atomic addition command inside memory (see Section 6 for           scribes our design choices to achieve this new PIM abstraction.
+our evaluation methodology). The evaluation is based on nine       Section 4 will describe our detailed implementation to realize
+real-world graphs [29, 45], which have 62 K to 5 M vertices        this abstraction.
+(y-axis is sorted in ascending order of the number of vertices).   3.1. Operations
+  p2p-Gnutella31                                                   In order to integrate PIM capability into an existing ISA ab-
+soc-Slashdot0811                                                   straction, PIM operations are expressed as specialized instruc-
+    web-Stanford                                                   tions (PEIs) of host processors. For example, if the main
+    amazon-2008
+                                                                   memory supports an in-memory atomic add command (PIM
+        frwiki-2013
+            wiki-Talk                                              operation), we add a PIM-enabled atomic add instruction (PEI)
+         cit-Patents                                               to the host processor. This facilitates effortless and gradual
+ soc-LiveJournal1                                                  integration of PIM operations into existing software through
+     ljournal-2008
+                                                                   replacement of normal instructions with PEIs.
+                        −20 %   0    +20 %    +40 %     +60 %         When a PEI is issued by a host processor, our hardware
+                                    Speedup                        mechanism dynamically decides the best location to execute
+Figure 2: Performance improvement with an in-memory                it between memory and the host processor on a per-operation
+atomic addition operation used for the PageRank algorithm.         basis. Software does not provide any information to perform
+   We observe that employing only one simple PIM opera-            such a decision and is unaware of the execution location of the
+tion can improve system performance by up to 53%. The              operation, which is determined by hardware.
+main benefit is due to the greatly reduced memory bandwidth           For memory operands of PIM operations, we introduce an
+consumption of the memory-side addition compared to its            important design choice, called the single-cache-block restric-
+host-side counterpart. While host-side addition moves the en-      tion: the memory region accessible by a single PIM operation
+tire cache block back and forth between memory and the host        is limited to a single last-level cache block. Such a restriction
+processor for each update, memory-side addition simply sends       brings at least three important benefits in terms of efficiency
+the 8-byte delta to memory to update w.next_pagerank. As-          and practicality of PIM operations, as described below.
+suming 64-byte cache blocks and no cache hits, the host-side       • Localization: It ensures that data accessed by a PIM oper-
+addition transfers 128 bytes of data from/to off-chip memory          ation are always bounded to a single DRAM module. This
+for every single update, whereas the memory-side addition             implies that PIM operations always use only vertical links
+
+
+
+===== Page 4 =====
+
+   (without off-chip data transfer) in transferring the target                      Instead, host processors provide a PIM memory fence in-
+   data between DRAM and in-memory computation units.2                           struction called pfence to enforce memory ordering between
+• Interoperability: Since PIM operations and normal last-                        normal instructions and PEIs. The pfence instruction blocks
+   level cache accesses now have the same memory access                          host processor execution until all PEIs issued before it (in-
+   granularity (i.e., one last-level cache block), hardware sup-                 cluding those from other host processors) are completed. In
+   port for coherence management and virtual-to-physical ad-                     Figure 1, a pfence instruction needs to be inserted after line 12
+   dress translation for PIM operations becomes greatly sim-                     since normal instructions in the third loop access data modified
+   plified (see Section 4).                                                      by PEIs in the second loop (i.e., the w.next_pagerank fields).
+• Simplified Locality Profiling: Locality of data accessed by                       It should be noted that, although pfence itself might intro-
+   PIM operations can be easily identified by utilizing the last-                duce some performance overhead, its overhead can generally
+   level cache tag array or similar structures. Such information                 be amortized over numerous PEI executions. For example,
+   is utilized in determining the best location to execute PEIs.                 the PageRank algorithm in Figure 1 issues one PEI per edge
+   In addition to memory operands, PIM operations can also                       before each pfence, which corresponds to millions or even
+have input/output operands. An example of this is the delta                      billions of PEIs per pfence for large real-world graphs.
+operand of the atomic addition at line 10 of Figure 1. When a                    Virtual Memory. PEIs use virtual addresses just as normal
+PIM operation is executed in main memory, its input/output                       instructions. Supporting virtual memory for PEIs therefore
+operands are transferred between host processors and memory                      does not require any modification to existing operating systems
+through off-chip links. The maximum size of input/output                         and applications.
+operands is restricted to the size of a last-level cache block
+because, if input/output operands are larger than a last-level                   3.3. Software Modification
+cache block, offloading such PIM operations to memory in-
+                                                                                 In this paper, we assume that programmers modify source
+creases off-chip memory bandwidth consumption compared to
+                                                                                 code of target applications to utilize PEIs. This is similar
+host-side execution due to the single-cache-block restriction.
+                                                                                 to instruction set extensions in commercial processors (e.g.,
+3.2. Memory Model                                                                Intel SSE/AVX [12]), which are exploited by programmers
+Coherence. Our architecture supports hardware cache co-                          using intrinsics and are used in many real workloads where
+herence for PIM operations so that (1) PIM operations can                        they provide performance benefit. However, we believe that
+access the latest versions of data even if the target data are                   the semantics of the PEIs is simple enough (e.g., atomic add)
+stored in on-chip caches and (2) normal instructions can see                     for modern compilers to automatically recognize places to
+the data modified by PIM operations. This allows program-                        emit them without requiring hints from programmers and/or
+mers to mix normal instructions and PEIs in manipulating the                     complex program analysis. Moreover, our scheme reduces the
+same data without disabling caches, in contrast to many past                     burden of compiler designers since it automatically determines
+PIM architectures.                                                               the best location to execute each PEI between memory and the
+                                                                                 host processor, which allows compilers to be less accurate in
+Atomicity. Our memory model ensures atomicity between
+                                                                                 estimating performance/energy gain of using PEIs.
+PEIs. In other words, a PEI that reads from and writes to its
+target cache block is not interrupted by other PEIs (possibly                    4. Architecture
+from other host processors) that access the same cache block.
+For example, if the addition at line 10 of Figure 1 is imple-                    In this section, we describe our architecture that implements
+mented as a PEI, hardware preserves its atomicity without any                    our PIM abstraction with minimal modification to existing
+software concurrency control mechanism (e.g., locks).                            systems. Our architecture is not limited to specific types of in-
+   On the contrary, atomicity of a PEI is not guaranteed if a nor-               memory computation, but provides a substrate to implement
+mal instruction accesses the target cache block. For example, if                 simple yet general-purpose PIM operations in a practical and
+a normal store instruction writes a value to w.next_pagerank                     efficient manner.
+(in Figure 1), this normal write may happen between reading                      4.1. Overview
+w.next_pagerank and writing it inside the atomic PEI addi-
+tion (line 10), thereby breaking the atomicity of the PEI. This                  Figure 3 gives an overview of our architecture. We choose the
+is because, in order to support atomicity between a PEI and a                    Hybrid Memory Cube (HMC) [23] as our baseline memory
+normal instruction, every memory access needs to be checked,                     technology. An HMC consists of multiple vertical DRAM
+which incurs overhead even for programs that do not use PEIs.                    partitions called vaults. Each vault has its own DRAM con-
+                                                                                 troller placed on the logic die. Communication between host
+                                                                                 processors and HMCs is based on a packet-based abstract
+     2 Without the single-cache-block restriction, PIM operations require spe-   protocol supporting not only read/write commands, but also
+cial data mapping to prevent off-chip transfer between multiple DRAM mod-        compound commands such as add-immediate operations, bit-
+ules. This comes with many limitations in that (1) it introduces significant     masked writes, and so on [20]. Note that our architecture can
+modification to existing systems to expose the physical location of data to
+software and (2) the resulting design may not be easily adaptable across         be easily adopted to other memory technologies since it does
+different main memory organizations.                                             not depend on properties specific to any memory technology.
+
+
+
+===== Page 5 =====
+
+ Host Processor                                                        HMC                                     this less invasive style of integration to avoid modification to
+ Out-of-Order                                                                                                  out-of-order cores, one can add actual instructions for PCU
+
+
+
+
+                                         Last-Level
+                  L1 Cache
+
+                             L2 Cache
+                                                                                                   DRAM
+    Core
+
+
+
+
+                                           Cache
+                                                                                           PCU    Controller   control by modifying the cores for tighter integration.
+
+
+
+
+                                                                        Crossbar Network
+                                                      HMC Controller
+                                                                                                                  Memory-side PCUs are interfaced with the HMC controllers
+     PCU                                                                                           DRAM
+                                                                                           PCU    Controller   using special memory commands. It is relatively easy to add
+                             PMU                                                                               such commands because communication between HMCs and
+
+
+
+
+                                                                                                 ...
+                                           PIM
+                                        Directory                                                              HMC controllers is based on a packet-based abstract protocol,
+                                        Locality                                                   DRAM        which allows the flexible addition of new commands.
+                                        Monitor                                            PCU    Controller
+                                                                                                               4.3. PEI Management Unit (PMU)
+       Figure 3: Overview of the proposed architecture.                                                        In order to coordinate all PCUs in the system, the PMU per-
+                                                                                                               forms three important tasks for PEI execution: (1) atomicity
+   The key features of our architecture are (1) to support PIM                                                 management of PEIs, (2) cache coherence management for
+operations as part of the host processor instruction set and                                                   PIM operation execution, and (3) data locality profiling for
+(2) to identify PEIs with high data locality and execute them                                                  locality-aware execution of PIM operations. We explain in
+in the host processor. To realize these, our architecture is                                                   detail the proposed hardware structures to handle these tasks.
+composed of two main components. First, a PEI Computation
+Unit (PCU) is added into each host processor and each vault                                                    PIM Directory. As explained in Section 3.2, our architec-
+to facilitate PEIs to be executed in either the host processor or                                              ture guarantees the atomicity of PEIs. If we consider memory-
+main memory. Second, in order to coordinate PEI execution                                                      side PEI execution only, atomicity of PEIs can be maintained
+in different PCUs, the PEI Management Unit (PMU) is placed                                                     simply by modifying each DRAM controller inside HMCs
+near the last-level cache and is shared by all host processors. In                                             to schedule memory accesses (including reads and writes)
+the following subsections, we explain the details of these two                                                 from a single PEI as an inseparable group. However, since
+components and their operation sequences in host-/memory-                                                      our architecture executes PEIs in both host-side PCUs and
+side PEI execution.                                                                                            memory-side PCUs, this is not enough to guarantee the atom-
+                                                                                                               icity of host-side PEI execution.
+4.2. PEI Computation Unit (PCU)                                                                                   In order to guarantee the atomicity of both host-side and
+Architecture. A PCU is a hardware unit that executes PEIs.                                                     memory-side PEI execution, our architecture introduces a
+Each PCU is composed of computation logic and an operand                                                       hardware structure that manages atomicity of PEI execution at
+buffer. The computation logic is a set of circuits for computa-                                                the host side. Ideally, this structure would track all in-flight
+tion supported by main memory (e.g., adders). All PCUs in                                                      PEIs to ensure that each cache block has either only one writer
+the system have the same computation logic so that any PEI                                                     PEI (i.e., a PEI that modifies its target cache block) or multiple
+can be executed by any PCU.                                                                                    reader PEIs (i.e., PEIs that only read their target cache block).
+   The operand buffer is a small SRAM buffer that stores                                                       However, this incurs a very large overhead since exact tracking
+information of in-flight PEIs. For each PEI, an operand buffer                                                 of such information requires a fully associative table having
+entry is allocated to store its type, target cache block, and                                                  as many entries as the total number of operand buffer entries
+input/output operands. When the operand buffer is full, future                                                 of all PCUs in the system (which is equal to the maximum
+PEIs are stalled until space frees up in the buffer.                                                           number of in-flight PEIs, as discussed in Section 4.2).
+                                                                                                                  We develop a special hardware unit called PIM directory
+   The purpose of the operand buffer is to exploit memory-
+                                                                                                               to manage atomicity of in-flight PEIs in a cost-effective man-
+level parallelism during PEI execution. In our architecture,
+                                                                                                               ner. The key idea of the PIM directory is to allow rare false
+when a PEI obtains a free operand buffer entry, the PCU
+                                                                                                               positives in atomicity management (i.e., serialization of two
+immediately sends a read request for the target cache block
+                                                                                                               PEIs with different target cache blocks) for storage overhead
+of the PEI to memory even if the required computation logic
+                                                                                                               reductions. This does not affect the atomicity of PEIs as long
+is in use. Then, the fetched data are buffered in the operand
+                                                                                                               as there are no false negatives (e.g., simultaneous execution of
+buffer until the computation logic becomes available. As such,
+                                                                                                               two writer PEIs with the same target cache block).3 In order
+memory accesses from different PEIs can be overlapped by
+                                                                                                               to exploit this idea, the PIM directory is organized as a direct-
+simply increasing the number of operand buffer entries. This
+                                                                                                               mapped, tag-less table indexed by XOR-folded addresses of
+is especially useful in our case since simple PIM operations
+                                                                                                               target cache blocks. Each entry implements a reader-writer
+usually underutilize the computation logic of PCUs due to the
+                                                                                                               lock with four fields: (1) a readable bit, (2) a writeable bit,
+small amount of computation they generate.
+                                                                                                               (3) an n-bit reader counter where n = dlog2 (total number of
+Interface. A host processor controls its host-side PCU by                                                      operand buffer entries)e, and (4) a 1-bit writer counter.
+manipulating memory-mapped registers inside it (see Sec-
+tion 4.5). Assemblers can provide pseudo-instructions for                                                          3 Although too frequent false positives may incur a performance overhead
+PCU control, which are translated to accesses to those memory-
+                                                                                                               due to unnecessary serialization, our evaluation shows that our mechanism
+mapped registers, in order to abstract the memory-mapped reg-                                                  achieves similar performance to its ideal version (an infinite number of entries)
+isters away from application software. Although we choose                                                      while incurring only a small storage overhead (see Section 7.6).
+
+
+
+===== Page 6 =====
+
+   When a reader PEI arrives at the PIM directory, it is blocked             each PEI depends only on the locality of a single target cache
+until the corresponding PIM directory entry is in the readable               block. With that in mind, the remaining issue is to monitor
+state. After that, the entry is marked as non-writeable in order             locality of the cache blocks accessed by the PEIs, which is
+to block future writer PEIs during the reader PEI execution.                 done by the locality monitor in the PMU.
+At this moment, the reader PEI can be executed atomically.                      The locality monitor is a tag array with the same number of
+After the reader PEI execution, if there are no more in-flight               sets/ways as that of the last-level cache. Each entry contains a
+reader PEIs to the entry, the entry is marked as writeable.                  valid bit, a 10-bit partial tag (constructed by applying folded-
+   When a writer PEI arrives, it first needs to ensure that there            XOR to the original tags), and replacement information bits.
+are no in-flight writer PEIs for the corresponding PIM direc-                Each last-level cache access leads to hit promotion and/or
+tory entry since atomicity allows only a single writer PEI for               block replacement for the corresponding locality monitor entry
+each cache block. Then, the entry is marked as non-readable                  (as in the last-level cache).
+to avoid write starvation by future reader PEIs. After that,                    The key difference between the locality monitor and the tag
+the writer PEI waits until all in-flight reader PEIs for the PIM             array of the last-level cache is that the former is also updated
+directory entry are completed (i.e., until the PIM directory                 when a PIM operation is issued to memory. More specifically,
+entry becomes writeable), in order to prevent the reader PEIs                when a PIM operation is sent to main memory, the locality
+from reading the cache block in the middle of the writer PEI                 monitor is updated as if there is a last-level cache access to its
+execution. Finally, the write PEI is executed atomically and,                target cache block. By doing so, the locality of PEIs is properly
+upon its completion, the state of the entry is set to readable.              monitored regardless of the location of their execution.
+   In addition to atomicity management, the PIM directory also                  In our locality monitor, the data locality of a PEI can be
+implements the pfence instruction explained in Section 3.2.                  identified by checking to see if its target cache block address
+When a pfence instruction is issued, it waits for each PIM                   hits in the locality monitor. The key idea behind this is that, if
+directory entry to become readable. This ensures that all in-                some cache blocks are accessed frequently (i.e., high locality),
+flight writer PEIs issued before the pfence are completed when               they are likely to be present in the locality monitor. However,
+the pfence returns.                                                          according to our evaluations, if a locality monitor entry is
+Cache Coherence Management. In our PIM abstraction,                          allocated by a PIM operation, it is often too aggressive to
+PEIs should be interoperable with existing cache coherence                   consider it as having high locality on its first hit in the locality
+protocols. This is easily achievable for host-side PEI execution             monitor. Therefore, we add a 1-bit ignore flag per entry to
+since host-side PCUs share L1 caches with their host proces-                 ignore the first hit to an entry allocated by a PIM operation
+sors. On the other hand, PEIs offloaded to main memory might                 (those allocated by last-level cache accesses do not set this
+read stale values of their target cache blocks if on-chip caches             ignore flag).
+have modified versions of these blocks.                                      4.4. Virtual Memory Support
+    Our solution to this problem is simple. Due to the single-
+cache-block restriction, when the PMU receives a PEI, it                     Unlike many other PIM architectures, virtual memory is easily
+knows exactly which cache block the PEI will access. Thus,                   supported in our architecture since PEIs are part of the con-
+it simply requests back-invalidation (for writer PEIs) or back-              ventional ISA. When a host processor issues a PEI, it simply
+writeback4 (for reader PEIs) for the target cache block to the               translates the virtual address of the target cache block by ac-
+last-level cache before sending the PIM operation to memory.                 cessing its own TLB. By doing so, all PCUs and the PMU in
+This ensures that neither on-chip caches nor main memory                     the system handle PEIs with physical addresses only.
+has a stale copy of the data before/after PIM operation exe-                    This scheme greatly improves the practicality of our archi-
+cution, without requiring complex hardware support for ex-                   tecture. First, it avoids the overhead of adding address transla-
+tending cache coherence protocols toward the main memory                     tion capabilities in memory. Second, existing mechanisms for
+side. Note that back-invalidation and back-writeback happen                  handling page faults can be used without modification because
+infrequently in practice since our architecture offloads PEIs to             page faults are still handled only at the host processor (i.e.,
+memory only if the target data are not expected to be present                no need to handle page faults in memory). Third, it does not
+in on-chip caches.                                                           increase TLB pressure since the single-cache-block restriction
+                                                                             guarantees that only one TLB access is needed for each PEI
+Locality Monitor. One of the key features of our architec-                   just as a normal memory access operation.
+ture is locality-aware PEI execution. The key idea is to decide
+whether to execute a PEI locally on the host or remotely in                  4.5. PEI Execution
+memory. This introduces a new challenge: dynamically pro-                    Host-side PEI Execution. Figure 4 illustrates the execution
+filing the data locality of PEIs. Fortunately, our single-cache-             sequence of a PEI with high data locality. First, the host pro-
+block restriction simplifies this problem since data locality of             cessor sends the input operands of the PEI to the PCU and
+     4 We use the term ‘back-writeback’ to denote a writeback request that
+                                                                             issues it 1 . The host-side PCU has a set of memory-mapped
+                                                                             registers for control and temporary storage of input operands.
+forces writing back the target cache block from any of the L1, L2, or L3
+caches it is present in to main memory (analogous to back-invalidation in    Next, the host-side PCU accesses the PMU to (1) obtain a
+inclusive cache hierarchies).                                                reader-writer lock for the target cache block from the PIM
+
+
+
+===== Page 7 =====
+
+               Out-of-Order                                                                                            5. Target Applications for Case Study
+                  Core
+   1 Send the input        7 Read the
+                                                                                                                       The primary target of our architecture is applications with
+
+
+
+
+                                                                                     Last-Level
+                                                        L1 Cache
+
+                                                                      L2 Cache
+     operands and            output operands                                                                           large memory footprint and very large memory bandwidth
+
+
+
+
+                                                                                       Cache
+     issue the PEI
+                                                                                                                       consumption. This makes it difficult to use standard bench-
+
+
+
+
+                                                                                                   HMC Controller
+                                 3 Load the block
+                     PCU                                                                                               marks for evaluation as many standard benchmarks do not
+                                 5 Store the block
+      4 Execute                                                                                                        stress off-chip memory. Instead, we perform a case study on
+                                   if modified                        PMU
+                                                                                       PIM
+                                           6 Notify completion                      Directory
+                                                                                                                       ten emerging data-intensive workloads from three important
+                                                                                                                       domains, which are often classified as “big-data” workloads.
+                                  2 Check for atomicity                             Locality
+                                    and data locality                               Monitor                            Evaluating such big-data applications on PIM architectures
+                                                                                                                       is very important since they are envisioned as the principal
+                  Figure 4: Host-side PEI execution.                                                                   target for PIM due to their importance, broad applicability, and
+directory and (2) consult the locality monitor to decide the                                                           enormous memory bandwidth demand [2, 41]. Note that other
+best location to execute the PEI 2 . In this case, the locality                                                        applications can also be accelerated under our general-purpose
+monitor advises the execution of the PEI on the host-side PCU                                                          framework by implementing (possibly) different types of PEIs.
+as the target block is predicted to have high data locality. After                                                     5.1. Large-Scale Graph Processing
+that, the host-side PCU allocates a new operand buffer entry,                                                          Average Teenage Follower (ATF) [19] is an example ker-
+copies the input operands from the memory-mapped register                                                              nel of social network analysis. It counts for each vertex the
+to this entry, and loads the cache block from the L1 cache 3 .                                                         number of its teenage followers by iterating over all teenager
+Once the target cache block is loaded, the PCU executes the                                                            vertices and incrementing the ‘follower’ counters of their suc-
+PEI 4 and initiates a store request to the L1 cache if the PEI                                                         cessor vertices. Since this generates a very large amount of
+modifies the target cache block data 5 . When the PEI execu-                                                           random memory accesses over the entire graph (pointer chas-
+tion is complete, the host-side PCU notifies the completion                                                            ing over edges), we implement 8-byte atomic integer increment
+to the PMU in background to release the corresponding PIM                                                              as a PIM operation to accelerate it.
+directory entry 6 . Finally, the host processor reads the output
+                                                                                                                          Breadth-First Search (BFS) [19] is a graph traversal algo-
+operands through memory-mapped registers inside the PCU
+                                                                                                                       rithm, which visits vertices closer to a given source vertex first.
+and the operand buffer entry is deallocated 7 .
+                                                                                                                       Our implementation is based on the parallel level-synchronous
+Memory-side PEI Execution. Figure 5 shows the proce-                                                                   BFS algorithm [18, 19], where each vertex maintains a ‘level’
+dure of executing a PEI in main memory. Steps 1 and 2 are                                                              field to track the progress of traversal. Since each vertex
+the same as in the above case, except that the locality monitor                                                        updates the level fields of its neighbors by a min function,
+advises the execution of the PEI in memory. While this deci-                                                           we implement 8-byte atomic integer min as a PIM operation,
+sion is being returned to the host-side PCU, the PMU sends a                                                           which accepts an 8-byte input operand that replaces the target
+back-invalidation/back-writeback signal to the last-level cache                                                        8-byte word in memory if the input operand is smaller than
+to clean any local copy of the target cache block 3 . At the                                                           the target word in memory.
+same time, the host-side PCU transfers the input operands                                                                 PageRank (PR) [18] is a well-known algorithm that calcu-
+stored in its memory-mapped registers to the PMU 4 . Once                                                              lates the importance of vertices in a graph (see Figure 1). We
+both steps are complete, the PMU sends the PIM operation                                                               implement double-precision floating point addition as a PIM
+to main memory by packetizing the operation type, the tar-                                                             operation for this application as discussed in Section 2.2.
+get cache block address, and the input operands 5 . Upon                                                                  Single-Source Shortest Path (SP) [19] finds the shortest
+receiving the response from the main memory 6 , the PMU                                                                path from a given source vertex to other vertices in a graph.
+releases the corresponding PIM directory entry and sends the                                                           Our application uses the parallel Bellman-Ford algorithm,
+output operands back to the host-side PCU 7 so that the host                                                           which repeatedly iterates over vertices with distance changes
+processor can read them 8 .                                                                                            and relaxes their outgoing edges with min functions. There-
+                  Out-of-Order
+                                                                                                                       fore, our implementation uses the atomic integer min operation
+                     Core                                                                                              that we already discussed for BFS.
+     1 Send the input         8 Read the                                                                                  Weakly Connected Components (WCC) [24] identifies
+                                                      Last-Level
+
+
+
+
+        operands and            output
+                                                        Cache
+
+
+
+
+        issue the PEI           operands    ...                                                                        weakly connected components of a graph (a set of vertices
+                        PCU
+                                                                                                                       that are reachable from each other when edge direction is
+                                                                                                      HMC Controller
+
+
+
+
+                                                                                                                       ignored). The algorithm assigns a unique label for each vertex
+                              7 Send back the                      3 Flush or clean
+                                output operands                      the block if necessary                            and collapses the labels of connected vertices into the smallest
+  2 Check for atomicity
+                                            PMU                             5 Issue the
+                                                                                                                       one by propagating labels through edges. Thus, this workload
+    and data locality                                   PIM
+                                                     Directory                   PIM operation                         can also benefit from the atomic integer min operation.
+                                                     Locality               6 Retrieve the                             5.2. In-Memory Data Analytics
+                     4 Send the input operands
+                                                     Monitor                     output operands
+                                                                                                                       Hash Join (HJ) [3] joins two relations from an in-memory
+                Figure 5: Memory-side PEI execution.                                                                   database by building a hash table with one relation and probing
+
+
+
+===== Page 8 =====
+
+it with keys from the other. For this application, we implement     of an operation is marked as ‘O’, it indicates that the operation
+a PIM operation for hash table probing, which checks keys in        modifies the target cache block) and the sizes of input/output
+a given bucket for a match and returns the match result and         operands. All these operations are supported by both the host-
+the next bucket address. The host processor issues this PIM         side and the memory-side PCUs in our system.
+operation for the next bucket by performing pointer chasing
+                                                                            Table 1: Summary of Supported PIM Operations
+with the returned next bucket address. We also modify the soft-
+ware to unroll multiple hash table lookups for different rows to      Operation                   R W       Input    Output Applications
+be interleaved in one loop iteration. This allows out-of-order
+                                                                      8-byte integer increment O      O 0 bytes 0 bytes AT
+cores to overlap the execution of multiple PIM operations with
+                                                                      8-byte integer min       O      O 8 bytes 0 bytes BFS, SP, WCC
+the use of out-of-order execution.                                    Floating-point add       O      O 8 bytes 0 bytes PR
+   Histogram (HG) builds a histogram with 256 bins from               Hash table probing       O      X 8 bytes 9 bytes HJ
+32-bit integer data. In order to reduce memory bandwidth              Histogram bin index      O      X 1 byte 16 bytes HG, RP
+consumption of reading the input data, we implement a PIM             Euclidean distance       O      X 64 bytes 4 bytes SC
+operation that calculates the bin indexes of data in memory           Dot product              O      X 32 bytes 8 bytes SVM
+by shifting each 4-byte word in a 64-byte cache block with a
+given shift amount, truncating each word into a 1-byte value,       6. Evaluation Methodology
+and returning all 16 of them as a 16-byte output operand.
+                                                                    6.1. Simulation Configuration
+   Radix Partitioning (RP) [3] is a data partitioning algo-
+rithm for an in-memory database, which acts as a preprocess-        We use an in-house x86-64 simulator whose frontend is based
+ing step for many database operations. Since it internally          on Pin [33]. Our simulator models microarchitectural com-
+builds a histogram of data before partitioning the data, it can     ponents in a cycle-level manner, including out-of-order cores,
+be accelerated by using the PIM operation for HG. However,          multi-bank caches with MSHRs, on-chip crossbar network,
+unlike HG where input data are read only once in a streaming        the MESI cache coherence protocol, off-chip links of HMCs,
+manner, radix partitioning accesses the original data again         and DRAM controllers inside HMCs. Table 2 summarizes the
+after building the histogram to move the data to corresponding      configuration for the baseline system used in our evaluations,
+partitions. We simulate a usage scenario where this algorithm       which consists of 16 out-of-order cores, a three-level inclusive
+is applied to given input data 100 times, which resembles           cache hierarchy, and 32 GB main memory based on HMCs.
+access patterns of database servers continuously receiving                     Table 2: Baseline Simulation Configuration
+queries to the same relation.
+                                                                      Component           Configuration
+5.3. Machine Learning and Data Mining
+                                                                      Core              16 out-of-order cores, 4 GHz, 4-issue
+Streamcluster (SC) [4] is an online clustering algorithm for          L1 I/D-Cache      Private, 32 KB, 4/8-way, 64 B blocks, 16 MSHRs
+n-dimensional data. The bottleneck of this algorithm is in            L2 Cache          Private, 256 KB, 8-way, 64 B blocks, 16 MSHRs
+computing the Euclidean distance of two points. To accel-             L3 Cache          Shared, 16 MB, 16-way, 64 B blocks, 64 MSHRs
+erate this computation, we implement a PIM operation that             On-Chip Network Crossbar, 2 GHz, 144-bit links
+computes the distance between two 16-dimensional single-              Main Memory       32 GB, 8 HMCs, daisy-chain (80 GB/s full-duplex)
+precision floating-point vectors, one stored in its target cache      HMC               4 GB, 16 vaults, 256 DRAM banks [20]
+                                                                       – DRAM           FR-FCFS, tCL = tRCD = tRP = 13.75 ns [27]
+block (A) and the other passed as its input operand (B). Since
+                                                                       – Vertical Links 64 TSVs per vault with 2 Gb/s signaling rate [23]
+the application uses this kernel to calculate distance from few
+cluster centers to many data points, we use the PIM opera-             In our system, each PCU has a single-issue computation
+tion by passing a cluster center as B and a data point as A, to     logic and a four-entry operand buffer (512 bytes). Thus, a PCU
+preserve the locality of the cluster centers.                       can issue memory requests of up to four in-flight PEIs in paral-
+   Support Vector Machine Recursive Feature Elimina-                lel but executes each PEI serially. We set the clock frequency
+tion (SVM) [38] selects the best set of features that describe      of host-side and memory-side PCUs to 4 GHz and 2 GHz, re-
+the data in support vector machine (SVM) classification. It         spectively. Our system has 16 host-side PCUs (one per host
+is extensively used in finding a compact set of genes that are      processor) and 128 memory-side PCUs (one per vault).
+correlated with disease. The SVM kernel inside it heavily              Within the PMU design, the PIM directory is implemented
+computes dot products between a single hyperplane vector            as a tag-less four-bank SRAM array that can keep track of 2048
+(w) and a very large number of input vectors (x). Thus, we          reader-writer locks. The storage overhead of the PIM directory
+implement a PIM operation that computes the dot product             is 3.25 KB, or 13 bits per entry (a readable bit, a writeable
+of two 4-dimensional double-precision floating-point vectors,       bit, a 10-bit5 reader counter and a 1-bit writer counter). The
+similar to the PIM operation for SC.                                locality monitor has 16,384 sets and 16 ways, which is the
+5.4. Operation Summary                                              same as the organization of the tag array of the L3 cache.
+
+Table 1 summarizes the PIM operations implemented in this                5 Since our system has 576 (= 16 × 4 + 128 × 4) operand buffers in total,
+paper. It also shows reader/writer flags (e.g., if the ‘W’ column   at least 10 bits are needed to safely track the number of in-flight PEIs.
+
+
+
+===== Page 9 =====
+
+Since each entry consists of a valid bit, a 10-bit partial tag,                                           Host-Only       PIM-Only          Locality-Aware
+                                                                                            1.8
+4-bit LRU information, and a 1-bit ignore flag, the storage
+                                                                                            1.6
+
+
+
+
+                                                                           Normalized IPC
+overhead of the locality monitor is 512 KB (3.1% of the last-                               1.4
+level cache capacity). The access latency of the PIM directory                              1.2
+and the locality monitor is set to two and three CPU cycles,                                1.0
+respectively, based on CACTI 6.5 [37].                                                      0.8
+                                                                                            0.6
+6.2. Workloads
+                                                                                            0.4
+We simulate ten real-world applications presented in Section 5                                    ATF   BFS   PR   SP   WCC   HJ       HG   RP   SC   SVM    GM
+
+for our evaluations. To analyze the impact of data locality, we                                                     (a) Small inputs
+use three input sets for each workload as shown in Table 3.                                 1.8
+
+All workloads are simulated for two billion instructions after                              1.6
+
+
+
+
+                                                                           Normalized IPC
+skipping their initialization phases.                                                       1.4
+
+        Table 3: Input Sets of Evaluated Applications                                       1.2
+
+                                                                                            1.0
+  Application     Input Sets (Small/Medium/Large)
+                                                                                            0.8
+  ATF, BFS, PR,   soc-Slashdot0811 (77 K vertices, 905 K edges) [45] /                            ATF   BFS   PR   SP   WCC   HJ       HG   RP   SC   SVM    GM
+  SP, WCC         frwiki-2013 (1.3 M vertices, 34 M edges) [29] /                                                  (b) Medium inputs
+                  soc-LiveJournal1 (4.8 M vertices, 69 M edges) [45]                        1.8
+  HJ              R = 128 K /1 M/128 M rows, S = 128 M rows
+                                                                                            1.6
+
+                                                                           Normalized IPC
+  HG              106 /107 /108 32-bit integers
+  RP              128 K /1 M/128 M rows                                                     1.4
+  SC              4 K /64 K /1 M of 32/128/128-dimensional points [4]
+                                                                                            1.2
+  SVM             50/130/253 instances from Ovarian cancer dataset [38]
+                                                                                            1.0
+
+7. Evaluation Results                                                                       0.8
+                                                                                                  ATF   BFS   PR   SP   WCC   HJ       HG   RP   SC   SVM    GM
+In this section, we evaluate four different system configura-                                                       (c) Large inputs
+tions described below. Unless otherwise stated, all results are               Figure 6: Speedup comparison under different input sizes.
+normalized to Ideal-Host.
+• Host-Only executes all PEIs on host-side PCUs only. This                   In order to analyze the impact of PIM operations on off-chip
+   disables the locality monitor of the PMU.                              bandwidth consumption, Figure 7 shows the total amount of
+• PIM-Only executes all PEIs on memory-side PCUs only.                    off-chip transfers in Host-Only and PIM-Only, normalized
+   This also disables the locality monitor.                               to Ideal-Host. For large inputs, PIM-Only greatly reduces
+• Ideal-Host is the same as Host-Only except that its PIM di-             off-chip bandwidth consumption by performing computation
+   rectory is infinitely large and can be accessed in zero cycles.        in memory and bringing only the necessary results to the host
+   This configuration represents an idealized conventional ar-            processor.6 However, using PIM operations for small inputs,
+   chitecture. In this configuration, our PEIs are implemented            which usually fit in the large on-chip caches, greatly increases
+   as normal host processor instructions since atomicity of               the off-chip bandwidth consumption (up to 502x in SC).
+   operations is preserved exactly without incurring any cost.               Our architecture exploits this trade-off between Host-Only
+                                                                          and PIM-Only execution by adapting to the data locality of ap-
+• Locality-Aware executes PEIs on both host-side and
+                                                                          plications. As shown in Figure 6, our Locality-Aware system
+   memory-side PCUs based on our locality monitor.
+                                                                          provides the speedup of PIM-Only in workloads with large
+7.1. Performance                                                          inputs (47% improvement over Host-Only) by offloading 79%
+Figure 6 presents a performance comparison of the four sys-               of PEIs to memory-side PCUs. At the same time, our proposal
+tems under different workload input set sizes. All results                maintains the performance of Host-Only in workloads with
+are normalized to Ideal-Host. The last bars labeled as ‘GM’               small inputs (32% improvement over PIM-Only) by executing
+indicate geometric mean across 10 workloads.                              86% (96% if HG is excluded) of PEIs on host-side PCUs.
+   First, we confirm that the effectiveness of simple PIM op-                More importantly, Locality-Aware often outperforms both
+erations highly depends on data locality of applications. For             Host-Only and PIM-Only by simultaneously utilizing host-
+large inputs, PIM-Only achieves 44% speedup over Ideal-Host               side and memory-side PCUs for PEI execution. This is espe-
+since using PIM operations better utilizes the vertical DRAM              cially noticeable in graph processing workloads with medium
+bandwidth inside HMCs (2x the internal bandwidth utilization              inputs (i.e., ATF, BFS, PR, SP, and WCC in Figure 6b), where
+on average). However, for small inputs, PIM-Only degrades                 Locality-Aware achieves 12% and 11% speedup over Host-
+average performance by 20% because PIM operations always
+access DRAM even though the data set comfortably fits in                      6 An exception to this trend is observed in SC and SVM with large inputs,
+on-chip caches (causing 17x the DRAM accesses on average).                which will be discussed in Section 7.4.
+
+
+
+===== Page 10 =====
+
+                                           Request (Host to HMC)                               Response (HMC to Host)                               side execution to memory-side execution as input size grows
+                       8.0
+                                                                                                                                                    from left to right in the figure. For example, only 0.3% of the
+
+
+
+
+                                                                                                             16.1
+
+
+                                                                                                                          502
+
+
+                                                                                                                                    408
+                                           Host-Only
+ Normalized Transfer
+
+
+
+
+                       6.0                 PIM-Only                                                                                                 PEIs are executed on memory-side PCUs in soc-Slashdot0811,
+                                           Locality-Aware
+                                                                                                                                                    while this ratio reaches up to 87% in cit-Patents. This indi-
+                       4.0                                                                                                                          cates the adaptivity of our architecture to a wide range of data
+                       2.0
+                                                                                                                                                    locality behavior and different input sets.
+                                                                                                                                                       We confirm that our locality monitoring scheme facilitates
+                       0.0                                                                                                                          the use of both host-side and memory-side execution in a
+                                ATF         BFS            PR         SP      WCC        HJ         HG           RP           SC     SVM
+                                                                    (a) Small inputs
+                                                                                                                                                    robust manner. For example, in amazon-2008 and frwiki-2013,
+                       1.2
+                                                                                                                                                    which are medium-size input sets (and thus do not fully fit in
+                                                                                                                                                    on-chip caches), our technique enables a sizeable fraction of
+ Normalized Transfer
+
+
+
+
+                       1.0
+                       0.8
+                                                                                                                                                    PEIs to be executed on the memory side, yet a sizeable fraction
+                       0.6
+                                                                                                                                                    is also executed on the host side. This adaptive behavior of PEI
+                                                                                                                                                    execution shows the importance of hardware-based schemes
+                       0.4
+                                                                                                                                                    for locality-aware PIM execution, as fine-grained (per-cache-
+                       0.2
+                                                                                                                                                    block) information of data locality cannot be easily obtained
+                       0.0
+                                ATF         BFS            PR         SP      WCC        HJ         HG           RP           SC     SVM            with software-only approaches.
+                                                                   (b) Large inputs                                                                 7.3. Multiprogrammed Workloads
+                             Figure 7: Normalized amount of off-chip transfer.
+                                                                                                                                                    To further analyze the benefit of our dynamic mechanism for
+Only and PIM-Only, respectively. The major reason is that, in                                                                                       locality-aware PIM execution, we evaluate our architecture
+those workloads, vertices have different data locality according                                                                                    with 200 multiprogrammed workloads. Each workload is con-
+to the shape of the graph. For example, in the PageRank algo-                                                                                       structed by randomly picking two target applications, each
+rithm shown in Figure 1, vertices with many incoming edges                                                                                          of which is set to spawn eight threads. We choose their in-
+(called high-degree vertices) receive more updates than those                                                                                       put size uniformly at random from six possible combinations
+with few incoming edges since the atomic increment at line 10                                                                                       (small-small, medium-medium, large-large, small-medium,
+is propagated through outgoing edges. Such characteristics                                                                                          medium-large, and small-large). We use the sum of IPCs as a
+play an important role in social network graphs like the ones                                                                                       performance metric since most of our target applications are
+used in our evaluations since they are known to show a large                                                                                        server workloads, which are throughput-oriented.
+variation in the number of edges per vertex (often referred to as                                                                                      Figure 9 shows the performance of Locality-Aware and
+power-law degree distribution property) [36]. In this context,                                                                                      PIM-Only normalized to Host-Only, showing that our locality-
+Locality-Aware provides the capability of automatically opti-                                                                                       aware architecture performs better than both Host-Only and
+mizing computation for high-degree and low-degree vertices                                                                                          PIM-Only execution for an overwhelming majority of the
+separately without complicating software programming.                                                                                               workloads. Hence, our architecture effectively selects the best
+7.2. Sensitivity to Input Size                                                                                                                      place to execute PEIs even if applications with very differ-
+                                                                                                                                                    ent locality behavior are mixed. This is an important con-
+Figure 8 compares the performance of Host-Only, PIM-Only,                                                                                           tribution since, without hardware-based locality monitoring
+and Locality-Aware using the PageRank workload with nine                                                                                            mechanisms like ours, it is infeasible or very difficult for the
+input graphs. We use the same input graphs as in Figure 2.                                                                                          software to determine where to execute a PEI, in the presence
+Graphs are sorted based on their number of vertices: graphs                                                                                         of multiple workloads scheduled at runtime. In many systems,
+with larger numbers of vertices appear toward the right side of                                                                                     a diverse spectrum of applications or workloads are run to-
+the figure. Figure 8 also depicts the fraction of PEIs executed                                                                                     gether and their locality behavior changes dynamically at a
+on memory-side PCUs (denoted as ‘PIM %’).                                                                                                           fine granularity. As such, it is critical that a technique like
+   Most notably, Locality-Aware gradually shifts from host-
+                                                                                                                                                                                              PIM-Only         Locality-Aware
+                                 Host-Only                  PIM-Only              Locality-Aware                       PIM %                                              1.8
+                       1.6                                                                                                          100 %
+                                                                                                                                                                          1.6
+                                                                                                                                                     Normalized IPC Sum
+
+
+
+
+                       1.4                                                                                                          80 %
+ Normalized IPC
+
+
+
+
+                                                                                                                                                                          1.4
+
+                       1.2                                                                                                          60 %                                  1.2
+                                                                                                                                            PIM %
+
+
+
+
+                                                                                                                                                                          1.0
+                       1.0                                                                                                          40 %
+                                                                                                                                                                          0.8
+                       0.8                                                                                                          20 %
+                                                                                                                                                                          0.6
+                       0.6                                                                                                          0%                                    0.4
+                                                                                                                                                                                0   20   40   60   80    100   120   140    160   180   200
+                               p2p-Gnu-
+                                 tella31
+
+                                           soc-Slash-
+                                             dot0811
+
+                                                           web-
+                                                        Stanford
+                                                                   amazon-
+                                                                     2008
+
+                                                                             frwiki-
+                                                                              2013
+
+                                                                                       wiki-
+                                                                                       Talk
+
+                                                                                                    cit-
+                                                                                                Patents
+
+                                                                                                           soc-Live-
+                                                                                                           Journal1
+
+                                                                                                                        ljournal-
+                                                                                                                            2008
+
+
+
+
+                                                                                                                                                                                                   Workload Number
+                                                                                                                                                    Figure 9: Performance comparison using randomly picked
+ Figure 8: PageRank performance with different graph sizes.                                                                                         multiprogrammed workloads (normalized to Host-Only).
+
+
+
+===== Page 11 =====
+
+ours can dynamically profile the locality behavior and adapt                                                          1      2     4      8      16               1     2    4
+                                                                                                            1.2                                       1.2
+PEI execution accordingly.
+                                                                                                            1.0                                       1.0
+
+
+
+
+                                                                                           Normalized IPC
+7.4. Balanced Dispatch: Idea and Evaluation                                                                 0.8                                       0.8
+As shown in Figure 7, most of the speedup achieved by PIM-                                                  0.6                                       0.6
+Only comes from the reduction in memory bandwidth con-                                                      0.4                                       0.4
+sumption. However, we observe an intriguing behavior for                                                    0.2                                       0.2
+some workloads: PIM-Only outperforms Host-Only in SC and                                                    0.0                                       0.0
+SVM with large inputs even though it increases off-chip band-                                                        Small       Medium       Large          Small Medium Large
+
+width consumption. This is because PIM-Only shows better                                                          (a) Operand buffer size                   (b) Execution width
+balance between request and response bandwidth consumption                                Figure 11: Performance sensitivity to different PCU designs.
+(note that HMCs have separate off-chip links for requests and
+responses). For example, in SC, Host-Only reads 64-byte data                              7.5. Design Space Exploration for PCUs
+per PEI, while PIM-Only sends 64-byte data to memory per                                  Operand Buffer Size. Figure 11a shows the performance
+PEI (see Table 1). Although the two consume nearly the same                               sensitivity of Locality-Aware to the operand buffer size in each
+amount of memory bandwidth in total, the latter performs bet-                             PCU. The results are averaged over all applications and then
+ter because these two applications are read-dominated, which                              normalized to the default configuration (four entries). Error
+makes response bandwidth more performance-critical than                                   bars show the minimum and the maximum values.
+request bandwidth.7                                                                          According to the results, incorporating a four-entry operand
+   Leveraging this observation, we devise a simple idea called                            buffer per PCU (i.e., 576 in-flight PEIs) enables the PCU to
+balanced dispatch, which relies on the host-side PEI execu-                               exploit the maximum level of memory-level parallelism across
+tion capability of our architecture. In this scheme, PEIs are                             PEIs, thereby improving the system performance by more than
+forced to be executed on host-side PCUs regardless of their                               30% compared to the one with a single-entry operand buffer.
+locality if doing so achieves a better balance between request                            Having more than four operand buffer entries per PCU does
+and response bandwidth. For this purpose, two counters, Creq                              not yield a noticeable difference in performance due to the
+and Cres , are added to the HMC controller to accumulate the                              saturation of instruction-level parallelism across PEIs.
+total number of flits transferred through the request and re-
+sponse links, respectively (the counters are halved every 10 µs                           Execution Width. Figure 11b depicts the impact of PCU
+to calculate the exponential moving average of off-chip traffic).                         execution width on the performance of Locality-Aware. As
+When a PEI misses in the locality monitor, if Cres is greater                             shown in the figure, increasing the issue width of the compu-
+than Creq (i.e., higher average response bandwidth consump-                               tation logic shows a negligible effect since execution time of a
+tion), our scheme chooses the one that consumes less response                             PEI is dominated by memory access latency.
+bandwidth between host-side and memory-side execution of                                  7.6. Performance Overhead of the PMU
+that PEI. Similarly, if Creq is greater than Cres , the execution
+                                                                                          Compared to an ideal PMU with infinite storage, our PMU
+location with less request bandwidth consumption is chosen.
+                                                                                          design can potentially degrade performance in three ways.
+   As shown in Figure 10, balanced dispatch further improves
+                                                                                          First, the limited PIM directory size unnecessarily serializes
+the performance of our architecture by up to 25%. We believe
+                                                                                          two PEIs with different target cache blocks if the two cache
+that this idea can be generalized to other systems with separate
+                                                                                          blocks happen to be mapped to the same PIM directory entry.
+request/response channels such as buffer-on-board memory
+                                                                                          Second, partial tags of the locality monitor could potentially
+systems [7] (e.g., Intel SMB [22], IBM Centaur [13], etc.), the
+                                                                                          report false data locality if two cache blocks in a set have the
+evaluation of which is left for our future work.
+                                                                                          same partial tag. Third, access latency of the PIM directory
+                            Host-Only           PIM-Only
+                                                                                          and the locality monitor delays PEI execution.
+                            Locality-Aware      Locality-Aware + Balanced Dispatch
+                  1.8                                                                        Fortunately, we observe that these sources of potential per-
+                  1.6                                                                     formance degradation have a negligible impact on system per-
+ Normalized IPC
+
+
+
+
+                  1.4                                                                     formance. According to our evaluations, idealizing the PIM
+                  1.2                                                                     directory and the locality monitor (with unlimited storage and
+                  1.0                                                                     zero latency) improves the performance of our architecture by
+                  0.8
+                                                                                          only 0.13% and 0.31%, respectively. Therefore, we conclude
+                  0.6
+                                                                                          that our PMU design supports atomicity and locality-aware
+                  0.4
+                            SC           SVM    SC       SVM       SC           SVM       execution of PEIs with negligible performance overhead.
+                                 Small            Medium                Large
+                                                                                          7.7. Energy, Area, and Thermal Issues
+ Figure 10: Performance improvement of balanced dispatch.
+                  7 To be more specific, a memory read consumes 16/80 bytes of request/
+                                                                                          Figure 12 shows the energy consumption of the memory hierar-
+                                                                                          chy in Host-Only, PIM-Only, and Locality-Aware, normalized
+response bandwidth and a memory write consumes 80 bytes of request band-
+width in our configuration. Thus, if an application is read-dominated, the                to that of Ideal-Host. We use CACTI 6.5 [37] to model en-
+response bandwidth is likely to be saturated first.                                       ergy consumption of on-chip caches, the PIM directory, and
+
+
+
+===== Page 12 =====
+
+                              Cache           HMC Link              DRAM   memory [14, 16, 25, 39, 40, 46]. This is true even for recent
+                              Host-side PCU   Memory-side PCU       PMU    studies that revisit the PIM concept using 3D-stacked DRAM
+                     1.6
+                     1.4                                Host-Only          technologies [1, 11, 41, 50, 51]. Although such approaches
+                                                        PIM-Only
+ Normalized Energy
+
+
+
+
+                     1.2
+                                                                           might achieve higher performance than conventional architec-
+                                                        Locality-Aware
+                     1.0                                                   tures, they require disruptive changes in both hardware and
+                     0.8                                                   software, thereby hindering cost-effective and seamless inte-
+                     0.6                                                   gration of the PIM concept with existing systems. Our work
+                     0.4                                                   overcomes these two major limitations.
+                     0.2                                                      Little has been studied on the effect of on-chip caches on
+                     0.0                                                   PIM system design. With respect to cache coherence, most
+                               Small          Medium             Large
+                     Figure 12: Energy consumption of memory hierarchy.
+                                                                           previous PIM approaches either operate on a noncacheable
+                                                                           memory region [15, 39–41, 46], insert explicit cache block
+the locality monitor. The energy consumption of 3D-stacked                 flushes into software code [16, 25, 44, 46], or require invalida-
+DRAM, DRAM controllers, and off-chip links of an HMC                       tions of a memory region [43], all of which introduce perfor-
+is modeled by CACTI-3DD [6], McPAT 1.2 [30], and an en-                    mance overhead and/or programming burden. Although it is
+ergy model from previous work [27], respectively. The energy               possible to extend host-side cache coherence protocols to main
+consumption of the PCUs is derived from synthesis results of               memory [26], this incurs nontrivial overhead in implementing
+our RTL implementation of computation logic and operand                    coherence protocols inside memory and, more importantly,
+buffers based on the Synopsys DesignWare Library [47].                     tightly couples memory design to host processor design. Our
+   Among the three configurations, Locality-Aware consumes                 architecture supports cache coherence without such drawbacks
+the lowest energy across all input sizes. For small inputs, it             by introducing the single-cache-block restriction and manag-
+minimizes DRAM accesses by executing most of the PEIs                      ing coherence entirely from the host side.
+at host-side PCUs, unlike PIM-Only, which increases energy                    To the best of our knowledge, no previous work considered
+consumption of off-chip links and DRAM by 36% and 116%,                    cache locality in PIM systems from a performance perspective
+respectively. For large inputs, Locality-Aware saves energy                and proposed mechanisms to adaptively execute PIM opera-
+over Host-Only due to the reduction in off-chip traffic and                tions either in the host processor or in memory. As shown in
+execution time. Hence, we conclude that Locality-Aware                     Section 2.2, simply offloading computation to memory all the
+enables energy benefits over both Host-Only and PIM-Only                   time (as done in previous proposals) often noticeably degrades
+due to its ability to adapt PEI execution to data locality.                system performance when the computation exhibits high data
+   Figure 12 also clearly indicates that our scheme introduces             locality. Our scheme provides adaptivity of execution location
+negligible energy overhead in existing systems. Specifically,              to data locality, thereby significantly improving performance
+the memory-side PCUs contribute only 1.4% of the energy                    and energy efficiency especially in the presence of varying
+consumption of HMCs. This implies that integration of such                 dynamic factors (e.g., input sets and workload composition).
+simple PIM operations into memory likely has a negligible                     In terms of PIM operation granularity, the most relevant
+impact on peak temperature, which is one of the important                  research to ours is active memory operations (AMOs) [9, 10],
+issues in 3D-stacked memory design from a practical view-                  in which on-chip memory controllers support a limited set of
+point [8, 31]. Finally, our synthesis results and CACTI-3DD                simple computations. However, our approach is different from
+estimate the area overhead of memory-side PCUs to be only                  AMOs in at least three aspects. First, unlike our PIM-based ar-
+1.85% of the logic die area, assuming that a DRAM die and a                chitecture, computation in on-chip memory controllers, as op-
+logic die occupy the same area.                                            posed to in memory, still suffers from the off-chip bandwidth
+                                                                           limitation, which is the bottleneck of our target applications.
+8. Related Work                                                            Second, AMOs are always executed in memory controllers,
+To our knowledge, this is the first work that proposes (1) a               which requires cache block flushes for each AMO, thereby
+processing-in-memory execution model that is compatible                    degrading performance compared to host-side execution under
+with modern programming models and existing mechanisms                     high data locality. This is not the case for our system since
+for cache coherence and virtual memory, which is enabled                   host-side PCUs see exactly the same memory hierarchy as the
+by our new extensions to modern ISAs, called PIM-enabled                   host processor. Third, the memory controller design for AMOs
+instructions (PEIs), and (2) a new mechanism, called locality-             needs dedicated TLBs for virtual memory support, whereas
+aware PEI execution, that adaptively determines whether a                  our architecture achieves the same goal without such overhead
+PEI should be executed in memory or in the host processor                  by performing address translation with host processor TLBs.
+based on data locality, thereby achieving the benefits of both
+memory-side and host-side execution.                                       9. Conclusion
+   As we already explained in Section 1, most past works                   In this paper, we proposed PIM-enabled instructions (PEIs),
+on PIM share two common limitations: (1) unconventional                    a practical model for processing-in-memory and its hardware
+programming models for in-memory computation units and                     implementation, which is compatible with existing cache co-
+(2) limited interoperability with on-chip caches and virtual               herence and virtual memory mechanisms. The key idea of
+
+
+
+===== Page 13 =====
+
+this paper is to express PIM operations by extending the ISA                    [15] Q. Guo et al., “AC-DIMM: Associative computing with STT-MRAM,”
+of the host processor with PEIs. This greatly improves the                           in Proc. ISCA, 2013.
+                                                                                [16] M. Hall et al., “Mapping irregular applications to DIVA, a PIM-based
+practicality of the PIM concept by (1) seamlessly utilizing the                      data-intensive architecture,” in Proc. SC, 1999.
+sequential programming model for in-memory computation,                         [17] S. Hong et al., “Green-Marl: A DSL for easy and efficient graph
+                                                                                     analysis,” in Proc. ASPLOS, 2012.
+(2) simplifying the hardware support for interoperability with                  [18] S. Hong et al., “Efficient parallel graph exploration on multi-core CPU
+existing cache coherence and virtual memory mechanisms,                              and GPU,” in Proc. PACT, 2011.
+                                                                                [19] S. Hong et al., “Simplifying scalable graph processing with a domain-
+and (3) minimizing area, power, and thermal overheads of                             specific language,” in Proc. CGO, 2014, pp. 208–218.
+implementing computation units inside memory. Importantly,                      [20] “Hybrid memory cube specification 1.0,” Hybrid Memory Cube Con-
+                                                                                     sortium, Tech. Rep., Jan. 2013.
+our architecture is also capable of dynamically optimizing PEI                  [21] “Hybrid memory cube specification 2.0,” Hybrid Memory Cube Con-
+execution according to the data locality of applications and                         sortium, Tech. Rep., Nov. 2014.
+PEIs. Our extensive evaluation results using emerging data-                     [22] “Intel R C102/C104 scalable memory buffer datasheet,” Intel, Feb.
+                                                                                     2014.
+intensive workloads showed that our architecture combines the                   [23] J. Jeddeloh and B. Keeth, “Hybrid memory cube new DRAM architec-
+best part of conventional architectures and simple PIM opera-                        ture increases density and performance,” in Proc. VLSIT, 2012.
+                                                                                [24] U. Kang et al., “PEGASUS: A peta-scale graph mining system imple-
+tions in terms of both performance and energy consumption                            mentation and observations,” in Proc. ICDM, 2009.
+while minimizing the overhead of in-memory computation                          [25] Y. Kang et al., “FlexRAM: Toward an advanced intelligent memory
+                                                                                     system,” in Proc. ICCD, 1999.
+units and management structures for PEI execution. We con-                      [26] D. Keen et al., “Cache coherence in intelligent memory systems,” IEEE
+clude that our PEI abstraction and its implementation provide                        Trans. Comput., vol. 52, no. 7, pp. 960–966, Jul. 2003.
+a practical approach to realizing high-performance and energy-                  [27] G. Kim et al., “Memory-centric system interconnect design with hybrid
+                                                                                     memory cubes,” in Proc. PACT, 2013.
+efficient integration of in-memory computation capability into                  [28] P. M. Kogge, “EXECUBE-a new architecture for scaleable MPPs,” in
+commodity computer systems in the near future.                                       Proc. ICPP, 1994.
+                                                                                [29] Laboratory for Web Algorithmics. Available: http://law.di.unimi.it/
+Acknowledgments                                                                      datasets.php
+                                                                                [30] S. Li et al., “McPAT: An integrated power, area, and timing modeling
+We thank the anonymous reviewers for their valuable feed-                            framework for multicore and manycore architectures,” in Proc. MICRO,
+                                                                                     2009.
+back. This work was supported in large part by the National                     [31] G. H. Loh, “3D-stacked memory architectures for multi-core proces-
+Research Foundation of Korea (NRF) grants funded by the                              sors,” in Proc. ISCA, 2008.
+                                                                                [32] G. H. Loh et al., “A processing-in-memory taxonomy and a case for
+Korean government (MEST) (No. 2012R1A2A2A0604729                                     studying fixed-function PIM,” presented at the Workshop on Near-Data
+7) and the IT R&D program of MKE/KEIT (No. 10041608,                                 Processing, 2013.
+                                                                                [33] C.-K. Luk et al., “Pin: Building customized program analysis tools
+Embedded System Software for New Memory-based Smart                                  with dynamic instrumentation,” in Proc. PLDI, 2005.
+Devices). Onur Mutlu also acknowledges support from the                         [34] A. Lumsdaine et al., “Challenges in parallel graph processing,” Parallel
+Intel Science and Technology Center for Cloud Computing,                             Process. Lett., vol. 17, no. 1, pp. 5–20, Mar. 2007.
+                                                                                [35] K. Mai et al., “Smart memories: A modular reconfigurable architecture,”
+Samsung, Intel, and NSF grants 0953246, 1065112, 1212962,                            in Proc. ISCA, 2000.
+and 1320531.                                                                    [36] A. Mislove et al., “Measurement and analysis of online social net-
+                                                                                     works,” in Proc. IMC, 2007.
+References                                                                      [37] N. Muralimanohar et al., “CACTI 6.0: A tool to model large caches,”
+                                                                                     HP Laboratories, Tech. Rep. HPL-2009-85, Apr. 2009.
+ [1] J. Ahn et al., “A scalable processing-in-memory accelerator for parallel   [38] R. Narayanan et al., “MineBench: A benchmark suite for data mining
+     graph processing,” in Proc. ISCA, 2015.                                         workloads,” in Proc. IISWC, 2006.
+ [2] R. Balasubramonian et al., “Near-data processing: Insights from a          [39] M. Oskin et al., “Active pages: A computation model for intelligent
+     MICRO-46 workshop,” IEEE Micro, vol. 34, no. 4, pp. 36–42, Jul.                 memory,” in Proc. ISCA, 1998.
+     2014.                                                                      [40] D. Patterson et al., “A case for intelligent RAM,” IEEE Micro, vol. 17,
+ [3] C. Balkesen et al., “Main-memory hash joins on multi-core CPUs:                 no. 2, pp. 34–44, Mar./Apr. 1997.
+     Tuning to the underlying hardware,” in Proc. ICDE, 2013.                   [41] S. Pugsley et al., “NDC: Analyzing the impact of 3D-stacked mem-
+ [4] C. Bienia et al., “The PARSEC benchmark suite: Characterization and             ory+logic devices on MapReduce workloads,” in Proc. ISPASS, 2014.
+     architectural implications,” in Proc. PACT, 2008.                          [42] S. Rusu et al., “Ivytown: A 22nm 15-core enterprise Xeon processor
+ [5] S. Brin and L. Page, “The anatomy of a large-scale hypertextual web             family,” in International Solid-State Circuits Conference Digest of
+     search engine,” in Proc. WWW, 1998.                                             Technical Papers, 2014.
+ [6] K. Chen et al., “CACTI-3DD: Architecture-level modeling for 3D             [43] V. Seshadri et al., “RowClone: Fast and energy-efficient in-DRAM
+     die-stacked DRAM main memory,” in Proc. DATE, 2012.                             bulk data copy and initialization,” in Proc. MICRO, 2013.
+ [7] E. Cooper-Balis et al., “Buffer-on-board memory systems,” in Proc.         [44] Y. Solihin et al., “Automatic code mapping on an intelligent memory
+     ISCA, 2012.                                                                     architecture,” IEEE Trans. Comput., vol. 50, no. 11, pp. 1248–1266,
+ [8] W. R. Davis et al., “Demystifying 3D ICs: The pros and cons of                  2001.
+     going vertical,” IEEE Des. Test Comput., vol. 22, no. 6, pp. 498–510,      [45] Stanford Large Network Dataset Collection. Available: http:
+     Nov./Dec. 2005.                                                                 //snap.stanford.edu/data/index.html
+ [9] Z. Fang et al., “Active memory operations,” in Proc. ICS, 2007.            [46] T. L. Sterling and H. P. Zima, “Gilgamesh: A multithreaded processor-
+[10] Z. Fang et al., “Active memory controller,” J. Supercomput., vol. 62,           in-memory architecture for petaflops computing,” in Proc. SC, 2002.
+     no. 1, pp. 510–549, Oct. 2012.                                             [47] Synopsys DesignWare Library – Datapath and Building Block IP.
+[11] A. Farmahini-Farahani et al., “NDA: Near-DRAM acceleration archi-               Available: http://www.synopsys.com/dw/buildingblock.php
+     tecture leveraging commodity DRAM devices and standard memory              [48] S. Thoziyoor et al., “PIM lite: A multithreaded processor-in-memory
+     modules,” in Proc. HPCA, Feb. 2015.                                             prototype,” in Proc. GLSVLSI, 2005.
+[12] N. Firasta et al., “Intel R AVX: New frontiers in performance im-          [49] W. A. Wulf and S. A. McKee, “Hitting the memory wall: Implications
+     provements and energy efficiency,” Intel Corporation, Tech. Rep., May           of the obvious,” ACM SIGARCH Comput. Archit. News, vol. 23, no. 1,
+     2008.                                                                           pp. 20–24, Mar. 1995.
+[13] J. Friedrich et al., “The POWER8TM processor: Designed for big data,       [50] D. P. Zhang et al., “TOP-PIM: Throughput-oriented programmable
+     analytics, and cloud environments,” in Proc. ICICDT, 2014.                      processing in memory,” in Proc. HPDC, 2014.
+[14] M. Gokhale et al., “Processing in memory: The Terasys massively            [51] Q. Zhu et al., “A 3D-stacked logic-in-memory accelerator for
+     parallel PIM array,” IEEE Comput., vol. 28, no. 4, pp. 23–31, Apr.              application-specific data intensive computing,” in Proc. 3DIC, 2013.
+     1995.
+

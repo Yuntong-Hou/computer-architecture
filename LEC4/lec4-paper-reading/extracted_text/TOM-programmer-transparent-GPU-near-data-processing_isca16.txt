@@ -1,0 +1,1329 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/lec4-paper-reading/sources/original-paper/TOM-programmer-transparent-GPU-near-data-processing_isca16.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC4/original-paper/TOM-programmer-transparent-GPU-near-data-processing_isca16.pdf
+Raw URL: https://raw.githubusercontent.com/Yuntong-Hou/computer-architecture/main/LEC4/original-paper/TOM-programmer-transparent-GPU-near-data-processing_isca16.pdf
+Accessed: 2026-05-11 11:24:25 UTC
+
+
+
+===== Page 1 =====
+
+                Transparent Offloading and Mapping (TOM):
+   Enabling Programmer-Transparent Near-Data Processing in GPU Systems
+                Kevin Hsieh‡        Eiman Ebrahimi† Gwangsun Kim∗ Niladrish Chatterjee† Mike O’Connor†
+                                     Nandita Vijaykumar‡ Onur Mutlu§‡ Stephen W. Keckler†
+                             ‡                                       †                 ∗              §
+                                 Carnegie Mellon University              NVIDIA            KAIST          ETH Zürich
+
+                                                                                       Off-chip GPU-to-memory link Main GPU SMs
+ABSTRACT                                                                                                                          DRAM layers
+Main memory bandwidth is a critical bottleneck for modern GPU
+                                                                                                                                  Logic layer
+systems due to limited off-chip pin bandwidth. 3D-stacked mem-
+ory architectures provide a promising opportunity to significantly                                                                   Logic layer
+alleviate this bottleneck by directly connecting a logic layer to the                                                                   SM
+                                                                                                   Main GPU
+DRAM layers with high bandwidth connections. Recent work has                                                                       Crossbar switch
+shown promising potential performance benefits from an architec-             3D-stacked memory     Off-chip cross-stack link
+                                                                                                                                  Vault   ….    Vault
+                                                                                                                                  Ctrl          Ctrl
+ture that connects multiple such 3D-stacked memories and offloads            (memory stack)
+bandwidth-intensive computations to a GPU in each of the logic                         Figure 1: Overview of an NDP GPU system.
+layers. An unsolved key challenge in such a system is how to enable
+computation offloading and data mapping to multiple 3D-stacked               SMs reduces data traffic between the memory stacks and
+memories without burdening the programmer such that any applica-             the main GPU, alleviating the off-chip memory bandwidth
+tion can transparently benefit from near-data processing capabilities        bottleneck and reducing power consumption of the power-
+in the logic layer.                                                          hungry off-chip memory bus. Unfortunately, there are two
+   Our paper develops two new mechanisms to address this key chal-           key challenges in such NDP systems that need to be solved
+lenge. First, a compiler-based technique that automatically identifies       to effectively exploit the benefits of near data processing.
+code to offload to a logic-layer GPU based on a simple cost-benefit          To solve these challenges, prior works required significant
+analysis. Second, a software/hardware cooperative mechanism that             programmer effort [2, 55, 60], which we aim to eliminate in
+predicts which memory pages will be accessed by offloaded code,
+                                                                             this work.
+and places those pages in the memory stack closest to the offloaded
+code, to minimize off-chip bandwidth consumption. We call the com-              Challenge 1. Which operations should be executed on the
+bination of these two programmer-transparent mechanisms TOM:                 SMs in the main GPU versus the SMs in the memory stack? In-
+Transparent Offloading and Mapping.                                          structions must be steered to the compute units they most effi-
+   Our extensive evaluations across a variety of modern memory-              ciently execute on. For example, memory-intensive blocks of
+intensive GPU workloads show that, without requiring any program             instructions could benefit from executing at the logic layer of
+modification, TOM significantly improves performance (by 30% on              memory stacks that hold the data they access, while compute-
+average, and up to 76%) compared to a baseline GPU system that               intensive portions could benefit from remaining on the main
+cannot offload computation to 3D-stacked memories.                           GPU. Although programmers may have such knowledge, it
+                                                                             would be a large burden for them to designate the most appro-
+1. Introduction                                                              priate execution engine for all parts of the program, which
+Main memory bandwidth is a well-known critical bottleneck                    may change dynamically due to program phase behavior and
+for many GPU applications [21, 44, 56]. Emerging 3D-stacked                  different input sets.
+memory technologies offer new opportunities to alleviate this                   Challenge 2. How should data be mapped to different 3D
+bottleneck by enabling very wide, energy-efficient interfaces                memory stacks? In a system with multiple memory stacks,
+to the processor [29, 30]. In addition, a logic layer within a               such as the one in Figure 1, an application’s data is spread
+3D memory stack provides the opportunity to place process-                   across multiple memory stacks to maximize bandwidth uti-
+ing elements close to the data in memory to further improve                  lization of the main GPU. However, the efficiency of an NDP
+bandwidth and reduce power consumption [12, 26, 59]. In                      operation primarily depends on whether the data accessed by
+these near-data processing (NDP) systems, through-silicon                    the offloaded operation is located within the same memory
+vias (TSVs) from the memory dies can provide greater band-                   stack. We thus need to map data in a way that: 1) maximizes
+width to the processing units on the logic layer within the                  the code/data co-location for NDP operations, and 2) max-
+stack, while simultaneously removing the need for energy-                    imizes bandwidth utilization for the code executing on the
+consuming and long-distance data movement between chips.                     main GPU. Doing so is challenging because different code
+   Recent work demonstrates promising performance and                        blocks and different threads in a program access different
+energy efficiency benefits from using near-data processing in                parts of data structures at different times during program
+GPU systems [55, 60]. Figure 1 shows a high level diagram of                 execution. Determining which part of memory is accessed by
+an example near-data processing system architecture. This                    which code block instances is difficult, and requiring the pro-
+system consists of 1) multiple 3D-stacked memories, called                   grammer to do this places a large burden on the programmer.
+memory stacks, each of which has one or more streaming                          Our goal is to solve both challenges transparently to the
+multiprocessors (SMs) on its logic layer, and 2) the main GPU                programmer. To this end, we develop two new mechanisms,
+with multiple SMs. Offloading computation to the logic layer                 the combination of which we refer to as TOM (Transpar-
+
+
+                                                                         1
+
+
+
+===== Page 2 =====
+
+ent Offloading and Mapping). To solve Challenge 1, we                  2. Motivation
+propose an offload candidate selection mechanism that can
+be implemented as a static compiler analysis pass requiring            The first challenge for NDP systems is deciding which code
+no programmer intervention. The key idea is to statically              to offload. Most prior research on near-data processing re-
+identify code blocks with maximum potential memory band-               quires the programmer to identify and specify which code
+width savings from offloading to the near-data compute units.          will be run close to memory [2, 14, 55] and can ignore the
+The bandwidth savings obtained with compute offloading                 memory intensity of the code [60]. These approaches lead
+is a function of the memory intensity of the offloaded code            to increased programmer effort, or suboptimal performance
+and the bandwidth spent to transfer live-in/live-out regis-            by executing some compute-intensive code on the 3D-stack
+ters to/from code being executed on the logic layer. Our               logic layer. In contrast, our approach identifies the candidate
+mechanism statically estimates memory bandwidth savings                code blocks for offloading via static compile-time analysis
+of different instruction code blocks to identify the best candi-       that maximizes memory bandwidth savings. Figure 2 shows
+dates to offload to NDP compute units in the logic layer of 3D         the ideal performance improvement of our proposed offload
+memory stacks (Section 3.1). Our system then dynamically               candidate identification mechanism (described in detail in
+decides whether or not to actually offload the selected code           Section 3.1). With an idealized system where there is no over-
+blocks (Section 3.3), based on dynamic system conditions               head for offloading code blocks and where all offloaded code
+such as SM and bandwidth utilization.                                  and data are co-located, our static approach has the potential
+   To solve Challenge 2, we propose a programmer-transparent           to improve performance by 1.58× on average (up to 2.19×)
+data mapping mechanism that places data in the same mem-               across a range of 10 memory intensive GPGPU workloads.
+                                                                                 2.5
+ory stack as that of the offloaded code that accesses it. This                   2.0
+
+
+                                                                       Speedup
+mechanism is based on the key observation that a significant                     1.5
+fraction (85% in our experiments) of offloaded code blocks                       1.0
+                                                                                 0.5
+exhibit repeatable memory access patterns. We leverage this                      0.0
+repeatability in access patterns to perform simple changes to                           BP   BFS   KM   CFD    HW    LIB   RAY   FWT   SP   RD   AVG
+physical memory mapping to place offloaded code and the                                Figure 2: Ideal speedup with near-data processing.
+data it accesses in the same memory stack. Our mechanism                  A second challenge is co-locating the offloaded compu-
+uses the main GPU to evaluate different simple memory map-             tation with its data, while at the same time not degrading
+ping options at run time. It then predicts memory pages that           performance of the non-offloaded code due to potentially
+the offloaded code block will access, finds the mapping that           increased memory stack contention. This is a problem that
+would keep that data closest to the code that will access it,          static compiler analysis inherently cannot solve. The map-
+and maps the predicted pages using the identified best map-            ping of memory to different stacks is determined by several
+ping while mapping all other pages using the mapping that              dynamic components, e.g., the host-side driver, GPU runtime,
+favors the main GPU.                                                   memory controller, etc. Most prior NDP proposals introduce
+   Contributions. We make the following contributions:                 intrusive program changes such as low level APIs or program
+                                                                       annotations to address the data mapping problem [55, 60].
+• We propose a new compiler-based mechanism to select
+                                                                       Such approaches make the benefit of NDP available only to
+  instructions to offload to near-data compute units, without
+                                                                       those willing and able to re-write their programs, unlike the
+  requiring any programmer intervention. Our mechanism
+                                                                       programmer-transparent approach we propose in this pa-
+  identifies the best candidate code blocks for offloading by
+                                                                       per. Figure 3 shows how an ideal mapping, which simply
+  statically estimating the potential memory bandwidth sav-
+                                                                       uses the best two consecutive address bits to map memory
+  ings for different code blocks. We propose a new runtime
+                                                                       pages to memory stacks, can improve the performance of
+  mechanism that decides whether or not the selected in-
+                                                                       an NDP system.1 The graph shows that such a simple ideal
+  structions should be offloaded based on system conditions.
+                                                                       address mapping of data to memory stacks, which maximizes
+• We propose a new programmer-transparent data mapping
+                                                                       offloaded code/data co-location, improves performance by
+  mechanism to co-locate offloaded code and data in the
+                                                                       13% on average compared to a state-of-the-art GPU memory
+  same memory stack by exploiting predictability in memory
+                                                                       mapping policy [9]. These two motivating studies illustrate
+  access patterns in offloaded code blocks. Our mechanism
+                                                                       that there are significant gains that can be achieved by devel-
+  retains the memory mapping for all other data to maximize
+                                                                       oping intelligent code offloading and data mapping strategies.
+  memory bandwidth of code executing on the main GPU.
+                                                                                 1.5
+• We comprehensively evaluate the combination of our two
+                                                                       Speedup
+
+
+
+
+  mechanisms, collectively called TOM (Transparent Offload-                      1.0
+
+  ing and Mapping), using 10 memory-intensive general-                           0.5
+  purpose GPU applications across a variety of system config-                    0.0
+  urations. We show that TOM, on average, improves system                               BP   BFS   KM   CFD    HW    LIB   RAY   FWT   SP   RD   AVG
+  performance by 30% (up to 76%), reduces off-chip memory              Figure 3: Effect of ideal memory mapping on near-data pro-
+                                                                       cessing performance.
+  traffic by 38% (up to 99%), and reduces energy consumption
+  by 11% (up to 37%), over a baseline GPU system that cannot
+  offload computation to 3D-stacked memories.                                     1 Section 5 describes our evaluation methodology.
+
+
+
+
+                                                                   2
+
+
+
+===== Page 3 =====
+
+3. Mechanism                                                             makes Equations (1) and (2) overly simplistic because, in real-
+We describe our new mechanisms to enable programmer-                     ity, loads and stores are coalesced by the load-store unit and
+transparent near-data processing in GPU systems. Our pro-                caches. Furthermore, for loads, the sizes of address and data
+posal, Transparent Offloading and Mapping (TOM), consists                are different because data is fetched at cache line granularity.
+of two key components. The first is a compiler-based tech-               To address these issues, we estimate the bandwidth change
+nique to identify candidate code blocks for offloading based             at warp granularity as follows:
+on cost-benefit analysis of memory bandwidth (Section 3.1).                 BWT X = (REGT X · SW )−
+The second component is a software/hardware cooperative
+                                                                              (NLD · CoalLD · M issLD + NST · (SW + CoalST ))                   (3)
+mechanism that maps memory pages accessed by offloaded
+code to where the code will execute, by exploiting common                   BWRX = (REGRX · SW )−
+memory access patterns (Section 3.2). After describing these                 (NLD · CoalLD · SC · M issLD + 1/4 · NST · CoalST )                (4)
+two key components separately, we describe a runtime mech-
+                                                                             In Equations (3) and (4), SW is the size of a warp (e.g. 32)
+anism that dynamically determines whether an offloading
+                                                                         and SC is the ratio of the cache line size to the address size
+candidate block should really be offloaded (Section 3.3).
+                                                                         (e.g. 32 for 128B cache lines and 4B addresses). CoalLD
+3.1. Identification of Offloading Candidates                             and CoalST are the average coalescing ratios for loads and
+The objective when identifying candidate instruction blocks              stores respectively. For example, if all loads in a warp can be
+for offloading is to improve performance by reducing the                 coalesced into two cache line accesses on average, CoalLD
+main GPU’s memory bandwidth consumption. The key to                      is 2. Also, M issLD is the cache miss rate for loads and is
+this identification is determining whether offloading a block            accounted for as a co-efficient for the number of loads, NLD ,
+saves more memory bandwidth during offloaded execution than              when calculating the bandwidth benefit of offloading.
+it costs in additional data transfers to initiate and complete the           We propose identifying offload candidate blocks with static
+offload. Memory bandwidth savings come from executing                    compile time analysis since determining instruction depen-
+offloaded loads/stores in the memory stack. The overhead of              dencies (i.e., REGT X and REGRX values) at run time would
+offloading is due to transferring the context required by the            introduce high hardware complexity. The compiler can easily
+block to execute in memory, and returning execution results              determine these terms as they are needed for register allo-
+to the main GPU. This section details the process.                       cation and instruction scheduling. However, the compiler
+3.1.1. Estimating the memory bandwidth cost-benefit.                     does not statically know coalescing ratios (CoalLD , CoalST )
+As Figure 1 shows, the main GPU and the memory stacks are                or cache miss rates (M issLD ). We use a conservative esti-
+connected by unidirectional high speed links similar to the              mate for these values so that the identified candidate blocks
+Hybrid Memory Cube (HMC) architecture [34]. Load instruc-                are most likely beneficial. As such, we assume all memory
+tions send addresses through the transmit channels (TX, from             instructions in a warp are perfectly coalesced so both coalesc-
+the GPU to the memory stack), and receive data back on the               ing ratios are 1. Since GPU cache miss rates are usually high,
+receive channels (RX, from the memory stack to the GPU).                 we choose an estimate of 50% for M issLD , close to the GPU
+Store instructions send store addresses and data through the             cache miss rates reported by prior works on a wide range of
+TX channels, and get the acknowledgment messages back                    workloads [1, 45].2
+from the RX channels. Without loss of generality, we assume              3.1.2. Offloading candidate block identification. The
+the size of address, data, and registers is 4× the size of an            compiler identifies an instruction block as a potential offload-
+acknowledgment message. If loads and stores are executed                 ing candidate if the total estimated change in bandwidth
+independently for each thread, we can estimate the change                as a result of offloading (BWT X + BWRX of Equations (3)
+in bandwidth consumption caused by offloading a block as:                and (4)) is negative. This means the benefits of offloading that
+                                                                         candidate outweigh the costs and thus offloading is expected
+            BWT X = REGT X − (NLD + 2 · NST )                 (1)
+                                                                         to save overall memory bandwidth. The compiler tags each
+           BWRX = REGRX − (NLD + 1/4 · NST )                  (2)        candidate with a 2-bit value indicating whether offloading
+   REGT X and REGRX are the number of registers trans-                   it is estimated to save RX bandwidth and/or TX bandwidth.
+mitted and received from the memory stacks respectively.                 Section 4.2 describes how the hardware uses this informa-
+These represent the bandwidth cost of offloading the block.              tion to dynamically determine whether or not the candidate
+The bandwidth benefit of offloading is based on the number               should be actually offloaded.
+of loads, NLD , and stores, NST , executed in the block.                 3.1.3. Loops and conditional offloading candidates. In
+   Equation (1) is derived assuming each load transmits an               candidate blocks that encapsulate a loop structure, the loop’s
+address, and each store transmits both its address and data              execution count is a multiplier into the number of loads/stores
+through the TX channel. Similarly, Equation (2) is derived               for the block’s bandwidth change calculation. While the
+by assuming each load gets its data and each store gets its              overhead of offloading a loop is constant and is proportional
+acknowledgment message back on the RX channel.                           to the number of live-in registers required by the block and
+   In a GPU, threads are executed in lock-step warps, so it                 2 While using more aggressive values identifies more offloading candi-
+is straightforward for the hardware to offload code block                dates, we do not observe clear performance benefits in our experiments.
+instances at the granularity of a warp as opposed to the gran-           This is because not all aggressively-chosen offloading candidates result in
+ularity of a single thread. Offloading at warp granularity               memory bandwidth savings.
+
+
+                                                                     3
+
+
+
+===== Page 4 =====
+
+                                                                                float portfolio_b (float ∗L, float ∗L_b) {
+the number of registers the block calculates values for, the
+                                                                                    int m, n; float b, s, swapval, v;
+benefit is determined by the number of executed iterations.                          ...
+   There are three cases for the compiler to handle a loop.                         for (n = 0; n < Nmat; n++)
+                                                                                       L_b[n] = −v ∗ delta /(1.0 + delta ∗ L[n]);
+First, if the loop trip count can be determined statically, the
+compiler uses it to determine whether or not it is an offloading                                  for (n = Nmat; n < N; n++)
+candidate. Second, if the loop trip count can be determined                                          L_b[n] = b ∗ L_b[n];
+before entering the loop at runtime, the compiler marks the
+corresponding loop as a “conditional offloading candidate”.                                       return v;
+The compiler then provides the condition as a hint to the hard-          Figure 4: Example offloading candidate blocks from LIBOR
+ware. Using this hint, hardware decides whether or not to                Monte Carlo [6, 18].
+offload the candidate at runtime. For example, the condition             3.2. Programmer-transparent Data Mapping
+of offloading can be a certain register’s value (e.g., the loop         The goal of programmer-transparent data mapping is to im-
+count) being greater than some threshold. Hardware offloads             prove code/data co-location in a simple fashion. We first
+these conditional offloading candidates only when the con-              analyze the candidate block’s memory access traces to find
+dition holds true. Third, if the loop trip count is determined          opportunities towards this goal. Based on our findings, we
+during execution, the compiler conservatively assumes the               propose a new automatic mechanism to find an effective data
+count to be one and makes the offloading decision based on              mapping.
+the loop body. If offloading the loop body is beneficial, the           3.2.1. Memory access pattern analysis. We observe that a
+loop is marked as an unconditional offloading candidate.                significant fraction of offloading candidates exhibit a very pre-
+                                                                        dictable access pattern: fixed offset, which means accesses are
+3.1.4. Offloading candidate block limitations. We im-
+                                                                        separated with a constant address offset/distance from each
+pose three limitations on candidate blocks. First, there should
+                                                                        other. Such accesses are predictable and can be used to map
+not be any on-chip shared memory accesses within a can-
+                                                                        memory chunks with that offset onto the same stack. Fur-
+didate block, as the compute units in memory stacks can-
+                                                                        thermore, when the offset between accesses has a factor that
+not access the main GPU’s shared memory without going
+                                                                        is a power of two, some least significant bits in the accessed
+through the off-chip link. Second, if the candidate code
+                                                                        addresses are always the same. Therefore, we can ensure
+involves divergent threads, they must converge at the end
+                                                                        all accesses go to the same memory stack if we use only the
+of offloaded execution. Since the GPU uses a SIMT execu-
+                                                                        least significant N bits to determine the stack mapping. For
+tion model, threads in a warp may diverge at control flow
+                                                                        example, the first loop in Figure 4 accesses two arrays with
+instructions. Allowing control flow divergence after the exe-
+                                                                        the same index, and their offset is solely determined by the
+cution of an offloaded block can significantly complicate the
+                                                                        distance between the arrays’ base addresses. As memory is
+management of the control divergence/reconvergence stack
+                                                                        allocated at a page granularity, which is a power of two value,
+(e.g., by requiring it to be distributed across the main GPU
+                                                                        this distance usually has a factor that is a power of two.
+and the memory stacks). As such, to make sure the threads
+                                                                           To understand how often such an access pattern happens,
+in a warp converge at the end of an offloaded block’s execu-
+                                                                        we categorize offloading candidates (chosen by the mecha-
+tion, the compiler makes sure the destinations of all control
+                                                                        nisms described in Section 3.1) based on the percentage of
+flow instructions are still confined within the candidate block.
+                                                                        fixed-offset memory accesses. Figure 5 shows the results. We
+Third, we do not allow memory barrier, synchronization, or
+                                                                        make two observations based on the results.
+atomic instructions in candidate blocks as we do not support                                    All accesses fixed offset        75%-99% fixed offset      50%-75% fixed offset
+synchronization primitives between the main GPU and the                                         25%-50% fixed offset             0%-25% fixed offset       No access fixed offset
+logic layer SM. Section 4.4.2 describes the details.                                             100%
+                                                                        Percent of offloading
+                                                                          candidate blocks
+
+
+
+
+                                                                                                  80%
+3.1.5. Offloading candidate block examples. Figure 4                                              60%
+shows the example offloading candidate blocks in a sample                                         40%
+GPU workload: LIBOR Monte Carlo [6,18]. In this code, there                                       20%
+are two loops that are conditional offloading candidate blocks.                                    0%
+Each loop has five input values (REGT X , marked as red), one                                              BP     BFS       KM   CFD    HW    LIB      RAY FWT   SP     RD    AVG
+load, and one store (both circled). If the compiler does not take        Figure 5: Analysis of accessed memory address offsets in of-
+                                                                         floading candidates.
+into account loops, it would not select these two loops as of-
+floading candidates with our conservative estimate for cache               First, 85% of all offloading candidates in the GPU workloads
+miss rate and coalescing ratios (BWT X +BWRX = +110.25                  we studied have some memory accesses with fixed offset that
+with 50% cache miss rate and perfect load/store coalescing).            can be used to improve data locality. Second, six workloads
+However, by considering loops as described in Section 3.1.3,            have offloading candidates that always access memory with
+these two loops become conditional offloading candidates.               a fixed offset. This means we can find a simple mapping for
+With the same conservative assumptions, this loop would                 these workloads that would keep a large portion of accesses
+save memory bandwidth if it iterates four or more times as              within the same stack as offloaded blocks.
+it executes more loads and stores (BWT X + BWRX = −39                      We take advantage of these observations by using consec-
+when it iterates four times).                                           utive bits in the memory address to determine memory stack
+
+
+                                                                    4
+
+
+
+===== Page 5 =====
+
+                                                                                                                     Baseline mapping                        Best mapping in first 0.1% NDP blocks
+address mapping. We avoid choosing bits from the cache line                                                          Best mapping in first 0.5% NDP blocks   Best mapping in first 1% NDP blocks
+offset to ensure off-chip link efficiency and main memory
+
+
+
+
+                                                                                  memory stack in an offloading
+                                                                                                                     Best mapping in all NDP blocks
+
+
+
+
+                                                                                   Probability of accessing one
+                                                                                                                  100%
+row buffer locality are not reduced. Assuming fixed offset
+
+
+
+
+                                                                                       candidate instance
+                                                                                                                  80%
+
+addresses have a common factor of 2M and the cache line size                                                      60%
+
+is 2N , our best bit position choices for mapping to different
+                                                                                                                  40%
+                                                                                                                  20%
+memory stacks are among bits [M − 1 : N ].                                                                         0%
+                                                                                                                         BP     BFS     KM     CFD     HW    LIB   RAY    FWT      SP     RD     AVG
+   To demonstrate the effectiveness of using consecutive ad-                      Figure 6: Effectiveness of the best memory mapping chosen
+dress bits for mapping addresses to memory stacks, we sweep                       from different fraction of offloading candidate instances.
+all consecutive 2-bit mappings3 in a system with 4 memory
+                                                                                  and apply this mapping only to the data that offloading can-
+stacks and compare the compute/data co-location of the best
+                                                                                  didate blocks access.
+2-bit mapping with the baseline GPU mapping [9]. As we
+                                                                                     With our mechanism, GPU kernel execution is split into
+offload each candidate block at the granularity of a warp,
+                                                                                  a relatively short initial learning phase followed by regular
+an offloading candidate instance is a warp that executes an
+                                                                                  execution. During the learning phase, all GPU kernels run
+offloading candidate block. We define the compute/data co-
+                                                                                  on the main SMs and the corresponding data resides in the
+location as the probability of accessing one memory stack in
+                                                                                  CPU memory while the mechanism learns the best memory
+an offloading candidate instance. Higher probability indicates
+                                                                                  mapping for data accessed by offloading candidates. After
+higher compute/data co-location. Our evaluation shows that
+                                                                                  the learning phase is over, before regular execution com-
+using the best consecutive bit position choice, the probability
+                                                                                  mences, we copy data accessed by offloading candidates from
+of accessing one memory stack from an offloading candidate
+                                                                                  the CPU memory to the GPU memory based on the learned
+instance goes up from 38% (with baseline data mapping) to
+                                                                                  best memory mapping. Our mechanism essentially delays the
+75% on average (almost a 2× improvement). This shows the
+                                                                                  memory copy from the CPU to the GPU in the typical GPU
+effectiveness of using a simple memory mapping mechanism
+                                                                                  execution flow so there is no extra data remapping overhead.
+to increase the compute/data co-location to maximize the
+                                                                                  During regular execution, offloaded code runs on memory
+benefits of NDP.
+                                                                                  stack SMs while the data it accesses is mapped using the
+3.2.2. Predictability of the best memory mapping. Ad-                             best mapping discovered in the learning phase. As we apply
+justing memory mapping after data has been placed in GPU                          the best mapping only to the data accessed by the offload-
+memory and during kernel execution can involve high over-                         ing candidates, all the other data is still mapped with the
+head in moving data between stacks and could easily elim-                         sophisticated memory mapping scheme typically used by
+inate the benefits of NDP. To address this, we propose a                          GPUs [9], which maximizes memory bandwidth for the code
+mechanism to predict the best memory mapping before data                          the main GPU executes. Section 4.3 describes the detailed
+is placed in memory.                                                              flow of programmer-transparent data mapping.
+   We find that we can predict the best memory mapping
+by observing a small number of initial offloading candidate                       3.3. Dynamic Offloading Aggressiveness Control
+instances’ memory behavior. Figure 6 shows how close we                           Aggressively offloading candidates determined by the com-
+can get by making a choice on the memory mapping to use                           piler to memory stacks may make the system slower in two
+by observing only the first 0.1%, 0.5%, and 1% offloading can-                    scenarios. First, memory stack SMs could become new per-
+didate instances. The figure shows that the mapping chosen                        formance bottlenecks if the number of offloading requests is
+after observing only 0.1% of offloading candidate instances                       more than what they can handle. As each SM has a limit on
+achieves a probability of accessing one memory stack of 72%,                      concurrent warps running on it, the SMs in memory stacks
+which is only 3% less than that obtained with oracle knowl-                       cannot spawn new warps for an offloaded block after the num-
+edge. This is intuitive because most GPU programs access                          ber of concurrent warps reaches the hardware limit. When
+memory based on the index of threads and thread blocks,                           this happens, SMs in the main GPU would be waiting for the
+which makes access patterns very predictable and consistent                       offloaded blocks to complete, but these offloaded blocks would
+among threads [38]. We conclude that we can predict a simple                      not be making progress as they are waiting to be spawned.
+memory stack physical address mapping that significantly                          Second, there could be a discrepancy in the bandwidth sav-
+improves code/data co-location by observing a small number                        ings of the RX and TX off-chip links. Offloading a block may
+of initial offloading candidate instances.                                        save significant bandwidth in the RX channel, but introduce
+                                                                                  additional traffic in the TX channel. If the TX channel is the
+3.2.3. Programmer-transparent data mapping. Based on
+                                                                                  performance bottleneck for an application, offloading such a
+Section 3.2.2, we propose a software/hardware cooperative
+                                                                                  block will exacerbate the problem.
+mechanism to improve compute/data locality automatically,
+                                                                                     To address the above cases, we propose dynamic offload-
+which we call programmer-transparent data mapping.
+                                                                                  ing aggressiveness control, which uses run-time informa-
+The key idea is to learn the best memory mapping by observ-
+                                                                                  tion to make the final decision on whether or not each can-
+ing a small number of initial offloading candidate instances,
+                                                                                  didate should be offloaded. Our dynamic offloading control
+    3 We only need 2 bits to determine the memory stack in a system with 4        mechanism may override the compiler’s offloading recom-
+memory stacks. The result of the sweep starts from bit position 7 (128B GPU       mendation in two ways. First, the GPU keeps track of the
+cache line size) to bit position 16 (64 KB). Based on our results, sweeping       number of pending offloading requests sent to each mem-
+into higher bits does not make a noticeable difference.                           ory stack, and stops further offloading when that number
+
+
+                                                                              5
+
+
+
+===== Page 6 =====
+
+reaches the number of warps that can concurrently execute                             utilization rate of a channel reaches a pre-defined threshold,
+on the corresponding memory stack SM. Doing so prevents                               it reports the channel as busy to the Offload Controller (¶).
+the over-offloading situation described above. Second, the                               Memory Map Analyzer (¸). The Memory Map Analyzer
+GPU monitors the bandwidth utilization of both TX and RX                              is set up by the GPU Runtime to provide the number of mem-
+channels, and does not offload blocks that would introduce                            ory stacks accessed by each offloading candidate instance for
+more traffic to a channel that is already above some threshold                        all different potential stack mappings. This unit is enabled
+utilization rate. As described in Section 3.1, the compiler tags                      only during the learning phase of programmer-transparent
+each offloading candidate block with a 2-bit value to indicate                        data mapping, as we describe further in Section 4.3.
+its bandwidth savings in the TX and RX channels. The hard-
+                                                                                      4.2. Design of NDP Offloading
+ware uses this information to make offloading decisions at
+run time.                                                                             Interface between the compiler and the hardware. The
+                                                                                      compiler provides information about offloading candidates to
+4. Implementation                                                                     the hardware in two ways. First, we introduce a new instruc-
+In this section, we describe the implementation details of                            tion in the ISA that is used by the compiler to indicate the
+our proposal, TOM. We first introduce the hardware compo-                             beginning of an offloading candidate block to the hardware.
+nents added by our proposal (Section 4.1). We then provide                            Second, the compiler provides an offloading metadata ta-
+detailed design of the NDP offloading (Section 4.2) and the                           ble in the program to the hardware. Each entry in this table
+programmer-transparent data mapping (Section 4.3) mecha-                              is associated with an offloading candidate, and provides the
+nisms. Finally, we discuss how we handle two important de-                            begin/end PC addresses, live-in/live-out registers, 2-bit tags
+sign considerations, virtual address translation (Section 4.4.1)                      to indicate the TX/RX channel savings (Section 3.1.2), and the
+and cache coherence (Section 4.4.2).                                                  condition for conditional offloading candidates (Section 3.1.3).
+4.1. Hardware Block Diagram                                                           This table is allocated by the compiler and placed in on-chip
+                                                                                      Shared Memory (¹).
+Figure 7 presents the high level block diagram that shows
+                                                                                         Offloading candidate block detection. In the pipeline,
+how our proposals for NDP offloading fit within a typical
+                                                                                      each instruction is decoded and placed into the Instruction
+GPU pipeline [20, 37]. We add three new components to sup-
+                                                                                      Buffer (º). When the Instruction Buffer detects the instruc-
+port our mechanisms: (1) an Offload Controller to make final
+                                                                                      tion as the beginning of an offloading candidate block, it
+offloading decisions, (2) a Channel Busy Monitor to monitor
+                                                                                      marks this warp as not ready, and consults the Offload Con-
+the utilization of the off-chip channels, and (3) a Memory
+                                                                                      troller (¶) for an offloading decision. The Offload Controller
+Map Analyzer to support programmer-transparent data map-
+                                                                                      fetches its offloading metadata from Shared Memory (¹), and
+ping, as described in Section 4.3. We briefly describe each
+                                                                                      uses it to make an offloading decision.
+component and explain how it fits into the NDP offloading
+                                                                                         Dynamic offloading decision. The dynamic offloading
+event flow.
+                                                                                      decision consists of three steps: (1) The Offload Controller
+                Scoreboard      SIMT Stack
+  Fetch/                                  Active                    ALU
+                                                                                      checks whether the condition for offloading is true for a con-
+ I-Cache/   ❺                  ❼          Mask ❻                                      ditional offloading candidate. It does so by getting the corre-
+  Decode        Instruction                        Operand
+                  Buffer
+                                   Issue
+                                                   Collector                          sponding register value from the Operand Collector (») and
+                                                                    MEM               performing the value comparison based on the corresponding
+                    ❶
+                           Offload                                                    condition (Section 3.1.3). (2) If one of the TX/RX channels
+                          Controller                           ❹                      is signaled as busy by the Channel Busy Monitor (·) and
+                                ❷                              Shared     Data
+                                                                                      the 2-bit tag for this block indicates that it would introduce
+                     Offload           Channel Busy             Mem       Cache
+                     ACK                 Monitor                                      more memory traffic to a busy channel, the Offload Controller
+                                       Offload Request
+                                                                Memory Port /
+                                                                  MSHR
+                                                                                      does not offload it. (3) The Offload Controller determines the
+                               ❸                                                      offloading destination based on the memory stack that will be
+                                        Memory Map
+                                         Analyzer                                     accessed by the first instruction of the block.4 It then checks
+Figure 7: Block diagram of the NDP hardware and its inter-                            whether the number of pending offloading requests to that
+actions with the GPU pipeline.                                                        memory stack have reached the warp limit of the memory
+                                                                                      stack SM, and, if so, skips offloading (Section 3.3). Note that
+   Offload Controller (¶). The Offload Controller works
+                                                                                      the pipeline can schedule and execute other warps while
+with the main GPU pipeline to provide three functions. First,
+                                                                                      waiting for the offloading decision.
+it determines whether a candidate block should be offloaded
+                                                                                         Sending offloading requests. After the decision is made,
+based on runtime information. This runtime decision involves
+                                                                                      the warp that is waiting for the offloading decision becomes
+handling of conditional offloading candidates (Section 3.1.3)
+and dynamic offloading aggressiveness control (Section 3.3).                              4 If the first instruction of the offloading candidate is not a memory in-
+
+Second, it packs the offloading information and sends it to                           struction, the Offload Controller saves the live-registers and asks the pipeline
+the memory stack SMs. Third, it resumes the offloaded warp                            to execute until the first memory instruction. When the first memory in-
+                                                                                      struction is encountered and the destination stack is determined, offloading
+when it receives the corresponding acknowledgment packet
+                                                                                      actually happens and the offloaded block restarts execution from the be-
+from memory stack SMs.                                                                ginning of the block on the appropriate memory stack SM. The redundant
+   Channel Busy Monitor (·). The Channel Busy Monitor                                 execution at the main GPU does not affect the program state because we
+tracks the utilization of off-chip TX/RX channels. When the                           update the live-out registers only after offloading completes.
+
+
+                                                                                  6
+
+
+
+===== Page 7 =====
+
+ready. The Issue unit (¼) issues the instructions into the                       each offloading candidate instance for all different potential
+pipeline as usual if the decision is not to offload the block.                   stack mappings (e.g., using bits 7:8, 8:9, ..., 16:17 in a system
+Otherwise, it sends the instruction to the Offload Controller.                   with four memory stacks). Separately, for each application-
+The Offload Controller packs live-in registers, begin/end PCs,                   allocated memory range (Step 1) that has been accessed by
+and active masks as an offloading request and sends it to the                    an offloading candidate, the analyzer sets a bit in the memory
+memory stack. In our evaluation, we assume the pipeline                          allocation table to indicate that this range should apply the
+latency of offloading a task is 10 cycles. This latency is small                 memory mapping that favors offloaded blocks.
+compared to the at least 200 cycle latency of each memory                           4. When the memory mapping analyzer has seen the pre-
+access within an offloaded block, which contains many such                       determined number of offloading candidate instances (e.g.,
+memory accesses. The GPU pipeline can execute other warps                        0.1% of all instances) , it issues an interrupt to the GPU run-
+while waiting for the offloaded tasks.                                           time. The GPU runtime stops execution on all SMs in the
+   Receiving offload acknowledgment. When an of-                                 GPU and uses the data recorded by the mapping analyzer to
+floaded block completes its execution on the memory stack,                       determine the best memory mapping. This is the mapping
+the memory stack SM sends an offload acknowledgment                              that leads to the most accesses to the stack that the offloaded
+packet to the main GPU, which includes live-out registers                        block would execute on.
+and the cache lines that need to be invalidated (Section 4.4.2).                    5. Finally, the GPU runtime requests the GPU driver on the
+The Offload Controller (¶) requests cache invalidations and                      CPU to perform the memory copy. In the baseline, this would
+register updates, and then restarts the corresponding warp                       have happened before the kernel launch. In our proposal,
+from the next instruction of the end of the block on the GPU.                    however, the GPU driver copies the memory ranges that
+4.3. Design of Programmer-transparent Data                                       have been accessed by an offloading candidate block into the
+     Mapping                                                                     GPU memory, using the best found mapping in the learning
+                                                                                 phase. Other memory ranges are copied over using the default
+Our programmer-transparent data mapping is a soft-                               mapping that favors the code running on the main GPU.
+ware/hardware cooperative mechanism to choose and ap-                            Subsequently, regular execution resumes on the GPU.
+ply the best memory mapping for compute/data co-location
+based on the access pattern of a small number of initial of-                     4.4. Design Considerations
+floading candidate instances (Section 3.2.1). In hardware, we                    There are two considerations that are important to the effi-
+add a memory mapping analyzer in the GPU (¸ in Fig-                              ciency and correctness of NDP offloading: 1) virtual address
+ure 7). In software, we modify the GPU host-side driver                          translation in memory stacks, and 2) cache coherence be-
+that runs on the CPU and the GPU runtime that runs on the                        tween the SMs in the main GPU and the SMs in the memory
+GPU. Existing applications can benefit from our programmer-                      stacks. We address these here.
+transparent data mapping without any program modification.                       4.4.1. Virtual address translation. The GPU application
+   This mechanism consists of the following steps:                               works with virtual addresses that are translated to physical
+   1. Before launching a GPU kernel, a GPU application needs                     addresses using a hardware TLB and an MMU that accesses
+to allocate memory through the GPU driver on the CPU, and                        page tables in memory. We assume memory stack SMs are
+copy corresponding locations from the CPU memory into the                        equipped with similar TLBs and MMUs and are capable of
+GPU memory. With programmer-transparent data mapping,                            performing virtual address translation. According to our
+the GPU driver still allocates memory in the GPU virtual                         evaluation, the size of the MMU and TLB per SM is fairly
+memory space5 , but delays the copy by initially mapping the                     small: 1-2K flip-flops and small amount of logic. This accounts
+GPU virtual memory to CPU memory During the initial learn-                       for less than 2% of the area of a memory stack SM.
+ing phase, the GPU driver records each memory allocation in                         Providing this capability to the memory stack SMs can pose
+a memory allocation table6 for further reference.                                two challenges: First, the page table needed for address trans-
+   2. When the application requests a GPU kernel launch,                         lation may not be located in the same memory stack as the
+the GPU driver uses the GPU runtime to set up the memory                         requesting SM. Such accesses would utilize cross-stack links
+mapping analyzer (¸ in Figure 7) based on two tables: the                        used for remote data access already present in our architec-
+memory allocation table from Step 1 and the offloading                           ture (as shown in Figure 1 and described further in Section 5).
+metadata table from the compiler (Section 4.2). The GPU                          Second, if the GPU SMs were to update the page table, a TLB
+driver then launches the kernel as usual. Since the GPU                          shootdown may be needed to maintain the correctness of
+virtual memory has been allocated in CPU memory, during                          address translation. However, we offload candidate blocks
+the relatively short initial learning phase, the GPU accesses                    only after we complete the memory copy and the page table
+the memory through the GPU-to-CPU link (i.e., PCI-E). As                         update. Since we set up all page tables before offloading, there
+we describe in Section 5, our experimental setup faithfully                      is no need for memory stack TLB shootdowns.
+accounts for this extra latency during the learning phase.
+                                                                                 4.4.2. Cache coherence. Both the SMs in the GPU and the
+   3. The memory mapping analyzer monitors the execution
+                                                                                 SMs in the memory stacks have caches to exploit locality
+of GPU threads and their memory accesses. By doing so, it
+                                                                                 and coalesce memory accesses. As blocks get offloaded to
+calculates how many memory stacks would be accessed by
+                                                                                 memory stack SMs, and data is cached on the SMs in addition
+  5 Section 4.4.1 provides the details of the virtual address translation.       to the main GPU caches, correctness issues may occur if stale
+  6 Section 6.6 provides the details of the memory allocation table.             data is accessed incorrectly. For example, an SM in a memory
+
+
+                                                                             7
+
+
+
+===== Page 8 =====
+
+stack may execute an offloaded block and update some values                             links using BookSim [11], a cycle-accurate interconnection
+in memory. Subsequently, if the GPU SMs read stale data                                 network simulator also used for on-chip interconnect sim-
+from their caches, they will not obtain the most up-to-date                             ulation in GPGPU-Sim. We faithfully model all overheads
+data. Therefore, we make sure GPU SMs and memory stacks                                 incurred by our proposed NDP architecture, including the
+SMs always observe the most up-to-date values.                                          traffic from transferring live-in/live-out registers for offloaded
+   A naive solution would be to provide cache coherence be-                             blocks and any cache coherence overhead. Since we assume
+tween the main GPU’s caches and memory stack SM caches.                                 the learning phase of the programmer-transparent data map-
+However, extending the traditional cache coherence proto-                               ping is executed out of the CPU memory (before data is copied
+cols to the number of caches involved is difficult, potentially                         over to the GPU memory), all memory accesses in the learn-
+requiring large state and interconnect bandwidth [22,24]. The                           ing phase are modeled with the measured PCI-E bus latency
+corresponding coherence traffic would need to go through off-                           from Miller et al. [36].
+chip links between the GPU and the memory stacks, and can                                  In our architecture, we assume cross-stack links to allow
+consume more bandwidth than what is reduced by offloading.                              remote data access for the SMs in memory stacks. The band-
+   In our NDP architecture, when the main GPU SM requests                               width of each link is 0.5× of each link between the GPU
+offloading of a block, the memory stacks essentially execute                            and each memory stack. We assume the internal memory
+some instructions on behalf of the requesting main GPU SM.                              bandwidth in memory stacks is 2× of the link bandwidth
+Since these are the only SMs that execute instructions from                             between GPU and memory stacks. Compared to some prior
+the same Cooperative Thread Array (CTA), without loss of                                3D-stacked proposals [2,14,60], this is a conservative assump-
+generality, we focus on their cache coherence here. In the                              tion. However, valid arguments can be made to consider even
+GPU programming model, there is no ordering or consis-                                  more conservative design points for the internal memory
+tency guarantee between threads in different CTAs. Each                                 bandwidth of the stacks. As such, we also evaluate a system
+CTA is bound to a specific SM, and there is no cache coher-                             configuration that matches internal and external memory
+ence requirement across SMs. Additionally, programmers                                  bandwidth.8 That is, the baseline GPU would be able to fully
+are required to explicitly use memory barriers or thread syn-                           saturate a memory stack’s bandwidth in this design point.
+chronization instructions to ensure memory access ordering                                 Table 1 summarizes our simulation parameters. The GPU
+across threads within a CTA [38].                                                       configuration and the GPU-to-memory bandwidth are similar
+   We guarantee the cache correctness of offloaded execution                            to the configuration of NVIDIA Maxwell, a state-of-art GPU
+in three steps. First, the requesting SM in the GPU pushes all                          architecture. To make a fair comparison between the baseline
+memory update traffic from itself to memory before issuing                              GPU system and our NDP GPU system, the total number of
+the offloading request. This is not difficult because most GPUs                         SMs in these two configurations are the same.
+employ write through caches [53]. Second, the memory stack                                 For our energy evaluations, we use GPUWattch [33] to
+SM invalidates its private cache before spawning a new warp                             model the power consumption of the SMs (both GPU SMs
+for the offloaded block. These two steps guarantee that the                             and memory stack SMs) and on-chip interconnect. We assume
+memory stack SM observes the most up-to-date data from the                              the off-chip link consumes 2 pJ/bit for packet transfer, and
+requester SM. Third, the memory stack SM records the cache                              1.5 pJ/bit/cycle when it is idle [27]. The power of stacked
+line addresses that have been updated by this offloaded block,                          memory is calculated using the Rambus power model [57],
+and sends these addresses back to the requester SM when the                             which models the power consumption of TSVs [29] and 3D-
+offloaded block exits. The requester SM then invalidates these                          stacked DRAM devices [8]. From this model, row activation
+cache lines in the GPU and subsequently obtains the latest                              energy is estimated to be 11.8 nJ for a 4KB row and the DRAM
+data from memory, if necessary7 . According to our evaluation,                          row-buffer read energy is 4 pJ/b.
+the average performance overhead of guaranteeing correct                                   Our baseline memory mapping is similar to the one used
+execution with this mechanism is only 1.2%.                                             by Chatterjee et al [9]. We spread consecutive cache lines
+                                                                                        to different memory stacks and vaults to maximize memory
+5. Methodology                                                                          level parallelism and load balance across them. Similar to
+5.1. System Modeling and Configuration                                                  prior work [61], we XOR a subset of higher-order bits to
+                                                                                        form the memory stack index to prevent pathological access
+We model our proposed NDP GPU architecture by modify-                                   conflicts on a specific memory stack.
+ing GPGPU-Sim 3.2.0 [6] to include the modeling of memory
+stacks and logic layer SMs. The off-chip links between GPU                              5.2. Offloading Candidate Selection Tool
+and memory stacks are modeled as unidirectional high-speed                              We implement a tool to analyze the PTX (Parallel Thread
+    7 Note that this mechanism may potentially change the observed ordering
+                                                                                        Execution ISA) files generated by the CUDA compiler [40].
+                                                                                        This tool performs the static analysis proposed in Section 3.1.
+for other threads in the same CTA. Without offloading, the other threads
+in the same CTA can observe the data change immediately as they run on
+                                                                                        The tool analyzes all potential instruction blocks at the PTX
+the same SM. With offloading, the other threads cannot observe it until the             level, and calculates memory bandwidth savings using the
+offloaded block completes. However, this is not a problem because cross-                equations in Section 3.1. The number of live-in registers is cal-
+thread ordering is not guaranteed without explicit memory barrier/thread                culated by determining the number of operands that are not
+synchronization instructions. Since we do not include such synchronization
+instructions in offloaded candidate blocks, all threads still observe the correct          8 Section 6.5 provides the results of sensitivity studies on the cross-stack
+
+values at the memory barrier or thread synchronization point.                           link bandwidth and the internal memory bandwidth.
+
+
+                                                                                    8
+
+
+
+===== Page 9 =====
+
+           Table 1: Major simulation parameters.                                        Table 2: Summary of applications.
+                             Main GPU                                              Name              Abbr.                Name               Abbr.
+         Core Number           68 SMs for baseline                         Back Propagation [10]      BP        BFS Graph Traversal [10]      BFS
+                               64 SMs for the NDP system                     K-means [10, 48]         KM            CFD Solver [10]          CFD
+        Core Clustering        4 SMs per cluster                              Heartwall [10]         HW          LIBOR Monte Carlo [6]        LIB
+       Core Configuration      1.4 GHz, 48 warps/SM                          RAY Tracing [6]         RAY       Fast Walsh Transform [39]     FWT
+                               32 threads/warp, 32768 registers             Scalar Product [39]       SP         Parallel Reduction [39]      RD
+                               8 CTAs/SM, 48KB shared memory
+        Private L1 Cache       32KB, 4-way, write through                6. Results
+        Shared L2 Cache        1MB, 16-way, write through                We evaluate the effect of our proposal, TOM, on application
+        Clock Frequency        Interconnect 1.25 GHz, L2 700 MHz
+                                                                         performance, memory traffic, and energy consumption. We
+                          Off-chip Links
+        GPU to Memory          80 GB/s per link, 320 GB/s total          evaluate two NDP policies: (i) NDP-Uncontrolled or no-ctrl: al-
+      Memory to Memory         40 GB/s per link, fully connected         ways offloading the candidate blocks and (ii) NDP-Controlled
+                           Memory Stack                                  or ctrl: enabling dynamic offloading control described in Sec-
+      SM in Memory Stack       1 SM per memory stack, 48 warps/SM        tion 3.3. We evaluate these NDP policies along with two
+  Memory Stack Configuration   4 memory stacks, 16 vaults/stack          memory mapping schemes: (i) bmap: baseline GPU mem-
+                               16 banks/vault, 64 TSVs/vault             ory mapping [9], and (ii) tmap: our proposed programmer-
+                               1.25 Gb/s TSV signaling rate
+                                                                         transparent data mapping. Unless specified otherwise, the
+  Internal Memory Bandwidth    160 GB/s per memory stack
+                               640 GB/s total                            results are over a baseline GPU without NDP and with the
+    DRAM Scheduling Policy     FR-FCFS [47, 63]                          baseline memory mapping described in Section 5.
+         DRAM Timing           DDR3-1600 [35]
+                                                                         6.1. Effect on Performance
+generated using the instruction block itself, and the number             Figure 8 shows the speedup of various NDP policies using dif-
+of live-out registers is calculated by determining the number            ferent memory mapping schemes, normalized to the baseline
+of operands that are needed by subsequent instructions. The              system. Three major observations are in order:
+tool identifies loops by first detecting backward conditional               1. TOM significantly improves performance. When all
+branch instructions. When the condition of the branch is a               TOM techniques are enabled (NDP-Controlled and tmap), av-
+comparison to a value that is generated within the block with            erage performance improves by 30% (up to 76%) over the
+a simple add/subtract operation, the condition is identified as          baseline. We observe speedup for all workloads. As the base-
+a loop condition. The output of the tool is the list of offloading       line has the same number of SMs as our NDP configuration,
+candidate blocks with their associated begin/end PCs, live-              we conclude that automatically moving some computation to
+in/live-out registers, 2-bit tags to indicate whether offloading         memory stacks with TOM provides better performance than
+the block would save bandwidth on TX/RX channels, and the                having additional SMs at the main GPU.
+condition to offload if it is a conditional offloading candidate.           2. Programmer-transparent data mapping improves per-
+The output of the tool is then fed into our GPGPU-Sim-based              formance over baseline memory mapping. On average, NDP
+performance model. Our tool works on PTX because the                     with programmer-transparent data mapping (tmap) provides
+evaluation infrastructure, GPGPU-Sim, works only on PTX.                 an additional 10% speedup over NDP with baseline mem-
+The same idea can be directly applied to SASS or any other               ory mapping (bmap). For some workloads, the improvement
+instruction set that runs on real GPUs.                                  from programmer-transparent data mapping is significant.
+                                                                         KM’s performance improves from 3% to 39% and RD’s perfor-
+5.3. Evaluated Applications and Metrics                                  mance improves from 51% to 76% as a result of better memory
+                                                                         mapping. Some workloads are not sensitive to programmer-
+We evaluate the memory intensive workloads (with memory                  transparent data mapping because the mapping chosen by our
+bandwidth utilization >50%) from Rodinia 3.0 [10] , scientific           data mapping is very similar to the baseline mapping. There
+workloads used by GPGPU-Sim [6], and CUDA SDK [39].                      is one workload (BFS) that gets slower with programmer-
+We do not consider compute-intensive workloads, as TOM                   transparent data mapping (NDP’s improvement reduces from
+does not find offloading candidates in these workloads; hence,           29% to 21%). The reason is that BFS is a very irregular work-
+their performance is not affected. We use the slightly mod-              load, and the mapping chosen by our mechanism with the
+ified K-means from Rogers et al. [48], which replaces tex-               initial 0.1% offloading candidate instances is not the best one
+ture/constant memory with global memory to use a larger                  for all offloading candidate instances. Assuming we had ora-
+input. Table 2 summarizes our workloads. We run all appli-               cle knowledge and we chose the optimal mapping, the per-
+cations to completion or for 2 billion instructions, whichever           formance improvement of BFS would be 64% (not shown).9
+comes first. We record the performance metrics at the same                  3. Offloading aggressiveness control is an enabler for
+point of execution across all configurations.                            NDP’s performance improvements. Without offloading con-
+   The major performance metric we use is IPC (Instruction               trol (NDP-Uncontrolled), the system becomes slower by 3%/7%
+Per Cycle), and we normalize it to a baseline GPU system                 on average (with tmap/bmap). This is because the main SMs
+without NDP. We also present the total memory traffic on                    9 This number is different from (and actually higher than) that in Fig-
+all off-chip links (including GPU-to-memory and memory-to-               ure 3 for BFS, because the experiments in Figure 3 do not include all the
+memory) to quantify off-chip bandwidth.                                  mechanisms we propose, whereas the experiments in Section 6 do.
+
+
+                                                                     9
+
+
+
+===== Page 10 =====
+
+                                                                                                                       NDP-Uncontrolled (no-ctrl)                                                                                             NDP-Controlled (ctrl)
+                 1.5
+Speedup
+
+
+                 1.0
+                 0.5
+                 0.0
+                        bmap tmap bmap tmap bmap tmap bmap tmap bmap tmap bmap tmap bmap tmap bmap tmap bmap tmap bmap tmap bmap tmap
+                                  BP                                BFS                               KM                                CFD                               HW                                LIB                               RAY                               FWT                                SP                                RD                               AVG
+                                                                    Figure 8: Speedup with different NDP offloading and memory mapping policies.
+                                                                     GPU-Memory RX Channel                                                                          GPU-Memory TX Channel                                                                         Memory-Memory Channel
+                  1.5
+Memory Traffic
+ Normalized
+
+
+
+
+                  1.0
+
+                  0.5
+
+                  0.0
+                        no-ctrl
+
+
+                                         no-ctrl
+
+
+                                                          no-ctrl
+
+
+                                                                           no-ctrl
+
+
+                                                                                            no-ctrl
+
+
+                                                                                                             no-ctrl
+
+
+                                                                                                                              no-ctrl
+
+
+                                                                                                                                               no-ctrl
+
+
+                                                                                                                                                                no-ctrl
+
+
+                                                                                                                                                                                 no-ctrl
+
+
+                                                                                                                                                                                                  no-ctrl
+
+
+                                                                                                                                                                                                                   no-ctrl
+
+
+                                                                                                                                                                                                                                    no-ctrl
+
+
+                                                                                                                                                                                                                                                     no-ctrl
+
+
+                                                                                                                                                                                                                                                                      no-ctrl
+
+
+                                                                                                                                                                                                                                                                                       no-ctrl
+
+
+                                                                                                                                                                                                                                                                                                        no-ctrl
+
+
+                                                                                                                                                                                                                                                                                                                         no-ctrl
+
+
+                                                                                                                                                                                                                                                                                                                                          no-ctrl
+
+
+                                                                                                                                                                                                                                                                                                                                                           no-ctrl
+
+
+                                                                                                                                                                                                                                                                                                                                                                            no-ctrl
+
+
+                                                                                                                                                                                                                                                                                                                                                                                             no-ctrl
+                                  ctrl
+
+
+                                                   ctrl
+
+
+                                                                    ctrl
+
+
+                                                                                     ctrl
+
+
+                                                                                                      ctrl
+
+
+                                                                                                                       ctrl
+
+
+                                                                                                                                        ctrl
+
+
+                                                                                                                                                         ctrl
+
+
+                                                                                                                                                                          ctrl
+
+
+                                                                                                                                                                                           ctrl
+
+
+                                                                                                                                                                                                            ctrl
+
+
+                                                                                                                                                                                                                             ctrl
+
+
+                                                                                                                                                                                                                                              ctrl
+
+
+                                                                                                                                                                                                                                                               ctrl
+
+
+                                                                                                                                                                                                                                                                                ctrl
+
+
+                                                                                                                                                                                                                                                                                                 ctrl
+
+
+                                                                                                                                                                                                                                                                                                                  ctrl
+
+
+                                                                                                                                                                                                                                                                                                                                   ctrl
+
+
+                                                                                                                                                                                                                                                                                                                                                    ctrl
+
+
+                                                                                                                                                                                                                                                                                                                                                                     ctrl
+
+
+                                                                                                                                                                                                                                                                                                                                                                                      ctrl
+
+
+                                                                                                                                                                                                                                                                                                                                                                                                       ctrl
+                         bmap tmap                         bmap tmap                         bmap tmap                         bmap tmap                         bmap tmap                         bmap tmap                         bmap tmap                         bmap tmap                         bmap tmap                         bmap tmap                         bmap tmap
+                                    BP                               BFS                               KM                                CFD                               HW                                LIB                               RAY                              FWT                                 SP                                RD                               AVG
+                                                     Figure 9: Memory traffic with different NDP offloading and memory mapping policies.
+offload more warps than the memory stack SMs can han-                                                                                                                                                       22% (tmap) of the total memory traffic in the baseline when
+dle. As such, the computational capacity of memory stack                                                                                                                                                    we offload all candidate blocks (no-ctrl), which is a 2.5× reduc-
+SMs becomes the new bottleneck. However using offload-                                                                                                                                                      tion. We observe a similar reduction ratio with controlled of-
+ing aggressiveness control (NDP-Controlled) improves per-                                                                                                                                                   floading (ctrl with bmap and tmap). The memory-to-memory
+formance by 30% over the baseline, and the workloads that                                                                                                                                                   traffic is a smaller proportion in this case because some of-
+are otherwise slowed down by uncontrolled offloading be-                                                                                                                                                    floading candidates are executed in the main GPU.
+come significantly faster. For instance, offloading control
+enables LIB to experience a performance improvement of                                                                                                                                                      6.3. Effect on Energy Consumption
++52% instead of a degradation of -64%. On average, offloaded                                                                                                                                                Figure 10 shows the effect of our NDP architecture on en-
+instructions reduce from 46.4% (NDP-Uncontrolled) to 15.7%                                                                                                                                                  ergy consumption. Energy consumption is segmented by the
+(NDP-Controlled) of all instructions executed (not graphed).                                                                                                                                                source. We make two major observations.
+We conclude that the mechanism we propose in Section 3.3                                                                                                                                                       First, TOM is effective in reducing system energy consump-
+for controlling how aggressively we offload blocks on an                                                                                                                                                    tion. Total energy consumption reduces by 11% on average
+NDP architecture is essential to enabling NDP’s performance                                                                                                                                                 (up to 37%) when all TOM techniques are enabled (ctrl + tmap).
+improvements.                                                                                                                                                                                               Compared to the baseline, average energy consumption due
+                                                                                                                                                                                                            to SMs reduces from 77% to 68%, while the energy consump-
+ 6.2. Effect on Memory Traffic                                                                                                                                                                              tion due to off-chip links reduces from 7% to 5%. These energy
+ Figure 9 shows the effect of NDP offloading and memory                                                                                                                                                     savings are mainly a result of the performance improvement
+ mapping on off-chip memory traffic. The memory traffic is                                                                                                                                                  which reduces leakage energy, and reduced memory traffic
+ normalized to the baseline, and segmented by the channel                                                                                                                                                   over off-chip links.
+ category. We make two major observations.                                                                                                                                                                     Second, both programmer-transparent data mapping and
+    First, as expected, TOM is effective in reducing the over-                                                                                                                                              offloading aggressiveness control are important to the energy
+ all memory traffic. When the system offloads all candidate                                                                                                                                                 savings. Without them, total energy consumption increases
+ blocks with programmer-transparent data mapping (no-ctrl                                                                                                                                                   by 8% on average. This is mainly because the system runs
+ and tmap), the total memory traffic reduces by 38% on aver-                                                                                                                                                slower without these techniques. Even though memory traffic
+ age (up to 99%). This shows the effectiveness of our automatic                                                                                                                                             reduces without these techniques, the extra leakage energy
+ offloading candidate selection and programmer-transparent                                                                                                                                                  due to longer execution time overshadows the savings from
+ data mapping. With controlled offloading (ctrl and tmap), the                                                                                                                                              transmitting fewer memory packets.
+ memory traffic reduction is 13% on average (up to 37%). This
+ is much less than the uncontrolled offloading because some                                                                                                                                                 6.4. Sensitivity to Computational Capacity of SMs
+ memory-intensive offloading candidates are still executed in                                                                                                                                                    in Memory Stacks
+ the GPU. It also implies that if we increase the computational                                                                                                                                             The performance and traffic results indicate a trade-off be-
+ capacity of SMs in memory stacks, we can potentially offload                                                                                                                                               tween performance improvement and traffic reduction. With
+ more work to them and save more memory traffic. We discuss                                                                                                                                                 offloading aggressiveness control, we see an average perfor-
+ this further in Section 6.4.                                                                                                                                                                               mance improvement of 30% with a memory traffic reduction
+    Second, programmer-transparent data mapping is very ef-                                                                                                                                                 of 13%. However, offloading all candidate blocks degrades
+ fective at reducing memory-to-memory traffic. On average,                                                                                                                                                  performance by 3%, but saves 38% memory traffic. With of-
+ memory-to-memory traffic is reduced from 55% (bmap) to                                                                                                                                                     floading aggressiveness control enabled, TOM does not save
+
+
+                                                                                                                                                                                              10
+
+
+
+===== Page 11 =====
+
+                                                                                                                                              SMs                             Off-chip Links                                           DRAM Devices
+Normalized Energy
+
+
+                    1.5
+                    1.0
+                    0.5
+                    0.0
+                                      ctrl
+
+
+                                                       ctrl
+
+
+                                                                        ctrl
+
+
+                                                                                         ctrl
+
+
+                                                                                                          ctrl
+
+
+                                                                                                                           ctrl
+
+
+                                                                                                                                            ctrl
+
+
+                                                                                                                                                             ctrl
+
+
+                                                                                                                                                                              ctrl
+
+
+                                                                                                                                                                                               ctrl
+
+
+                                                                                                                                                                                                                ctrl
+
+
+                                                                                                                                                                                                                                     ctrl
+
+
+                                                                                                                                                                                                                                                      ctrl
+
+
+                                                                                                                                                                                                                                                                       ctrl
+
+
+                                                                                                                                                                                                                                                                                        ctrl
+
+
+                                                                                                                                                                                                                                                                                                         ctrl
+
+
+                                                                                                                                                                                                                                                                                                                          ctrl
+
+
+                                                                                                                                                                                                                                                                                                                                           ctrl
+
+
+                                                                                                                                                                                                                                                                                                                                                            ctrl
+
+
+                                                                                                                                                                                                                                                                                                                                                                             ctrl
+
+
+                                                                                                                                                                                                                                                                                                                                                                                              ctrl
+
+
+                                                                                                                                                                                                                                                                                                                                                                                                               ctrl
+                            no-ctrl
+
+
+                                             no-ctrl
+
+
+                                                              no-ctrl
+
+
+                                                                               no-ctrl
+
+
+                                                                                                no-ctrl
+
+
+                                                                                                                 no-ctrl
+
+
+                                                                                                                                  no-ctrl
+
+
+                                                                                                                                                   no-ctrl
+
+
+                                                                                                                                                                    no-ctrl
+
+
+                                                                                                                                                                                     no-ctrl
+
+
+                                                                                                                                                                                                      no-ctrl
+
+
+                                                                                                                                                                                                                           no-ctrl
+
+
+                                                                                                                                                                                                                                            no-ctrl
+
+
+                                                                                                                                                                                                                                                             no-ctrl
+
+
+                                                                                                                                                                                                                                                                              no-ctrl
+
+
+                                                                                                                                                                                                                                                                                               no-ctrl
+
+
+                                                                                                                                                                                                                                                                                                                no-ctrl
+
+
+                                                                                                                                                                                                                                                                                                                                 no-ctrl
+
+
+                                                                                                                                                                                                                                                                                                                                                  no-ctrl
+
+
+                                                                                                                                                                                                                                                                                                                                                                   no-ctrl
+
+
+                                                                                                                                                                                                                                                                                                                                                                                    no-ctrl
+
+
+                                                                                                                                                                                                                                                                                                                                                                                                     no-ctrl
+                             bmap              tmap bmap                         tmap bmap                         tmap bmap                         tmap bmap                         tmap bmap                             tmap bmap                         tmap bmap                         tmap bmap                         tmap bmap                         tmap bmap                         tmap
+                                        BP                               BFS                               KM                                CFD                               HW                                LIB                                  RAY                               FWT                                 SP                                RD                              AVG
+                                                       Figure 10: Energy consumption with different NDP offloading and memory mapping policies.
+ as much memory traffic because some memory-intensive                                                                                                                                                            in parallel on the memory stack SMs makes the compute
+ candidate blocks are still executed on the GPU.                                                                                                                                                                 pipelines of these SMs new bottlenecks. A more sophisti-
+    We can get the best of both worlds by adding more com-                                                                                                                                                       cated offloading aggressiveness mechanism that considers
+ putational resources (i.e., warp capacity) to memory stack                                                                                                                                                      the ALU instruction ratio would help alleviate this problem,
+ SMs because limited warp capacity is the major reason we                                                                                                                                                        and we leave it as future work. We conclude that increasing
+ need offloading aggressiveness control. To increase warp                                                                                                                                                        warp capacity can maintain high performance improvements
+ capacity, we need to add more storage for the register file,                                                                                                                                                    while significantly reducing memory traffic.
+ warp state, and the warp scheduler. The major cost comes
+ from additional registers. To begin with, memory stack SMs                                                                                                                                                      6.5. Sensitivity to Internal and Cross-Stack
+ require fewer registers per thread than the main GPU SMs                                                                                                                                                             Memory Bandwidth
+ since an offloaded block executes only a portion of the code in                                                                                                                                                 Many NDP proposals based on 3D-stacked memory assume
+ a kernel. We find that the largest number of live registers in                                                                                                                                                  the memory stack compute units can exploit much more
+ an offloaded block is 26 versus 49 for an entire thread, among                                                                                                                                                  internal memory bandwidth from TSVs, and that bandwidth
+ all our workloads. This means that if we increased the size                                                                                                                                                     cannot necessarily be fully utilized by the main processor in
+ of the register file on a memory stack SM to be the same as                                                                                                                                                     the system because of cost and speed of off-chip links and
+ that on the main GPU, we could potentially run 2× the warps                                                                                                                                                     pins [2, 14, 60]. In most of our evaluations, we also assumed
+ on a memory stack SM. Figures 11 and 12 show the effect of                                                                                                                                                      that the total internal memory bandwidth is 2× the external
+ adding warp capacity on performance and memory traffic.                                                                                                                                                         link bandwidth that links the GPU to each memory stack.
+                          no-ctrl-1X-warp                               ctrl-1X-warp                         ctrl-2X-warp                            ctrl-4X-warp                                                However, such an assumption may not always be true, as the
+                    1.5                                                                                                                                                                                          benefit of building a memory stack with such high internal
+ Speedup
+
+
+
+
+                    1.0                                                                                                                                                                                          bandwidth may not always justify its cost. Thus, we also
+                    0.5                                                                                                                                                                                          evaluate our NDP architecture with a configuration where
+                    0.0                                                                                                                                                                                          the internal memory bandwidth is equal to the external link
+                            BP           BFS              KM             CFD              HW              LIB              RAY         FWT               SP            RD            AVG                         bandwidth. Figure 13 presents the performance results.
+  Figure 11: Speedup with different warp capacities in memory
+  stack SMs.                                                                                                                                                                                                                                                                  2X-internal-BW                               1X-internal-BW
+                                                                                                                                                                                                                           1.5
+                                                                                                                                                                                                                 Speedup
+
+
+
+
+                                 no-ctrl-1X-warp                                ctrl-1X-warp                               ctrl-2X-warp                             ctrl-4X-warp
+                                                                                                                                                                                                                           1.0
+ Memory Traffic
+
+
+
+
+                      1.0
+  Normalized
+
+
+
+
+                                                                                                                                                                                                                           0.5
+
+                      0.5                                                                                                                                                                                                  0.0
+                                                                                                                                                                                                                                            BP           BFS             KM              CFD              HW              LIB              RAY          FWT                  SP           RD            AVG
+                                                                                                                                                                                                                 Figure 13: Speedup with different internal bandwidth in
+                      0.0                                                                                                                                                                                        memory stacks.
+                                 BP            BFS            KM               CFD          HW             LIB             RAY              FWT              SP          RD           AVG
+  Figure 12: Memory traffic with different warp capacities in                                                                                                                                                       The speedup with equal internal/external memory band-
+  memory stack SMs.                                                                                                                                                                                              width (1×-internal-BW ) is on average within 2% of that
+    As the figures show, adding warp capacity to memory                                                                                                                                                          achieved with 2X internal memory bandwidth (2×-internal-
+ stack SMs saves more memory traffic while maintaining high                                                                                                                                                      BW ). On average, NDP with equal internal/external band-
+ performance improvements. On average, 4× warp capacity                                                                                                                                                          width has 28% speedup over the baseline. As such, the per-
+ (ctrl-4×-warp) saves an additional 20% memory traffic over                                                                                                                                                      formance of our NDP architecture does not hinge on higher
+ 1× warp capacity (ctrl-1×-warp) while maintaining similar                                                                                                                                                       internal bandwidth from TSVs. The reason is that the main
+ average speedup. The memory traffic savings with 4× warp                                                                                                                                                        GPU is usually bottlenecked by one of the TX/RX off-chip
+ capacity is 34% compared to the baseline, which is close to the                                                                                                                                                 channels. Our NDP offloading enables memory stack SMs to
+ 38% traffic reduction from uncontrolled offloading. Perfor-                                                                                                                                                     directly access the memory controller with on-package inter-
+ mance also improves by 29% with 4× warp capacity compared                                                                                                                                                       connect. These SMs can make use of the internal memory
+ to the baseline, and most workloads have better performance                                                                                                                                                     bandwidth when the GPU is bottlenecked by one of the two
+ than with 1× warp capacity. The only exception is RD, which                                                                                                                                                     channels. This makes our NDP architecture more efficient
+ runs significantly slower with more warp capacity. This is                                                                                                                                                      even without extra internal bandwidth in the memory stacks.
+ because more than half of the instructions in the offloaded                                                                                                                                                        Another parameter in our NDP architecture is the memory
+ blocks of RD are ALU instructions, so running 4× warps                                                                                                                                                          bandwidth of cross-stack links that allow remote data access
+
+
+                                                                                                                                                                                                      11
+
+
+
+===== Page 12 =====
+
+for the SMs in memory stacks. We choose the cross-stack                   require significant programmer effort to map computation to
+link bandwidth as 0.5× of the GPU-to-stack links by default               PIM computation units, 2) do not consider the data mapping
+because the cross-stack bandwidth requirements are smaller.               problem to multiple different computation units in different
+We sweep this ratio of cross-stack link bandwidth to GPU-to-              memory chips, or 3) are not applicable to GPU-based systems.
+stack link bandwidth. Average performance benefit is 17% for                 Among these works, the closest to ours is Lee et al.’s pro-
+0.125×, 29% for 0.25× and 31% for 1×. These results show                  posed compiler algorithm to automatically map code to a
+that performance gains of our mechanism are significant for               FlexRAM architecture [31]. This algorithm estimates the exe-
+a wide range of design points.                                            cution time of instruction modules on the host processor and
+6.6. Area Estimation                                                      the memory processor, and schedules instruction modules to
+The major area overhead of our proposed NDP architecture                  the processor that would execute them faster. In contrast to
+comes from storage for three components: the memory map-                  our proposal, this work 1) is not applicable to modern GPU
+ping analyzer (Section 4.1), the memory allocation table, and             systems because the key bottleneck of GPU systems is mem-
+the offloading metadata table (Section 4.3).                              ory bandwidth instead of latency and as such, 2) proposes
+   For each offloading candidate instance, the Memory Map                 a very different algorithm than ours, and 3) does not tackle
+Analyzer needs 40 bits to support 10 potential memory map-                the data mapping challenge to multiple memory stacks (as it
+pings in a 4 memory stack system. With 48 warps/SM, we                    assumes there is only a single memory chip with computation
+need 40 × 48 = 1,920 bits storage in the memory map ana-                  units).
+lyzer per SM to support all concurrent warps. In the memory                  Placing Data Close to Computation Units. The prob-
+allocation table, each entry contains the start address, the              lem of placing data close to the computation unit that re-
+length, and a bit that indicates whether the corresponding                quires it has been examined in various contexts, including for
+range will be accessed by an offloaded block. Therefore, we               NUMA (Non-Uniform Memory Access, e.g., [7]) and NUCA
+need 97 bits to support a 48-bit virtual address space. Assum-            (Non-Uniform Cache Access, e.g., [25]) based systems. The
+ing the maximum number of entries is 100, we need 9,700                   challenge we solve is similar at a high-level, but our problem
+bits for the memory allocation table shared among all SMs.                context (i.e., a GPU-based NDP system, which is inherently
+Third, each entry in the offloading metadata table contains               heterogeneous) is different and unique in two ways. First,
+begin/end PCs, bit vectors for live-in/live-out registers, a 2-bit        as we discuss in Section 3.2, our data mapping mechanism
+tag for the bandwidth reduction on TX/RX channels, and the                needs to consider and satisfy the different requirements of
+condition to offload it. We estimate this structure needs 258             both the NDP computation units and the main GPU for data
+bits based on CUDA PTX ISA 1.4 [41]. Assuming we need                     mapping. For NDP units, data should be mapped close to
+to support 40 entries in the table, which is 2× the maximum               computation units, but for the main GPU, data should be
+number of entries observed in our workloads, we need 10,320               mapped to maximize bandwidth utilization. Past works did
+bits for this structure in each SM.                                       not tackle varying data placement requirements from hetero-
+   We estimate our proposal’s area with CACTI 6.5 [58] using              geneous execution elements. Second, in a GPU-based NDP
+the 40nm process node, the same process node our configu-                 system, there is no system software running on the NDP com-
+ration assumes. The total area overhead is 0.11 mm2 , which               putation units: these units are controlled by the main GPU
+is an insignificant 0.018% of the GPU area we model.                      and their memory is pre-allocated.10 As a result, dynamic
+                                                                          and sophisticated data mapping mechanisms are less attrac-
+7. Related Work                                                           tive in the GPU-based NDP system, and we develop a simple
+To our knowledge, this is the first work that develops                    data placement mechanism, which no past work examined.
+programmer-transparent methods for offloading code and co-                Finally, none of these past works on data placement tackle
+locating data and code to enable near-data processing in GPU-             the challenge of automatically finding code blocks to execute
+based systems that employ 3D-stacked memory. No previous                  in near-data computation units.
+work we know of developed methods for automatically (1)
+identifying instruction blocks from unmodified programs to
+                                                                          8. Conclusion
+offload to NDP computation engines, and (2) mapping data to               We introduce TOM (Transparent Offloading and Mapping),
+multiple memory stacks such that the data and the offloaded               a combination of new techniques that enable computation
+code that accesses it are co-located on the same memory stack.            offloading and efficient data mapping to multiple 3D-stacked
+In this section, we discuss related works on 1) processing in             memories in a GPU system, without burdening the program-
+memory and 2) placing data close to compute units, both of                mer. TOM consists of two key ideas. First, it statically iden-
+which are related to different aspects of our proposal.                   tifies instruction blocks with maximum potential memory
+   Processing in Memory (PIM) has been explored to in-                    bandwidth savings from offloading, and dynamically decides
+tegrate computation units within memory (e.g., [13, 15, 19,               whether or not the selected candidates should actually be
+23, 28, 42, 43, 49–52, 54]). This idea has been revived with              offloaded based on runtime system conditions. Second, it
+the emergence of 3D-stacked memory technology, and there                  exploits the predictability in memory access patterns of of-
+have been been a number of more recent proposals that aim                 floaded instruction blocks to co-locate offloaded code and
+to improve the performance of data-intensive workloads                      10 In contrast, most previous works on placing data close to computation
+using accelerators or compute units in 3D-stacked mem-                    units in NUMA-based systems assume that system software can perform
+ory [2–5, 14, 16, 17, 32, 46, 55, 60, 62]. These works either 1)          page allocation, migration, or duplication across the computation units.
+
+
+                                                                     12
+
+
+
+===== Page 13 =====
+
+data in the same memory stack. We have shown, through ex-                             [24] J. H. Kelm et al., “WAYPOINT: Scaling coherence to thousand-core
+tensive evaluations, that TOM significantly improves perfor-                               architectures,” in PACT, 2010.
+                                                                                      [25] C. Kim et al., “An adaptive, non-uniform cache structure for wire-delay
+mance while also reducing energy consumption and off-chip                                  dominated on-chip caches,” in ASPLOS, 2002.
+memory traffic, even with conservative assumptions about                              [26] D. H. Kim et al., “3D-MAPS: 3D massively parallel processor with
+the internal bandwidth available in the memory stacks. We                                  stacked memory,” in ISSCC, 2012.
+                                                                                      [27] G. Kim et al., “Memory-centric system interconnect design with hybrid
+conclude that TOM is a practical and effective approach to                                 memory cubes,” in PACT, 2013.
+enabling programmer-transparent near-data processing in                               [28] P. M. Kogge, “EXECUBE-a new architecture for scaleable MPPs,” in
+GPU systems.                                                                               ICPP, 1994.
+                                                                                      [29] D. U. Lee et al., “A 1.2 V 8Gb 8-channel 128GB/s high-bandwidth
+Acknowledgments                                                                            memory (HBM) stacked DRAM with effective microbump I/O test
+                                                                                           methods using 29nm process and TSV,” in ISSCC, 2014.
+We thank the anonymous reviewers, members of NVIDIA                                   [30] D. Lee et al., “Simultaneous Multi-Layer Access: Improving 3D-
+Research and the SAFARI Research Group for their feedback.                                 Stacked Memory Bandwidth at Low Cost,” ACM TACO, 2016.
+                                                                                      [31] J. Lee et al., “Automatically mapping code on an intelligent memory
+Special thanks to David W. Nellans, Daniel R. Johnson, Aamer                               architecture,” in HPCA, 2001.
+Jaleel, and Evgeny Bolotin for feedback. We acknowledge                               [32] J. H. Lee et al., “BSSync: Processing near memory for machine learning
+the support of our industrial partners: Google, Intel, NVIDIA,                             workloads with bounded staleness consistency models,” in PACT, 2015.
+                                                                                      [33] J. Leng et al., “GPUWattch: enabling energy optimizations in GPGPUs,”
+Samsung and Seagate. This research was partially supported                                 in ISCA, 2013.
+by NSF (grants 1212962, 1409723), ISTC-CC, SRC, DSSC, and                             [34] “Hybrid Memory Cube Specification 2.0,” 2014.
+the United States Department of Energy.                                               [35] Micron Technology, “4Gb: x4, x8, x16 DDR3 SDRAM,” 2011.
+                                                                                      [36] D. J. Miller et al., “Motivating future interconnects: a differential
+References                                                                                 measurement analysis of PCI latency,” in ANCS, 2009.
+                                                                                      [37] V. Narasiman et al., “Improving GPU Performance via Large Warps
+ [1] N. Agarwal et al., “Selective GPU caches to eliminate CPU-GPU HW                      and Two-Level Warp Scheduling,” in MICRO, 2011.
+     cache coherence,” in HPCA, 2016.                                                 [38] NVIDIA, “NVIDIA CUDA C Programming Guide.”
+ [2] J. Ahn et al., “A scalable processing-in-memory accelerator for parallel         [39] NVIDIA, “NVIDIA CUDA SDK 4.2.”
+     graph processing,” in ISCA, 2015.                                                [40] NVIDIA, “NVIDIA CUDA Toolkit.”
+ [3] J. Ahn et al., “PIM-Enabled Instructions: A low-overhead, locality-              [41] NVIDIA, “NVIDIA PTX ISA Version 1.4.”
+     aware processing-in-memory architecture,” in ISCA, 2015.                         [42] M. Oskin et al., “Active Pages: a computation model for intelligent
+ [4] B. Akin et al., “Data Reorganization in memory using 3D-stacked                       memory,” in ISCA, 1998.
+     DRAM,” in ISCA, 2015.                                                            [43] D. Patterson et al., “A case for intelligent RAM,” IEEE Micro, 1997.
+ [5] O. O. Babarinsa and S. Idreos, “JAFAR: near-data processing for                  [44] G. Pekhimenko et al., “A case for toggle-aware compression for GPU
+     databases,” in SIGMOD, 2015.                                                          systems,” in HPCA, 2016.
+ [6] A. Bakhoda et al., “Analyzing CUDA workloads using a detailed GPU                [45] J. Power et al., “Heterogeneous system coherence for integrated CPU-
+     simulator,” in ISPASS, 2009.                                                          GPU systems,” in MICRO, 2013.
+ [7] R. Chandra et al., “Scheduling and page migration for multiprocessor             [46] S. H. Pugsley et al., “NDC: Analyzing the impact of 3D-stacked mem-
+     compute servers,” in ASPLOS, 1994.                                                    ory+logic devices on MapReduce workloads,” in ISPASS, 2014.
+ [8] K. Chandrasekar et al., “System and circuit level power modeling of              [47] S. Rixner et al., “Memory access scheduling,” in ISCA, 2000.
+     energy-efficient 3D-stacked wide I/O DRAMs,” in DATE, 2013.                      [48] T. G. Rogers et al., “Cache-conscious wavefront scheduling,” in MICRO,
+                                                                                           2012.
+ [9] N. Chatterjee et al., “Managing DRAM latency divergence in irregular             [49] V. Seshadri et al., “Gather-Scatter DRAM: In-DRAM Address Transla-
+     GPGPU applications,” in SC, 2014.                                                     tion to Improve the Spatial Locality of Non-unit Strided Accesses,” in
+[10] S. Che et al., “Rodinia: A benchmark suite for heterogeneous comput-                  MICRO, 2015.
+     ing,” in IISWC, 2009.                                                            [50] V. Seshadri et al., “Fast bulk bitwise AND and OR in DRAM,” CAL,
+[11] W. J. Dally and B. P. Towles, Principles and Practices of Interconnection             2015.
+     Networks, 2004.                                                                  [51] V. Seshadri et al., “RowClone: fast and energy-efficient in-DRAM bulk
+                                                                                           data copy and initialization,” in MICRO, 2013.
+[12] R. G. Dreslinski et al., “Centip3De: A 64-Core, 3D stacked near-
+     threshold system,” IEEE Micro, 2013.                                             [52] D. E. Shaw et al., “The NON-VON database machine: A brief overview,”
+                                                                                           IEEE Database Eng. Bull., 1981.
+[13] D. G. Elliott et al., “Computational RAM: A Memory-SIMD hybrid and               [53] I. Singh et al., “Cache coherence for GPU architectures,” in HPCA,
+     its application to DSP,” in CICC, 1992.                                               2013.
+[14] A. Farmahini-Farahani et al., “NDA: Near-DRAM acceleration archi-                [54] H. S. Stone, “A logic-in-memory computer,” IEEE TC, 1970.
+     tecture leveraging commodity DRAM devices and standard memory                    [55] Z. Sura et al., “Data access optimization in a processing-in-memory
+     modules,” in HPCA, 2015.                                                              system,” in CF, 2015.
+[15] B. B. Fraguela et al., “Programming the FlexRAM parallel intelligent             [56] N. Vijaykumar et al., “A case for core-assisted bottleneck acceleration
+     memory system,” in PPoPP, 2003.                                                       in GPUs: enabling flexible data compression with assist warps,” in
+[16] M. Gao et al., “Practical near-data processing for in-memory analytics                ISCA, 2015.
+     frameworks,” in PACT, 2015.                                                      [57] T. Vogelsang, “Understanding the energy consumption of dynamic
+[17] M. Gao and C. Kozyrakis, “HRL: efficient and flexible reconfigurable                  random access memories,” in MICRO, 2010.
+     logic for near-data processing,” in HPCA, 2016.                                  [58] S. J. Wilton and N. P. Jouppi, “CACTI: An enhanced cache access and
+[18] M. Giles and S. Xiaoke, “Notes on using the NVIDIA 8800 GTX graph-                    cycle time model,” IEEE Journal of Solid-State Circuits, 1996.
+     ics card,” https://people.maths.ox.ac.uk/gilesm/codes/libor_old/report.          [59] D. H. Woo et al., “POD: A 3D-integrated broad-purpose acceleration
+     pdf.                                                                                  layer,” IEEE Micro, 2008.
+[19] M. Gokhale et al., “Processing in memory: The Terasys massively                  [60] D. P. Zhang et al., “TOP-PIM: Throughput-oriented Programmable
+     parallel PIM array,” IEEE Computer, 1995.                                             Processing in Memory,” in HPDC, 2014.
+                                                                                      [61] Z. Zhang et al., “A permutation-based page interleaving scheme to
+[20] GPGPU-Sim, “GPGPU-Sim Manual.”                                                        reduce row-buffer conflicts and exploit data locality,” in MICRO, 2000.
+[21] A. Jog et al., “OWL: Cooperative Thread Array Aware Scheduling                   [62] Q. Zhu et al., “Accelerating sparse matrix-matrix multiplication with
+     Techniques for Improving GPGPU Performance,” in ASPLOS, 2013.                         3D-stacked logic-in-memory hardware,” in HPEC, 2013.
+[22] D. Johnson et al., “Rigel: A 1,024-core single-chip accelerator architec-        [63] W. K. Zuravleff and T. Robinson, “Controller for a synchronous DRAM
+     ture,” IEEE Micro, 2011.                                                              that maximizes throughput by allowing memory requests and com-
+[23] Y. Kang et al., “FlexRAM: Toward an advanced intelligent memory                       mands to be issued out of order,” 1997, US Patent 5,630,096.
+     system,” in ICCD, 1999.
+
+
+                                                                                 13
+

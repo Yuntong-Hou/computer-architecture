@@ -1,0 +1,1183 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/lec4-paper-reading/sources/original-paper/lisa-dram_hpca16.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC4/original-paper/lisa-dram_hpca16.pdf
+Raw URL: https://raw.githubusercontent.com/Yuntong-Hou/computer-architecture/main/LEC4/original-paper/lisa-dram_hpca16.pdf
+Accessed: 2026-05-11 11:24:27 UTC
+
+
+
+===== Page 1 =====
+
+                  Low-Cost Inter-Linked Subarrays (LISA):
+           Enabling Fast Inter-Subarray Data Movement in DRAM
+  Kevin K. Chang† , Prashant J. Nair? , Donghyuk Lee† , Saugata Ghose† , Moinuddin K. Qureshi? , and Onur Mutlu†
+                                †                                       ?
+                                    Carnegie Mellon University              Georgia Institute of Technology
+
+ABSTRACT                                                                     channel (typically 64 bits wide). Then, the data is written back
+                                                                             to memory, again one cache line at a time over the pin-limited
+   This paper introduces a new DRAM design that enables fast
+                                                                             channel, into the destination location. By going through the
+and energy-efficient bulk data movement across subarrays in a
+                                                                             processor, this data movement incurs a significant penalty in
+DRAM chip. While bulk data movement is a key operation in
+                                                                             terms of latency and energy consumption.
+many applications and operating systems, contemporary systems
+perform this movement inefficiently, by transferring data from                  To address the inefficiencies of traversing the pin-limited
+DRAM to the processor, and then back to DRAM, across a narrow                channel, a number of mechanisms have been proposed to accel-
+off-chip channel. The use of this narrow channel for bulk data               erate bulk data movement (e.g., [26, 45, 69, 83]). The state-of-
+movement results in high latency and energy consumption. Prior               the-art mechanism, RowClone [69], performs data movement
+work proposed to avoid these high costs by exploiting the existing           completely within a DRAM chip, avoiding costly data transfers
+wide internal DRAM bandwidth for bulk data movement, but                     over the pin-limited memory channel. However, its effective-
+the limited connectivity of wires within DRAM allows fast data               ness is limited because RowClone can enable fast data move-
+movement within only a single DRAM subarray. Each subarray                   ment only when the source and destination are within the
+is only a few megabytes in size, greatly restricting the range over          same DRAM subarray. A DRAM chip is divided into multiple
+which fast bulk data movement can happen within DRAM.                        banks (typically 8), each of which is further split into many sub-
+   We propose a new DRAM substrate, Low-Cost Inter-Linked                    arrays (16 to 64) [36], shown in Figure 1a, to ensure reasonable
+Subarrays (LISA), whose goal is to enable fast and efficient data            read and write latencies at high density [4, 22, 24, 36, 77]. Each
+movement across a large range of memory at low cost. LISA adds               subarray is a two-dimensional array with hundreds of rows of
+low-cost connections between adjacent subarrays. By using these              DRAM cells, and contains only a few megabytes of data (e.g.,
+connections to interconnect the existing internal wires (bitlines)           4MB in a rank of eight 1Gb DDR3 DRAM chips with 32 subar-
+of adjacent subarrays, LISA enables wide-bandwidth data trans-               rays per bank). While two DRAM rows in the same subarray
+fer across multiple subarrays with little (only 0.8%) DRAM area              are connected via a wide (e.g., 8K bits) bitline interface, rows in
+overhead. As a DRAM substrate, LISA is versatile, enabling an                different subarrays are connected via only a narrow 64-bit data
+array of new applications. We describe and evaluate three such               bus within the DRAM chip (Figure 1a). Therefore, even for
+applications in detail: (1) fast inter-subarray bulk data copy,              previously-proposed in-DRAM data movement mechanisms
+(2) in-DRAM caching using a DRAM architecture whose rows                     such as RowClone [69], inter-subarray bulk data movement
+have heterogeneous access latencies, and (3) accelerated bitline             incurs long latency and high memory energy consumption
+precharging by linking multiple precharge units together. Our                even though data does not move out of the DRAM chip.
+extensive evaluations show that each of LISA’s three applications                                 Cell                                 Isolation
+significantly improves performance and memory energy effi-                                        Subarray                             Transistor
+ciency, and their combined benefit is higher than the benefit of                  Row Buffer
+                                                                                                    Internal
+each alone, on a variety of workloads and system configurations.
+                                                                                                    Data Bus
+1. Introduction                                                                                      64b
+                                                                                                                         8Kb
+   Bulk data movement, the movement of thousands or mil-                         Bitlines        Slow                                  Fast
+lions of bytes between two memory locations, is a common                             (a) RowClone [69]                      (b) LISA
+operation performed by an increasing number of real-world                    Figure 1: Transferring data between subarrays using the in-
+applications (e.g., [28, 40, 56, 63, 67, 69, 71, 74, 83]). Therefore,        ternal data bus takes a long time in state-of-the-art DRAM
+it has been the target of several architectural optimizations                design, RowClone [69] (a). Our work, LISA, enables fast inter-
+                                                                             subarray data movement with a low-cost substrate (b).
+(e.g., [1, 26, 69, 80, 83]). In fact, bulk data movement is impor-
+tant enough that modern commercial processors are adding                        While it is clear that fast inter-subarray data movement can
+specialized support to improve its performance, such as the                  have several applications that improve system performance
+ERMSB instruction recently added to the x86 ISA [17].                        and memory energy efficiency [28, 56, 63, 67, 69, 83], there is
+   In today’s systems, to perform a bulk data movement be-                   currently no mechanism that performs such data movement
+tween two locations in memory, the data needs to go through                  quickly and efficiently. This is because no wide datapath ex-
+the processor even though both the source and destination are                ists today between subarrays within the same bank (i.e., the
+within memory. To perform the movement, the data is first                    connectivity of subarrays is low in modern DRAM). Our goal
+read out one cache line at a time from the source location in                is to design a low-cost DRAM substrate that enables fast and
+memory into the processor caches, over a pin-limited off-chip                energy-efficient data movement across subarrays.
+
+
+978-1-4673-9211-2/16/$31.00 ©2016 IEEE                                  1
+
+
+
+===== Page 2 =====
+
+   We make two key observations that allow us to improve the                  we propose a new DRAM design, VarIabLe LAtency (VILLA)
+connectivity of subarrays within each bank in modern DRAM.                    DRAM, with asymmetric subarrays that reduce the access
+First, accessing data in DRAM causes the transfer of an entire                latency to hot rows by up to 63%, delivering high system
+row of DRAM cells to a buffer (i.e., the row buffer, where the                performance and achieving both goals of low overhead and
+row data temporarily resides while it is read or written) via                 fast data movement (§5).
+the subarray’s bitlines. Each bitline connects a column of cells           • Reducing precharge latency. Precharge is the process of
+to the row buffer, interconnecting every row within the same                  preparing the subarray for the next memory access [22, 36,
+subarray (Figure 1a). Therefore, the bitlines essentially serve               39, 40]. It incurs latency that is on the critical path of a
+as a very wide bus that transfers a row’s worth of data (e.g.,                bank-conflict memory access. The precharge latency of a
+8K bits) at once. Second, subarrays within the same bank are                  subarray is limited by the drive strength of the precharge
+placed in close proximity to each other. Thus, the bitlines of a              unit attached to its row buffer. We demonstrate that LISA
+subarray are very close to (but are not currently connected to)               enables a new mechanism, LInked Precharge (LIP), which
+the bitlines of neighboring subarrays (as shown in Figure 1a).                connects a subarray’s precharge unit with the idle precharge
+                                                                              units in the neighboring subarrays, thereby accelerating
+Key Idea. Based on these two observations, we intro-
+                                                                              precharge and reducing its latency by 2.6x (§6).
+duce a new DRAM substrate, called Low-cost Inter-linked
+SubArrays (LISA). LISA enables low-latency, high-bandwidth                 These three mechanisms are complementary to each other, and
+inter-subarray connectivity by linking neighboring subarrays’              we show that when combined, they provide additive system
+bitlines together with isolation transistors, as illustrated in Fig-       performance and energy efficiency improvements (§9.4). LISA
+ure 1b. We use the new inter-subarray connection in LISA to                is a versatile DRAM substrate, capable of supporting several
+develop a new DRAM operation, row buffer movement (RBM),                   other applications beyond these three, such as performing
+which moves data that is latched in an activated row buffer in             efficient data remapping to avoid conflicts in systems that
+one subarray into an inactive row buffer in another subarray,              support subarray-level parallelism [36], and improving the
+without having to send data through the narrow internal data               efficiency of bulk bitwise operations in DRAM [67] (see §10).
+bus in DRAM. RBM exploits the fact that the activated row                      This paper makes the following major contributions:
+buffer has enough drive strength to induce charge perturba-                • We propose a new DRAM substrate, Low-cost Inter-linked
+tion within the idle (i.e., precharged) bitlines of neighboring               SubArrays (LISA), which provides high-bandwidth connec-
+subarrays, allowing the destination row buffer to sense and                   tivity between subarrays within the same bank to support
+latch this data when the isolation transistors are enabled.                   bulk data movement at low latency, energy, and cost (§3).
+   By using a rigorous DRAM circuit model that conforms to                 • We propose and evaluate three new applications that take
+the JEDEC standards [22] and ITRS specifications [18, 19], we                 advantage of LISA: (1) Rapid Inter-Subarray Copy (RISC),
+show that RBM performs inter-subarray data movement at 26x                    which copies data across subarrays at low latency and low
+the bandwidth of a modern 64-bit DDR4-2400 memory channel                     DRAM energy; (2) Variable Latency (VILLA) DRAM, which
+(500 GB/s vs. 19.2 GB/s; see §3.3), even after we conservatively              reduces the access latency of hot data by caching it in fast
+add a large (60%) timing margin to account for process and                    subarrays; and (3) Linked Precharge (LIP), which reduces
+temperature variation.                                                        the precharge latency for a subarray by linking its precharge
+                                                                              units with neighboring idle precharge units.
+Applications of LISA. We exploit LISA’s fast inter-subarray                • We extensively evaluate LISA’s applications individually
+movement to enable many applications that can improve sys-                    and combined together. Our evaluation shows that (1) RISC
+tem performance and energy efficiency. We implement and                       improves average system performance by 66% over work-
+evaluate the following three applications of LISA:                            loads that perform intensive bulk data movement and
+• Bulk data copying. Fast inter-subarray data movement                        (2) VILLA/LIP improve performance by 5%/8% over a wide
+  can eliminate long data movement latencies for copies be-                   variety of workloads. Combining all three applications im-
+  tween two locations in the same DRAM chip. Prior work                       proves system performance by 94% and reduces memory
+  showed that such copy operations are widely used in today’s                 energy by 49% on a 4-core system running workloads with
+  operating systems [56, 63] and datacenters [28]. We propose                 intensive bulk data movement (§9.4).
+  Rapid Inter-Subarray Copy (RISC), a new bulk data copying
+  mechanism based on LISA’s RBM operation, to reduce the
+  latency and DRAM energy of an inter-subarray copy by 9.2x
+                                                                           2. Background: DRAM Organization
+  and 48.1x, respectively, over the best previous mechanism,                 A modern DRAM system consists of a hierarchy of compo-
+  RowClone [69] (§4).                                                      nents: channels, ranks, banks, and subarrays. A memory chan-
+• Enabling access latency heterogeneity within DRAM.                       nel drives DRAM commands, addresses, and data between a
+  Prior works [40, 71] introduced non-uniform access laten-                memory controller and a group of DRAM ranks. Within a rank,
+  cies within DRAM, and harnessed this heterogeneity to pro-               there are multiple banks that can serve memory requests (i.e.,
+  vide a data caching mechanism within DRAM for hot (i.e.,                 reads or writes) concurrently, independent of one another.1
+  frequently-accessed) pages. However, these works do not
+  achieve either one of the following goals: (1) low area over-                1 Physically, a rank consists of multiple DRAM chips. Every chip in a rank
+  head, and (2) fast data movement from the slow portion of                operates in lockstep to serve fragments of data for the same request. Many
+  DRAM to the fast portion. By exploiting the LISA substrate,              prior works provide further details on DRAM rank organization [77, 82].
+
+
+                                                                       2
+
+
+
+===== Page 3 =====
+
+2.1. DRAM Subarrays                                                                   to the bank I/O logic 5 , which sends the data out of the DRAM
+                                                                                      chip to the memory controller.
+   In this work, we focus on operations across subarrays within                          While the row is activated, a consecutive column command
+the same bank. Typically, a bank is subdivided into multiple                          to the same row can access the data from the row buffer with-
+subarrays [4, 36, 69, 79], as shown in Figure 2. Each subarray                        out performing an additional ACTIVATE. This is called a row
+consists of a 2D-array of DRAM cells that are connected to                            buffer hit. In order to access a different row, a PRECHARGE com-
+sense amplifiers through bitlines. Because the size of a sense                        mand is required to reinitialize the bitlines’ values for another
+amplifier is more than 100x the size of a cell [40], modern                           ACTIVATE. This re-initialization process is completed by a set of
+DRAM designs fit in only enough sense amplifiers in a row                             precharge units 6 in the row buffer. For more detail on DRAM
+to sense half a row of cells. To sense the entire row of cells,                       commands and internal DRAM operation, we refer the reader
+each subarray has bitlines that connect to two rows of sense                          to prior works [36, 39, 40, 44, 69, 71].
+amplifiers — one above and one below the cell array ( 1 and
+ 2 in Figure 2, for Subarray 1). This DRAM design is known as                         3. Low-Cost Inter-Linked Subarrays (LISA)
+the open bitline architecture, and is commonly used to achieve
+high-density DRAM [42, 75]. For the rest of the paper, we refer                          We propose a new DRAM substrate, LISA, which enables
+to a single row of sense amplifiers, which holds the data from                        fast and energy-efficient data movement across subarrays
+half a row of activated cells, as a row buffer.                                       within a DRAM chip. First, we discuss the low-cost design
+                                                                                      changes to DRAM to enable high-bandwidth connectivity
+                              Internal Bitline Bitline
+                              Data 3                                                  across neighboring subarrays (Section 3.1). We then introduce
+         Subarray 0           Bus                                                     a new DRAM command that uses this new connectivity to
+                              64b                                                     perform bulk data movement (Section 3.2). Finally, we conduct
+ Row Decoder
+
+
+
+
+       1
+               SA    SA   SA    SA              Wordline                              circuit-level studies to determine the latency of this command
+                                                                                      (Sections 3.3 and 3.4).
+                                                                      Sense
+                   Subarray 1                                         Amplifier       3.1. LISA Design
+                                                                      Precharge
+               2                                                      Unit 6             LISA is built upon two key characteristics of DRAM. First,
+               SA    SA   SA    SA
+                                                                                      large data bandwidth within a subarray is already available
+                                                                                      in today’s DRAM chips. A row activation transfers an entire
+                       ...
+
+
+
+
+                                      GSA   4                                         DRAM row (e.g., 8KB across all chips in a rank) into the row
+               5                                        Bitline   Bitline             buffer via the bitlines of the subarray. These bitlines essen-
+                     Bank I/O        Global
+                                     Sense Amplifiers                                 tially serve as a wide bus that transfers an entire row of data in
+                                                                                      parallel to the respective subarray’s row buffer. Second, every
+ Figure 2: Bank and subarray organization in a DRAM chip.                             subarray has its own set of bitlines, and subarrays within the
+                                                                                      same bank are placed in close proximity to each other. There-
+2.2. DRAM Subarray Operation                                                          fore, a subarray’s bitlines are very close to its neighboring
+    Accessing data in a subarray requires two steps. The DRAM                         subarrays’ bitlines, although these bitlines are not directly
+row (typically 8KB across a rank of eight x8 chips) must first be                     connected together.2
+activated. Only after activation completes, a column command                             By leveraging these two characteristics, we propose to build
+(i.e., a READ/WRITE) can operate on a piece of data (typically 64B                    a wide connection path between subarrays within the same bank
+across a rank; the size of a single cache line) from that row.                        at low cost, to overcome the problem of a narrow connection
+    When an ACTIVATE command with a row address is issued,                            path between subarrays in commodity DRAM chips (i.e., the
+the data stored within a row in a subarray is read by two row                         internal data bus 3 in Figure 2). Figure 3 shows the subarray
+buffers (i.e., the row buffer at the top of the subarray 1 and                        structures in LISA. To form a new, low-cost inter-subarray dat-
+the one at the bottom 2 ). First, a wordline corresponding                            apath with the same wide bandwidth that already exists inside
+to the row address is selected by the subarray’s row decoder.                         a subarray, we join neighboring subarrays’ bitlines together
+Then, the top row buffer and the bottom row buffer each sense                         using isolation transistors. We call each of these isolation tran-
+the charge stored in half of the row’s cells through the bitlines,                    sistors a link. A link connects the bitlines for the same column
+and amplify the charge to full digital logic values (0 or 1) to                       of two adjacent subarrays.
+latch in the cells’ data.                                                                When the isolation transistor is turned on (i.e., the link is
+                                                                                      enabled), the bitlines of two adjacent subarrays are connected.
+    After an ACTIVATE finishes latching a row of cells into the
+                                                                                      Thus, the sense amplifier of a subarray that has already driven
+row buffers, a READ or a WRITE can be issued. Because a typical
+                                                                                      its bitlines (due to an ACTIVATE) can also drive its neighboring
+read/write memory request is made at the granularity of a
+                                                                                      subarray’s precharged bitlines through the enabled link. This
+single cache line, only a subset of bits are selected from a
+                                                                                      causes the neighboring sense amplifiers to sense the charge
+subarray’s row buffer by the column decoder. On a READ, the
+                                                                                      difference, and simultaneously help drive both sets of bitlines.
+selected column bits are sent to the global sense amplifiers
+                                                                                      When the isolation transistor is turned off (i.e., the link is
+through the internal data bus (also known as the global data
+lines) 3 , which has a narrow width of 64B across a rank of                               2 Note that matching the bitline pitch across subarrays is important for a
+
+eight chips. The global sense amplifiers 4 then drive the data                        high-yield DRAM process [42, 75].
+
+
+                                                                                  3
+
+
+
+===== Page 4 =====
+
+                                                                                                                             Charge Sharing &
+                                           Isolation                               1 Activated RB                          2 Double Amplification 3 Fully Sensed
+                    Subarray 0                                                          BL BL                                 BL BL                           BL BL
+                                           Transistor (Link)
+                                                                                                   Activated
+                                         Top Row Buffer                                                                             0+                             0
+      A                                     (src)                                           0
+                                                                                  src                                  src                          src
+                    Subarray 1                                                                            Link
+      B                                                                            VDD                                 VDD-
+                                                                                                                                    VDD/2-          VDD            0
+                                         Bottom Row Buffer
+                                             (dst)                                dst           Precharged dst                                      dst
+                    Subarray 2                                                                  (VDD/2)
+                                                                                                                     VDD/2+              Ł             VDD
+          Figure 3: Inter-linked subarrays in LISA.
+
+disabled), the neighboring subarrays are disconnected from                       Figure 4: Row buffer movement process using LISA.
+each other and thus operate as in conventional DRAM.
+                                                                         in Figure 4), which connect the bitlines of dst to the bitlines
+3.2. Row Buffer Movement (RBM) Through LISA                              of dst2, in state 2 . By enabling RBM to perform row buffer
+   Now that we have inserted physical links to provide high-             movement across non-adjacent subarrays via a single com-
+bandwidth connections across subarrays, we must provide                  mand, instead of requiring multiple commands, the movement
+a way for the memory controller to make use of these new                 latency and command bandwidth are reduced.
+connections. Therefore, we introduce a new DRAM command,                 3.3. Row Buffer Movement (RBM) Latency
+RBM, which triggers an operation to move data from one row
+buffer (half a row of data) to another row buffer within the                To validate the RBM process over LISA links and evaluate
+same bank through these links. This operation serves as the              its latency, we build a model of LISA using the Spectre Circuit
+building block for our architectural optimizations.                      Simulator [2], with the NCSU FreePDK 45nm library [54]. We
+   To help explain the RBM process between two row buffers,              configure the DRAM using the JEDEC DDR3-1600 timings [22],
+we assume that the top row buffer and the bottom row buffer              and attach each bitline to 512 DRAM cells [40, 71]. We conser-
+in Figure 3 are the source (src) and destination (dst) of an             vatively perform our evaluations using worst-case cells, with
+example RBM operation, respectively, and that src is activated           the resistance and capacitance parameters specified in the
+with the content of a row from Subarray 0. To perform this               ITRS reports [18, 19] for the metal lanes. Furthermore, we
+RBM, the memory controller enables the links ( A and B )                 conservatively model the worst RC drop (and hence latency)
+between src and dst, thereby connecting the two row buffers’             by evaluating cells located at the edges of subarrays.
+bitlines together (bitline of src to bitline of dst, and bitline            We now analyze the process of using one RBM operation to
+of src to bitline of dst).                                               move data between two non-adjacent row buffers that are two
+                                                                         subarrays apart. To help the explanation, we use an example
+   Figure 4 illustrates how RBM drives the data from src to
+                                                                         that performs RBM from RB0 to RB2, as shown on the left side
+dst. For clarity, we show only one column from each row
+                                                                         of Figure 5. The right side of the figure shows the voltage
+buffer. State 1 shows the initial values of the bitlines (BL and
+                                                                         of a single bitline BL from each subarray during the RBM
+BL) attached to the row buffers — src is activated and has
+                                                                         process over time. The voltage of the BL bitlines show the
+fully driven its bitlines (indicated by thick bitlines), and dst
+                                                                         same behavior, but have inverted values. We now explain this
+is in the precharged state (thin bitlines indicating a voltage
+                                                                         RBM process step by step.
+state of VDD /2). In state 2 , the links between src and dst
+are turned on. The charge of the src bitline (BL) flows to the                   BL BL                           RB0.BL (src)                 RB1.BL               RB2.BL (dst)
+connected bitline (BL) of dst, raising the voltage level of dst’s                                         1.3        VDD                 1                2            4
+BL to VDD /2 + ∆. The other bitlines (BL) have the opposite
+                                                                                            Voltage (V)
+
+
+
+
+                                                                         RB0                              1.1
+charge flow direction, where the charge flows from the BL of             (src)
+                                                                                                                       ACTIVATE
+                                                                                                                                                                        RBM
+dst to the BL of src. This phase of charge flowing between                                                0.9
+                                                                                                                                                                   3
+the bitlines is known as charge sharing. It triggers dst’s row           RB1                              0.7 V /2
+                                                                                                               DD
+buffer to sense the increase of differential voltage between
+                                                                                                          0.5
+BL and BL, and amplify the voltage difference further. As                RB2                                     0     5      10   15    20    25   30        35   40      45   50
+a result, both src and dst start driving the bitlines with the           (dst)
+                                                                                          RBM
+                                                                                                                                             Time (ns)
+same values. This double sense amplification process pushes
+both sets of bitlines to reach the final fully sensed state ( 3 ),       Figure 5: SPICE simulation results for transferring data across
+                                                                         two subarrays with LISA.
+thus completing the RBM from src to dst.
+   Extending this process, RBM can move data between two                    First, before the RBM command is issued, an ACTIVATE com-
+row buffers that are not adjacent to each other as well. For             mand is sent to RB0 at time 0. After roughly 21ns ( 1 ), the
+example, RBM can move data from the src row buffer (in Fig-              bitline reaches VDD , which indicates the cells have been fully
+ure 3) to a row buffer, dst2, that is two subarrays away (i.e.,          restored (tRAS). Note that, in our simulation, restoration hap-
+the bottom row buffer of Subarray 2, not shown in Figure 3).             pens more quickly than the standard-specified tRAS value of
+This operation is similar to the movement shown in Figure 4,             35ns, as the standard includes a guardband on top of the typical
+except that the RBM command turns on two extra links (Ł 2                cell restoration time to account for process and temperature
+
+
+                                                                     4
+
+
+
+===== Page 5 =====
+
+variation [3, 39]. This amount of margin is on par with values                    4.1. Shortcomings of the State-of-the-Art
+experimentally observed in commodity DRAMs at 55°C [39].
+                                                                                    Previously, we have described the state-of-the-art work,
+   Second, at 35ns ( 2 ), the memory controller sends the RBM                    RowClone [69], which addresses the problem of costly data
+command to move data from RB0 to RB2. RBM simultaneously                         movement over memory channels by coping data completely
+turns on the four links (circled on the left in Figure 5) that                   in DRAM. However, RowClone does not provide fast data copy
+connect the subarrays’ bitlines.                                                 between subarrays. The main latency benefit of RowClone
+   Third, after a small amount of time ( 3 ), the voltage of                     comes from intra-subarray copy (RC-IntraSA for short) as it
+RB0’s bitline drops to about 0.9V, as the fully-driven bitlines
+                                                                                 copies data at the row granularity. In contrast, inter-subarray
+of RB0 are now charge sharing with the precharged bitlines                       RowClone (RC-InterSA) requires transferring data at the cache
+attached to RB1 and RB2. This causes both RB1 and RB2 to sense                   line granularity (64B) through the internal data bus in DRAM.
+the charge difference and start amplifying the bitline values.                   Consequently, RC-InterSA incurs 16x longer latency than RC-
+Finally, after amplifying the bitlines for a few nanoseconds                     IntraSA. Furthermore, RC-InterSA is a long blocking operation
+( 4 at 40ns), all three bitlines become fully driven with the                    that prevents reading from or writing to the other banks in
+value that is originally stored in RB0.                                          the same rank, reducing bank-level parallelism [38, 53].
+   We thus demonstrate that RBM moves data from one row                             To demonstrate the ineffectiveness of RC-InterSA, we com-
+buffer to a row buffer two subarrays away at very low latency.                   pare it to today’s currently-used copy mechanism, memcpy,
+Our SPICE simulation shows that the RBM latency across two                       which moves data via the memory channel. In contrast to
+LISA links is approximately 5ns ( 2 → 4 ). To be conserva-                       RC-InterSA, which copies data in DRAM, memcpy copies data
+tive, we do not allow data movement across more than two                         by sequentially reading out source data from the memory and
+subarrays with a single RBM command.3                                            then writing it to the destination data in the on-chip caches.
+3.4. Handling Process and Temperature Variation                                  Figure 6 compares the average system performance and queu-
+                                                                                 ing latency of RC-InterSA and memcpy, on a quad-core system
+   On top of using worst-case cells in our SPICE model, we                       across 50 workloads that contain bulk (8KB) data copies (see
+add in a latency guardband to the RBM latency to account for                     Section 8 for our methodology). RC-InterSA actually degrades
+process and temperature variation, as DRAM manufacturers                         system performance by 24% relative to memcpy, mainly be-
+commonly do [3, 39]. For instance, the ACTIVATE timing (tRCD)                    cause RC-InterSA increases the overall memory queuing la-
+has been observed to have margins of 13.3% [3] and 17.3% [39]                    tency by 2.88x, as it blocks other memory requests from being
+for different types of commodity DRAMs. To conservatively                        serviced by the memory controller performing the RC-InterSA
+account for process and temperature variation in LISA, we add                    copy. In contrast, memcpy is not a long or blocking DRAM
+a large timing margin, of 60%, to the RBM latency. Even then,                    command, but rather a long sequence of memory requests
+RBM latency is 8ns and RBM provides a 500 GB/s data transfer                     that can be interrupted by other critical memory requests,
+bandwidth across two subarrays that are one subarray apart                       as the memory scheduler can issue memory requests out of
+from each other, which is 26x the bandwidth of a DDR4-2400                       order [34, 35, 52, 53, 62, 73, 78, 84].
+DRAM channel (19.2 GB/s) [24].
+                                                                                                   3                                  1000
+                                                                                Weighted Speedup
+
+
+
+
+                                                                                                                   Queueing Latency
+
+
+
+
+                                                                                                                                             2.88x     memcpy
+                                                                                                          -24.0%                       800
+4. Application 1: Rapid Inter-Subarray Bulk                                                                                                          RC-InterSA
+                                                                                                                       (cycles)
+
+
+
+
+                                                                                                   2                                   600
+   Data Copying (LISA-RISC)                                                                        1                                   400
+                                                                                                                                       200
+   Due to the narrow memory channel width, bulk copy op-                                           0                                     0
+erations used by applications and operating systems are per-                                           GMean                                 GMean
+formance limiters in today’s systems [26, 28, 69, 83]. These                      Figure 6: Comparison of RowClone to memcpy over the mem-
+operations are commonly performed due to the memcpy and                           ory channel, on workloads that perform bulk data copy across
+memmov. Recent work reported that these two operations con-                       subarrays on a 4-core system.
+sume 4-5% of all of Google’s datacenter cycles, making them                          On the other hand, RC-InterSA offers energy savings of
+an important target for lightweight hardware acceleration [28].                   5.1% on average over memcpy by not transferring the data over
+As we show in Section 4.1, the state-of-the-art solution, Row-                    the memory channel. Overall, these results show that neither
+Clone [69], has poor performance for such operations when                         of the existing mechanisms (memcpy or RowClone) offers fast
+they are performed across subarrays in the same bank.                             and energy-efficient bulk data copy across subarrays.
+   Our goal is to provide an architectural mechanism to ac-
+celerate these inter-subarray copy operations in DRAM. We                         4.2. In-DRAM Rapid Inter-Subarray Copy (RISC)
+propose LISA-RISC, which uses the RBM operation in LISA to                           Our goal is to design a new mechanism that enables low-
+perform rapid data copying. We describe the high-level oper-                      latency and energy-efficient memory copy between rows in
+ation of LISA-RISC (Section 4.2), and then provide a detailed                     different subarrays within the same bank. To this end, we
+look at the memory controller command sequence required to                        propose a new in-DRAM copy mechanism that uses LISA to
+implement LISA-RISC (Section 4.3).                                                exploit the high-bandwidth links between subarrays. The key
+    3 In other words, RBM has two variants, one that moves data between           idea, step by step, is to: (1) activate a source row in a subarray;
+immediately adjacent subarrays (Figure 4) and one that moves data between         (2) rapidly transfer the data in the activated source row buffers
+subarrays that are one subarray apart from each other (Figure 5).                 to the destination subarray’s row buffers, through LISA’s wide
+
+
+                                                                            5
+
+
+
+===== Page 6 =====
+
+inter-subarray links, without using the narrow internal data                    Third, to move data from RB0 to RB2 to complete the copy
+bus; and (3) activate the destination row, which enables the                 transaction, we need to precharge both RB1 and RB2. The
+contents of the destination row buffers to be latched into the               challenge here is to precharge all row buffers except RB0. This
+destination row. We call this inter-subarray row-to-row copy                 cannot be accomplished in today’s DRAM because a precharge
+mechanism LISA-Rapid Inter-Subarray Copy (LISA-RISC).                        is applied at the bank level to all row buffers. Therefore, we
+   As LISA-RISC uses the full row bandwidth provided by LISA,                propose to add a new precharge-exception command, which
+it reduces the copy latency by 9.2x compared to RC-InterSA                   prevents a row buffer from being precharged and keeps it
+(see Section 4.5). An additional benefit of using LISA-RISC is               activated. This bank-wide exception signal is supplied to all
+that its inter-subarray copy operations are performed com-                   row buffers, and when raised for a particular row buffer, the
+pletely inside a bank. As the internal DRAM data bus is un-                  selected row buffer retains its state while the other row buffers
+touched, other banks can concurrently serve memory requests,                 are precharged. After the precharge-exception (PREE ) is com-
+exploiting bank-level parallelism. This new mechanism is com-                plete, we then invoke the second RBM (RBM0→2 ) to copy RB0
+plementary to RowClone, which performs fast intra-subarray                   to RB2, which is followed by an activation (ACTSA2 0) to write
+copies. Together, our mechanism and RowClone can enable                      RB2 into SA2. Finally, LISA-RISC finishes the copy by issuing
+a complete set of fast in-DRAM copy techniques in future                     a PRECHARGE command (PRE in Figure 7) to the bank.
+systems. We now explain the step-by-step operation of how                       In comparison, the command service timeline of RC-InterSA
+LISA-RISC copies data across subarrays.                                      is much longer, as RowClone can copy only one cache line of
+                                                                             data at a time (as opposed to half a row buffer). This requires
+4.3. Detailed Operation of LISA-RISC                                         128 serial cache line transfers to read the data from RB0 and RB1
+   Figure 7 shows the command service timelines for both                     into a temporary row in another bank, followed by another
+LISA-RISC and RC-InterSA, for copying a single row of data                   128 serial cache line transfers to write the data into RB2 and
+across two subarrays, as we show on the left. Data is copied                 RB3. LISA-RISC, by moving half a row using a single RBM
+from subarray SA0 to SA2. We illustrate four row buffers (RB0–               command, achieves 9.2x lower latency than RC-InterSA.
+RB3): recall from Section 2.1 that in order to activate one row,             4.4. Data Coherence
+a subarray must use two row buffers (at the top and bottom),                    When a copy is performed in DRAM, one potential disad-
+as each row buffer contains only half a row of data. As a result,            vantage is that the data stored in the DRAM may not be the
+LISA-RISC must copy half a row at a time, first moving the                   most recent version, as the processor may have dirty cache
+contents of RB1 into RB3, and then the contents of RB0 into                  lines that belong to the section of memory being copied. Prior
+RB2, using two RBM commands.                                                 works on in-DRAM migration have proposed techniques to
+   First, the LISA-RISC memory controller activates the source               accommodate data coherence [67, 69]. Alternatively, we can
+row (ACTSA0 ) to latch its data into two row buffers (RB0 and                accelerate coherence operations by using structures like the
+RB1). Second, LISA-RISC invokes the first RBM operation                      Dirty-Block Index [66].
+(RBM1→3 ) to move data from the bottom source row buffer
+(RB1) to the respective destination row buffer (RB3), thereby                4.5. Comparison of Copy Techniques
+linking RB1 to both RB2 and RB3, which activates both RB2                       Figure 8 shows the DRAM latency and DRAM energy con-
+and RB3. After this step, LISA-RISC cannot immediately in-                   sumption of different copy commands for copying a row of
+voke another RBM to transfer the remaining half of the source                data (8KB). The exact latency and energy numbers are listed
+row in RB0 into RB2, as a row buffer (RB2) needs to be in the                in Table 1.4 We derive the copy latency of each command se-
+precharged state in order to receive data from an activated row              quence using equations based on the DDR3-1600 timings [22]
+buffer (RB0). Therefore, LISA-RISC completes copying the first               (available in our technical report [5]), and the DRAM energy
+half of the source data into the destination row before invok-               using the Micron power calculator [49]. For LISA-RISC, we
+ing the second RBM, by writing the row buffer (RB3) into the                 define a hop as the number of subarrays that LISA-RISC needs
+cells through an activation (ACTSA2 ). This activation enables               to copy data across to move the data from the source subarray
+the contents of the sense amplifiers (RB3) to be driven into                 to the destination subarray. For example, if the source and des-
+the destination row. To address the issue that modern DRAM                   tination subarrays are adjacent to each other, the number of
+chips do not allow a second ACTIVATE to an already-activated                      4 Our reported numbers differ from prior work [69] because: (1) we use
+bank, we use the back-to-back ACTIVATE command that is used                  faster DRAM timing parameters (1600-11-11-11 vs 1066-8-8-8), and (2) we use
+to support RowClone [69].                                                    the 8KB row size of most commercial DRAM instead of 4KB [69].
+
+ RB0                                            Bulk row buffer transfers
+            Copy   LISA-RISC                                                                                   9.2x reduction in latency
+ SA0                         ACTSA0      RBM1 3 ACTSA2 PREE RBM0 2 ACTSA2                        PRE
+                   (SA0 SA2)
+ RB1
+ SA1
+ RB2
+                   RC-InterSA ACT
+                   (SA0 SA2)      SA0     RD0     RD1    ... RD   126       RD127   PRE    ACTSA2      WR0    WR1     ... WR    126   WR127   PRE
+ SA2                                                                          Serial cache line transfers
+ RB3                                                                                      Time
+
+ Figure 7: Command service timelines of a row copy for LISA-RISC and RC-InterSA (command latencies not drawn to scale).
+
+
+                                                                        6
+
+
+
+===== Page 7 =====
+
+              7
+              6                                                                                         LISA-VILLA is also easy to implement, as discussed in Sec-
+                                                                       -RISC               memcpy
+Energy (µJ)
+
+
+
+              5
+                                                            t of L
+                                                                   I SA                                 tion 5.2. We describe our hot row caching policy in Section 5.3.
+              4                                        en                                RowClone
+                                                ovem
+              3                             Impr                                InterSA LISA-RISC       5.1. Shortcomings of the State-of-the-Art
+                        SA
+
+              2
+                       tra
+
+
+                                 15 hops
+              1            1 7                 InterBank                                                   We observe that two state-of-the-art techniques for hetero-
+                      In
+
+
+
+
+              0
+                  0          200      400     600      800           1000      1200    1400             geneity within a DRAM chip are not effective at providing
+                                              Latency (ns)                                              both ease of implementation and low movement cost.
+                      Figure 8: Latency and DRAM energy of 8KB copy.                                       CHARM [71] introduces heterogeneity within a rank by
+                                                                                                        designing a few fast banks with (1) shorter bitlines for faster
+        Copy Commands (8KB)                        Latency (ns)                       Energy (µJ)       data sensing, and (2) closer placement to the chip I/O for faster
+        memcpy (via mem. channel)   1366.25                  6.2                                        data transfers. To exploit these low-latency banks, CHARM
+        RC-InterSA / Bank / IntraSA 1363.75 / 701.25 / 83.75 4.33 / 2.08 / 0.06                         uses an OS-managed mechanism to statically allocate hot data
+        LISA-RISC (1 / 7 / 15 hops) 148.5 / 196.5 / 260.5    0.09 / 0.12 / 0.17                         to them based on program profile information. Unfortunately,
+                                                                                                        this approach cannot adapt to program phase changes, lim-
+                             Table 1: Copy latency and DRAM energy.
+                                                                                                        iting its performance gains. If it were to adopt dynamic hot
+hops is 1. The DRAM chips that we evaluate have 16 subarrays                                            data management, CHARM would incur high movement cost
+per bank, so the maximum number of hops is 15.                                                          over the narrow 64-bit internal data bus in DRAM, as illus-
+   We make two observations from these numbers. First, al-                                              trated in Figure 9a, since it does not provide high-bandwidth
+though RC-InterSA incurs similar latencies as memcpy, it con-                                           connectivity between banks.
+sumes 29.6% less energy, as it does not transfer data over the
+                                                                                                        Fast Bank Slow Bank
+channel and DRAM I/O for each copy operation. However, as                                                                                                    Isolation
+we showed in Section 4.1, RC-InterSA incurs a higher system                                                                                                  Transistors
+performance penalty because it is a long-latency blocking mem-
+                                                                                                                                                             Underutilized
+ory command. Second, copying between subarrays using LISA                                                                                   Far              Cache Space
+                                                                                                                                            Seg.
+achieves significantly lower latency and energy compared to
+                                                                                                                 64b         Internal
+RowClone, even though the total latency of LISA-RISC grows                                                                   Data Bus
+                                                                                                                                         Near
+                                                                                                                                         Seg.
+linearly with the hop count.                                                                             High Movement Cost
+   By exploiting the LISA substrate, we thus provide a more                                                    (a) CHARM [71]                      (b) TL-DRAM [40]
+complete set of in-DRAM copy mechanisms. Our workload                                                     Figure 9: Drawbacks of existing heterogeneous DRAMs.
+evaluation results show that LISA-RISC outperforms RC-
+InterSA and memcpy: its average performance improvement                                                    TL-DRAM [40] provides heterogeneity within a subarray by
+and energy reduction over the best performing inter-subarray                                            dividing it into fast (near) and slow (far) segments that have
+copy mechanism (i.e., memcpy) are 66.2% and 55.4%, respec-                                              short and long bitlines, respectively, using isolation transistors.
+tively, on a quad-core system, across 50 workloads that per-                                            To manage the fast segment as an OS-transparent hardware
+form bulk copies (see Section 9.1).                                                                     cache, TL-DRAM proposes a fast intra-subarray movement
+                                                                                                        scheme similar to RowClone [69]. The main disadvantage
+5. Application 2: In-DRAM Caching Using                                                                 is that TL-DRAM needs to cache each hot row in two near
+                                                                                                        segments, as shown in Figure 9b, as each subarray uses two
+   Heterogeneous Subarrays (LISA-VILLA)                                                                 row buffers on opposite ends to sense data in the open-bitline
+   Our second application aims to reduce the DRAM access                                                architecture. This prevents TL-DRAM from using the full near
+latency for frequently-accessed (hot) data. Prior work intro-                                           segment capacity. TL-DRAM’s area overhead is also sizable
+duces heterogeneity into DRAM, where one region has a fast                                              (3.15%) in an open-bitline architecture. As we can see, neither
+access latency but small capacity (fewer DRAM rows), while                                              CHARM nor TL-DRAM strike a good trade-off between the
+the other has a slow access latency but high capacity (many                                             two design constraints.
+more rows) [40, 71]. To yield the highest performance benefits,                                         5.2. Variable Latency (VILLA) DRAM
+the fast region is used as a dynamic cache that stores the hot                                             We propose to introduce heterogeneity within a bank by de-
+rows. There are two design constraints that must be consid-                                             signing heterogeneous-latency subarrays. We call this heteroge-
+ered: (1) ease of implementation, as the fast caching structure                                         neous DRAM design VarIabLe LAtency DRAM (VILLA-DRAM).
+needs to be low-cost and non-intrusive; and (2) data move-                                              To design a low-cost fast subarray, we take an approach similar
+ment cost, as the caching mechanism should adapt to dynamic                                             to prior work, attaching fewer cells to each bitline to reduce
+program phase changes, which can lead to changes in the set                                             the parasitic capacitance and resistance. This reduces the sens-
+of hot DRAM rows. As we show in Section 5.1, prior work has                                             ing (tRCD), restoration (tRAS), and precharge (tRP) time of the
+not balanced the trade-off between these two constraints.                                               fast subarrays [40, 51, 71]. In this work, we focus on managing
+   Our goal is to design a heterogeneous DRAM that offers fast                                          the fast subarrays in hardware, as it offers better adaptivity to
+data movement with a low-cost and easy-to-implement de-                                                 dynamic changes in the hot data set.
+sign. To this end, we propose LISA-VILLA (VarIabLe LAtency),                                               In order to take advantage of VILLA-DRAM, we rely on
+a mechanism that uses LISA to provide fast row movement                                                 LISA-RISC to rapidly copy rows across subarrays, which sig-
+into the cache when the set of hot DRAM rows changes.                                                   nificantly reduces the caching latency. We call this synergistic
+
+
+                                                                                                    7
+
+
+
+===== Page 8 =====
+
+design, which builds VILLA-DRAM using the LISA substrate,                                  1 Activated RB
+                                                                                                                                    Charge Sharing &
+                                                                                                                              2 Double Precharging 3 Fully Precharged
+LISA-VILLA. Nonetheless, the cost of transferring data to a fast
+subarray is still non-negligible, especially if the fast subarray                                               Activated
+                                                                                                                                                                           VDD/2
+is far from the subarray where the data to be cached resides.                                               0                              0+
+Therefore, an intelligent cost-aware mechanism is required to                                                    Link
+                                                                                                                                                 Precharge
+                                                                                           VDD                               VDD-                Enabled VDD/2
+make astute decisions on which data to cache and when.
+                                                                                                            VDD/2                           VDD/2-                         VDD/2
+5.3. Caching Policy for LISA-VILLA
+                                                                                                                Precharged
+   We design a simple epoch-based caching policy to evaluate                             VDD/2                          VDD/2+                              VDD/2
+the benefits of caching a row in LISA-VILLA. Every epoch,
+                                                                                                 Figure 10: Linked precharging through LISA.
+we track the number of accesses to rows by using a set of
+1024 saturating counters for each bank.5 The counter values                               To evaluate the accelerated precharge process, we use the
+are halved every epoch to prevent staleness. At the end of an                          same methodology described in Section 3.3 and simulate the
+epoch, we mark the 16 most frequently-accessed rows as hot,                            linked precharge operation in SPICE. Figure 11 shows the
+and cache them when they are accessed the next time. For our                           resulting timing diagram. During the first 2ns, the wordline
+cache replacement policy, we use the benefit-based caching                             is lowered to disconnect the cells from the bitlines 1 . Then,
+policy proposed by Lee et al. [40]. Specifically, it uses a benefit                    we enable the links to begin precharging the bitlines 2 . The
+counter for each row cached in the fast subarray: whenever a                           result shows that the precharge latency reduces significantly
+cached row is accessed, its counter is incremented. The row                            due to having two PUs to perform the precharge. LISA enables
+with the least benefit is replaced when a new row needs to                             a shorter precharge latency of approximately 3.5ns 3 versus
+be inserted. Note that a large body of work proposed various                           the baseline precharge latency of 13.1ns 4 .
+caching policies (e.g., [11, 13, 15, 25, 30, 48, 61, 68, 81]), each
+                                                                                                            1.3 1       2       3                                     4
+of which can potentially be used with LISA-VILLA.                                                                                               Baseline
+
+
+
+
+                                                                                              Voltage (V)
+                                                                                                            1.1                                 LISA-LIP
+   Our evaluation shows that LISA-VILLA improves system
+                                                                                                Bitline
+                                                                                                            0.9
+performance by 5.1% on average, and up to 16.1%, for a range                                                0.7
+of 4-core workloads (see Section 9.2).                                                                      0.5
+                                                                                                                0             3.5     5                10           13.1     15
+                                                                                                                                          Time (ns)
+6. Application 3: Fast Precharge Using Linked
+   Precharge Units (LISA-LIP)                                                              Figure 11: SPICE simulation of precharge operation.
+
+   Our third application aims to accelerate the process of                                To account for process and temperature variation, we
+precharge. The precharge time for a subarray is determined                             add a guardband to the SPICE-reported latency, increasing
+by the drive strength of the precharge unit. We observe that                           it to 5ns (i.e., by 42.9%), which still achieves 2.6x lower
+in modern DRAM, while a subarray is being precharged, the                              precharge latency than the baseline. Our evaluation shows that
+precharge units (PUs) of other subarrays remain idle.                                  LISA-LIP improves performance by 10.3% on average, across
+   We propose to exploit these idle PUs to accelerate a                                50 four-core workloads (see Section 9.3).
+precharge operation by connecting them to the subarray that
+is being precharged. Our mechanism, LISA-LInked Precharge
+                                                                                       7. Hardware Cost
+(LISA-LIP), precharges a subarray using two sets of PUs: one                           7.1. Die Area Overhead
+from the row buffer that is being precharged, and a second set
+                                                                                          To evaluate the area overhead of adding isolation transistors,
+from a neighboring subarray’s row buffer (which is already in
+                                                                                       we use area values from prior work, which adds isolation
+the precharged state), by enabling the links between the two
+                                                                                       transistors to disconnect bitlines from sense amplifiers [55].
+subarrays.
+                                                                                       That work shows that adding an isolation transistor to every
+   Figure 10 shows the process of linked precharging using
+                                                                                       bitline incurs a total of 0.8% die area overhead in a 28nm DRAM
+LISA. Initially, only one subarray (top) is fully activated
+                                                                                       process technology. Similar to prior work that adds isolation
+(state 1 ) while the neighboring (bottom) subarray is in
+                                                                                       transistors to DRAM [40, 55], our LISA substrate also requires
+the precharged state. The neighboring subarray is in the
+                                                                                       additional control logic outside the DRAM banks to control
+precharged state, as only one subarray in a bank can be acti-
+                                                                                       the isolation transistors, which incurs a small amount of area
+vated at a time, while the other subarrays remain precharged.
+                                                                                       and is non-intrusive to the cell arrays. For LISA-VILLA, we use
+In state 2 , we begin the precharge operation by disabling the
+                                                                                       1024 six-bit saturating counters to track the access frequency
+sense amplifier in the top row buffer and enabling its PU. After
+                                                                                       of rows in every bank; this requires an additional 6KB storage
+we enable the links between the top and bottom subarrays,
+                                                                                       within a memory controller connected to one rank.
+the bitlines start sharing charge with each other, and both PUs
+simultaneously reinitialize the bitlines, eventually fully pulling                     7.2. Handling Repaired Rows
+the bitlines to VDD /2 (state 3 ). Note that we are using two                             To improve yield, DRAM manufacturers often employ post-
+PUs to pull down only one set of activated bitlines, which is                          manufacturing repair techniques that can remap faulty rows
+why the precharge process is shorter.                                                  to spare rows provisioned in every subarray [31]. Therefore,
+     5 The hardware cost of these counters is low, requiring only 6KB of storage       consecutive row addresses as observed by the memory con-
+in the memory controller (see Section 7.1).                                            troller may physically reside in different subarrays. To handle
+
+
+                                                                                   8
+
+
+
+===== Page 9 =====
+
+this issue for techniques that require the controller to know             misses per thousand instructions) non-copy-intensive bench-
+the subarray a row resides in (e.g., RowClone [69], LISA-RISC),           marks. Due to the large number of workloads, we present
+a simple approach can be used to expose the repaired row                  detailed results for only five workload mixes (Table 3), along
+information to the memory controller. Since DRAM already                  with the average results across all 50 workloads.
+stores faulty rows’ remapping information inside the chip, this
+                                                                              Mix 1    tpcc64, forkbench, libquantum, bootup
+information can be exposed to the controller through the serial               Mix 2    bootup, xalancbmk, pagerank, forkbench
+presence detect (SPD) [23], which is an EEPROM that stores                    Mix 3    libquantum, pagerank, forkbench, bootup
+DRAM information such as timing parameters. The memory                        Mix 4    mcf, forkbench, random, forkbench
+                                                                              Mix 5    bfs, bootup, tpch2, bootup
+controller can read this stored information at system boot time
+so that it can correctly determine a repaired row’s location               Table 3: A subset of copy workloads with detailed results.
+in DRAM. Note that similar techniques may be necessary for
+                                                                          Performance Metrics. We measure single-core and
+other mechanisms that require information about physical
+                                                                          multi-core performance using IPC and Weighted Speedup
+location of rows in DRAM (e.g., [4, 29, 33, 36, 40, 43]).
+                                                                          (WS) [70], respectively. Prior work showed that WS is a
+8. Methodology                                                            measure of system throughput [8]. To report DRAM energy
+                                                                          consumption, we use the Micron power calculator [49]. We
+   We evaluate our system using a variant of Ramulator [32],              run all workloads for 100 million instructions, as done in
+an open-source cycle-accurate DRAM simulator, driven by                   many recent works [35, 36, 40, 41, 52].
+traces generated from Pin [46]. We will make our simulator
+                                                                          VILLA-DRAM Configuration. For our simulated VILLA-
+publicly available [6]. We use a row buffer policy that closes
+                                                                          DRAM, each fast subarray consists of 32 rows to achieve low
+a row only when there are no more outstanding requests in
+                                                                          latency on sensing, precharge, and restoration (a typical subar-
+the memory controller to the same row [62]. Unless stated
+                                                                          ray has 512 rows). Our SPICE simulation reports the following
+otherwise, our simulator uses the parameters listed in Table 2.
+                                                                          new timing parameters for a 32-row subarray: tRCD=7.5ns,
+ Processor         1–4 OoO cores, 4GHz, 3-wide issue                      tRP=8.5ns, and tRAS=13ns, which are reduced from the origi-
+ Cache             L1: 64KB, L2: 512KB per core, L3: 4MB, 64B lines       nal timings by respectively, 45.5%, 38.2%, and 62.9%. For each
+ Mem. Controller 64/64-entry read/write queue, FR-FCFS [62, 84]           bank, we allocate 4 fast subarrays in addition to the 16 512-row
+                                                                          subarrays, incurring a 1.6% area overhead. We set the epoch
+                   DDR3-1600 [50], 1–2 channels, 1 rank/channel,
+ DRAM              8 banks/rank, 16 subarrays/bank                        length for our caching policy to 10,000 cycles.
+          Table 2: Evaluated system configuration.                        9. Evaluation
+Benchmarks and Workloads. We primarily use bench-                           We quantitatively evaluate our proposed applications of
+marks from TPC(-C/-H) [76], DynoGraph (BFS, Page-                         LISA: (1) rapid bulk copying (LISA-RISC), (2) in-DRAM caching
+Rank) [58], SPEC CPU2006 [72], and STREAM [47], along                     with heterogeneous subarrays (LISA-VILLA), and (3) reduced
+with a random-access microbenchmark similar to HPCC Ran-                  precharge time (LISA-LIP).
+domAccess [14]. Because these benchmarks predominantly
+stress the CPU and memory while rarely invoking memcpy, we                9.1. Bulk Memory Copy
+use the following benchmarks to evaluate different copy mech-             9.1.1. Single-Core Workloads. Figure 12 shows the per-
+anisms: (1) bootup, (2) forkbench, and (3) Unix shell. These              formance of three copy benchmarks on a single-core sys-
+were shared by the authors of RowClone [69]. The bootup                   tem with one memory channel and 1MB of last-level cache
+benchmark consists of a trace collected while a Debian oper-              (LLC). We evaluate the following bulk copy mechanisms:
+ating system was booting up. The forkbench kernel forks a                 (1) memcpy, which copies data over the memory channel;
+child process that copies 1K pages from the parent process by             (2) RowClone [69]; and (3) LISA-RISC. We use two different
+randomly accessing them from a 64MB array. The Unix shell                 hop counts between the source and destination subarray for
+is a script that runs find in a directory along with ls on each           LISA-RISC: 15 (longest) and 1 (shortest). They are labeled as
+subdirectory. More information on these is in [69].                       LISA-RISC-15 and LISA-RISC-1, respectively, in the figure. We
+   To evaluate the benefits of different data copy mechanisms             make four major observations.
+in isolation, we use a copy-aware page mapping policy that                   First, LISA-RISC achieves significant improvement over
+allocates destination pages to certain DRAM structures (i.e.,             RC-InterSA for all three benchmarks in terms of both IPC
+subarrays, banks) such that only the specified copy mechanism             and memory energy consumption, shown in Figure 12a and
+is used for copy operations. For example, when evaluating                 Figure 12b, respectively. This shows that the LISA substrate is
+RC-IntraSA, the page mapper allocates the destination page                effective at performing fast inter-subarray copies.
+only within the same subarray as the source page [69].                       Second, both LISA-RISC-1 and LISA-RISC-15 significantly
+   To construct multi-core workloads for evaluating the bene-             reduce the memory energy consumption over memcpy. This is
+fits of data copy mechanisms, we randomly assemble 50 work-               due to (1) reduced memory traffic over the channel by keeping
+loads, each comprising 50% copy-intensive benchmarks and                  the data within DRAM, and (2) higher performance.
+50% non-copy-intensive benchmarks. To evaluate the benefits                  Third, LISA-RISC-1/-15 provides 12.6%/10.6%, 4.9x/4.3x, and
+of in-DRAM caching and reduced precharge time, we restrict                1.8%/0.7% speedup for bootup, forkbench, and shell, re-
+our workloads to randomly-selected memory-intensive (≥ 5                  spectively, over memcpy. The performance gains are smaller
+
+
+                                                                      9
+
+
+
+===== Page 10 =====
+
+                      3                                              1.8%
+                    2.5
+                                                                                             other hand, when memcpy is used as the copy mechanism,
+                                      12.6%                                  memcpy          the working set of forkbench is mainly from bulk copy data,
+                      2                                                    RC-InterSA
+                                                   4.9x
+                                                                                             and is less susceptible to cache size reduction. Nonetheless,
+IPC
+
+
+
+
+                    1.5                                                   RC-InterBA
+                      1                                                    RC-IntraSA        LISA-RISC still provides an improvement of 4.2x even with a
+                    0.5                                                 LISA-RISC-15
+                      0                                                  LISA-RISC-1         256KB cache.
+                               bootup       forkbench        shell                             We conclude that LISA-RISC significantly improves perfor-
+                                           Benchmarks
+                                                  (a) IPC                                    mance and memory energy efficiency in single-core workloads
+                                                                                             that invoke bulk copies.
+Norm. DRAM Energy
+
+
+
+
+                      1
+                                                                             memcpy          9.1.2. Multi-Core Workloads. Figure 13 shows the system
+                    0.8                                                    RC-InterSA
+                                -58.0%         -94.7%         -77.1%
+                    0.6                                                   RC-InterBA         performance and energy efficiency (i.e., memory energy per
+                                                                           RC-IntraSA
+                    0.4
+                                                                        LISA-RISC-15         instruction) of different copy mechanisms across 50 work-
+                    0.2
+                      0
+                                                                         LISA-RISC-1         loads, on a quad-core system with two channels and 4MB of
+                               bootup       forkbench        shell                           LLC. The error bars in this figure (and other figures) indicate
+                                           Benchmarks
+                                                (b) Energy                                   the 25th and 75th percentile values across all 50 workloads.
+                                                                                             Similar to the performance trends seen in the single-core sys-
+                                               4.2x
+                          4                                                   256KB          tem, LISA-RISC consistently outperforms other mechanisms
+Normalized IPC
+
+
+
+
+                                                                              512KB
+                          2                                                     1MB          at copying data between subarrays. LISA-RISC-1 attains a high
+    (log2)
+
+
+
+
+                                                                     44.7%      2MB
+                              18.2%
+                                                                                4MB          average system performance improvement of 66.2% and 2.2x
+                          1
+                                                                                             over memcpy and RC-InterSA, respectively. Although Mix 5
+                     0.5                                                                     has the smallest number of copy operations out of the five
+                                  bootup
+                               forkbench           shell                                     presented workload mixes, LISA-RISC still improves its per-
+                              Benchmarks
+(c) LISA’s performance improvement over memcpy as LLC size varies                            formance by 6.7% over memcpy. By moving copied data only
+Figure 12: Comparison of copy mechanisms in a single-core                                    within DRAM, LISA-RISC significantly reduces memory en-
+system. Value (%) on top indicates the improvement of LISA-                                  ergy consumption (55.4% on average) over memcpy. In sum-
+RISC-1 over memcpy.                                                                          mary, LISA-RISC provides both high performance and high
+                                                                                             memory energy efficiency for bulk data copying for a wide
+for bootup and shell. Both of these benchmarks invoke
+                                                                                             variety of single- and multi-core workloads.
+fewer copy operations (i.e., 2171 and 2682, respectively) than
+                                                                                                               4
+forkbench, which invokes a large number (40952) of copies.
+                                                                                             Normalized WS
+
+
+
+
+                                                                                                             3.5                                                 66.2%       RC-InterSA
+                                                                                                               3
+As a result, forkbench is more sensitive to the memory latency                                               2.5                                                            RC-InterBA
+                                                                                                                                                                             RC-IntraSA
+of copy commands. Furthermore, the large LLC capacity (1MB)                                                    2
+                                                                                                             1.5                                                          LISA-RISC-15
+helps absorb the majority of memory writes resulting from                                                      1
+                                                                                                             0.5
+                                                                                                                                                                           LISA-RISC-1
+memcpy for bootup and shell, thereby reducing the effective                                                              Mix1     Mix2    Mix3    Mix4    Mix5 GMean50
+latency of memcpy.                                                                                                                         Workloads
+   Fourth, RC-InterSA performs worse than memcpy for bootup                                                                 (a) Weighted speedup normalized to memcpy
+and shell due to its long blocking copy operations. Although,
+                                                                                             Normalized Memory
+                                                                                              Energy/Instruction
+
+
+
+
+                                                                                                                   1.4
+it attains a 19.4% improvement on forkbench because memcpy                                                         1.2                                           -55.4%
+                                                                                                                                                                            RC-InterSA
+                                                                                                                     1
+causes severe cache pollution by installing a large amount of                                                      0.8                                                     RC-InterBA
+                                                                                                                   0.6                                                      RC-IntraSA
+copied data into the LLC. Compared to the 20% cache hit rate                                                       0.4                                                   LISA-RISC-15
+                                                                                                                   0.2                                                    LISA-RISC-1
+for memcpy, RC-InterSA has a much higher hit rate of 67.2%                                                           0
+for forkbench. The copy performance of memcpy is strongly                                                                  Mix1    Mix2    Mix3    Mix4   Mix5 HMean50
+
+correlated with the LLC management policy and size.                                                                                         Workloads
+
+   To understand performance sensitivity to LLC size, Fig-                                                               (b) Memory energy efficiency normalized to memcpy
+ure 12c shows the speedup of LISA-RISC-1 over memcpy for                                     Figure 13: Four-core system evaluation: (a) weighted speedup
+different LLC capacities. We make two observations, which are                                and (b) memory energy per instruction.
+also similar for LISA-RISC-15 (not shown). First, for bootup
+and shell, the speedup of LISA over memcpy reduces as the                                    9.2. In-DRAM Caching with LISA-VILLA
+LLC size increases because the destination locations of memcpy                                  Figure 14 shows the system performance improvement of
+operations are more likely to hit in the larger cache.                                       LISA-VILLA over a baseline without any fast subarrays in a
+   Second, for forkbench, LISA-RISC’s performance gain over                                  four-core system. It also shows the hit rate in VILLA-DRAM,
+memcpy decreases as cache size reduces from 1MB to 256KB.                                    i.e., the fraction of accesses that hit in the fast subarrays. We
+This is because the LLC hit rate reduces much more signifi-                                  make two main observations. First, by exploiting LISA-RISC
+cantly for LISA-RISC, from 67% (1MB) to 10% (256KB), than for                                to quickly cache data in VILLA-DRAM, LISA-VILLA improves
+memcpy (from 20% at 1MB, to 19% at 256KB). When forkbench                                    system performance for a wide variety of workloads — by
+uses LISA-RISC for copying data, its working set mainly con-                                 up to 16.1%, with a geometric mean of 5.1%. This is mainly
+sists of non-copy data, which has good locality. As the LLC                                  due to reduced DRAM latency of accesses that hit in the fast
+size reduces by 4x, the working set no longer fits in the smaller                            subarrays (which comprise 16MB of total storage across two
+cache, thus causing a significant hit rate reduction. On the                                 memory channels). The performance improvement heavily
+
+
+                                                                                        10
+
+
+
+===== Page 11 =====
+
+ correlates with the VILLA cache hit rate. Our work does not                                                                                   alone, and adding LISA-LIP further provides an 8.8% gain over
+ focus on optimizing the caching scheme, but the hit rate may                                                                                  LISA-(RISC+VILLA). Second, although LISA-RISC alone pro-
+ be increased by an enhanced caching policy (e.g., [61, 68]),                                                                                  vides a majority of the performance improvement over the
+ which can further improve system performance.                                                                                                 baseline (59.6% on average), the use of both LISA-VILLA and
+                             LISA-VILLA                70                                                                                      LISA-LIP further improves performance, resulting in an aver-
+
+
+
+
+                                                            VILLA Hit Rate (%)
+                 1.15
+ Normalized WS
+
+
+
+
+                                                                                                   1
+                                                       60                                                                                      age performance gain of 94.8% and memory energy reduction
+
+
+
+
+                                                                                 Normalized WS
+                            Cache Hit Rate
+                  1.1                                  50                                        0.8
+                                                       40                                                                                      (not plotted) of 49.0%. Taken together, these results indicate
+                 1.05                                  30                                        0.6
+                                                       20                                        0.4
+                                                                                                                                               that LISA is an effective substrate that enables a wide range
+                    1
+                                                       10
+                                                                                                 0.2
+                                                                                                        RC-InterSA                             of high-performance and energy-efficient applications in the
+                 0.95                                  0                                               LISA-VILLA
+                     0       10    20    30     40    50                                           0                                           DRAM system.
+                                                                                                            GMean
+                                   Workloads                                                                                                                         8
+                                                                                                                                                                             LISA-(RISC+VILLA+LIP)
+
+
+
+
+                                                                                                                                             Normalized WS
+Figure 14: Performance improvement and hit rate with LISA-                                                                                                           4           LISA-(RISC+VILLA)
+VILLA, and performance comparison to using RC-InterSA                                                                                                                                  LISA-RISC-15
+
+
+
+
+                                                                                                                                                 (log2)
+with VILLA-DRAM.                                                                                                                                                     2
+                                                                                                                                                                     1
+    Second, the VILLA-DRAM design, which consists of hetero-                                                                                                     0.5
+ geneous subarrays, is not practical without LISA. Figure 14                                                                                                             0             10            20               30               40               50
+ shows that using RC-InterSA to move data into the cache                                                                                                                                                  Workloads
+ reduces performance by 52.3% due to slow data movement,                                                                                       Figure 16: Combined WS improvement of LISA applications.
+ which overshadows the benefits of caching. The results indi-                                                                                  9.5. Sensitivity to System Configuration
+ cate that LISA is an important substrate to enable not only
+ fast bulk data copy, but also a fast in-DRAM caching scheme.                                                                                    Figure 17 shows the weighted speedup for memcpy and
+                                                                                                                                              LISA-All (i.e., all three applications) on a 4-core system using
+  9.3. Accelerated Precharge with LISA-LIP                                                                                                    varying memory channel counts and LLC sizes. The results
+    Figure 15 shows the system performance improvement                                                                                        show that performance improvement increases with fewer
+ of LISA-LIP over a baseline that uses the standard DRAM                                                                                      memory channels, as memory contention increases. On the
+ precharge latency, as well as LISA-LIP’s row-buffer hit rate,                                                                                other hand, adding more memory channels increases memory-
+ on a four-core system across 50 workloads. LISA-LIP attains a                                                                                level parallelism, allowing more of the copy latency to be
+ maximum gain of 13.2%, with a mean improvement of 8.1%.                                                                                      hidden. Similar trends are observed with the LLC capacity. As
+ The performance gain becomes higher as the row-buffer hit                                                                                    LLC size decreases, the working set becomes less likely to fit
+ rate decreases, which leads to more precharge commands.                                                                                      with memcpy, worsening its performance. LISA-All provides
+ These results show that LISA is a versatile substrate that effec-                                                                            significant performance benefits for all configurations.
+ tively reduces precharge latency in addition to accelerating                                                                                                   10
+                                                                                                                                                                                                                                             memcpy
+                                                                                                                                             Weighted Speedup
+
+
+
+
+ data movement.                                                                                                                                                  8                                                                          LISA-All
+                                                                                                                                                                                              1.8x                             1.9x
+                                                                                                                                                                 6                     1.9x                           1.9x
+                                                                                                                      RB Hit Rate (%)
+
+
+
+
+                 1.15                                                                                            70
+Normalized WS
+
+
+
+
+                                  LISA-LIP Speedup                 RB Hit Rate                                                                                                  2.1x                          2.0x
+                  1.1                                                                                            60                                              4
+                                                                                                                 50
+                 1.05                                                                                            40                                              2
+                    1                                                                                            30                                              0
+                                                                                                                 20                                                           Memory Channels                 LLC Size
+                 0.95                                                                                            10
+                        0           10         20          30                                          40       50                              Figure 17: Performance sensitivity to channels and LLC size.
+                                                 Workloads
+   Figure 15: Speedup and row buffer (RB) hit rate of LISA-LIP.                                                                                9.6. Effect of Copy Distance on LISA-RISC
+                                                                                                                                                 Table 4 shows that the performance gain and memory en-
+    We also evaluate the effectiveness of combining LISA-VILLA                                                                                ergy savings of LISA-RISC over memcpy increases as the copy
+  and LISA-LIP (not shown, but available in our technical re-                                                                                 distance reduces. This is because with fewer subarrays be-
+  port [5]). The combined mechanism, which is transparent to                                                                                  tween the source and destination subarrays, the number of
+  software, improves system performance by 12.2% on average                                                                                   RBM commands invoked by LISA-RISC reduces accordingly,
+  and up to 23.8% across the same set of 50 workloads without                                                                                 which decreases the latency and memory energy consumption
+  bulk copies. Thus, LISA is an effective substrate that can enable                                                                           of bulk data copy.
+  mechanisms to fundamentally reduce memory latency.
+                                                                                                                                                       Copy Distance (hops)                               1      3         7      15          31       63
+  9.4. Putting Everything Together
+                                                                                                                                                       RISC Copy Latency (ns)  148.5 164.5 196.5 260.5 388.5 644.5
+     As all of the three proposed applications are complementary                                                                                       WS Improvement (%)       66.2 65.3 63.3 59.6 53.0 42.4
+  to each other, we evaluate the effect of putting them together                                                                                       DRAM Energy Savings (%) 55.4 55.2 54.6 53.6 51.9 48.9
+  on a four-core system. Figure 16 shows the system perfor-
+  mance improvement of adding LISA-VILLA to LISA-RISC (15                                                                                                                Table 4: Effect of copy distance on LISA-RISC.
+  hops), as well as combining all three optimizations, compared
+  to our baseline using memcpy and standard DDR3-1600 mem-                                                                                     10. Other Applications Enabled by LISA
+  ory. We draw several key conclusions. First, the performance                                                                                   We describe two additional applications that can potentially
+  benefits from each scheme are additive. On average, adding                                                                                   benefit from LISA. We describe them at a high level, and defer
+  LISA-VILLA improves performance by 16.5% over LISA-RISC                                                                                      evaluations to future work.
+
+
+                                                                                                                                        11
+
+
+
+===== Page 12 =====
+
+Reducing Subarray Conflicts via Remapping. When two                        destination, which prolongs data transfer latency. In contrast,
+memory requests access two different rows in the same bank,                LISA provides a direct path to transfer data between row buffers
+they have to be served serially, even if they are to different sub-        without requiring intermediate data writes into the subarray.
+arrays. To mitigate such bank conflicts, Kim et al. [36] propose           Caching. Several prior works (e.g., [11, 13, 15, 30]) have pro-
+subarray-level parallelism (SALP), which enables multiple sub-             posed to add a small SRAM cache to DRAM chips, which
+arrays to remain activated at the same time. However, if two ac-           obtains lower access latency at the cost of high area overhead.
+cesses are to the same subarray, they still have to be served se-          Many other works (e.g., [7, 20, 21, 57, 59, 60, 61, 68]) have
+rially. This problem is exacerbated when frequently-accessed               proposed various cache management policies. Such caching
+rows reside in the same subarray. To help alleviate such sub-              policies can potentially be integrated with LISA-VILLA to
+array conflicts, LISA can enable a simple mechanism that ef-               achieve a better hit rate in the fast subarrays.
+ficiently remaps or moves the conflicting rows to different
+subarrays by exploiting fast RBM operations.                               Reducing DRAM Latency. Several types of DRAM provide
+                                                                           low latency, such as Micron’s RLDRAM [51] or Fujitsu’s FC-
+Extending the Range of In-DRAM Bulk Operations. To                         DRAM [64]. These have fewer cells connected to each bitline,
+accelerate bitwise operations, Seshadri et al. [67] propose a              which comes with a large overhead [36, 40].
+new mechanism that performs bulk bitwise AND and OR op-
+                                                                              O et al. [55] propose to add isolation transistors that sepa-
+erations in DRAM. Their mechanism is restricted to applying
+                                                                           rate bitlines from their sense amplifiers so that the bitlines can
+bitwise operations only on rows within the same subarray
+                                                                           be precharged without deactivating the row buffer. This helps
+as it requires the copying of source rows before performing
+                                                                           to hide the latency impact of precharge. These isolation tran-
+the bitwise operation. The high cost of inter-subarray copies
+                                                                           sistors are orthogonal to isolation transistors in LISA, which
+makes the benefit of this mechanism inapplicable to data re-
+                                                                           interconnect bitlines of neighboring subarrays, and LISA can
+siding in rows in different subarrays. LISA can enable efficient
+                                                                           be combined with [55] to further improve performance. LISA
+inter-subarray bitwise operations by using LISA-RISC to copy
+                                                                           can also be combined with many other proposals that reduce
+rows to the same subarray at low latency and low energy.
+                                                                           DRAM latency (e.g., [4, 12, 36, 37, 39, 40]).
+11. Related Work
+                                                                           12. Conclusion
+   To our knowledge, this is the first work to propose a DRAM
+substrate that supports fast data movement between subarrays                  We present a new DRAM substrate, low-cost inter-linked
+in the same bank, which enables a wide variety of applications             subarrays (LISA), that expedites bulk data movement across
+for DRAM systems. We already provided extensive compar-                    subarrays in DRAM. LISA achieves this by creating a new
+isons to RowClone [69], CHARM [71], and TL-DRAM [40].                      high-bandwidth datapath at low cost between subarrays, via
+We now discuss prior works that focus on each of the opti-                 the insertion of a small number of isolation transistors. We
+mizations that LISA enables.                                               describe and evaluate three applications that are enabled by
+Bulk Data Transfer Mechanisms. Prior works [9, 10, 27]                     LISA. First, LISA significantly reduces the latency and memory
+have added scratchpad memories to reduce CPU pressure dur-                 energy consumption of bulk copy operations between subar-
+ing bulk data transfers, which can also enable sophisticated               rays over two state-of-the-art mechanisms [69]. Second, LISA
+data movement (e.g., scatter-gather), but they still require data          enables an effective in-DRAM caching scheme on a new het-
+to first be moved on-chip. A patent proposes a DRAM that can               erogeneous DRAM organization, which uses fast subarrays for
+copy a page across memory blocks [65], but lacks concrete                  caching hot data in every bank. Third, we reduce precharge la-
+analysis and evaluation of the underlying copy operations.                 tency by connecting two precharge units of adjacent subarrays
+Intel I/O Acceleration Technology [16] allows for memory-to-               together using LISA. We experimentally show that the three
+memory DMA transfers across a network, but cannot transfer                 applications of LISA greatly improve system performance and
+data within main memory.                                                   memory energy efficiency when used individually or together,
+   Zhao et al. [83] propose to add a bulk data movement engine             across a variety of workloads and system configurations.
+inside the memory controller to speed up bulk-copy operations.                We conclude that LISA is an effective substrate that enables
+Jiang et al. [26] design a different copy engine, placed within            several effective applications. We believe that this substrate,
+the cache controller, to alleviate pipeline and cache stalls that          which enables low-cost interconnections between DRAM sub-
+occur when these transfers take place. However, these works                arrays, can pave the way for other applications that can further
+do not directly address the problem of data movement across                improve system performance and energy efficiency through
+the narrow memory channel.                                                 fast data movement in DRAM.
+   A concurrent work by Lu et al. [45] proposes a het-                     Acknowledgments
+erogeneous DRAM design similar to VILLA-DRAM, called
+DAS-DRAM, but with a very different data movement mecha-                      We thank the anonymous reviewers and SAFARI group
+nism from LISA. It introduces a row of migration cells into each           members for their helpful feedback. We acknowledge the sup-
+subarray to move rows across subarrays. Unfortunately, the                 port of Google, Intel, Nvidia, Samsung, and VMware. This
+latency of DAS-DRAM is not scalable with movement distance,                research was supported in part by the ISTC-CC, SRC, CFAR,
+because it requires writing the migrating row into each inter-             and NSF (grants 1212962, 1319587, and 1320531). Kevin Chang
+mediate subarray’s migration cells before the row reaches its              is supported in part by the SRCEA/Intel Fellowship.
+
+
+                                                                      12
+
+
+
+===== Page 13 =====
+
+References                                                                              [43] J. Liu et al., “An Experimental Study of Data Retention Behavior in Mod-
+                                                                                             ern DRAM Devices: Implications for Retention Time Profiling Mecha-
+ [1] S. Blagodurov et al., “A Case for NUMA-Aware Contention Management                      nisms,” in ISCA, 2013.
+     on Multicore Systems,” in USENIX ATC, 2011.                                        [44] J. Liu et al., “RAIDR: Retention-Aware Intelligent DRAM Refresh,” in
+ [2] Cadence Design Systems, Inc., “Spectre Circuit Simulator,” http://www.                  ISCA, 2012.
+     cadence.com/products/rf/spectre_circuit/pages/default.aspx.                        [45] S.-L. Lu et al., “Improving DRAM Latency with Dynamic Asymmetric
+ [3] K. Chandrasekar et al., “Exploiting Expendable Process-Margins in                       Subarray,” in MICRO, 2015.
+                                                                                        [46] C.-K. Luk et al., “Pin: Building Customized Program Analysis Tools with
+     DRAMs for Run-Time Performance Optimization,” in DATE, 2014.                            Dynamic Instrumentation,” in PLDI, 2005.
+ [4] K. K. Chang et al., “Improving DRAM Performance by Parallelizing                   [47] J. D. McCalpin, “STREAM Benchmark.”
+     Refreshes with Accesses,” in HPCA, 2014.                                           [48] J. Meza et al., “Enabling Efficient and Scalable Hybrid Memories Using
+ [5] K. K. Chang et al., “Low-Cost Inter-Linked Subarrays (LISA): A New                      Fine-Granularity DRAM Cache Management,” CAL, 2012.
+     DRAM Substrate with Higher Connectivity,” Carnegie Mellon Univ.,                   [49] Micron Technology, “Calculating Memory System Power for DDR3,”
+     SAFARI Research Group, Tech. Rep., 2016.                                                2007.
+ [6] CMU SAFARI Research Group, https://github.com/CMU-SAFARI.                          [50] Micron Technology, Inc., “4Gb: x4, x8, x16 DDR3 SDRAM,” 2011.
+ [7] J. D. Collins and D. M. Tullsen, “Hardware Identification of Cache Con-            [51] Micron Technology, Inc., “576Mb: x18, x36 RLDRAM3,” 2011.
+     flict Misses,” in MICRO, 1999.                                                     [52] O. Mutlu and T. Moscibroda, “Stall-Time Fair Memory Access Scheduling
+ [8] S. Eyerman and L. Eeckhout, “System-Level Performance Metrics for                       for Chip Multiprocessors,” in MICRO, 2007.
+     Multiprogram Workloads,” IEEE Micro, 2008.                                         [53] O. Mutlu and T. Moscibroda, “Parallelism-Aware Batch Scheduling: En-
+ [9] M. Gschwind, “Chip Multiprocessing and the Cell Broadband Engine,”                      hancing Both Performance and Fairness of Shared DRAM Systems,” in
+     in CF, 2006.                                                                            ISCA, 2008.
+[10] J. Gummaraju et al., “Architectural Support for the Stream Execution               [54] North Carolina State Univ., “FreePDK45,” http://www.eda.ncsu.edu/wiki/
+     Model on General-Purpose Processors,” in PACT, 2007.                                    FreePDK.
+                                                                                        [55] S. O et al., “Row-Buffer Decoupling: A Case for Low-Latency DRAM
+[11] C. A. Hart, “CDRAM in a Unified Memory Architecture,” in Intl. Com-                     Microarchitecture,” in ISCA, 2014.
+     puter Conference, 1994.                                                            [56] J. K. Ousterhout, “Why Aren’t Operating Systems Getting Faster as Fast
+[12] H. Hassan et al., “ChargeCache: Reducing DRAM Latency by Exploiting                     as Hardware?” in USENIX Summer Conf., 1990.
+     Row Access Locality,” in HPCA, 2016.                                               [57] T. Piquet et al., “Exploiting Single-Usage for Effective Memory Manage-
+[13] H. Hidaka et al., “The Cache DRAM Architecture,” IEEE Micro, 1990.                      ment,” in ACSAC, 2007.
+[14] HPC Challenge, “RandomAccess,” http://icl.cs.utk.edu/hpcc.                         [58] J. Poovey et al., “DynoGraph,” https://github.com/sirpoovey/
+[15] W.-C. Hsu and J. E. Smith, “Performance of Cached DRAM Organizations                    DynoGraph.
+     in Vector Supercomputers,” in ISCA, 1993.                                          [59] M. Qureshi et al., “A Case for MLP-Aware Cache Replacement,” in ISCA,
+[16] Intel Corp., “Intel®I/O Acceleration Technology,” http://www.intel.com/                 2006.
+                                                                                        [60] M. Qureshi and Y. Patt, “Utility-Based Cache Partitioning: A Low-
+     content/www/us/en/wireless-network/accel-technology.html.                               Overhead, High-Performance, Runtime Mechanism to Partition Shared
+[17] Intel Corp., “Intel 64 and IA-32 Architectures Optimization Reference                   Caches,” in MICRO, 2006.
+     Manual,” 2012.                                                                     [61] M. K. Qureshi et al., “Adaptive Insertion Policies for High-Performance
+[18] ITRS, http://www.itrs.net/ITRS1999-2014Mtgs,Presentations&Links/                        Caching,” in ISCA, 2007.
+     2013ITRS/2013Tables/FEP_2013Tables.xlsx, 2013.                                     [62] S. Rixner et al., “Memory Access Scheduling,” in ISCA, 2000.
+[19] ITRS, http://www.itrs.net/ITRS1999-2014Mtgs,Presentations&Links/                   [63] M. Rosenblum et al., “The Impact of Architectural Trends on Operating
+     2013ITRS/2013Tables/Interconnect_2013Tables.xlsx, 2013.                                 System Performance,” in SOSP, 1995.
+[20] A. Jaleel et al., “Adaptive Insertion Policies for Managing Shared Caches,”        [64] Y. Sato et al., “Fast cycle RAM (FCRAM): A 20-ns Random Row Access,
+     in PACT, 2008.                                                                          Pipe-Lined Operating DRAM,” in VLSIC, 1998.
+[21] A. Jaleel et al., “High Performance Cache Replacement Using Re-                    [65] S.-Y. Seo, “Methods of Copying a Page in a Memory Device and Meth-
+     reference Interval Prediction (RRIP),” in ISCA, 2010.                                   ods of Managing Pages in a Memory System,” U.S. Patent Application
+[22] JEDEC, “DDR3 SDRAM Standard,” 2010.                                                     20140185395, 2014.
+[23] JEDEC, “Standard No. 21-C. Annex K: Serial Presence Detect (SPD) for               [66] V. Seshadri et al., “The Dirty-Block Index,” in ISCA, 2014.
+     DDR3 SDRAM Modules,” 2011.                                                         [67] V. Seshadri et al., “Fast Bulk Bitwise AND and OR in DRAM,” CAL, 2015.
+[24] JEDEC, “DDR4 SDRAM Standard,” 2012.                                                [68] V. Seshadri et al., “The Evicted-Address Filter: A Unified Mechanism to
+[25] X. Jiang et al., “CHOP: Adaptive Filter-Based DRAM Caching for CMP                      Address Both Cache Pollution and Thrashing,” in PACT, 2012.
+     Server Platforms,” in HPCA, 2010.                                                  [69] V. Seshadri et al., “RowClone: Fast and Energy-Efficient In-DRAM Bulk
+[26] X. Jiang et al., “Architecture Support for Improving Bulk Memory Copy-                  Data Copy and Initialization,” in MICRO, 2013.
+     ing and Initialization Performance,” in PACT, 2009.                                [70] A. Snavely and D. Tullsen, “Symbiotic Jobscheduling for a Simultaneous
+[27] J. A. Kahle et al., “Introduction to the Cell Multiprocessor,” IBM JRD,                 Multithreading Processor,” in ASPLOS, 2000.
+     2005.                                                                              [71] Y. H. Son et al., “Reducing Memory Access Latency with Asymmetric
+[28] S. Kanev et al., “Profiling a Warehouse-Scale Computer,” in ISCA, 2015.                 DRAM Bank Organizations,” in ISCA, 2013.
+[29] U. Kang et al., “Co-Architecting Controllers and DRAM to Enhance                   [72] Standard Performance Evaluation Corp., “SPEC CPU2006 Benchmarks,”
+     DRAM Process Scaling,” in The Memory Forum, 2014.                                       http://www.spec.org/cpu2006.
+[30] G. Kedem and R. P. Koganti, “WCDRAM: A Fully Associative Integrated                [73] L. Subramanian et al., “The Blacklisting Memory Scheduler: Achieving
+     Cached-DRAM with Wide Cache Lines,” CS-1997-03, Duke, 1997.                             High Performance and Fairness at Low Cost,” in ICCD, 2014.
+[31] B. Keeth and R. J. Baker, DRAM Circuit Design: A Tutorial. Wiley, 2000.            [74] K. Sudan et al., “Micro-Pages: Increasing DRAM Efficiency with Locality-
+[32] Y. Kim et al., “Ramulator: A Fast and Extensible DRAM Simulator,” CAL,                  Aware Data Placement,” in ASPLOS, 2010.
+     2015.                                                                              [75] T. Takahashi et al., “A Multigigabit DRAM Technology with 6F2 Open-
+[33] Y. Kim et al., “Flipping Bits in Memory Without Accessing Them: An                      Bitline Cell, Distributed Overdriven Sensing, and Stacked-Flash Fuse,”
+     Experimental Study of DRAM Disturbance Errors,” in ISCA, 2014.                          JSSC, 2001.
+[34] Y. Kim et al., “ATLAS: A Scalable and High-Performance Scheduling                  [76] Transaction Performance Processing Council, “TPC Benchmarks,” http:
+     Algorithm for Multiple Memory Controllers,” in HPCA, 2010.                              //www.tpc.org/.
+[35] Y. Kim et al., “Thread Cluster Memory Scheduling: Exploiting Differ-               [77] A. N. Udipi et al., “Rethinking DRAM Design and Organization for
+     ences in Memory Access Behavior,” in MICRO, 2010.                                       Energy-Constrained Multi-Cores,” in ISCA, 2010.
+                                                                                        [78] H. Usui et al., “DASH: Deadline-Aware High-Performance Memory
+[36] Y. Kim et al., “A Case for Exploiting Subarray-Level Parallelism (SALP)
+                                                                                             Scheduler for Heterogeneous Systems with Hardware Accelerators,”
+     in DRAM,” in ISCA, 2012.                                                                TACO, 2016.
+[37] C. J. Lee et al., “DRAM-Aware Last-Level Cache Writeback: Reducing                 [79] T. Vogelsang, “Understanding the Energy Consumption of Dynamic
+     Write-Caused Interference in Memory Systems,” Tech. Rep., 2010.                         Random Access Memories,” in MICRO, 2010.
+[38] C. J. Lee et al., “Improving Memory Bank-Level Parallelism in the Pres-            [80] S. Wong et al., “A Hardware Cache memcpy Accelerator,” in FPT, 2006.
+     ence of Prefetching,” in MICRO, 2009.                                              [81] H. Yoon et al., “Row Buffer Locality Aware Caching Policies for Hybrid
+[39] D. Lee et al., “Adaptive-Latency DRAM: Optimizing DRAM Timing for                       Memories,” in ICCD, 2012.
+     the Common-Case,” in HPCA, 2015.                                                   [82] T. Zhang et al., “Half-DRAM: A High-Bandwidth and Low-Power DRAM
+[40] D. Lee et al., “Tiered-Latency DRAM: A Low Latency and Low Cost                         Architecture from the Rethinking Of Fine-grained Activation,” in ISCA,
+     DRAM Architecture,” in HPCA, 2013.                                                      2014.
+[41] D. Lee et al., “Simultaneous Multi Layer Access: A High Bandwidth and              [83] L. Zhao et al., “Hardware Support for Bulk Data Movement in Server
+     Low Cost 3D-Stacked Memory Interface,” TACO, 2016.                                      Platforms,” in ICCD, 2005.
+                                                                                        [84] W. Zuravleff and T. Robinson, “Controller for a Synchronous DRAM That
+[42] K.-N. Lim et al., “A 1.2V 23nm 6F2 4Gb DDR3 SDRAM with Local-Bitline                    Maximizes Throughput by Allowing Memory Requests and Commands
+     Sense Amplifier, Hybrid LIO Sense Amplifier and Dummy-Less Array
+                                                                                             to Be Issued Out of Order,” U.S. Patent 5630096, 1997.
+     Architecture,” in ISSCC, 2012.
+
+
+                                                                                   13
+

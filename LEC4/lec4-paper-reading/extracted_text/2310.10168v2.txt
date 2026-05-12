@@ -1,0 +1,1239 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/lec4-paper-reading/sources/original-paper/2310.10168v2.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC4/original-paper/2310.10168v2.pdf
+Raw URL: https://raw.githubusercontent.com/Yuntong-Hou/computer-architecture/main/LEC4/original-paper/2310.10168v2.pdf
+Accessed: 2026-05-11 11:24:22 UTC
+
+
+
+===== Page 1 =====
+
+                                                     DaPPA: A Data-Parallel Programming Framework for
+                                                            Processing-in-Memory Architectures
+                                                           Geraldo F. Oliveira†            Alain Kohli†             David Novo⋆            Ataberk Olgun†
+                                                       A. Giray Yağlıkçı†            Saugata Ghose‡               Juan Gómez-Luna∇                Onur Mutlu†
+                                                                        †                        ⋆
+                                                                          ETH Zürich               LIRMM, Univ. Montpellier, CNRS
+                                                                  ‡                                               ∇
+                                                                      Univ. of Illinois Urbana-Champaign            NVIDIA Research
+
+                                            The growing volume of data in modern applications has led to         proposed since then [10, 17, 18, 27–150], real-world PIM sys-
+arXiv:2310.10168v2 [cs.AR] 22 Apr 2025
+
+
+
+
+                                         significant computational costs in conventional processor-centric       tems have only recently been manufactured [37,80,81,151,152];
+                                         systems. Processing-in-memory (PIM) architectures alleviate             from which the UPMEM PIM system [151–153] is the first PIM
+                                         these costs by moving computation closer to memory, reducing            architecture to become commercially available. It consists of
+                                         data movement overheads. UPMEM is the first commercially                UPMEM modules, which are standard DDR4-2400 DIMMs with
+                                         available PIM system, featuring thousands of in-order processors        16 PIM chips. A PIM chip consists of eight small multithreaded
+                                         (DPUs) integrated within DRAM modules. However, program-                general-purpose in-order processors called DPUs. Each DPU
+                                         ming a UPMEM-based system remains challenging due to the                has exclusive access to a 64 MB DRAM bank (called MRAM), a
+                                         need for explicit data management and workload partitioning             24 kB instruction memory (called IRAM), and a 64 kB scratch-
+                                         across DPUs.                                                            pad memory (called WRAM). A common UPEM-capable system
+                                            We introduce DaPPA (data-parallel processing-in-memory               has 20 DRAM modules with 128 DPUs and 8 GB of memory
+                                         architecture), a programming framework that eases the pro-              each, totaling 2,560 DPUs with 160 GB of memory.
+                                         grammability of UPMEM systems by automatically managing                    To program the DPUs in a UPMEM-capable system, UPMEM
+                                         data movement, memory allocation, and workload distribution.            has developed a single-instruction multiple-thread (SIMT) pro-
+                                         The key idea behind DaPPA is to leverage a high-level data-             gramming model. The programming model uses a C-like in-
+                                         parallel pattern-based programming interface to abstract hard-          terface and exposes to the programmer a series of application
+                                         ware complexities away from the programmer. DaPPA comprises             programming interfaces (APIs) to manage data allocation and
+                                         three main components: (i) data-parallel pattern APIs, a collec-        data movement between the host CPU/DPUs and within the
+                                         tion of five primary data-parallel pattern primitives that allows       memory hierarchy of the DPUs. A programmer needs to follow
+                                         the programmer to express data transformations within an ap-            four main steps to implement a given application targeting
+                                         plication; (ii) a dataflow programming interface, which allows          the UPMEM system. The programmer needs to: (i) partition
+                                         the programmer to define how data moves across data-parallel            the computation (and input data) across the DPUs in the sys-
+                                         patterns; and (iii) a dynamic template-based compilation, which         tem, manually exposing thread-level parallelism (TLP); (ii) dis-
+                                         leverages code skeletons and dynamic code transformations to            tribute (copy) the appropriate input data from the CPU’s main
+                                         convert data-parallel patterns implemented via the dataflow pro-        memory into the DPU’s memory space; (iii) launch the compu-
+                                         gramming interface into an optimized UPMEM binary.                      tation kernel that the DPUs will execute; and (iv) gather (copy)
+                                            We evaluate DaPPA using six workloads from the PrIM bench-           output data from the DPUs to the CPU main memory once the
+                                         mark suite on a real UPMEM system. Compared to hand-tuned               DPUs execute the kernel.
+                                         implementations, DaPPA improves end-to-end performance by                  Even though UPMEM’s programming model resembles that
+                                         2.1×, on average, and reduces programming complexity (mea-              of widely employed architectures, such as GPUs, it requires
+                                         sured in lines-of-code) by 94%. Our results demonstrate that            the programmer to (i) have prior knowledge of the underlying
+                                         DaPPA is an effective programming framework for efficient and           UPMEM hardware and (ii) manage data movement at a fine-
+                                         user-friendly programming on UPMEM systems.                             grained granularity manually. Such limitations can difficult
+                                                                                                                 the adoption of PIM architectures in general-purpose systems.
+                                         1. Introduction                                                         Therefore, our goal in this work is to ease programmability for
+                                         The increasing prevalence and growing size of data in modern            the UPMEM architecture, allowing a programmer to write effi-
+                                         applications have led to high costs for computation in tradi-           cient PIM-friendly code without the need to manage hardware
+                                         tional processor-centric computing systems [1–20]. To mitigate          resources explicitly.
+                                         these costs, the processing-in-memory (PIM) [1,2,5,6,8,9,20–25]            To ease the programmability of PIM architectures,
+                                         paradigm moves computation closer to where the data resides,            we propose DaPPA (data-parallel processing-in-memory
+                                         reducing the need to move data between memory and the pro-              architecture), a programming framework that can, for a given
+                                         cessor. Even though the concept of PIM has been first proposed          application, automatically distribute input and gather output
+                                         in the 1960s [24, 26], and various PIM architectures have been          data, handle memory management, and parallelize work across
+
+
+                                                                                                             1
+
+
+
+===== Page 2 =====
+
+the DPUs. The key idea behind DaPPA is to remove the re-               socket Intel Xeon Silver 4110 CPU at 2.10 GHz (host CPU),
+sponsibility of managing hardware resources from the pro-              standard main memory (DDR4-2400) of 128 GB, and 20 UP-
+grammer by providing an intuitive data-parallel pattern-based          MEM PIM DIMMs with 160 GB PIM-capable memory and
+programming interface [154, 155], which abstracts the hard-            2,560 DPUs. We compare DaPPA’s performance and program-
+ware components of the UPMEM system. Using this key idea,              ming complexity to that of the hand-tuned implementations
+DaPPA transforms a data-parallel pattern-based application             present in PrIM. First, compared to hand-tuned PrIM work-
+code into the appropriate UPMEM-target code, including the             loads, DaPPA improves end-to-end performance by 2.1×, on
+required APIs for data management and code partition, which            average across the six workloads. DaPPA’s performance im-
+can then be compiled into a UPMEM-based binary transpar-               provement is due to code optimizations, such as parallel data
+ently from the programmer. While generating UPMEM-target               transfer and partitioning of workload between CPU and DPU.
+code, DaPPA implements several code optimizations to im-               Second, DaPPA significantly reduces programming complexity
+prove performance.                                                     (measured by lines-of-code) on average by 94%. We conclude
+                                                                       that DaPPA is an efficient programming framework that eases
+    Concretely, DaPPA takes as input C/C++ code, which de-
+                                                                       the programmability of the UPMEM PIM architecture.
+scribes the target computation using a collection of data-
+parallel patterns and DaPPA’s programming interface, and                  We make the following key contributions:
+generates as output the requested computation. DaPPA con-              • To our knowledge, this is the first work to propose a data-
+sists of three main components: (i) DaPPA’s data-parallel pat-           parallel pattern-based programming framework that ab-
+tern APIs, (ii) DaPPA’s dataflow programming interface, and              stracts both computation and communication requirements
+(iii) DaPPA’s dynamic template-based compilation. DaPPA’s                while automatically generating code for the UPMEM archi-
+data-parallel pattern APIs are a collection of pre-defined               tecture.
+functions that implement high-level data-parallel pattern prim-        • We propose DaPPA (data-parallel processing-in-memory
+itives [154, 155]. Each primitive allows the user to express             architecture), a programming framework that automatically
+how data is transformed during computation. DaPPA supports               distributes input and gathers output data, handles memory
+five primary data-parallel pattern primitives, including map,            management, and parallelizes work across DPUs.
+filter, reduce, window, and group. The user can combine
+                                                                       • We equip DaPPA with a series of code optimizations that im-
+data-parallel primitives to describe complex data transforma-            prove the performance of workloads running on the UPMEM
+tions in an application. DaPPA is responsible for translating            system.
+and parallelizing each data-parallel primitive to efficient CPU        • We evaluate DaPPA using six workloads from the PrIM
+and UPMEM code. DaPPA exposes a dataflow programming                     benchmark suite, and we observe that DaPPA improves per-
+interface to the user. In this programming interface, the main           formance by 2.1× and reduces lines-of-code by 94%, on av-
+component is the Pipeline class, which represents a sequence             erage, compared to the hand-tuned PrIM workloads.
+of data-parallel patterns that will be executed on the DPUs.
+A given Pipeline has one or more stages. Each stage uti-               2. Background
+lizes a given data-parallel pattern primitive to transform input       3. The UPMEM Architecture
+operands following a user-defined computation. Stages are
+                                                                       Figure 1 illustrates the main components of a UPMEM-enabled
+executed in order, in a pipeline fashion. Finally, DaPPA uses a
+                                                                       system [33, 151–153]. A UPMEM-enabled system consists of a
+dynamic template-based compilation to generate UPMEM
+                                                                       host CPU (Figure 1a) equipped with regular DRAM as its main
+code in two main steps. In the first step, DaPPA creates an
+                                                                       memory (Figure 1b) and specialized UPMEM DRAM DIMMs
+initial UPMEM code based on code skeletons of a UPMEM
+                                                                       (PIM-enabled memory in Figure 1c). A UPMEM module is a
+application. In the second step, DaPPA uses a series of trans-
+                                                                       standard DDR4-2400 DIMM (module) with 8 (1-rank) or 16
+formations to (i) extract the required information that will
+                                                                       (2-rank) PIM chips. Inside each UPMEM PIM chip (Figure 1d),
+be fed to the UPMEM code skeletons from the user program;
+                                                                       there are 8 small general-purpose in-order processors, called
+(ii) calculate the appropriate offsets used when managing data
+                                                                       DPUs. DPUs are fine-grained multithreaded. Each DPU (Fig-
+across MRAMs and WRAMs; and (iii) divide computation be-
+                                                                       ure 1e) has exclusive access to (i) a 64 MB DRAM bank, called
+tween CPU and DPUs. Using DaPPA’s data-parallel pattern
+                                                                       MRAM; (ii) a 24 kB instruction memory, called IRAM; and
+APIs, dataflow programming interface, and dynamic template-
+                                                                       (iii) a 64 kB scratchpad memory, called WRAM. The PIM cores
+based compilation, the user can quickly implement and deploy
+                                                                       in a UPMEM system operate at 450 MHz and feature a 14-stage
+applications to the UPMEM system without any knowledge of
+                                                                       pipeline, enabling them to execute one integer addition or sub-
+the underlying architecture.
+                                                                       traction per cycle. Integer multiplication and division require
+   To demonstrate DaPPA’s benefits, we implement a subset of           up to 32 cycles when the pipeline is fully utilized. However,
+the workloads (i.e., vector addition, select, reduction, unique,       floating-point operations incur significantly higher latencies,
+imagine histogram small, and general matrix-vector multi-              ranging from tens to 2,000 cycles [153]. A standard UPMEM-
+plication) presented in the UPMEM-based PrIM benchmark                 based PIM system is composed of 20 UPMEM DIMMs, thus
+suite [156] using our data-parallel pattern model. We perform          containing up to 2,560 DPUs and 160 GB of PIM-capable mem-
+our evaluation on a UPMEM PIM system that includes a 2-                ory, achieving a peak compute throughput exceeding 1 TOPS.
+
+
+                                                                   2
+
+
+
+===== Page 3 =====
+
+One primary limitation of the UPMEM PIM system is the lack                                                                (iii) broadcast CPU–DPU data transfer, where a single portion
+of a direct inter-DPU communication mechanism; instead, all                                                               of data from main memory is moved and replicated across
+communication between PIM cores occurs through memory                                                                     multiple DPUs (i.e., multiple MRAM banks).
+transfers between host main memory and PIM-enabled mem-
+ory.                                                                                                                      Step 2: Handle Caching in WRAM & MRAM → WRAM
+           (a) Host CPU Organization                                                (e) DPU Organization                  Transfers. In the second step, after a successful CPU–DPU
+                                                                                      24 KB                               transfer, the DPUs can start with their computations. In order
+
+
+
+
+                                                                    in-order core
+
+
+
+
+                                                                                                 DMA engine
+                                                                                                        64 MB
+                                                ...
+    core            core       core      core          core                           IRAM
+                                                                                                        DRAM              for a DPU to process data, the programmer needs to carefully
+         memory                              memory                                                      bank
+         controller                          controller                               64 KB            (MRAM)             (and manually) orchestrate (i) data movement between the
+ DDR4              1                 DDR4              2
+                                                                                      MRAM 3
+                                                                                                                          DRAM bank (MRAM) to the local scratchpad memory (WRAM)
+interface                           interface
+                                                                                                                          using the DPU’s direct memory access (DMA) engine ( 2 in
+            DRAM
+
+
+
+                           DRAM
+ DRAM
+
+
+
+
+                                                                                                                          Figure 1), and (ii) inter-DPU communication & tasklet synchro-
+             chip
+  chip
+
+
+
+
+                            chip
+
+
+
+                                      chip
+
+
+                                               chip
+
+
+
+                                                             chip
+                                      PIM
+
+
+                                               PIM
+
+
+
+                                                             PIM
+
+
+                                                                             DPU        DPU     DPU            DPU
+                    ...
+
+
+
+
+                                                       ...
+
+
+
+
+                                                                            DRAM       DRAM    DRAM           DRAM
+                                                                             bank       bank    bank           bank
+             ...                                 ...                                   DDR4 interface
+                                                                                                                          nization. For MRAM–WRAM data movement orchestration,
+                                                                                                                          the programmer must respect restrictive memory alignment
+ DRAM
+
+
+
+
+                           DRAM
+            DRAM
+
+
+
+
+                                                                           DRAM        DRAM DRAM              DRAM
+             chip
+  chip
+
+
+
+
+                            chip
+
+
+
+                                      chip
+
+
+                                               chip
+
+
+
+                                                             chip
+                                      PIM
+
+
+                                               PIM
+
+
+
+                                                             PIM
+                    ...
+
+
+
+
+                                                       ...
+
+
+
+
+                                                                            bank        bank    bank           bank
+                                                                            DPU         DPU     DPU            DPU        requirements (i.e., both source addresses in WRAM and MRAM
+ (b) Main Memory                   (c) PIM-Enabled Mem.                                 (d) PIM Chip                      must be 8-byte aligned) and set the appropriate transfer size
+                          Figure 1: UPMEM system organization.                                                            (which can vary from 8 to 2048 bytes). For inter-DPU com-
+                                                                                                                          munication, the programmer needs to identify programming
+3.1. The UPMEM Programming Model                                                                                          patterns that require data transfers across DPUs (e.g., merging
+                                                                                                                          of partial results to obtain a final output) and explicitly per-
+The UPMEM-based PIM systems utilize a single-program
+                                                                                                                          form DPU–CPU and CPU–DPU data transfers (since there is no
+multiple-data (SPMD) execution model [157], where multi-
+                                                                                                                          direct communication across DPUs in the PIM-enabled mem-
+ple tasklets (i.e., hardware threads) run the same code but
+                                                                                                                          ory) accordingly. For tasklet synchronization, the programmer
+operate on different pieces of data, allowing them to execute
+                                                                                                                          needs to decide which synchronization primitive (e.g., mutex,
+different control-flow paths at runtime. The number of hard-
+                                                                                                                          handshake, barrier, or semaphore) is the most appropriate for
+ware threads in a DPU is limited to 24, and the number of
+                                                                                                                          the given task.
+tasklets per DPU is determined by the programmer at compile
+time. Tasklets within the same DPU have the ability to share
+                                                                                                                          Step 3: Consolidating Results. In the third step, once the
+data and synchronize through mechanisms such as mutexes,
+                                                                                                                          main kernel finishes its execution within the DPUs, partial
+barriers, handshakes, and semaphores. However, tasklets in
+                                                                                                                          output values will be stored across the many DRAM banks
+different DPUs do not have any direct communication channel
+                                                                                                                          (MRAM) in the PIM-enabled memory. For such output values
+or memory sharing capability, hence they cannot directly com-
+                                                                                                                          to be visible to the host application, the programmer needs
+municate or synchronize. PIM-enabled memory is integrated
+                                                                                                                          to perform DPU–CPU data transfers ( 3 in Figure 1), so that
+into the host system as a loosely-coupled accelerator, where
+                                                                                                                          data is moved from the PIM-enabled memory to the main
+the host CPU is responsible for offloading the target kernel to
+                                                                                                                          memory. After this transfer is complete, the host CPU might
+the DPU cores, and moving the appropriate input data from
+                                                                                                                          still have to perform some post-processing, depending on the
+the host main memory to the PIM-enabled memory, similar to
+                                                                                                                          target application (e.g., the host CPU might combine the partial
+current GPU programming.
+                                                                                                                          results that each DPU produces).
+   UPMEM provides a software development kit (SDK) [151],
+containing library calls and runtime mechanisms to support                                                                Problem & Goal. Even though UPMEM’s programming model
+DPU programming. The programmer needs to follow three                                                                     resembles that of widely employed architectures, such as GPUs,
+main steps to execute a given application on the UPMEM-                                                                   it requires the programmer to (i) have prior knowledge of the
+enabled system.                                                                                                           underlying UPMEM hardware and (ii) manage data movement
+Step 1: Distribute & Transfer Input Data Across DPUs.                                                                     at a fine-grained granularity manually. Concretely, program-
+In the first step, the programmer distributes the input data                                                              ming a PIM-enabled system requires the programmer to per-
+across the multiple DPUs in the PIM-enabled memory, and                                                                   form (i) efficient workload partitioning across the many DPUs
+subsequently across the many tasklets within a single DPU, by                                                             and tasklets within the system; (ii) manual transfer of data
+explicitly moving the input data from the host main memory                                                                between the standard main memory and MRAM banks, while
+to the PIM-enabled memory ( 1 in Figure 1). To do so, the                                                                 ensuring that both host CPU and DPUs have access to accurate
+programmer makes use of one of the three CPU–DPU data                                                                     and up-to-date copies of data; and (iii) orchestrate data move-
+transfer primitives the UPMEM SDK provides, which allow                                                                   ment between MRAM banks and WRAM. Such limitations can
+for: (i) serial CPU–DPU data transfer, where a single portion                                                             difficult the adoption of PIM architectures in general-purpose
+of data is moved from main memory to a single DPU (i.e.,                                                                  systems. Therefore, our goal in this work is to ease programma-
+one MRAM bank); (ii) parallel CPU–DPU data transfer, where                                                                bility for the UPMEM architecture, allowing a programmer to
+multiple portions of data from main memory are distributed                                                                write efficient PIM-friendly code without the need to manage
+across multiple DPUs (i.e., across many MRAM banks); and                                                                  hardware resources explicitly.
+
+
+                                                                                                                      3
+
+
+
+===== Page 4 =====
+
+4. DaPPA Overview                                                      to (i) extract the required information that will be fed to the
+                                                                       UPMEM code skeleton from the user program; (ii) calculate the
+To ease the programmability of PIM architectures, we propose
+                                                                       appropriate offsets used when managing data across MRAMs
+DaPPA (data-parallel processing-in-memory architecture), a
+                                                                       and WRAMs; and (iii) divide computation between CPU and
+programming framework that can, for a given application, au-
+                                                                       DPUs.
+tomatically distribute input and gather output data, handle
+memory management, and parallelize work across the DPUs.               Putting All Together. Using DaPPA’s data-parallel pattern
+The key idea behind DaPPA is to remove the responsibility of           APIs, dataflow programming interface, and dynamic template-
+managing hardware resources from the programmer by provid-             based compilation, the user can quickly implement and deploy
+ing an intuitive data-parallel pattern-based programming inter-        applications to the UPMEM system without any knowledge of
+face [154, 155] that abstracts the hardware components of the          the underlying architecture. Figure 2 showcases an example of
+UPMEM system. Using this key idea, DaPPA transforms a data-            implementing a simple vector dot-product application using
+parallel pattern-based application code into the appropriate           DaPPA. In this example, the user defines a Pipeline with two
+UPMEM-target code, including the required APIs for data man-           stages: a map stage and a reduce stage. DaPPA generates the
+agement and code partition, which can then be compiled into            appropriate binary for the UPMEM system, executes the target
+a UPMEM-based binary transparently from the programmer.                computation in the DPUs, and copies the final output from the
+While generating UPMEM-target code, DaPPA implements                   DPUs to the CPU.
+several code optimizations to improve performance.
+    Figure 2 shows an overview of our DaPPA programming                5. DaPPA Implementation
+framework. DaPPA takes as input C/C++ code, which describes
+the target computation using a collection of data-parallel pat-        5.1. Data-Parallel Pattern APIs
+terns and DaPPA’s programming interface, and generates as              DaPPA exposes data-parallel pattern APIs that leverage
+output the requested computation. DaPPA consists of three              skeleton-based programming and data-parallel patterns to
+main components: (i) DaPPA’s data-parallel pattern APIs,               allow users to define their algorithms using high-level ab-
+(ii) DaPPA’s dataflow programming interface, and (iii) DaPPA’s         stractions [154, 155, 158, 159]. In skeleton-based programming,
+dynamic template-based compilation.                                    applications are composed of predefined skeletons (e.g., map,
+Data-Parallel Pattern APIs. DaPPA’s data-parallel pattern              reduce, pipeline, farm), each encapsulating a common par-
+APIs ( 1 in Figure 2) are a collection of pre-defined func-            allel computation pattern. In this way, programmers can fo-
+tions that implement high-level data-parallel pattern prim-            cus on application logic rather than low-level concerns such
+itives. Each primitive allows the user to express how data is          as tasklet management, synchronization, or inter-DPU com-
+transformed during computation. DaPPA supports five pri-               munication. Data-parallel patterns further enable concurrent
+mary data-parallel pattern primitives, including: (i) map, which       execution of the same operation (or sequence of operations)
+applies a function f to each individual input element i, pro-          across multiple data elements, thereby reducing boilerplate
+ducing unique output elements yi = f (xi ); (ii) reduce, which         (i.e., repeated) code and errors associated with explicit tasklet
+reduces input vectors to a scalar; (iii) filter, which selects         or DPU management [160, 161]. This separation of what
+input elements based on a predicate; (iv) window, which maps           (algorithmic intent) from how (hardware-specific optimiza-
+and output element as the reduction of W overlapping input             tions) eases code reuse, scalability, and maintainability for
+elements; (v) group, which maps and output element as the              CPUs [162–164], GPUs [162, 163, 165], special-purpose accel-
+reduction of G non-overlapping input elements. The user can            erators [166], and distributed systems [163, 167]. Numerous
+combine these five data-parallel primitives to describe complex        skeleton-based frameworks (e.g., SkePU [165], Skandium [168],
+data transformations in an application.                                and Muesli [162, 163, 169]) as well as libraries supporting data-
+                                                                       parallel constructs (e.g., CUDA [170], OpenCL [171], Intel
+Dataflow Programming Interface. DaPPA exposes a                        Threading Building Blocks [172], and Apache Spark [173, 174])
+dataflow programming interface to the user ( 2 in Figure 2).           exemplify the breadth and efficacy of these high-level paral-
+In this programming interface, the main component is the               lel programming approaches. Therefore, we leverage such a
+Pipeline class, which represents a sequence of data-parallel           programming paradigm to aid the programmability for the
+patterns that will be executed on the DPUs. A given Pipeline           UPMEM system.
+has one or more stages. Each stage utilizes a given data-
+                                                                           Currently, DaPPA supports five primary data-parallel pat-
+parallel pattern primitive to transform input operands follow-
+                                                                       terns (which Figure 2 illustrates), i.e., map, reduce, filter,
+ing a user-defined computation sequence. Stages are executed
+                                                                       window, and group. Each data-parallel pattern takes as input
+in order, in a pipeline fashion.
+                                                                       one or more one-dimensional (1D) vectors and produces as out-
+Dynamic Template-Based Compilation. DaPPA uses a dy-                   put a single 1D vector or a scalar value. Non-vector arguments,
+namic template-based compilation ( 3 in Figure 2) to generate          such as scalar parameters, can also be supplied as arguments
+DPU code in two main steps. In the first step, DaPPA creates an        and are broadcast across all DPUs involved in the computation.
+initial UPMEM code based on a skeleton of a UPMEM applica-             DaPPA implements each one of the five data-parallel patterns
+tion. In the second step, DaPPA uses a series of transformations       as follows.
+
+
+                                                                   4
+
+
+
+===== Page 5 =====
+
+                                    1 Data-parallel pattern APIs                                                 In-DRAM execution
+         map                reduce                 filter                window                 group
+
+    f    f    f   f             f              f   f    f    f       f     f    f    f      f        f
+                                                                                                                        UPMEM
+                                                                                                                        binary
+
+                      UPMEM::Pipeline p(datasize);
+     reduce                                                                                                    int main(){
+                      p.stage(MAP(([](int *c, int *a, int *b){
+                                                                                         stringification
+
+
+
+
+                                                                                                                                      compiler
+  C = A0B0 +                  *c = *a * *b;                                                                     {for arg in kernel}
+      A1B1 +          }), OUTPUT(int, &c),
+                                                                                                                  mram_read_full()
+                                                                                         type removal
+   map
+
+
+
+
+                                                                                                                         …
+      A2B2 +          INPUT(int, a), INPUT(int, b)));
+                                                                                                                  mram_write_full()
+      A3B3            p.stage(REDUCE(([](int *sum, int *c){                              mem. arrange.
+                                                                                                               }
+                             *sum += *c;
+                      }), REDUCE_OUT(int, &sum), INPUT(int, &c)));                       optimizations             template
+   Target
+ computation           2 Dataflow programming interface                             3 Dynamic template-based compilation
+                                     Figure 2: Overview of the DaPPA programming framework.
+
+map. The map data-parallel pattern takes as input a 1D vector            affect correctness, thereby enabling efficient parallel execution.
+x of size N , a pure function f , and produces as output a 1D            filter. The filter data-parallel pattern takes as input a 1D
+vector y of size N , where yi = f (xi ). A pure function consis-         vector x of size N and a pure predicate function f , and pro-
+tently produces the same output for a given input (i.e., the pure        duces as output a new 1D vector y. The predicate f tests each
+function produces deterministic outputs) and does not induce             element of x for a condition (returning true or false). The re-
+side effects (i.e., the invocation of f does not modify any ex-          sulting vector y contains exactly those elements of x for which
+ternal state, such as global variables, files, or shared memory,         f (xi )is true, while preserving their original
+and does not depend on any non-local state that may vary                                                              order. Formally,
+                                                                         y = xi f (xi ) = true, 1 ≤ i ≤ N . A pure predicate
+over time). As a result, no synchronization between tasklets             function consistently produces the same result for a given in-
+is required, and data sharing is unnecessary, making the map             put (i.e., deterministic output) and does not induce side effects.
+data-parallel pattern highly suitable for data-parallel execution        Purity ensures that each evaluation of f (xi ) can be performed
+on the UPMEM architectures. In our implementation of the                 independently and in parallel, without synchronization or data
+map data-parallel pattern, each tasklet independently executes
+                                                                         sharing. Once the true/false decisions are computed, the
+an instance of the function f , generating its corresponding             filter data-parallel pattern gathers the qualifying elements
+output f (xi ).                                                          to form the final output vector y.
+reduce. The reduce data-parallel pattern takes as input a 1D             window.. The window data-parallel pattern generalizes the map
+vector x of size N , a reduction function f , and produces as            pattern to computations where each output element depends
+output a single scalar value r. In its simplest form, the result         on a contiguous block (or “window”) of the input. Specifi-
+r is computed by repeatedly applying f over all elements   of         cally, the window data-parallel pattern takes as input: (i) a
+x, for example: r = f x1 , f x2 , . . . f xN −1 , xN . . . . For         1D vector x of size N , (ii) a window size W , and (iii) a pure
+efficient parallelization, f is commonly required tobe asso-            function f that operates on sub-vectors of length W . It pro-
+ciative, meaning that f (a, f (b, c)) = f f (a, b), c , for all          duces as output a 1D vector y of size M , where M depends
+valid operands a, b, and c. Associativity ensures that partial           on how windows are defined and handled at the boundaries
+computations of f (i.e., partial “reductions”) can be combined           (e.g., M might be N − W + 1 if every complete window pro-
+in arbitrary groupings and orders without affecting the final re-        duces exactly one output). Formally,      for each valid index i,
+sult. In case f is pure and associative, the reduce data-parallel        yi = f xi , xi+1 , . . . , xi+W −1 . Since  f is assumed to be
+                                                                                                              
+
+pattern allows intermediate values to be processed in parallel           pure, each sub-vector xi , . . . , xi+W −1 can be processed in-
+and merged incrementally, reducing the need for extensive                dependently. The main distinction from map arises because
+synchronization. In our implementation of the reduce data-               consecutive outputs in a window may depend on overlapping
+parallel pattern, the input vector x is equally distributed across       input segments. Users often provide additional (or padding) el-
+DPUs, and then multiple tasklets within a DPU compute par-               ements for the end of the input to ensure that the last positions
+tial reductions on each distinct subranges of the input vector.          can form a complete window of size W . This data-parallel
+These partial results are then combined (in the host CPU), us-           pattern is widely used in signal processing, sliding-window
+ing the same function f , in a tree-based hierarchy until a single       algorithms, and stencil computations, and it can be parallelized
+final result r remains. In case f is pure and associative, the           effectively on UPMEM by distributing different sub-vectors to
+order in which tasklets combine intermediate results does not            different DPUs.
+
+
+                                                                     5
+
+
+
+===== Page 6 =====
+
+group.        The group data-parallel pattern partitions a 1D                    group+filter. The group+filter data-parallel pattern par-
+input vector x of size N into contiguous, non-overlapping                        titions an input vector x into contiguous, non-overlapping
+sub-vectors (or “groups”) of size G. A pure function f is                        sub-vectors (“groups”) of size G and then applies a pure pred-
+then applied to each sub-vector to produce one output                            icate function f to decide whether each group is retained.
+element per group.              Formally, assuming N is divisi-                  Formally, for n = 1, 2, . .. , N
+                                                                                                                 G , define the n-th group as
+ble by G, the      vector   x   is segmented      into N
+                                                       G sub-vectors:            gn = x(n−1)G+1 , . . . , xnG . The output includes gn only if
+ x1 , . . . , xG , xG+1 , . . . , x2G , . . . , xN −G+1 , . . . , xN , and       f (gn ) = true. This selective mechanism extends the group
+                                                                  
+
+each
+   group is independently                 processed by yi              =        data-parallel pattern, maintaining independence across groups
+                                                                                 while filtering out those that do not satisfy the predicate.
+                            
+f x(i−1)G+1 , . . . , xiG         for i = 1, 2, . . . , G . Unlike
+                                                              N
+
+the window, whose sub-vectors can overlap, the group data-                       window+group+filter. The window+group+filter pattern
+parallel pattern advances its input index by G elements each                     extends the window+group pattern by selectively retain-
+step, thereby ensuring these sub-vectors are disjoint. Purity                    ing only those results that satisfy a pure predicate. As
+allows each group to be processed in isolation, making the                       in window+group, the input vector is divided into contigu-
+group data-parallel pattern highly amenable to data-parallel                     ous sub-vectors of size G, with each sub-vector allowed
+execution in UPMEM. In some applications, group can also be                      to read up to W additional elements beyond its bound-
+viewed as a special case of a reduction over fixed-size chunks:                  ary. A pure function f then produces an output from
+each chunk is “reduced” into a single value by the function f ,                  each extended sub-vector. Formally, for the n-th sub-
+without overlapping the inputs of neighboring chunks.                            vector, we consider x(n−1)G+1 , . . ., xnG+W , and compute
+   DaPPA also allows the user to combine some of the five pri-                   yn = f x(n−1)G+1 , . . . , xnG+W . A separate pure pred-
+mary data-parallel patterns to implement more complex execu-                     icate p then determines whether yn is kept in the output:
+tion patterns. In our current implementation, DaPPA enables                      include yn if and only if p(yn ) = true. Because f and
+the combination of window, filter, and group data-parallel                       p are both pure, each sub-vector can be processed indepen-
+patterns into four new implementations: window+group,                            dently, preserving the data-parallel benefits of the underlying
+window+filter, group+filter, and window+group+filter.                            window+group pattern while allowing for filtering of results.
+
+window+group. The window+group data-parallel pattern com-                        5.2. Dataflow Programming Interface
+bines the window and group data-parallel patterns. Like group,
+                                                                                 DaPPA allows the programmer to use the data-parallel pattern
+the input vector is divided into contiguous, non-overlapping
+                                                                                 APIs to implement a given task or application. To do so, DaPPA
+sub-vectors of size G. However, for each sub-vector, the com-
+                                                                                 exposes to the user a dataflow programming interface, which
+putation will depend not only on its own G elements but also
+                                                                                 Figure 3 illustrates. The key idea behind DaPPA’s dataflow pro-
+on up to an additional W elements (forming a “window”). For-
+                                                                                 gramming interface is to allow the programmer to implicitly
+mally, whereas the group data-parallel pattern would com-
+                                                                                 describe the data movement between data-dependent sub-tasks
+pute: yn = f x(n−1)G+1 , . . . , xnG , the window+group
+                                                                                 in the target task/application. At a high-level, the dataflow pro-
+data-parallel pattern extends
+                            the domain of f to: yn =                            gramming interface has three main components: (i) a Pipeline
+f x(n−1)G+1 , . . . , xnG+W , with W specifying how far be-
+                                                                                 ( 1 in Figure 3), which defines a collection of transformations
+yond the current group the function may read. This expanded
+                                                                                 over the input data; (ii) one or more stages ( 2 ), which com-
+scope is useful for computations where nearby elements (be-
+                                                                                 poses the Pipeline while each stage represents an unique
+yond the immediate group boundary) influence the result. As
+                                                                                 data-parallel pattern from DaPPA’s data-parallel pattern APIs;
+with window and group, the window+group data-parallel pat-
+                                                                                 (iii) implicit dataflow ( 3 ), where data moves sequentially, in a
+tern assumes a pure function f , ensuring that each sub-vector
+                                                                                 pipeline-fashion, across each stage.
+plus its “window” can be processed in parallel.
+                                                                                                             1 Pipeline
+window+filter. The window+filter data-parallel pattern                            input     2 stage 1          stage 2        stage N       output
+combines the behavior of window (sliding or overlapping sub-                                             3        f
+                                                                                                 f
+vectors) with filter (selecting outputs based on a predicate).                                                                   f
+
+Like window, it processes an input vector x in overlapping seg-                                  f                f
+
+ments (“windows”) of size W . However, rather than producing
+                                                                                      Figure 3: DaPPA’s dataflow programming interface.
+an output for every window, it applies a pure predicate function
+f to each window and includes that window’s contribution                            Concretely, the dataflow programming interface exposes
+in the output only if f returns true. Formally, for each valid                   to the programmer one main C++ class, the Pipeline class,
+index i, consider the window wi = xi , xi+1 , . . . , xi+W −1 .                  which represents a sequence of data-parallel patterns that will
+                                                               
+
+The pattern outputs wi if f (wi ) = true, and omits it oth-                      be executed on DPUs. The Pipeline class has a set data vec-
+erwise. As with both window and filter, the use of a pure                        tor size to guarantee length compatibility between all inputs,
+predicate function f . This combined pattern is particularly use-                which can only be reduced or divided by filter and group
+ful when overlapping context is necessary for deciding which                     data-parallel patterns. A given Pipeline has one or more
+segments of the data should be preserved.                                        stages, and works in three main steps. First, the input data is
+
+
+                                                                             6
+
+
+
+===== Page 7 =====
+
+transformed within each stage using a stage-specific function,               replicated; and (v) the number of elements that will be used for
+based on a given data-parallel pattern, producing an output                  a window (overlap) or a group (groupSize). For the tuple
+data. The output produced by a stage i can be used as input                  argsTuple, the user needs to define the type (i.e., ArgTypes)
+data for any subsequent stage i + 1. Second, after the user                  of each array pointer, which can be either an input array, an
+specifies all needed data transformations that the DPUs will                 output array, an array used as both input and output, a scalar
+execute across the different stages, they can specify the final              parameters, a scalar reduction output, or a combination func-
+output data that will be fetched from the DPU to the CPU.                    tion (used to combine partial results across DPUs). The stage
+Third, the user initiates the execution of the stages specified              method returns true in case the stage was successfully added
+for a given Pipeline across the DPUs. Note that, while defin-                to the Pipeline.
+ing each stage and its equivalent stage-specific function, the               Fetch Output from DPU. The fetch method is used to ex-
+user does not need to define any UPMEM-specific command,                     plicitly mark an output vector or scalar value that needs to be
+including those related to data orchestration and parallelism                copied from the DPU memory to the CPU main memory after
+distribution. This happens because DaPPA abstracts the un-                   the Pipeline is executed. This means that the marked vector
+derlying hardware characteristics from the user, allowing the                will not be treated as intermediate data (the default behavior
+programmer to only focus on implementing the functionality                   for output vectors and scalar values within Pipeline).
+of the target application.
+                                                                             Pipeline::fetch(vector);
+5.2.1. The Pipeline Class: Implementation. The primary
+interface DaPPA exposes to the user is the Pipeline class. We
+explain the main components of the Pipeline class using a                    Start DPU Execution. The execute method processes all
+vector dot product example in Listing 1. The Pipeline class                  stages that have been added to the Pipeline, and once each
+has five main methods, which we describe next.                               stage finishes its execution, writes all fetched outputs (from
+Class Constructor. Creates a new Pipeline object that will                   DPU memory) to their respective vectors or scalar values (to
+be used for any subsequent in-memory operations. The class                   the CPU main memory).
+construction takes an integer length as parameter, which de-                 Pipeline::execute();
+termines the length of the input and output vectors that will
+be processed by the instantiated Pipeline.
+                                                                             Get Result Length. The getLength method retrieves the
+Pipeline::Pipeline(length);
+                                                                             resulting length of an output vector after the DPU execution
+                                                                             have finished. This is only needed if the Pipeline includes
+Stage Creation. Adds a new stage to the Pipeline.                            a filter data-parallel pattern, as the resulting length of all
+                                                                             other data-parallel patterns can be known or calculated a priori.
+// Map / Window / Group
+template<typename... ArgTypes>
+bool stage(const std::string &str, std::function<void(ArgTypes*...)>
+                                                                             Pipeline::getLength(vector);
+      ,→ func, std::tuple<ArgTyped<ArgTypes>...> argsTuple, uint32_t
+      ,→ overlap, uint32_t groupSize);
+
+// Filter (Input/Output)
+template<typename FilterType, typename... ArgTypes>                          5.2.2. Implementing a Pipeline. The user follows 5 main
+bool stage(const std::string &str, std::function<bool(FilterType*,           steps to implement an application using DaPPA’s dataflow
+      ,→ ArgTypes*...)> func, ArgTyped<FilterType> output, std::tuple<
+      ,→ ArgTyped<FilterType>, ArgTyped<ArgTypes>...> argsTuple,             programming interface. We reference the simple vector dot-
+      ,→ uint32_t overlap, uint32_t groupSize);                              product example in Listing 1 to illustrate each step. First, the
+// Filter (InOut)                                                            user needs to allocate the input arrays that will be processed
+template<typename FilterType, typename... ArgTypes>                          by the Pipeline (line 2–6). DaPPA accepts as input arrays
+bool stage(const std::string &str, std::function<bool(FilterType*,
+      ,→ ArgTypes*...)> func, ArgTyped<FilterType> inout, std::tuple<        either std::vectors or a raw pointer. Second, the user cre-
+      ,→ ArgTyped<ArgTypes>...> argsTuple, uint32_t overlap, uint32_t        ates a Pipeline object (line 8). This object will be used to
+      ,→ groupSize);
+                                                                             construct the dot-product algorithm. The user needs to specify
+// Reduce                                                                    the length of the input and output data vectors in this step.
+template<typename... ArgTypes>
+bool stage(const std::string &str, std::function<void(ArgTypes*...)>         A key requirement for a given Pipeline is that the vector
+      ,→ func, std::tuple<ArgTyped<ArgTypes>...> argsTuple);                 length should be the same across all stages. In case differ-
+                                                                             ent vector lengths are required, the user can combine several
+The stage method takes as input: (i) a macro string str that                 different-length Pipelines. Third, the user adds the stages
+represents the stage data-parallel pattern; (ii) a function pointer          to the Pipeline (lines 9–20), where each stage represents a
+func, which defines the computation that will be executed by                 part of dot-product algorithm. Each stage contains the kernel
+a tasklet within a DPU; (iii) a tuple argsTuple composed of                  that a tasklet will execute, and a set of inputs and outputs. In
+<data type, array pointer>, which lists the input/output                     this example, the user uses a map data-parallel pattern to im-
+vectors for the given stage; (iv) an extra output array output,              plement a vector multiplication on arrays a and b (line 10), and
+which is used in case the produced output array needs to be                  a reduce data-parallel pattern to implement a scalar reduction
+
+
+                                                                         7
+
+
+
+===== Page 8 =====
+
+of vector c. An important point is that the user does not need                                     Kernel
+                                                                                                   String
+to fetch to the CPU memory the vector c during the Pipeline                            Kernel                            Global
+execution, since it is used as the intermediate result between                                    Compiled     CPU      Stage List
+                                                                                                   Kernel     Kernel
+the map and reduce stages. As long as an array is only used for          User Input
+                                                                                                                                     DPU Code
+                                                                                                                                     Template
+                                                                                                                                                Compiler
+
+intermediate data, it does not need to be allocated in the host
+CPU main memory, which allows DaPPA to save host CPU                                  Arguments
+
+                                                                                                              Global
+memory space. Fourth, the user marks all of the outputs that                                                 Argument
+                                                                                                                List
+need to be fetched from the DPUs after computation (line 21).
+As described before, this is so that DaPPA can avoid fetching                   Figure 4: DaPPA’s template-based compilation flow.
+intermediate results from the DPU. Fifth, the user triggers the
+execution of the Pipeline (line 22). Only at this point DaPPA            implementation, we make use of the Inja [175] template en-
+will allocate DPUs and run each stage in the Pipeline. After             gine to manage and populate the UPMEM code skeleton.
+the execution is finished, the fetched result data (i.e., sum) can       First Transformation. In the first transformation, DaPPA
+be accessed by the host CPU.                                             extracts information regarding the function kernels (i.e., func)
+1 uint32_t dataLength = 1048576;
+                                                                         specified within stages across a Pipeline, and its associated
+2 std::vector<uint32_t> a(dataLength);                                   input/output arguments (stringification). Kernel information
+3 std::vector<uint32_t> b(dataLength);
+4 uint32_t c; // Not fetched, no buffer needed
+                                                                         is added to a global stage list, while input/output arguments
+5 uint32_t sum = 0;                                                      are added to a global argument list. After this, most of the
+6 // Fill a and b with data here
+7
+                                                                         argument type information is stripped, apart from the type size
+8 Upmem::Pipeline p(dataLength);                                         and its string representation (type removal). In this way, we
+9 p.stage(MAP(([](uint32_t *c, uint32_t *a, uint32_t *b){
+10       *c = *a * *b;
+                                                                         can reduce the amount of templating required, which reduces
+11 }),                                                                   overall complexity and compilation time. Once all stages have
+         OUTPUT(uint32_t, &c),
+12
+13       INPUT(uint32_t, a),
+                                                                         been processed and added to the global state list, DaPPA moves
+14       INPUT(uint32_t, b)));                                           to the second transformation.
+15
+16 // REDUCE_OUT because it’s a scalar and not a vector                  Second Transformation. In the second transformation,
+17 p.stage(REDUCE(([](uint32_t *sum, uint32_t *c){
+18       *sum += *c;                                                     DaPPA finalizes some parameter calculations that depends
+19 }),                                                                   on having a global view of the application, and consequently,
+20       REDUCE_OUT(uint32_t, &sum),
+21       INPUT(uint32_t, &c)));                                          complete information about all stages. This includes memory
+22                                                                       parameters, such as how to arrange the data in MRAM and
+23 p.fetch(&sum);
+24 p.execute();                                                          WRAM (memory arrangement). Thus, the second transforma-
+                                                                         tion is crucial to orchestrate data movement in the DPU system.
+Listing 1: DaPPA’s implementation of a vector dot-product                In order to manage MRAM space, the second transformation
+using its dataflow programming interface.                                sets parameters related to MRAM data allocation depending
+                                                                         on the stages and their arguments, while respecting the fol-
+5.3. Dynamic Template-Based Compilation                                  lowing approach. When the data is copied to the DPUs, DaPPA
+After the user implements the target computation using the               splits its total size evenly across all DPUs while respecting the
+data-parallel pattern APIs and the dataflow programming in-              8-byte alignment requirement. Within a DPU, DaPPA further
+terface, DaPPA generates the appropriate UPMEM binary us-                splits the data evenly between all tasklets so that they can
+ing a dynamic template-based compilation. To so so, DaPPA                independently perform their calculations. DaPPA also directly
+uses two main components. First, it makes use of template-               arranges data in MRAM by calculating offsets from the MRAM
+based coding, where the UPMEM code is created based on an                base address (see Section 5.3.1). The data for all stages are
+initial skeleton of a UPMEM application. Second, DaPPA dy-               copied simultaneously before starting the DPU process. If the
+namically generates and compiles the target UPMEM code                   data does not fit in MRAM, DaPPA performs multiple execution
+by applying three key optimizations, i.e., stringification, type         rounds until the entire dataset is processed. Any intermediate
+removal, and memory arrangement, through four code trans-                results that have to propagate through the Pipeline (i.e., out-
+formations that (i) extract the required information from the            puts of one stage that become input of subsequent stages)
+user’s implemented Pipeline to feed the UPMEM code skele-                also have their dedicated MRAM space.
+ton; (ii) calculate the appropriate offsets used to manage data             Likewise, the second transformation also generates the ap-
+across MRAMs and WRAMs; and (iii) divide computation be-                 propriate parameters to manage WRAM using the following
+tween CPU and DPUs. Figure 4 gives an overview of DaPPA’s                approach. Once the DPU starts execution, it needs to first
+code transformations. It takes as user input a C++ code (imple-          initialize its memory space and set up the WRAM. It then iter-
+menting a given Pipeline) and generates as output a UPMEM                ates over each stage, in order. Each stage loops over WRAM
+binary. This process is dynamically repeated per Pipeline.               blocks (i.e., data segments that are small enough to fit into
+   Next, we give an overview of each transformation that                 WRAM). In the UPMEM system, the kernel needs to transfer
+DaPPA performs to generate UPMEM code. In our current                    the data from MRAM to the WRAM prior to execution, by
+
+
+                                                                     8
+
+
+
+===== Page 9 =====
+
+passing pointers to the appropriate WRAM location as its argu-           count is uniform across all arguments within a stage unless
+ments. After the computation is finished, it copies the results          a group data-parallel pattern partitions it. The WRAM cache
+back to MRAM. Hence, the second transformation sets (i) the              element count also determines how many function kernel invo-
+required pointers by casting them to the correct type first us-          cations can occur before requiring a data reload. To maximize
+ing the type information present in each stage argument; and             WRAM utilization, we compute the count per stage, consider-
+(ii) WRAM block index for a given WRAM access.                           ing its specific number of arguments. The process begins by
+Third Transformation. In the third transformation, DaPPA                 summing the element type sizes of all arguments in a stage
+deals with the case where the Pipeline data size does not                and dividing the total available WRAM space by this sum to
+respect the 8-byte alignment requirement of the UPMEM sys-               obtain a preliminary count. However, since MRAM–WRAM
+tem. In this case, DaPPA decides to execute the remaining                transfers require 8-byte alignment, adjustments are necessary.
+part of the computation at the CPU. The third transformation             We iterate over the arguments, computing the total required
+is responsible to identify such computation and to generate              space, including padding. If the padded size exceeds WRAM
+CPU code to execute it. To do so, DaPPA creates a separate               capacity, we decrement the element count until alignment con-
+CPU thread that will process some elements on the CPU while              straints are met. Finally, we determine the cache offsets for
+the DPU is processing the portion of the data that is 8-byte             each argument by sequentially placing them in WRAM.
+aligned. The amount of data processed on the CPU can be man-             2. Calculating MRAM Parameters. Next, we determine the
+ually increased so that the CPU does not have to idle while the          maximum number of elements a DPU can hold in MRAM for
+DPUs are processing the data, which can lead to performance              the entire Pipeline. Unlike WRAM, where each stage is con-
+improvements.                                                            sidered independently, MRAM capacity must accommodate all
+Fourth Transformation. In the fourth transformation,                     arguments across all stages simultaneously. The calculation
+DaPPA deals with the need of post-processing required for                follows the same method as WRAM, adhering to 8-byte align-
+some stages, in particular these that implement a filter or              ment constraints but encompassing all arguments rather than
+reduce data-parallel pattern. For a filter, the results of each          a single stage.
+tasklet have to be compressed to make the data contiguous                3. Calculating Leftover Parameters. Finally, we determine
+again. Since parallel data transfers usually achieves higher             the number of elements processed on the CPU. Due to UP-
+throughput in the UPMEM system [153], we have to copy the                MEM’s 8-byte alignment requirements, some data may not fit
+same amount of data from every DPU, even if the number of                into DPUs without violating alignment rules. These excess ele-
+elements passing the filters of each DPU might differ. This will         ments are handled by the CPU. The number of DPU-processed
+leave holes in the data, which we must remove in the CPU. Sim-           elements follows from the elements-per-round computation:
+ilarly, a reduce also needs further processing by combining              CPU elements = total_length − (elements_per_round ×
+the partial results of each DPU in the host CPU.                         nr_rounds).
+   After the four transformations are performed, all of the              Element Count Calculations: Special Cases. DaPPA ac-
+parameters and kernels are inserted into the UPMEM code                  counts for special cases when managing DPU memory, de-
+skeleton, and the UPMEM code is compiled.                                pending on the stage’s target parallel pattern. We describe
+5.3.1. Managing DPU Memory. In order to manage the DPU                   these cases below.
+memory, DaPPA tries to allocate as much data as possible                 window Data-Parallel Pattern. The window data-parallel pat-
+across the total memory space of the DPUs. In case the data              tern requires overlapping input data between DPUs, as each
+cannot all fit into the combined MRAM of the DPUs, we need               DPU processes elements while looking ahead at data handled
+to perform multiple execution rounds to process all of the data.         by the next DPU. At the end of the dataset, however, no ad-
+For this, we transfer as much data to the DPUs as possible, run          ditional elements remain for lookahead. To address this, one
+the entire Pipeline on that part of the data, and then repeat            approach is to reduce the output length by the overlap size, but
+this process until we have processed all of the data. To this end,       this complicates subsequent stages that rely on a consistent
+DaPPA performs different element count calculations, which               output size and may not align with user expectations. Instead,
+we describe next.                                                        DaPPA allows users to provide a small vector of overlap data,
+Element Count Calculations: General Case. DaPPA must                     which is appended to the original input to maintain the ex-
+determine how many elements of the input/output vectors,                 pected output size. Users preferring the first approach can
+passed as arguments to function kernels, can be processed                manually discard excess results.
+simultaneously across stages of a Pipeline. We describe how              filter Data-Parallel Pattern.       Implementing the filter
+DaPPA handles this process for the general case, i.e., where             data-parallel pattern on the DPU is straightforward: the kernel
+the target data-parallel patterns lead to homogeneous WRAM               function processes each element, appending those that satisfy
+and MRAM accesses.                                                       the filter condition to the output vector. However, managing
+1. Calculating WRAM Parameters. We first compute the                     WRAM–MRAM transfers introduces complexity. There are
+WRAM cache element count, which defines how many ele-                    two possible strategies for output transfers: (i) transferring all
+ments a stage’s WRAM cache can hold per argument. This                   available output elements after processing a full input WRAM
+
+
+                                                                     9
+
+
+
+===== Page 10 =====
+
+block, or (ii) waiting until a full output WRAM block is accu-           6.2. Workloads
+mulated before transferring. The latter is more efficient due to         We evaluate DaPPA using six PIM-friendly applications from
+larger batch transfers but requires frequent checks for a full           the PrIM benchmark suite [33, 153]: vector addition (VA), se-
+WRAM block, which is costly. To avoid this overhead, DaPPA               lect (SEL), unique (UNI), reduction (RED), general matrix-vector
+implements the first approach. A challenge in this method is             multiplication (GEMV), and image histogram small (HST-S). We
+ensuring 8-byte alignment, as the number of retained elements            use the hand-tuned implementations of such workloads from
+is unpredictable. To address this, we round up the transfer size         the PrIM benchmark suite as our baseline. Below, we describe
+to the nearest valid alignment, ensuring that no overwrites              the data-parallel patterns we use to implement each one of
+occur. Since the maximum possible output length (where all               the six PrIM workloads. If not otherwise specified, we use 1M
+elements are retained) is always aligned by design, this guar-           32-bit integer elements per UPMEM core as input dataset.
+antees safe memory handling. During transfers, the last 8-byte
+                                                                         Vector Addition (VA). Element-wise addition of two arrays
+section of each output WRAM block contains both valid data
+                                                                         using a map data-parallel pattern.
+and padding. Since subsequent transfers cannot create gaps,
+the base MRAM destination must remain unchanged. To han-                 Select (SEL). Selects elements from the input vector based on
+dle this, we copy the last 8 bytes of the previous WRAM block            a predicate using a filter data-parallel pattern.
+to the start of the next one, adjusting the offset so that new           Unique (UNI). Removes duplicates from a sorted vector using
+elements seamlessly append to the existing data.                         a window+filter data-parallel pattern with a window of two.
+                                                                         Thus, our implementation accesses two consecutive elements,
+5.4. Handling Invalid Pipeline Implementations                           keeping an element if it differs from the next one.
+Certain stage combinations cannot be processed within a                  Reduction (RED). Adds all elements of an input array into a
+single Pipeline as described so far. Specifically, the outputs           scalar value using a reduce data-parallel pattern.
+of filter and reduce cannot be directly used by subsequent               General Matrix-Vector Multiplication (GEMV). Standard
+stages except for additional filtering or reduction. For filter,         matrix-vector multiplication. We implement GEMV using a
+a map operation cannot process its output since each DPU                 group data-parallel pattern by (i) setting the group size equal to
+lacks knowledge of how many elements preceding DPUs are                  the vector size, (ii) treating the vector as a scalar, and (iii) man-
+retained. Without this information, a DPU cannot determine               ually iterating over rows to perform multiplication and summa-
+the correct position of its filtered results in the global output        tion. While this approach requires the user to explicitly write
+vector, making it impossible to align multiple inputs in a map           the loop, it is necessary because DaPPA does not inherently
+operation when one of them is a filter output. Similarly, for            recognize non-vector data structures such as matrices. Addi-
+reduce, each DPU only holds a partial result, meaning further            tionally, this method requires the entire vector to fit within
+stages would receive incomplete or incorrect data.                       WRAM. This constraint is also present in the PrIM benchmark.
+    To resolve this, filtered or reduced results must be copied          We evaluate the runtime of GEVM for matrices with 4096 rows
+back to the CPU and combined before further processing. This             and 256 columns per UPMEM core.
+effectively splits execution into two separate Pipelines: one
+handling operations up to the filter or reduce stages, and               Image Histogram Small (HST-S). Counts the number of times
+another processing the aggregated results. While this approach           each value appears in a vector input. We implement HST-S
+is less performant, using DPUs may still be beneficial. To assist        using a reduce data-parallel pattern. In our HST-S implemen-
+in such cases, DaPPA provides the PipelineFull class, which              tation, the reduction variable is a vector, whose size depends
+automatically detects invalid stage combinations and partitions          on the amount of unique values that appear in the input vec-
+execution into multiple sub-pipelines. This ensures that all             tor. We evaluate the runtime of HST-S for 1M 32-bit integer
+stage configurations can be handled correctly. The class is              elements per UPMEM core, with the number of histogram bins
+separate from Pipeline to highlight its potential performance            set to 256 [33, 153].
+impact, encouraging users to make an informed choice. Its                7. Evaluation
+interface remains identical to that of a regular Pipeline.
+                                                                         We first describe how DaPPA improves programming produc-
+                                                                         tivity. Second, we provide a performance analysis of DaPPA
+6. Methodology                                                           compared to hand-tuned reference implementations of our six
+6.1. Implementation                                                      evaluated workloads. Third, we discuss DaPPA’s overheads.
+
+We conduct our evaluation on a UPMEM PIM system that in-                 7.1. Productivity Improvement
+cludes a 2-socket Intel Xeon Silver 4110 CPU at 2.10 GHz (host           We evaluate how DaPPA can improve programming produc-
+CPU), standard main memory (DDR4-2400) of 128 GB, and                    tivity compared to the hand-tune PrIM workloads, and a
+20 UPMEM PIM DIMMs with 160 GB PIM-capable memory                        prior framework for UPMEM programmability called Sim-
+and 2,560 DPUs [151]. We implemented DaPPA in C++, and                   plePIM [176]. Similar to DaPPA, SimplePIM provides a series of
+compiled it as a shared library, therefore it can be distributed         high-level APIs that allow the user to abstract low-level imple-
+independently from the user application, if needed.                      mentation details when writing code for the UPMEM system.
+
+
+                                                                    10
+
+
+
+===== Page 11 =====
+
+However, different than DaPPA, in SimplePIM, the user is still                       cantly better than PrIM implementations. On average across
+responsible to explicitly handle CPU–DPU and DPU–DPU data                            these two workloads, DaPPA achieves 10× the performance
+communication. We use lines-of-code (LOC) as a productivity                          of PrIM implementations. This is due to the fact that PrIM
+metric [177–179]. To do so, we manually count the lines of ef-                       implementations for such workloads use slower serial data
+fective UPMEM-programming related code for each one of the                           transfers instead of faster parallel data transfers when copying
+six workloads, which excludes lines of code for data loading                         data back from the DPUs to the CPU main memory. As these
+from a file to the host main memory, host memory allocation,                         workloads have undefined output sizes (since they include fil-
+variable definition, and time measurements.                                          tering operations), PrIM transfers the output data back from
+   Table 1 summarizes the lines of effective code saved by us-                       each DPU individually, one after another, after communicating
+ing DaPPA for the six workloads compared to the hand-tuned                           the correct result size to the CPU. In contrast, DaPPA copies
+PrIM implementation and SimplePIM. Note that there is no                             back from DPUs to the CPU all the output data, and only com-
+available reference implementation of SimplePIM for three                            presses the data to remove the ‘holes’ after we transferred it
+of our workloads (i.e., SEL, UNI, and GEMV). We make two ob-                         back to the CPU, hence improving transfer time. Fourth, on
+servations from the table. First, compared to the hand-tuned                         average across all six workloads, DaPPA achieves 2.1× the end-
+PrIM implementations, DaPPA significantly reduces LOC. On                            to-end performance of the hand-tuned PrIM implementations.
+average across all six workloads, DaPPA reduces LOC by 94%                           We conclude that DaPPA consistently achieves performance
+compared to the PrIM implementations. This is possible since                         comparable to the PrIM hand-tune reference implementations.
+DaPPA significantly raises the abstraction level when imple-                                                                         CPU−DPU              DPU Kernel         DPU−CPU
+menting UPMEM workloads, allowing the user to mainly focus                                                  45000
+                                                                                                            44000
+the target kernel function. Second, compared to SimplePIM,                                                  43000
+                                                                                                            42000
+DaPPA further improves productivity by 59%. This is due to
+                                                                                      Execution Time (ms)
+                                                                                                            41000
+                                                                                                            40000
+the fact that in DaPPA, the user does not need to write code                                                5000
+
+for data communication or metadata bookkeeping, as in Sim-                                                  4000
+                                                                                                            3000
+
+plePIM. We conclude that DaPPA is an efficient framework to                                                 2000
+                                                                                                            1000
+
+ease UPMEM programmability.                                                                                    0
+                                                                                                                    PrIM DaPPA   PrIM DaPPA    PrIM DaPPA        PrIM DaPPA      PrIM DaPPA    PrIM DaPPA
+                                                                                                                       VA          SEL              UNI                RED         GEMV         HST−S
+           Table 1: Lines-of-code (LOC) comparison.
+           LOC         LOC               LOC     LOC Red.     LOC Red.               Figure 5: End-to-end execution time for six workloads using
+Workload
+           PrIM [31]   SimplePIM [176]   DaPPA   (vs. PrIM)   (vs. SimplePIM)        PrIM [33] hand-tuned and DaPPA implementations.
+VA         78          14                6       92%          57%
+SEL        120         -                 6       95%          -                      DPU Kernel Execution Time. Figure 6 shows the DPU ker-
+UNI        155         -                 6       96%          -
+RED        123         14                6       95%          57%                    nel execution time (i.e., the execution time excluding memory
+GEMV       180         -                 9       95%          -                      transfer times) for our six workloads using both PrIM and
+HST-S      113         21                8       93%          62%
+GMean      124         16                7       94%          59%
+                                                                                     DaPPA implementations. We make two observations from the
+                                                                                     figure. First, for most workloads, DaPPA either achieves on
+                                                                                     par performance or outperforms their PrIM implementations.
+7.2. Performance Analysis
+                                                                                     On average across all workloads, DaPPA achieves 1.4× the
+We compare DaPPA’s performance for our six workloads in                              performance of the PrIM implementations (and up to 3.5×).
+comparison to their PrIM hand-tuned implementations. We                              Second, for some workloads (i.e., SEL and HST-S), there is a
+conduct our analysis in a real UPMEM-based system (described                         large performance gap between DaPPA and PrIM implementa-
+in Section 6). In our analysis, we configure the DPUs to use 11                      tions, in favor of DaPPA. This is because different amounts of
+tasklets (for both DaPPA and PrIM workloads), which is the                           work are performed in the DPU in these cases: the PrIM imple-
+minimum number of tasklets in order to fill the DPU instruction                      mentations perform part of the compression/combination after
+pipeline [33, 153]. We report the average execution time across                      the filter/reduction already in the DPU, which counts towards
+10 execution runs.                                                                   the DPU time, whereas DaPPA perform such operations within
+End-to-End Execution Time. Figure 5 shows the average                                the host CPU, which counts towards the memory transfer time.
+end-to-end execution time to execute each one of our six work-                                                4
+                                                                                                                      PrIM          DaPPA
+loads using PrIM and DaPPA implementations. In this analysis,
+                                                                                     PrIM−Normalized
+
+
+
+
+we measure both the time it takes for CPU–DPU/DPU–CPU                                                         3
+                                                                                     Performance
+
+
+
+
+data transfer, inter-DPU data movement, and DPU kernel exe-                                                   2
+cution time. We make four observations from the figure. First,
+as expected, the CPU–DPU and DPU–CPU transfer times com-                                                      1
+prise the vast majority of the processing time for both PrIM
+                                                                                                              0
+and DaPPA implementations. Second, for four workloads (i.e.,                                                          VA         SEL          UNI            RED         GEMV          HST−S    GMean
+VA, RED, GEMV, and HST-S), DaPPA achieves performance on                             Figure 6: DPU kernel performance comparison for six work-
+par with the hand-tuned PrIM implementations. Third, for                             loads using PrIM [33] and DaPPA implementations.
+two workloads (i.e., SEL and UNI), DaPPA performs signifi-
+
+
+                                                                                11
+
+
+
+===== Page 12 =====
+
+7.3. DaPPA Execution Time Overheads                                     simplifies programming in UPMEM-based PIM systems. By
+DaPPA induces some additional execution overheads due to                abstracting hardware complexities through high-level data-
+its dynamic template-based compilation. We measured such                parallel patterns, DaPPA enables efficient PIM execution with-
+overheads for our six workload implementations, and we ob-              out manual optimizations. DaPPA is comprised of three main
+serve that DaPPA execution time overheads are of (i) 1 ms for           components, a set of data-parallel pattern APIs, a dataflow
+substituting values into the DPU code skeleton; (ii) 150 ms for         programming interface, and a dynamic template-based com-
+compiling the DPU binary (recall that in DaPPA, the DPU                 pilation scheme. Our evaluation shows that DaPPA improves
+binary has to be compiled at runtime for each Pipeline);                performance while reducing programming complexity for dif-
+(iii) 1–150 ms for other various operations (e.g., element count        ferent PIM workloads. DaPPA bridges the gap between ease
+calculations). Such execution overheads are negligible in com-          of use and efficiency in PIM architectures, fostering broader
+parison to the time the UPMEM SDK takes to allocate DPUs                adoption for general-purpose PIM systems.
+(1200 ms) and end-to-end DPU execution time (Figure 5).
+                                                                        References
+8. Related Work                                                          [1] O. Mutlu, “Memory Scaling: A Systems Architecture Perspective,” in IMW, 2013.
+                                                                         [2] O. Mutlu and L. Subramanian, “Research Problems and Opportunities in Memory
+To our knowledge, DaPPA is the first data-parallel pattern-                  Systems,” SUPERFRI, 2014.
+                                                                         [3] J. Dean and L. A. Barroso, “The Tail at Scale,” CACM, 2013.
+based programming framework to generate code for the UP-                 [4] S. Kanev, J. P. Darago et al., “Profiling a Warehouse-Scale Computer,” in ISCA, 2015.
+MEM architecture fully automatically. We first review works              [5] O. Mutlu, S. Ghose et al., “Enabling Practical Processing in and Near Memory for
+                                                                             Data-Intensive Computing,” in DAC, 2019.
+that provide high-level programming frameworks or APIs for               [6] O. Mutlu, S. Ghose et al., “Processing Data Where It Makes Sense: Enabling In-
+the UPMEM system. Second, we discuss compiler solutions                      Memory Computation,” MicPro, 2019.
+                                                                         [7] O. Mutlu, “Intelligent Architectures for Intelligent Machines,” in VLSI-DAT, 2020.
+targeting PIM architectures.                                             [8] S. Ghose, A. Boroumand et al., “Processing-in-Memory: A Workload-Driven Per-
+                                                                             spective,” IBM JRD, 2019.
+Programming Frameworks/APIs for UPMEM. Several                           [9] O. Mutlu, S. Ghose et al., “A Modern Primer on Processing in Memory,” in Emerging
+prior works [176, 180, 181] propose different programming                    Computing: From Devices to Systems — Looking Beyond Moore and Von Neumann.
+                                                                             Springer, 2021.
+frameworks or APIs to ease programmability in UPMEM-based               [10] A. Boroumand, S. Ghose et al., “Google Workloads for Consumer Devices: Mitigat-
+PIM systems. First, SimplePIM [176] proposes a high-level                    ing Data Movement Bottlenecks,” in ASPLOS, 2018.
+                                                                        [11] S. Wang and E. Ipek, “Reducing Data Movement Energy via Online Data Clustering
+programming framework that encapsulates management, com-                     and Encoding,” in MICRO, 2016.
+putation, and communication primitives into software APIs.              [12] S. A. McKee, “Reflections on the Memory Wall,” in CF, 2004.
+                                                                        [13] M. V. Wilkes, “The Memory Gap and the Future of High Performance Memories,”
+Similarly to DaPPA, SimplePIM uses a MapReduce-like pro-                     CAN, 2001.
+gramming model [182], with support for three execution par-             [14] Y. Kim, V. Seshadri et al., “A Case for Exploiting Subarray-Level Parallelism (SALP)
+                                                                             in DRAM,” in ISCA, 2012.
+allel patterns (i.e., map, reduce, and zip). DaPPA builds on top        [15] W. A. Wulf and S. A. McKee, “Hitting the Memory Wall: Implications of the Obvious,”
+of SimplePIM by (i) further extending the programming model                  CAN, 1995.
+                                                                        [16] S. Ghose, T. Li et al., “Demystifying Complex Workload–DRAM Interactions: An
+to allow for native implementation of more parallel patterns,                Experimental Study,” in SIGMETRICS, 2020.
+(ii) completely eliminating the need for the user to handle data        [17] J. Ahn, S. Hong et al., “A Scalable Processing-in-Memory Accelerator for Parallel
+                                                                             Graph Processing,” in ISCA, 2015.
+communication between CPU and DPUs and across DPUs,                     [18] J. Ahn, S. Yoo et al., “PIM-Enabled Instructions: A Low-Overhead, Locality-Aware
+and (iii) allowing for automatic cooperative execution between               Processing-in-Memory Architecture,” in ISCA, 2015.
+                                                                        [19] R. Sites, “It’s the Memory, Stupid!” MPR, 1996.
+CPU and DPUs for a given kernel. By doing so, DaPPA fur-                [20] G. F. Oliveira, J. Gómez-Luna et al., “DAMOV: A New Methodology and Benchmark
+ther improves programming productivity compared to Sim-                      Suite for Evaluating Data Movement Bottlenecks,” IEEE Access, 2021.
+                                                                        [21] S. Ghose, K. Hsieh et al., “The Processing-in-Memory Paradigm: Mechanisms to
+plePIM (as we show in Section 7). Second, other works, such as               Enable Adoption,” in Beyond-CMOS Technologies for Next Generation Computer
+TransPimLib [180] and PyGim [181], provide implementation                    Design, 2019.
+                                                                        [22] G. H. Loh, N. Jayasena et al., “A Processing in Memory Taxonomy and a Case for
+support for key computation kernels, such as transcendental                  Studying Fixed-Function PIM,” in WoNDP, 2013.
+functions and graph neural networks. Even though such works             [23] R. Balasubramonian, J. Chang et al., “Near-Data Processing: Insights from a MICRO-
+                                                                             46 Workshop,” IEEE Micro, 2014.
+also aid UPMEM programmability, they are limited to a narrow            [24] H. S. Stone, “A Logic-in-Memory Computer,” IEEE TC, 1970.
+application scope.                                                      [25] A. Saulsbury, F. Pong, and A. Nowatzyk, “Missing the Memory Wall: The Case for
+                                                                             Processor/Memory Integration,” in ISCA, 1996.
+Compiler Support for PIM. Many prior works propose com-                 [26] W. H. Kautz, “Cellular Logic-in-Memory Arrays,” IEEE TC, 1969.
+                                                                        [27] A. Farmahini-Farahani, J. H. Ahn et al., “NDA: Near-DRAM Acceleration Architec-
+piler solutions for different PIM systems [108, 124, 146, 147,               ture Leveraging Commodity DRAM Devices and Standard Memory Modules,” in
+183–186]. However, none of such compilers is suitable for                    HPCA, 2015.
+                                                                        [28] O. O. Babarinsa and S. Idreos, “JAFAR: Near-Data Processing for Databases,” in
+the real UPMEM PIM system. The authors of [187] propose                      SIGMOD, 2015.
+CINM, a compiler based on MLIR [188] (multi-level interme-              [29] F. Devaux, “The True Processing in Memory Accelerator,” in Hot Chips, 2019.
+                                                                        [30] N. M. Ghiasi, J. Park et al., “GenStore: A High-Performance and Energy-Efficient
+diate representation) for both UPMEM-like PIM systems and                    In-Storage Computing System for Genome Sequence Analysis,” in ASPLOS, 2022.
+analog-based PIM architectures. Compared to DaPPA, its main             [31] J. Gómez-Luna, I. El Hajj et al., “Benchmarking Memory-Centric Computing Sys-
+                                                                             tems: Analysis of Real Processing-in-Memory Hardware,” in CUT, 2021.
+limitation is the fact that it only supports linear algebra PIM         [32] J. Gómez-Luna, I. E. Hajj et al., “Benchmarking a New Paradigm: An Experimental
+kernels.                                                                     Analysis of a Real Processing-in-Memory Architecture,” arXiv:2105.03814 [cs.AR],
+                                                                             2021.
+                                                                        [33] J. Gómez-Luna, I. El Hajj et al., “Benchmarking a New Paradigm: Experimental
+9. Conclusion                                                                Analysis and Characterization of a Real Processing-in-Memory System,” IEEE Access,
+                                                                             2022.
+We introduce DaPPA (data-parallel processing-in-memory                  [34] C. Giannoula, N. Vijaykumar et al., “SynCron: Efficient Synchronization Support
+architecture), a data-parallel programming framework that                    for Near-Data-Processing Architectures,” in HPCA, 2021.
+
+
+
+                                                                   12
+
+
+
+===== Page 13 =====
+
+[35] G. Singh, D. Diamantopoulos et al., “NERO: A Near High-Bandwidth Memory                            Design,” in ICDE, 2022.
+     Stencil Accelerator for Weather Prediction Modeling,” in FPL, 2020.                           [75] A. Boroumand, S. Ghose et al., “Polynesia: Enabling Effective Hybrid Trans-
+[36] S. Lee, K. Kim et al., “A 1ynm 1.25V 8Gb, 16Gb/s/pin GDDR6-based Accelerator-in-                   actional/Analytical Databases with Specialized Hardware/Software Co-Design,”
+     Memory Supporting 1TFLOPS MAC Operation and Various Activation Functions                           arXiv:2103.00798 [cs.AR], 2021.
+     for Deep-Learning Applications,” in ISSCC, 2022.                                              [76] A. Boroumand, “Practical Mechanisms for Reducing Processor-Memory Data Move-
+[37] L. Ke, X. Zhang et al., “Near-Memory Processing in Action: Accelerating Personal-                  ment in Modern Workloads,” Ph.D. dissertation, Carnegie Mellon University, 2020.
+     ized Recommendation with AxDIMM,” IEEE Micro, 2021.                                           [77] M. Besta, R. Kanakagiri et al., “SISA: Set-Centric Instruction Set Architecture for
+[38] C. Giannoula, I. Fernandez et al., “SparseP: Towards Efficient Sparse Matrix Vector                Graph Mining on Processing-in-Memory Systems,” in MICRO, 2021.
+     Multiplication on Real Processing-in-Memory Architectures,” in SIGMETRICS, 2022.              [78] I. Fernandez, R. Quislant et al., “NATSA: A Near-Data Processing Accelerator for
+[39] H. Shin, D. Kim et al., “McDRAM: Low Latency and Energy-Efficient Matrix Com-                      Time Series Analysis,” in ICCD, 2020.
+     putations in DRAM,” IEEE TCADICS, 2018.                                                       [79] G. Singh, G. et al., “NAPEL: Near-Memory Computing Application Performance
+[40] S. Cho, H. Choi et al., “McDRAM v2: In-Dynamic Random Access Memory Systolic                       Prediction via Ensemble Learning,” in DAC, 2019.
+     Array Accelerator to Address the Large Model Problem in Deep Neural Networks                  [80] Y.-C. Kwon, S. H. Lee et al., “A 20nm 6GB Function-in-Memory DRAM, Based
+     on the Edge,” IEEE Access, 2020.                                                                   on HBM2 with a 1.2 TFLOPS Programmable Computing Unit using Bank-Level
+[41] A. Denzler, R. Bera et al., “Casper: Accelerating Stencil Computation using Near-                  Parallelism, for Machine Learning Applications,” in ISSCC, 2021.
+     Cache Processing,” arXiv:2112.14216 [cs.AR], 2021.                                            [81] S. Lee, S.-h. Kang et al., “Hardware Architecture and Software Stack for PIM Based
+[42] H. Asghari-Moghaddam, Y. H. Son et al., “Chameleon: Versatile and Practical                        on Commercial DRAM Technology: Industrial Product,” in ISCA, 2021.
+     Near-DRAM Acceleration Architecture for Large Memory Systems,” in MICRO,                      [82] D. Niu, S. Li et al., “184QPS/W 64Mb/mm2 3D Logic-to-DRAM Hybrid Bonding
+     2016.                                                                                              with Process-Near-Memory Engine for Recommendation System,” in ISSCC, 2022.
+[43] D. Patterson, T. Anderson et al., “A Case for Intelligent RAM,” IEEE Micro, 1997.             [83] Q. Zhu, T. Graf et al., “Accelerating Sparse Matrix-Matrix Multiplication with
+[44] D. G. Elliott, M. Stumm et al., “Computational RAM: Implementing Processors in                     3D-Stacked Logic-in-Memory Hardware,” in HPEC, 2013.
+     Memory,” Design and Test of Computers, 1999.                                                  [84] E. Azarkhish, C. Pfister et al., “Logic-Base Interconnect Design for Near Memory
+[45] M. A. Z. Alves, P. C. Santos et al., “Saving Memory Movements Through Vector                       Computing in the Smart Memory Cube,” IEEE VLSI, 2016.
+     Processing in the DRAM,” in CASES, 2015.                                                      [85] E. Azarkhish, D. Rossi et al., “Neurostream: Scalable and Energy Efficient Deep
+[46] S. L. Xi, O. Babarinsa et al., “Beyond the Wall: Near-Data Processing for Databases,”              Learning with Smart Memory Cubes,” TPDS, 2018.
+     in DaMoN, 2015.                                                                               [86] Q. Guo, N. Alachiotis et al., “3D-Stacked Memory-Side Acceleration: Accelerator
+[47] W. Sun, Z. Li et al., “ABC-DIMM: Alleviating the Bottleneck of Communication                       and System Design,” in WoNDP, 2014.
+     in DIMM-Based Near-Memory Processing with Inter-DIMM Broadcast,” in ISCA,                     [87] J. P. C. de Lima, P. C. Santos et al., “Design Space Exploration for PIM Architectures
+     2021.                                                                                              in 3D-Stacked Memories,” in CF, 2018.
+[48] K. K. Matam, G. Koo et al., “GraphSSD: Graph Semantics Aware SSD,” in ISCA, 2019.             [88] B. Akın, J. C. Hoe, and F. Franchetti, “HAMLeT: Hardware Accelerated Memory
+[49] M. Gokhale, B. Holmes, and K. Iobst, “Processing in Memory: The Terasys Massively                  Layout Transform within 3D-Stacked DRAM,” in HPEC, 2014.
+     Parallel PIM Array,” Computer, 1995.                                                          [89] Y. Huang, L. Zheng et al., “A Heterogeneous PIM Hardware-Software Co-Design
+[50] M. Hall, P. Kogge et al., “Mapping Irregular Applications to DIVA, a PIM-Based                     for Energy-Efficient Graph Processing,” in IPDPS, 2020.
+     Data-Intensive Architecture,” in SC, 1999.                                                    [90] G. Dai, T. Huang et al., “GraphH: A Processing-in-Memory Architecture for Large-
+[51] M. A. Z. Alves, P. C. Santos et al., “Opportunities and Challenges of Performing                   Scale Graph Processing,” TCAD, 2018.
+     Vector Operations Inside the DRAM,” in MEMSYS, 2015.                                          [91] J. Liu, H. Zhao et al., “Processing-in-Memory for Energy-Efficient Neural Network
+[52] E. Lockerman, A. Feldmann et al., “Livia: Data-Centric Computing Throughout the                    Training: A Heterogeneous Approach,” in MICRO, 2018.
+     Memory Hierarchy,” in ASPLOS, 2020.                                                           [92] P.-A. Tsai, C. Chen, and D. Sanchez, “Adaptive Scheduling for Systems with Asym-
+[53] L. Nai, R. Hadidi et al., “GraphPIM: Enabling Instruction-Level PIM Offloading in                  metric Memory Hierarchies,” in MICRO, 2018.
+     Graph Computing Frameworks,” in HPCA, 2017.                                                   [93] P. Gu, X. Xie et al., “iPIM: Programmable In-Memory Image Processing Accelerator
+[54] A. Boroumand, S. Ghose et al., “LazyPIM: An Efficient Cache Coherence Mechanism                    using Near-Bank Architecture,” in ISCA, 2020.
+     for Processing-in-Memory,” CAL, 2017.                                                         [94] A. Farmahini-Farahani, J. H. Ahn et al., “DRAMA: An Architecture for Accelerated
+[55] D. Zhang, N. Jayasena et al., “TOP-PIM: Throughput-Oriented Programmable                           Processing Near Memory,” Computer Architecture Letters, 2014.
+     Processing in Memory,” in HPDC, 2014.                                                         [95] H. Asghari-Moghaddam, A. Farmahini-Farahani et al., “Near-DRAM Acceleration
+[56] M. Gao and C. Kozyrakis, “HRL: Efficient and Flexible Reconfigurable Logic for                     with Single-ISA Heterogeneous Processing in Standard Memory Modules,” IEEE
+     Near-Data Processing,” in HPCA, 2016.                                                              Micro, 2016.
+[57] J. S. Kim, D. S. Cali et al., “GRIM-Filter: Fast Seed Location Filtering in DNA Read          [96] J. Huang, R. R. Puli et al., “Active-Routing: Compute on the Way for Near-Data
+     Mapping Using Processing-in-Memory Technologies,” BMC Genomics, 2018.                              Processing,” in HPCA, 2019.
+[58] M. Drumond, A. Daglis et al., “The Mondrian Data Engine,” in ISCA, 2017.                      [97] C. D. Kersey, H. Kim, and S. Yalamanchili, “Lightweight SIMT Core Designs for
+[59] P. C. Santos, G. F. Oliveira et al., “Operand Size Reconfiguration for Big Data                    Intelligent 3D Stacked DRAM,” in MEMSYS, 2017.
+     Processing in Memory,” in DATE, 2017.                                                         [98] J. Li, X. Wang et al., “PIMS: A Lightweight Processing-in-Memory Accelerator for
+[60] G. F. Oliveira, P. C. Santos et al., “NIM: An HMC-Based Machine for Neuron                         Stencil Computations,” in MEMSYS, 2019.
+     Computation,” in ARC, 2017.                                                                   [99] J. S. Kim, D. Senol et al., “GRIM-Filter: Fast Seed Filtering in Read Mapping using
+[61] M. Gao, J. Pu et al., “TETRIS: Scalable and Efficient Neural Network Acceleration                  Emerging Memory Technologies,” arXiv:1708.04329 [q-bio.GN], 2017.
+     with 3D Memory,” in ASPLOS, 2017.                                                            [100] A. Boroumand, S. Ghose et al., “LazyPIM: Efficient Support for Cache Coherence in
+[62] D. Kim, J. Kung et al., “Neurocube: A Programmable Digital Neuromorphic Archi-                     Processing-in-Memory Architectures,” arXiv:1706.03162 [cs.AR], 2017.
+     tecture with High-Density 3D Memory,” in ISCA, 2016.                                         [101] Y. Zhuo, C. Wang et al., “GraphQ: Scalable PIM-Based Graph Processing,” in MICRO,
+[63] P. Gu, S. Li et al., “Leveraging 3D Technologies for Hardware Security: Opportunities              2019.
+     and Challenges,” in GLSVLSI, 2016.                                                           [102] M. Zhang, Y. Zhuo et al., “GraphP: Reducing Communication for PIM-Based Graph
+[64] A. Boroumand, S. Ghose et al., “CoNDA: Efficient Cache Coherence Support for                       Processing with Efficient Data Partition,” in HPCA, 2018.
+     Near-Data Accelerators,” in ISCA, 2019.                                                      [103] H. Lim and G. Park, “Triple Engine Processor (TEP): A Heterogeneous Near-Memory
+[65] K. Hsieh, E. Ebrahimi et al., “Transparent Offloading and Mapping (TOM) Enabling                   Processor for Diverse Kernel Operations,” TACO, 2017.
+     Programmer-Transparent Near-Data Processing in GPU Systems,” in ISCA, 2016.                  [104] E. Azarkhish, D. Rossi et al., “A Case for Near Memory Computation Inside the
+[66] D. S. Cali, G. S. Kalsi et al., “GenASM: A High-Performance, Low-Power Approxi-                    Smart Memory Cube,” in EMS, 2016.
+     mate String Matching Acceleration Framework for Genome Sequence Analysis,” in                [105] M. A. Z. Alves, M. Diener et al., “Large Vector Extensions Inside the HMC,” in DATE,
+     MICRO, 2020.                                                                                       2016.
+[67] S. H. Pugsley, J. Jestes et al., “NDC: Analyzing the Impact of 3D-Stacked Mem-               [106] J. Jang, J. Heo et al., “Charon: Specialized Near-Memory Processing Architecture
+     ory+Logic Devices on MapReduce Workloads,” in ISPASS, 2014.                                        for Clearing Dead Objects in Memory,” in MICRO, 2019.
+[68] A. Pattnaik, X. Tang et al., “Scheduling Techniques for GPU Architectures with               [107] R. Nair, S. F. Antao et al., “Active Memory Cube: A Processing-in-Memory Archi-
+     Processing-in-Memory Capabilities,” in PACT, 2016.                                                 tecture for Exascale Systems,” IBM JRD, 2015.
+[69] B. Akin, F. Franchetti, and J. C. Hoe, “Data Reorganization in Memory Using                  [108] R. Hadidi, L. Nai et al., “CAIRO: A Compiler-Assisted Technique for Enabling
+     3D-Stacked DRAM,” in ISCA, 2015.                                                                   Instruction-Level Offloading of Processing-in-Memory,” TACO, 2017.
+[70] K. Hsieh, S. Khan et al., “Accelerating Pointer Chasing in 3D-Stacked Memory:                [109] P. C. Santos, G. F. Oliveira et al., “Processing in 3D Memories to Speed Up Operations
+     Challenges, Mechanisms, Evaluation,” in ICCD, 2016.                                                on Complex Data Structures,” in DATE, 2018.
+[71] J. H. Lee, J. Sim, and H. Kim, “BSSync: Processing Near Memory for Machine                   [110] P. Chi, S. Li et al., “PRIME: A Novel Processing-in-Memory Architecture for Neural
+     Learning Workloads with Bounded Staleness Consistency Models,” in PACT, 2015.                      Network Computation in ReRAM-Based Main Memory,” in ISCA, 2016.
+[72] A. Boroumand, S. Ghose et al., “Mitigating Edge Machine Learning Inference Bottle-           [111] A. Shafiee, A. Nag et al., “ISAAC: A Convolutional Neural Network Accelerator
+     necks: An Empirical Study on Accelerating Google Edge Models,” arXiv:2103.00768                    with In-Situ Analog Arithmetic in Crossbars,” in ISCA, 2016.
+     [cs.AR], 2021.                                                                               [112] V. Seshadri, D. Lee et al., “Ambit: In-Memory Accelerator for Bulk Bitwise Opera-
+[73] A. Boroumand, S. Ghose et al., “Google Neural Network Models for Edge Devices:                     tions Using Commodity DRAM Technology,” in MICRO, 2017.
+     Analyzing and Mitigating Machine Learning Inference Bottlenecks,” in PACT, 2021.             [113] V. Seshadri and O. Mutlu, “In-DRAM Bulk Bitwise Execution Engine,”
+[74] A. Boroumand, S. Ghose et al., “Polynesia: Enabling High-Performance and Energy-                   arXiv:1905.09822 [cs.AR], 2019.
+     Efficient Hybrid Transactional/Analytical Databases with Hardware/Software Co-               [114] S. Li, D. Niu et al., “DRISA: A DRAM-Based Reconfigurable In-Situ Accelerator,” in
+
+
+
+                                                                                             13
+
+
+
+===== Page 14 =====
+
+      MICRO, 2017.                                                                                [152] UPMEM, “Introduction to UPMEM PIM. Processing-in-memory (PIM) on DRAM
+[115] V. Seshadri, Y. Kim et al., “RowClone: Fast and Energy-Efficient In-DRAM Bulk                     Accelerator (White Paper),” 2018.
+      Data Copy and Initialization,” in MICRO, 2013.                                              [153] J. Gómez-Luna, I. E. Hajj et al., “Benchmarking a New Paradigm: An Experimental
+[116] V. Seshadri and O. Mutlu, “The Processing Using Memory Paradigm: In-DRAM                          Analysis of a Real Processing-in-Memory Architecture,” arXiv:2105.03814 [cs.AR],
+      Bulk Copy, Initialization, Bitwise AND and OR,” arXiv:1610.09603 [cs.AR], 2016.                   2021.
+[117] Q. Deng, L. Jiang et al., “DrAcc: A DRAM Based Accelerator for Accurate CNN                 [154] M. I. Cole, Algorithmic Skeletons: Structured Management of Parallel Computation.
+      Inference,” in DAC, 2018.                                                                         Pitman London, 1989.
+[118] X. Xin, Y. Zhang, and J. Yang, “ELP2IM: Efficient and Low Power Bitwise Operation           [155] M. Cole, “Bringing Skeletons Out of the Closet: A Pragmatic Manifesto for Skeletal
+      Processing in DRAM,” in HPCA, 2020.                                                               Parallel Programming,” Parallel Computing, 2004.
+[119] L. Song, Y. Zhuo et al., “GraphR: Accelerating Graph Processing Using ReRAM,” in            [156] SAFARI Research Group, “PrIM Benchmark Suite,” https://github.com/CMU-
+      HPCA, 2018.                                                                                       SAFARI/prim-benchmarks.
+[120] L. Song, X. Qian et al., “PipeLayer: A Pipelined ReRAM-Based Accelerator for Deep           [157] M. J. Flynn, “Very High-Speed Computing Systems,” Proc. IEEE, 1966.
+      Learning,” in HPCA, 2017.                                                                   [158] M. McCool, J. Reinders, and A. Robison, Structured Parallel Programming: Patterns
+[121] F. Gao, G. Tziantzioulis, and D. Wentzlaff, “ComputeDRAM: In-Memory Compute                       for Efficient Computation. Elsevier, 2012.
+      Using Off-the-Shelf DRAMs,” in MICRO, 2019.                                                 [159] M. D. McCool, “Structured Parallel Programming with Deterministic Patterns,” in
+[122] C. Eckert, X. Wang et al., “Neural Cache: Bit-Serial In-Cache Acceleration of Deep                HotPar, 2010.
+      Neural Networks,” in ISCA, 2018.                                                            [160] T. Rauber and G. Rünger, Parallel Programming: For Multicore and Cluster Systems.
+[123] S. Aga, S. Jeloka et al., “Compute Caches,” in HPCA, 2017.                                        Springer, 2013.
+[124] D. Fujiki, S. Mahlke, and R. Das, “Duality Cache for Data Parallel Acceleration,” in        [161] G. Hager and G. Wellein, Introduction to High Performance Computing for Scientists
+      ISCA, 2019.                                                                                       and Engineers. CRC Press, 2010.
+[125] V. Seshadri, D. Lee et al., “Buddy-RAM: Improving the Performance and Efficiency            [162] S. Ernsting and H. Kuchen, “Data Parallel Algorithmic Skeletons with Accelerator
+      of Bulk Bitwise Operations Using DRAM,” arXiv:1611.09988 [cs.AR], 2016.                           Support,” IJPP, 2017.
+[126] V. Seshadri and O. Mutlu, “Simple Operations in Memory to Reduce Data Movement,”            [163] S. Ernsting and H. Kuchen, “Algorithmic Skeletons for Multi-Core, Multi-GPU
+      in Advances in Computers, Volume 106, 2017.                                                       Systems and Clusters,” IJHPCN, 2012.
+[127] V. Seshadri, Y. Kim et al., “RowClone: Accelerating Data Movement and Initializa-           [164] M. Aldinucci, M. Danelutto et al., “Fastflow: High-Level and Efficient Streaming on
+      tion Using DRAM,” arXiv:1805.03502 [cs.AR], 2018.                                                 Multicore,” Programming Multi-Core and Many-Core Computing Systems, 2017.
+[128] V. Seshadri, K. Hsieh et al., “Fast Bulk Bitwise AND and OR in DRAM,” CAL, 2015.            [165] J. Enmyren and C. W. Kessler, “SkePU: A Multi-Backend Skeleton Programming
+[129] S. Li, C. Xu et al., “Pinatubo: A Processing-in-Memory Architecture for Bulk Bitwise              Library for Multi-GPU Systems,” in HLPP, 2010.
+      Operations in Emerging Non-Volatile Memories,” in DAC, 2016.                                [166] M. Samadi, D. A. Jamshidi et al., “Paraprox: Pattern-Based Approximation for Data
+[130] J. D. Ferreira, G. Falcao et al., “pLUTo: In-DRAM Lookup Tables to Enable Massively               Parallel Applications,” in ASPLOS, 2014.
+      Parallel General-Purpose Computation,” arXiv:2104.07699 [cs.AR], 2021.                      [167] M. Aldinucci, S. Campa et al., “Targeting Distributed Systems in FastFlow,” in
+[131] J. D. Ferreira, G. Falcao et al., “pLUTo: Enabling Massively Parallel Computation in              Euro-Par, 2013.
+      DRAM via Lookup Tables,” in MICRO, 2022.                                                    [168] M. Leyton and J. M. Piquer, “Skandium: Multi-Core Programming with Algorithmic
+[132] M. Imani, S. Gupta et al., “FloatPIM: In-Memory Acceleration of Deep Neural                       Skeletons,” in PDP, 2010.
+      Network Training with High Precision,” in ISCA, 2019.                                       [169] P. Ciechanowicz, M. Poldner, and H. Kuchen, “The Münster Skeleton Library Muesli:
+[133] Z. He, L. Yang et al., “Sparse BD-Net: A Multiplication-Less DNN with Sparse                      A Comprehensive Overview,” ERCIS Working Paper, 2009.
+      Binarized Depth-Wise Separable Convolution,” JETC, 2020.                                    [170] J. Cheng, M. Grossman, and T. McKercher, Professional CUDA C Programming.
+[134] J. Park, R. Azizi et al., “Flash-Cosmos: In-Flash Bulk Bitwise Operations Using                   John Wiley & Sons, 2014.
+      Inherent Computation Capability of NAND Flash Memory,” in MICRO, 2022.                      [171] A. Munshi, “The OpenCL Specification,” in HCS, 2009.
+[135] M. S. Truong, L. Shen et al., “Adapting the RACER Architecture to Integrate Im-             [172] C. Pheatt, “Intel® Threading Building Blocks,” J. Comput. Sci. Coll., 2008.
+      proved In-ReRAM Logic Primitives,” JETCAS, 2022.                                            [173] M. Zaharia, M. Chowdhury et al., “Spark: Cluster Computing with Working Sets,”
+[136] M. S. Truong, E. Chen et al., “RACER: Bit-Pipelined Processing Using Resistive                    in HotCloud, 2010.
+      Memory,” in MICRO, 2021.                                                                    [174] M. Zaharia, R. S. Xin et al., “Apache Spark: A Unified Engine for Big Data Processing,”
+[137] A. Olgun, M. Patel et al., “QUAC-TRNG: High-Throughput True Random Number                         CACM, 2016.
+      Generation Using Quadruple Row Activation in Commodity DRAMs,” in ISCA,                     [175] pantor, “GitHub - pantor/inja: A Template Engine for Modern C++.” [Online].
+      2021.                                                                                             Available: https://github.com/pantor/inja
+[138] J. S. Kim, M. Patel et al., “D-RaNGe: Using Commodity DRAM Devices to Generate              [176] J. Chen, J. Gómez-Luna et al., “SimplePIM: A Software Framework for Productive
+      True Random Numbers With Low Latency and High Throughput,” in HPCA, 2019.                         and Efficient Processing-in-Memory,” in PACT, 2023.
+[139] J. S. Kim, M. Patel et al., “The DRAM Latency PUF: Quickly Evaluating Physical              [177] B. W. Boehm, “Software Engineering Economics,” TSE, 1984.
+      Unclonable Functions by Exploiting the Latency-Reliability Tradeoff in Modern               [178] C. Jones, Programming Productivity. McGraw-Hill, Inc., 1985.
+      Commodity DRAM Devices,” in HPCA, 2018.                                                     [179] T. DeMarco, Controlling Software Projects: Management, Measurement, and Estimates.
+[140] F. N. Bostancı, A. Olgun et al., “DR-STRaNGe: End-to-End System Design for                        Prentice Hall PTR, 1986.
+      DRAM-Based True Random Number Generators,” in HPCA, 2022.                                   [180] M. Item, J. Gómez-Luna et al., “TransPimLib: Efficient Transcendental Functions
+[141] A. Olgun, J. G. Luna et al., “PiDRAM: A Holistic End-to-End FPGA-Based Framework                  for Processing-in-Memory Systems,” in ISPASS, 2023.
+      for Processing-in-DRAM,” TACO, 2022.                                                        [181] C. Giannoula, P. Yang et al., “PyGim: An Efficient Graph Neural Network Library
+[142] M. F. Ali, A. Jaiswal, and K. Roy, “In-Memory Low-Cost Bit-Serial Addition Using                  for Real Processing-In-Memory Architectures,” in SIGMETRICS, 2024.
+      Commodity DRAM Technology,” in TCAS-I, 2019.                                                [182] W. Jiang, V. T. Ravi, and G. Agrawal, “A Map-Reduce System with an Alternate API
+[143] S. Angizi and D. Fan, “GraphiDe: A Graph Processing Accelerator Leveraging                        for Multi-Core Environments,” in CCGRID, 2010.
+      In-DRAM-Computing,” in GLSVLSI, 2019.                                                       [183] G. F. Oliveira, A. Olgun et al., “MIMDRAM: An End-to-End Processing-Using-DRAM
+[144] S. Li, A. O. Glova et al., “SCOPE: A Stochastic Computing Engine for DRAM-Based                   System for High-Throughput, Energy-Efficient and Programmer-Transparent
+      In-Situ Accelerator,” in MICRO, 2018.                                                             Multiple-Instruction Multiple-Data Computing,” in HPCA, 2024.
+[145] A. Subramaniyan and R. Das, “Parallel Automata Processor,” in ISCA, 2017.                   [184] H. Ahmed, P. C. Santos et al., “A Compiler for Automatic Selection of Suitable
+[146] Y. Zha and J. Li, “Hyper-AP: Enhancing Associative Processing Through A Full-                     Processing-in-Memory Instructions,” in DATE, 2019.
+      Stack Optimization,” in ISCA, 2020.                                                         [185] X. Peng, Y. Wang, and M.-C. Yang, “CHOPPER: A Compiler Infrastructure for
+[147] D. Fujiki, S. Mahlke, and R. Das, “In-Memory Data Parallel Processor,” in ASPLOS,                 Programmable Bit-Serial SIMD Processing Using Memory In DRAM,” in HPCA,
+      2018.                                                                                             2023.
+[148] L. Orosa, Y. Wang et al., “CODIC: A Low-Cost Substrate for Enabling Custom                  [186] Z. Wang, C. Liu et al., “Infinity Stream: Portable and Programmer-Friendly In-
+      In-DRAM Functionalities and Optimizations,” in ISCA, 2021.                                        /Near-Memory Fusion,” in ASPLOS, 2023.
+[149] M. Sharad, D. Fan, and K. Roy, “Ultra Low Power Associative Computing with Spin             [187] A. A. Khan, H. Farzaneh et al., “CINM (Cinnamon): A Compilation Infrastructure
+      Neurons and Resistive Crossbar Memory,” in DAC, 2013.                                             for Heterogeneous Compute In-Memory and Compute Near-Memory Paradigms,”
+[150] S. H. S. Rezaei, M. Modarressi et al., “NoM: Network-on-Memory for Inter-Bank                     arXiv:2301.07486 [cs.AR], 2022.
+      Data Transfer in Highly-Banked Memories,” CAL, 2020.                                        [188] C. Lattner, M. Amini et al., “MLIR: Scaling Compiler Infrastructure for Domain
+[151] UPMEM, “UPMEM Website,” https://www.upmem.com, 2020.                                              Specific Computation,” in CGO, 2021.
+
+
+
+
+                                                                                             14
+

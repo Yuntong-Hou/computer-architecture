@@ -1,0 +1,423 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/lec4-paper-reading/sources/original-paper/in-dram-bulk-and-or-ieee_cal15.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC4/original-paper/in-dram-bulk-and-or-ieee_cal15.pdf
+Raw URL: https://raw.githubusercontent.com/Yuntong-Hou/computer-architecture/main/LEC4/original-paper/in-dram-bulk-and-or-ieee_cal15.pdf
+Accessed: 2026-05-11 11:24:27 UTC
+
+
+
+===== Page 1 =====
+
+IEEE COMPUTER ARCHITECTURE LETTERS                                                                                                                1
+
+
+
+
+                     Fast Bulk Bitwise AND and OR in DRAM
+                            Vivek Seshadri*, Kevin Hsieh*, Amirali Boroumand*, Donghyuk Lee*,
+                            Michael A. Kozuch† , Onur Mutlu*, Phillip B. Gibbons† , Todd C. Mowry*
+                                                                         †
+                                      *Carnegie Mellon University          Intel Pittsburgh
+     Abstract—Bitwise operations are an important component of modern day programming, and are used in a variety of applications such
+     as databases. In this work, we propose a new and simple mechanism to implement bulk bitwise AND and OR operations in DRAM,
+     which is faster and more efficient than existing mechanisms. Our mechanism exploits existing DRAM operation to perform a bitwise
+     AND/OR of two DRAM rows completely within DRAM. The key idea is to simultaneously connect three cells to a bitline before the
+     sense-amplification. By controlling the value of one of the cells, the sense amplifier forces the bitline to the bitwise AND or bitwise OR
+     of the values of the other two cells. Our approach can improve the throughput of bulk bitwise AND/OR operations by 9.7X and reduce
+     their energy consumption by 50.5X. Since our approach exploits existing DRAM operation as much as possible, it requires negligible
+     changes to DRAM logic. We evaluate our approach using a real-world implementation of a bit-vector based index for databases. Our
+     mechanism improves the performance of commonly-used range queries by 30% on average.
+
+
+1   I NTRODUCTION                                                             We compare the throughput of performing bitwise AND/OR
+Bitwise operations (e.g., AND, OR) are an important compo-                 operations using our mechanism to a state-of-the-art baseline
+nent of modern day programming. They have a wide variety                   mechanism that uses the Intel AVX instructions [10] instead.
+of applications, and can often replace arithmetic operations               Our mechanism, which uses DRAM as a co-processor, can
+with more efficient algorithms [13,21]. In fact, most modern               achieve 9.7X higher throughput and consume 50.5X lower
+processors provide support to accelerate a variety of bitwise              energy compared to a baseline that has to read all the data
+operations (e.g., Intel AVX [10]).                                         from DRAM into the CPU (Section 4). Our evaluation of an
+   We focus our attention on two operations: bitwise AND                   open source bitmap index implementation (FastBit [1]) shows
+and bitwise OR. In addition to their uses in simple masking                that our mechanism can improve performance of commonly-
+and initializing, these operations are heavily used in databases           used index-intensive queries by 30% on average (Section 5).
+with bitmap indices [6,17]. Bitmap indices are an alternative to
+commonly-used data structures like the B-tree. Bitmap indices              2    BACKGROUND ON DRAM O PERATION
+can be more efficient than B-trees for performing range queries            At a high level, each DRAM chip consists of multiple banks
+and joins [1,6,22]. These queries frequently perform bitwise               that can be accessed mostly independently. Each bank is
+AND or OR operations on a large amount of data (multiple                   further divided into multiple subarrays [12]. Figure 1 shows
+KBs/MBs), which we refer to as a bulk bitwise operation.                   the organization of a DRAM subarray. Each subarray consists
+   To perform a bulk bitwise operation, existing systems must              of multiple rows of DRAM cells connected to an array of
+first read the source data into the processor from main memory             sense amplifiers. Each row of DRAM cells share a wordline that
+and later write the result back to main memory. The drawback               controls the connection between the cells of that row and the
+of this approach is that it requires a large amount of data to             sense amplifiers. Similarly, each column of DRAM cells share
+be transferred between the processor and main memory. As                   a bitline that connects those cells to the corresponding sense
+a result, existing systems incur high latency, bandwidth, and              amplifier. Each DRAM cell contains 1) a capacitor, and 2) an
+energy to execute these bulk bitwise operations.                           access transistor that acts as a switch between the capacitor
+   In this work, we propose a new mechanism to perform                     and the bitline (as shown in Figure 2). The access transistor is
+bulk bitwise AND and OR operations completely within DRAM.                 controlled by the wordline of the corresponding DRAM row.
+DRAM stores data in terms of charge in a capacitor. Since the                 Figure 3 shows the steps involved in DRAM cell access. We
+capacitors are very small, a sense amplifier is used to detect the         start with a fully charged cell in this example. The operation is
+charge on a capacitor. Our mechanism exploits the fact that                similar if the cell is empty. In the initial precharged state Ê, the
+each sense amplifier is connected to many DRAM cells. We                   bitline is charged to 12 VDD , and the sense amplifier is disabled
+show that by simultaneously connecting three cells (rather than            (indicated by the dis subscript). The cell access is triggered
+one) to a sense amplifier, and by controlling the value of one             by the ACTIVATE command to the corresponding DRAM row,
+of the cells, the sense amplifier can be forced to perform the             which raises the wordline corresponding to the row Ë. In the
+bitwise AND or the bitwise OR of the values in the remaining               phase that follows, known as charge sharing, charge flows from
+two cells. We develop this idea into a simple mechanism that               the cell to the bitline, raising the voltage level of the bitline to
+simultaneously activates three rows of DRAM cells to perform               1
+                                                                             V     + δ (state Ì). In this state, the sense amplifier is enabled
+                                                                           2 DD
+bitwise AND/OR of two of the three rows—essentially a                      (Í), and it senses the deviation in the voltage level of the bitline
+multiple-kilobyte-wide bitwise AND/OR operation.
+   Our mechanism heavily exploits both the internal operation                                                                       shared
+                                                                                                           1024 rows                bitline
+of DRAM and the external interface with the memory con-
+troller. Specifically, the main change required by our mecha-                         shared
+nism to existing DRAM chips is the support to simultaneously                         wordline                                    8192 columns
+activate three rows within any given subarray. This requires
+changes to only the row decoding logic, and as a result, our
+mechanism incurs low implementation cost (Section 3.2).                           DRAM Cell                                         sense
+                                                                                                                                    amplifier
+Manuscript submitted: 23-Mar-2015. Manuscript accepted: 11-Apr-                                       S     S     S    S     S
+2015. Final manuscript received: 18-Apr-2015.
+This work was supported by NSF (awards 0953246, 1212962, and
+1320531), and Intel Science and Tech. Center, Samsung, Google, Face-       Fig. 1. DRAM subarray. Each circle denotes a DRAM cell, which
+book, and SRC.                                                             contains a capacitor and an access transistor.
+
+
+
+===== Page 2 =====
+
+IEEE COMPUTER ARCHITECTURE LETTERS                                                                                                                          2
+
+
+                                                    1                           1                    1                        1           VDD         VDD
+                                         0          2 VDD       VDD             2 VDD   VDD          2 VDD + δ VDD            2 VDD + δ
+wordline                  bitline
+                                                       ACT
+
+                                                                                                                                                    Sen
+capacitor             S                       Ê Sdis
+                                                                      Ë     Sdis
+                                                                                              Ì S  dis
+                                                                                                                       Í S   en
+                                                                                                                                                Î
+           access
+         transistor                      Precharged    Wordline                    Charge                Sense-amplifier             Sense
+                                                        enable                     sharing                   enable               amplification
+Fig. 2. DRAM cell
+                                    Fig. 3. DRAM cell operation: Steps involved in accessing a DRAM cell
+
+from 21 VDD and amplifies the deviation until the bitline reaches                       20% even in the worst case. As we will describe in Section 3.1,
+VDD Î. Since the capacitor remains connected to the bitline,                            our implementation ensures that the cells are fully refreshed
+the capacitor also gets restored to its original fully charged                          before the triple-row activation. Second, our mechanism causes
+state. As each wordline is shared by an entire row of DRAM                              all the three source rows to be overwritten with the result of
+cells, a single activation process transfers the data from all the                      the bitwise operation.
+cells of that row to the corresponding sense amplifiers.                                   To ensure that the source data does not get modified, our
+   After the sense amplification, data can be accessed from                             mechanism first copies the data from the two source rows to two
+the sense amplifiers using the READ/WRITE command to the                                temporary rows (D1 and D2). Depending on the operation to
+corresponding column of data within the DRAM row. Once                                  be performed, our mechanism initializes a third temporary row
+the data is accessed, the subarray can be taken back to the                             (D3) to 0 or 1, and simultaneously activates the three rows D1,
+precharged state by issuing a PRECHARGE command.                                        D2, and D3. It finally copies the result to row C. For example,
+   The main takeaway from the DRAM cell operation is that                               to perform a bitwise AND of rows A and B, our mechanism
+the final state of the bitline depends on the deviation of the                          performs the following five steps: 1) Copy data from row A to
+bitline voltage from 12 VDD after the charge sharing phase. If the                      row D1, 2) Copy data from row B to row D2, 3) Initialize all
+deviation is positive (i.e., towards VDD ), the bitline is driven                       bits of row D3 to 0, 4) Simultaneously activate D1, D2, and
+to VDD . On the other hand, if the deviation is negative (i.e.,                         D3, and 5) Copy result to row C.
+towards 0), the bitline is driven to 0.                                                    While the above implementation is simple, the copy op-
+                                                                                        erations, if performed naively, will nullify the benefits of
+3    I N -DRAM AND AND OR                                                               our mechanism to perform bitwise operations completely in
+Our idea is simple. When three cells are simultaneously con-                            DRAM. Fortunately, our recent prior work, RowClone [20],
+nected to a bitline, the deviation on the bitline voltage after                         has proposed two techniques to perform row-to-row copy
+charge sharing is towards the majority value of the three cells.                        operations quickly and efficiently within DRAM. The first
+Specifically, if at least two of the three cells are initially in the                   technique, RowClone-FPM (Fast Parallel Mode), which is the
+charged state, the effective voltage level of the three cells is                        fastest and most efficient (85ns), copies data between two rows
+more than 23 VDD , resulting in a positive deviation on the bitline                     within a subarray by simply issuing back-to-back ACTIVATEs
+voltage. On the other hand, if at most one cell is initially in                         to the source row and the destination row, without an in-
+the charged state, the effective voltage level of the three cells                       tervening PRECHARGE. The second technique, RowClone-PSM
+is less than 13 VDD , resulting in a negative deviation on the                          (Pipelined Serial Mode), efficiently copies data between banks
+bitline voltage. Figure 4 shows an example of this operation                            by overlapping the read to the source bank with the write to
+with two of the three cells in the charged state Ê. As a result,                        the destination bank.
+there is a positive deviation on the bitline voltage after charge                          With RowClone, all three copy operations (Steps 1, 2, and 5),
+sharing Ë, and sense amplification drives the bitline to VDD ,                          and the initialization operation (Step 3) can be performed ef-
+and all the three cells become fully charged Ì.                                         ficiently within DRAM. To use RowClone for the initialization
+   If R, A, and B represent the logical states of the three cells,                      operation, we reserve two additional rows (R0 and R1) that
+the final state of the bitline after sense amplification is RA +                        are pre-initialized to 0 and 1, respectively. Depending on the
+RB + AB (i.e., at least two values should be 1 for the final                            operation to be performed (AND or OR), our mechanism uses
+state to be 1). Importantly, this expression can be rewritten as                        RowClone to copy either R0 or R1 to row D3. Furthermore,
+R(A + B) + R(AB). In other words, if the initial state of R                             to maximize the use of RowClone-FPM, we reserve five rows
+is 1, the final state of the bitline is the bitwise OR of A and                         (D1, D2, D3, R0, and R1) in each subarray.
+B. Otherwise, if the initial state of R is 0, the final state of the                       In the best case, when all the three rows involved in the
+bitline is the bitwise AND of A and B. Therefore, by controlling                        operation (A, B, and C) are present in the same subarray,
+the initial state of the cell R, we can execute a bitwise AND or                        our mechanism reduces to performing four RowClone-FPM
+bitwise OR operation using the sense amplifier.                                         operations. The first three steps (two copies and one initializa-
+   There are two challenges with our approach. First, when                              tion) each involve one RowClone-FPM. Steps 4 and 5 together
+connecting three cells, the deviation on the bitline (positive                          involve a single RowClone-FPM, with the first activation being
+or negative) will be lower than the deviation on the bitline                            a triple-row activation. In the worst case, when the three rows
+when only one cell is connected. For a typical bitline to cell                          are in different subarrays within the same bank, the three
+capacitance ratio of 6 [23], the reduction in the deviation is only                     copy operations (1, 2, and 4/5) need to be performed using
+            0               1
+                            2 VDD       VDD         1
+                                                    2 VDD + δ
+                                                                VDD         VDD         RowClone-PSM while the initialization operation (Step 3) can
+                                                                                        still be performed using RowClone-FPM.
+     B                              B                       B                           3.1 Positive Aspects of Our Mechanism
+            0                           VDD                     VDD
+                                                                                        Our mechanism has three positive aspects. First, the source
+     A                              A                       A                           data is copied into the rows D1, D2, and D3 just before the
+            0                           VDD                     VDD
+                                                                                        triple-row activation. Since each copy operation takes much
+     R                              R                       R                           less than 1µs (five orders of magnitude less than the refresh
+                                                                                        interval), the cells involved in the triple-row activation are very
+            Ê         Sdis
+                                         Ë      Sdis
+                                                                 Ì        Sen
+                                                                                        close to the fully refreshed state before the operation. This
+Fig. 4. Simultaneously connecting three cells to the bitline                            ensures reliable operation of our mechanism and results in
+
+
+
+===== Page 3 =====
+
+IEEE COMPUTER ARCHITECTURE LETTERS                                                                                                                                                                          3
+
+
+
+low impact on the latency of triple-row activation.1 Second,             is similar to the inter-segment copy operation described in
+in any subarray, the triple-row activation is always performed           Tiered-Latency DRAM [15] (Section 4.4). With this aggressive
+on the rows D1, D2, and D3, as opposed to any three arbitrary            mechanism, the latency of a RowClone-FPM operation reduces
+set of rows within the subarray. These rows can be chosen                to 50ns (one ACTIVATE and one PRECHARGE). Therefore, the
+at design time and can be controlled by a separate small row             overall latency of a bitwise AND/OR operation is 200ns.
+decoder. While using three arbitrary rows for the triple-row             We will refer to this enhanced mechanism as aggressive, and
+activation may require three independent full row decoders,              the approach that uses the simple back-to-back ACTIVATE
+our approach of choosing the three rows at design time and               operations as conservative.
+controlling them using a separate small decoder incurs signif-           Throughput. To compare the potential throughput of bitwise
+icantly lower cost. The separate row decoder can determine               AND/OR operations enabled by our mechanism to a baseline
+if the three rows are activated individually (for the copy               system, we created a benchmark that repeatedly performs
+operations) or together (for the triple-row activation). Finally,        bitwise AND of two vectors of a given size (S), and stores the
+as we will describe in Section 4, having a separate row decoder          result in a third vector (the throughput results with bitwise OR
+for D1, D2, and D3 allows us to further accelerate the copy              are same as that of bitwise AND). We ran this microbenchmark
+operations using a more aggressive copy mechanism.                       (with various values of S) on a single-socket Intel Core i7-
+3.2 Changes to DRAM                                                      4790K processor connected to two 8GB DDR3-1333 DIMMs
+                                                                         each on a different channel. Our baseline implementation uses
+Our mechanism requires three changes to the DRAM logic and
+                                                                         the AVX support [10] provided by the x86 ISA to perform
+interface. First, as mentioned in Section 3.1, our mechanism
+                                                                         bitwise AND operations. The processor has a 32KB L1 cache,
+requires each subarray to have a separate small row decoder
+                                                                         256KB L2 cache, and an 8MB L3 cache. The throughput of the
+to control the three reserved rows (D1, D2, and D3). Second,
+                                                                         baseline heavily depends on whether the working set of the
+our mechanism requires a variant of the ACTIVATE command
+                                                                         benchmark fits in the L1, L2 or the L3 cache.
+through which the memory controller can communicate the
+                                                                            Figure 5 plots the results of this experiment. The x-axis
+triple-row activation to DRAM. Finally, our mechanism re-
+                                                                         shows the value of S (i.e., vector size) and the y-axis plots
+quires the DRAM and the controller to support RowClone [20].
+                                                                         the throughput of the bitwise operation in terms of gigabytes
+RowClone itself incurs very low cost (less than 0.01% die area).
+                                                                         of AND (or OR) operations per second. The figure also plots
+In addition to these changes, our mechanism also reserves
+                                                                         the estimated throughput of our conservative and aggressive
+five rows in each subarray. For a typical subarray with 1024
+                                                                         mechanisms. There are three conclusions we can draw from
+rows [12], this results in less than 0.5% loss in memory capacity.
+                                                                         the figure.
+3.3 Processor and Software Support
+The processor support required by our mechanism is similar
+                                                                              Operation Throughput
+
+
+
+
+                                                                                                                                                      Our Mechanism (Aggressive, 2 banks)
+                                                                              (GB/s of AND/OR ops)
+
+
+
+
+to the support required by RowClone [20]. The processor must                                         70
+                                                                                                          L1
+1) provide instructions with which the software can communi-                                         60
+                                                                                                     50
+cate occurrences of bulk bitwise operations, 2) support cache                                                                                              Our Mechanism (Aggressive, 1 bank)
+                                                                                                     40
+coherence for data read and modified directly in DRAM, and
+                                                                                                     30                            L2              Our Mechanism (Conservative, 1 bank)
+3) communicate to software the minimum size of the bitwise
+                                                                                                     20
+operation that can be accelerated by DRAM (depending on
+                                                                                                     10                                                                    L3             Baseline
+how the physical address space is interleaved on to the DRAM
+hierarchy). The application must be modified to use the new
+                                                                                                               8KB
+
+                                                                                                                     16KB
+
+                                                                                                                            32KB
+
+                                                                                                                                    64KB
+
+                                                                                                                                           128KB
+
+                                                                                                                                                   256KB
+
+                                                                                                                                                             512KB
+
+                                                                                                                                                                     1MB
+
+                                                                                                                                                                            2MB
+
+                                                                                                                                                                                  4MB
+
+                                                                                                                                                                                        8MB
+
+                                                                                                                                                                                              16MB
+
+                                                                                                                                                                                                     32MB
+bulk bitwise instructions. Fortunately, this may require changes
+only to some libraries (e.g., FastBit [1]) that are shared by many                                                          Size of Vectors (S) in the Benchmark
+applications. These libraries are generally optimized to exploit         Fig. 5. Throughput comparison with Intel AVX extensions
+any available hardware acceleration.
+                                                                            First, as the vector size (S) increases, the throughput of the
+4   L ATENCY, T HROUGHPUT, AND E NERGY A NALYSIS                         baseline system drops — with sharp dips at points (highlighted
+As our goal in this paper is to demonstrate the potential of our         in the figure) when the cumulative working set no longer fits in
+mechanism, we focus our attention on the case when we can                a particular level of cache. Note that the working set is roughly
+use RowClone-FPM to perform all the copy operations.                     three times S. While the baseline starts with an impressive 71
+Latency. To complete an intra-subarray copy, RowClone-FPM                GB/s of AND operations when the working set fits the L1
+uses two ACTIVATEs (back-to-back) followed by a PRECHARGE                cache, the throughput drops to 3.9 GB/s when the working
+operation. Assuming typical DRAM timing parameters (tRAS =               set does not fit into any level of on-chip cache.
+                                                                            Second, both of our mechanisms significantly outperform the
+35ns and tRP = 15ns), each copy operation consumes 85ns. As
+                                                                         baseline throughput when the working set of the application
+our mechanism is essentially four RowClone-FPM operations
+                                                                         does not fit into any on-chip cache (e.g., S ≥ 4MB). The
+(as described in the previous section), the overall latency of a
+                                                                         throughput of our conservative mechanism (22.4 GB/s) is over
+bitwise AND/OR operation is 4 × 85ns = 340ns.
+                                                                         5X the baseline throughput and that of our aggressive mech-
+  In a RowClone-FPM operation, although the second
+                                                                         anism (38.2 GB/s) is close to 10X the baseline throughput.
+ACTIVATE does not involve any sense amplification (the sense
+                                                                            Third, although we run our benchmark on only a single
+amplifiers are already activated), the RowClone paper [20]
+                                                                         core, the throughput of the baseline is limited by the available
+assumes the ACTIVATE consumes the full tRAS latency. How-
+                                                                         memory bandwidth. In sharp contrast, the throughput of our
+ever, by controlling the rows D1, D2, and D3 using a separate
+                                                                         mechanism scales linearly with the number of banks, since
+row decoder, it is possible to overlap the ACTIVATE to the
+                                                                         our mechanism can be employed simultaneously in many
+destination fully with the ACTIVATE to the source row, by
+                                                                         DRAM banks. In other words, with just two DRAM banks, our
+raising the wordline of the destination row towards the end
+                                                                         mechanism can achieve a throughput of 76.4 GB/s of AND/OR
+of the sense amplification of the source row. This mechanism
+                                                                         operations, whereas the throughput of the baseline, even with
+  1. As described in Section 5, even if we conservatively assume a 2X    multiple cores, will not be much better than 3.9 GB/s.
+higher latency for the triple-row activation, our mechanism yields 20%   Energy. We use the Rambus power model [19] to estimate the
+performance improvement on our database benchmark.                       energy consumption of our mechanisms and the baseline. For
+
+
+
+===== Page 4 =====
+
+IEEE COMPUTER ARCHITECTURE LETTERS                                                                                                                                                 4
+
+
+
+the baseline, our estimate only includes the energy of accessing                                             6     R ELATED W ORK
+DRAM and does not include the energy consumed in accessing                                                   To our knowledge, this is the first work to exploit the analog
+the on-chip caches and performing the computation. Based                                                     operation of DRAM to perform bitwise operations. Many
+on our estimates, our conservative mechanism reduces energy                                                  works (e.g., EXECUBE [14], IRAM [18], DIVA [7]) have pro-
+consumption by 31.6X, and our aggressive mechanism reduces                                                   posed mechanisms to integrate logic on the DRAM chip to
+energy consumption by 50.5X compared to the baseline.                                                        perform bandwidth-intensive operations. The main limitation
+  In summary, our mechanism is significantly more efficient                                                  of such approaches is that adding large amounts of logic to
+than the baseline system, providing more than an order of mag-                                               DRAM significantly increases DRAM cost. Some new DRAM
+nitude improvement in throughput and reduction in energy                                                     architectures [2,11,16] contain a logic layer. Many techniques
+consumption of bulk bitwise AND/OR operations.                                                               (e.g., [4,5,8,9,24]) have been proposed to exploit the logic
+                                                                                                             layer to implement some computation close to DRAM. How-
+5     A NALYSIS OF A R EAL - WORLD B ITMAP I NDEX                                                            ever, these architectures still have limited memory bandwidth
+We analyze our mechanism’s performance on a real-world                                                       available to the logic layer, and our mechanism can provide
+bitmap index library, FastBit [1], widely-used in physics sim-                                               much higher throughput and efficiency for bitwise AND/OR
+ulations and network analysis. Fastbit can enable faster and                                                 operations. Therefore, the spare space in the logic layer can be
+more efficient searching/retrieval compared to B-trees.                                                      used to implement other functionality, while our mechanism
+  To construct an index, FastBit uses multiple bitmap bins,                                                  can still be used to implement bitwise AND/OR operations.
+each corresponding to either a distinct value or a range of                                                  7     C ONCLUSION
+values. FastBit relies on fast bitwise AND/OR operations on
+                                                                                                             We presented a new and simple mechanism to perform bulk
+these bitmaps to accelerate joins and range queries. For example,
+                                                                                                             bitwise AND/OR operations completely within DRAM. Our
+to execute a range query, FastBit performs a bitwise OR of all
+                                                                                                             mechanism exploits the analog operation of modern DRAM,
+bitmaps that correspond to the specified range.
+                                                                                                             and hence incurs low implementation cost. Our evaluations
+  We initialized FastBit on our baseline system using the
+                                                                                                             show that our approach can potentially increase throughput
+sample STAR [3] data set. We then ran a set of indexing-
+                                                                                                             and energy-efficiency of bitwise AND/OR operations by more
+intensive range queries that touch various numbers of bitmap
+                                                                                                             than an order of magnitude compared to the baseline, and sig-
+bins. For each query, we measure the fraction of query exe-
+                                                                                                             nificantly improve the performance of real-world applications.
+cution time spent on bitwise OR operations. Table 1 shows
+the corresponding results. For each query, the table shows                                                   R EFERENCES
+the number of bitmap bins involved in the query and the                                                      [1]  FastBit: An Efficient Compressed Bitmap Index Technology. https:
+percentage of time spent in bitwise OR operations. On average,                                                    //sdm.lbl.gov/fastbit/.
+31% of the query execution is spent on bitwise OR operations                                                 [2] High Bandwidth Memory DRAM.                  http://www.jedec.org/
+                                                                                                                  standards-documents/docs/jesd235.
+(with small variance across queries).                                                                        [3] The STAR experiment. http://www.star.bnl.gov/.
+                                                                                                             [4] J. Ahn et al. A Scalable Processing-in-Memory Accelerator for
+                  TABLE 1. Fraction of time spent in OR operations                                                Parallel Graph Processing. In ISCA, 2015.
+                                                                                                             [5] J. Ahn et al. PIM-Enabled Instructions: A Low-Overhead, Locality-
+    Number of bins                               3        9          20        45       98       118   128
+                                                                                                                  Aware Processing-in-Memory Architecture. In ISCA, 2015.
+    Fraction of time                                                                                         [6] C. Chan and Y. E. Ioannidis. Bitmap Index Design and Evaluation.
+                                               29%       29%        31%       32%      34%       34%   34%
+    spent in OR                                                                                                   In SIGMOD, 1998.
+                                                                                                             [7] J. Draper et al. The Architecture of the DIVA Processing-in-
+   To estimate the performance of our mechanism, we measure                                                       memory Chip. In ICS, 2002.
+the number of bitwise OR operations required to complete                                                     [8] A. F.-Farahani et al. NDA: Near-DRAM acceleration architecture
+the query. We then compute the amount of time taken by our                                                        leveraging commodity DRAM devices and standard memory
+mechanism to complete these operations and then use that to                                                       modules. In HPCA, 2015.
+                                                                                                             [9] Q. Guo et al. 3D-Stacked Memory-Side Acceleration: Accelerator
+estimate the performance of the overall query execution. To                                                       and System Design. In WoNDP, 2013.
+perform a bitwise OR of more than two rows, our mechanism                                                    [10] Intel. Intel Instruction Set Architecture Extensions. https://
+is invoked two rows at a time. Figure 6 shows the potential                                                       software.intel.com/en-us/intel-isa-extensions.
+performance improvement using our two mechanisms (con-                                                       [11] J. Jeddeloh and B. Keeth. Hybrid Memory Cube: New DRAM
+servative and aggressive), each with either 1 bank or 4 banks.                                                    Architecture Increases Density and Performance. In VLSIT, 2012.
+                                                                                                             [12] Y. Kim et al. A Case for Exploiting Subarray-level Parallelism
+   As our results indicate, our aggressive mechanism with 4
+                                                                                                                  (SALP) in DRAM. In ISCA, 2012.
+banks improves the performance of range queries by 30% (on                                                   [13] D. E. Knuth. The Art of Computer Programming. Fascicle 1:
+average) compared to the baseline, eliminating almost all the                                                     Bitwise Tricks & Techniques; Binary Decision Diagrams, 2009.
+overhead of bitwise operations. As expected, the aggressive                                                  [14] P. M. Kogge. EXECUBE - A new architecture for scaleable MPPs.
+mechanism performs better than the conservative mechanism.                                                        In ICPP, 1994.
+Similarly, using more banks provides better performance. Even                                                [15] D. Lee et al. Tiered-Latency DRAM: A Low Latency and Low
+                                                                                                                  Cost DRAM Architecture. In HPCA, 2013.
+if we assume a 2X higher latency for the triple-row activation,                                              [16] G. H. Loh. 3D-Stacked Memory Architectures for Multi-core
+our conservative mechanism with 1 bank improves perfor-                                                           Processors. In ISCA, 2008.
+mance by 18% (not shown in the figure).                                                                      [17] E. O’Neil et al. Bitmap Index Design Choices and Their Perfor-
+                                                                                                                  mance Implications. In IDEAS, 2007.
+                                                                                                             [18] D. Patterson et al. A case for Intelligent RAM. IEEE Micro, 1997.
+         Normalized Performance
+
+
+
+
+                                  1.2                                                                        [19] Rambus. DRAM Power Model, 2010.
+                                  1.0                                                                        [20] V. Seshadri et al. RowClone: Fast and Energy-efficient in-DRAM
+                                  0.8                                                                             Bulk Data Copy and Initialization. In MICRO, 2013.
+                                                                                                             [21] Henry S Warren. Hacker’s Delight. Pearson Education, 2012.
+                                  0.6                                                                        [22] K. Wu et al. Compressing bitmap indexes for faster search
+                                  0.4       Conservative (1 bank)         Aggressive (1 bank)
+                                                                                                                  operations. In SSDBM, 2002.
+                                  0.2
+                                                                                                             [23] Y. Yanagawa et al. In-substrate-bitline sense amplifier with array-
+                                            Conservative (4 banks)        Aggressive (4 banks)                    noise-gating scheme for low-noise 4F2 DRAM array operable at
+                                        3            9    20     45      98             118      128
+                                                                                                                  10-fF cell capacitance. In VLSI, 2011.
+                                                                                                             [24] D. Zhang et al. TOP-PIM: Throughput-oriented Programmable
+                                                          Number of OR bins
+                                                                                                                  Processing in Memory. In HPDC, 2014.
+Fig. 6. Range query performance improvement over baseline
+

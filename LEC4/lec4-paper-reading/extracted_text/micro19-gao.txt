@@ -1,0 +1,1172 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/lec4-paper-reading/sources/original-paper/micro19-gao.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC4/original-paper/micro19-gao.pdf
+Raw URL: https://raw.githubusercontent.com/Yuntong-Hou/computer-architecture/main/LEC4/original-paper/micro19-gao.pdf
+Accessed: 2026-05-11 11:24:28 UTC
+
+
+
+===== Page 1 =====
+
+         ComputeDRAM: In-Memory Compute Using Off-the-Shelf
+                            DRAMs
+                           Fei Gao                                          Georgios Tziantzioulis                               David Wentzlaff
+           feig@princeton.edu                                       georgios.tziantzioulis@princeton.edu                   wentzlaf@princeton.edu
+    Department of Electrical Engineering                            Department of Electrical Engineering              Department of Electrical Engineering
+           Princeton University                                             Princeton University                             Princeton University
+
+ABSTRACT                                                                                        IEEE/ACM International Symposium on Microarchitecture (MICRO-52), Octo-
+In-memory computing has long been promised as a solution to the                                 ber 12–16, 2019, Columbus, OH, USA. ACM, New York, NY, USA, 14 pages.
+                                                                                                https://doi.org/10.1145/3352460.3358260
+“Memory Wall” problem. Recent work has proposed using charge-
+sharing on the bit-lines of a memory in order to compute in-place
+and with massive parallelism, all without having to move data                                   1   INTRODUCTION
+across the memory bus. Unfortunately, prior work has required
+modification to RAM designs (e.g. adding multiple row decoders)                                 In modern computing systems, moving data between compute re-
+in order to open multiple rows simultaneously. So far, the com-                                 sources and main memory utilizes a large portion of the overall
+petitive and low-margin nature of the DRAM industry has made                                    system energy and significantly contributes to program execution
+commercial DRAM manufacturers resist adding any additional                                      time. As increasing numbers of processor cores have been inte-
+logic into DRAM. This paper addresses the need for in-memory                                    grated onto a single chip, the amount of memory bandwidth has
+computation with little to no change to DRAM designs. It is the                                 not kept up, thereby leading to a “Memory Wall” [48, 62]. Making
+first work to demonstrate in-memory computation with off-the-                                   matters worse, the communication latency between compute re-
+shelf, unmodified, commercial, DRAM. This is accomplished by                                    sources and off-chip DRAM has not improved as fast as the amount
+violating the nominal timing specification and activating multiple                              of computing resources have increased.
+rows in rapid succession, which happens to leave multiple rows                                     To address these challenges, near-memory compute [3, 11, 29, 35,
+open simultaneously, thereby enabling bit-line charge sharing. We                               55], Processors-in-Memory [19, 23, 27, 39, 52, 59], and in-memory
+use a constraint-violating command sequence to implement and                                    compute [28, 33, 46] have all been proposed. This paper focuses
+demonstrate row copy, logical OR, and logical AND in unmodified,                                on the most aggressive solution, performing computations with
+commodity, DRAM. Subsequently, we employ these primitives to                                    the memory. Unfortunately, performing computations with mem-
+develop an architecture for arbitrary, massively-parallel, compu-                               ory resources has relied on either emerging memory technolo-
+tation. Utilizing a customized DRAM controller in an FPGA and                                   gies [14, 16, 60] or has required additional circuits be added to
+commodity DRAM modules, we characterize this opportunity in                                     RAM arrays. While some solutions have been demonstrated in sili-
+hardware for all major DRAM vendors. This work stands as a proof                                con [1, 2, 45, 57], none of these solutions have gained widespread
+of concept that in-memory computation is possible with unmodi-                                  industry adoption largely due to requiring additional circuits to be
+fied DRAM modules and that there exists a financially feasible way                              added to already cost optimized and low-margin RAM implementa-
+for DRAM manufacturers to support in-memory compute.                                            tions.
+                                                                                                   In this paper, we demonstrate a novel method that performs
+                                                                                                computation with off-the-shelf, unmodified, commercial
+CCS CONCEPTS
+                                                                                                DRAM. Utilizing a customized memory controller, we are able to
+• Computer systems organization → Parallel architectures;                                       change the timing of standard DRAM memory transactions, oper-
+• Hardware → Dynamic memory.                                                                    ating outside of specification, to perform massively parallel logical
+                                                                                                AND, logical OR, and row copy operations. Using these base op-
+KEYWORDS                                                                                        erations and by storing and computing each value and its logical
+DRAM, in-memory computing, bit-serial, main memory                                              negation, we can compute arbitrary functions in a massively paral-
+                                                                                                lel bit-serial manner. Our novel operations function at the circuit
+ACM Reference Format:
+                                                                                                level by forcing the commodity DRAM chip to open multiple rows
+Fei Gao, Georgios Tziantzioulis, and David Wentzlaff. 2019. ComputeDRAM:
+                                                                                                simultaneously by activating them in rapid succession. Previous
+In-Memory Compute Using Off-the-Shelf DRAMs. In The 52nd Annual
+                                                                                                works [56, 57] have shown that with multiple rows opened, row
+                                                                                                copy and logical operations can be completed using bit-line charge
+Permission to make digital or hard copies of all or part of this work for personal or
+classroom use is granted without fee provided that copies are not made or distributed           sharing. However, to achieve this, all previous techniques relied on
+for profit or commercial advantage and that copies bear this notice and the full citation       hardware modifications. To our knowledge, this is the first work to
+on the first page. Copyrights for components of this work owned by others than the              perform row copy, logical AND, and logical OR using off-the-shelf,
+author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or
+republish, to post on servers or to redistribute to lists, requires prior specific permission   unmodified, commercial DRAM.
+and/or a fee. Request permissions from permissions@acm.org.                                        With a slight modification to the DRAM controller, in-memory
+MICRO-52, October 12–16, 2019, Columbus, OH, USA                                                compute is able to save the considerable energy needed to move data
+© 2019 Copyright held by the owner/author(s). Publication rights licensed to ACM.
+ACM ISBN 978-1-4503-6938-1/19/10. . . $15.00                                                    across memory buses and cache hierarchies. We regard this work
+https://doi.org/10.1145/3352460.3358260                                                         as an important proof of concept and indication that in-memory
+
+
+
+===== Page 2 =====
+
+MICRO-52, October 12–16, 2019, Columbus, OH, USA                                                                                                                                                    Gao et al.
+
+
+computation using DRAM is practical, low-cost, and should be in-                                                                                 Memory
+                                                                                                                                                                                            CPU
+cluded in all future computer systems. Taking a step further, we                                                                       Channels Controller
+characterize the robustness of each computational operation and                                                      Chips                                                columns
+                                                                             Banks
+identify which operations can be performed by which vendor’s                                                                                                                Bit-line
+
+
+
+
+                                                                                                                                                                                             Word-line
+DRAM. While our results show that not all vendors’ off-the-shelf                                                Global Bit-line
+
+
+
+
+                                                                                                                                        Global Word-line
+                                                                                           Global Row Decoder
+
+
+
+
+                                                                                                                                                           Row Decoder
+DRAMs support all operations, the virtue that we are able to find any                                                 Sub-array
+
+
+
+
+                                                                                Row Addr
+
+
+
+
+                                                                                                                                                                                                         rows
+unmodified DRAMs that do support a complete set of operations                                                         Sub-array
+demonstrates that DRAM vendors can likely support in-memory
+                                                                                                                   Global Row Buffer
+compute in DRAM at little to no monetary cost. In-memory com-
+                                                                                  Col Addr                             Global I/O                                         Sense Amplifier
+pute also shows potential as an alternative to using traditional                                                                                                         Local Row Buffer
+
+silicon CMOS logic gates for compute. With the slowing and po-
+tential ending of Moore’s Law, the computing community has to                                                          Figure 1: DRAM hierarchy
+look beyond relying on non-scaling silicon CMOS logic transis-
+tors for alternatives such as relying more heavily on in-memory
+computation.                                                              channel, and up to two ranks per module. Each rank consists of
+    This work has the potential for large impact on the computing         eight physical chips, which are accessed in parallel and share the
+industry with minimal hardware design changes. Currently, DRAM            same command bus. When memory is accessed, all chips see the
+is solely used to store data. Our discovery that off-the-shelf DRAM       same address, and the data read out from different chips in one rank
+can be used to perform computations, as is, or with nominal mod-          are concatenated. Each chip contains eight independent banks, and
+ifications by DRAM vendors, means that with a small update to             each bank is composed of rows and columns of DRAM memory
+the DRAM controller, all new computers can perform massively              cells. A row refers to a group of storage cells that are activated
+parallel computations without needing to have data transit the            simultaneously by a row activation command, and a column refers
+memory bus and memory hierarchy. This massively parallel bit-             to the smallest unit of data (one byte per chip) that can be addressed.
+serial computation has the potential to save significant energy and       Since it is impractical to use a single row decoder to address tens of
+can complete computations in-parallel with the main processor.            thousands of rows in a bank, or to use long bit-lines to connect the
+We envision this type of computing being used for data-parallel           cells in a bank vertically, the bank is further divided into sub-arrays,
+applications or sub-routines within a larger application. Prior work      each of which contains 512 rows typically. Within a sub-array, each
+has even proposed using such architectures applied to image [53]          bit-line connects all the cells in one bit of a column and the sense
+and signal [10] processing, computer vision [20], and the emerging        amplifier at the local row buffer.
+field of neural networks [21].                                               As the processor (or I/O device) operates, it generates a stream of
+    The main contributions of this work include:                          memory accesses (reads/writes), which are forwarded to the Mem-
+     • This is the first work to demonstrate row copy in off-the-         ory Controller (MC). The MC’s role is to receive memory requests,
+        shelf, unmodified, commercial, DRAM.                              generate a sequence of DRAM commands for the memory system,
+     • This is the first work to demonstrate bit-wise logical AND         and issue these commands properly timed across the memory chan-
+        and OR in off-the-shelf, unmodified, commercial, DRAM.            nel. Deviation from the DRAM timing specification directly affects
+     • We carefully characterize the capabilities and robustness          the operation. The generated side-effects from non-nominal op-
+        of the in-memory compute operations across DDR3 DRAM              eration of a DRAM module can affect the stored data. It is these
+        modules from all major DRAM vendors.                              non-nominal side-effects that our work exploits for performing
+     • We characterize the effect that supply voltage and tempera-        computation with memory.
+        ture have on the introduced operations’ robustness.
+     • We present an algorithmic technique for performing arbi-
+                                                                          2.2      DRAM commands and timing
+        trary computations based on non-inverting operations. This        In this section, we detail the attributes of the DRAM commands
+        is key as the DRAM bit-line charge sharing operations only        and timing that are important for our technique. Four commands
+        support non-inverting operations.                                 are essential for DRAM:
+     • We construct a software framework to run massively parallel         1 PRECHARGE: The PRECHARGE command applies to a whole bank.
+        bit-serial computations and demonstrate it in a real system.      It first closes the currently opened row by zeroing all word-lines in
+                                                                          the target bank, and subsequently drives all bit-lines to Vdd/2 as an
+2     BACKGROUND                                                          initial value.
+                                                                           2 ACTIVATE: The ACTIVATE command targets a specific row. Be-
+This section provides a brief introduction on DRAM operations, fo-        fore an ACTIVATE is issued, a PRECHARGE command must be sent to
+cusing on the attributes that affect our design; a detailed description   the corresponding bank to ensure the initial voltage on the bit-line
+of DRAM memory organization is discussed by Jacob et al. [32].            is Vdd/2. In nominal operations, at most one row can be activated
+                                                                          in a bank at any time [37]. During ACTIVATE, the word-line of the
+2.1    DRAM System Organization                                           addressed row is raised high, which connects the cells of that row
+DRAM memory follows a hierarchical system organization of: chan-          directly to the bit-lines. Charge sharing then occurs between the
+nels, ranks, banks, and rows/columns (Figure 1). An example orga-         storage cell and the bit-line. Although the capacitance of the cell is
+nization could have one DIMM (dual in-line memory module) per             relatively small compared to the bit-line’s, it could still make the
+
+
+
+===== Page 3 =====
+
+      CLK
+
+     CMD
+              ACT
+                        IDLE        IDLE      PRE      IDLE        IDLE
+                                                                            ACT           T1                           T2
+              (R1)                                                          (R2)
+
+                               T1                             T2
+
+ComputeDRAM: In-Memory Compute Using Off-the-Shelf DRAMs                                                       MICRO-52, October 12–16, 2019, Columbus, OH, USA
+
+
+
+     CLK                                                                                 CLK
+    CMD     ACT       IDLE      RD         IDLE      PRE       IDLE       ACT                  ACT                                                    ACT         T1
+            R1                  Col1                 R1                   R2           CMD     (R1)
+                                                                                                        IDLE        IDLE    PRE    IDLE        IDLE
+                                                                                                                                                      (R2)
+    ADDR
+            B1                  B1                   B1                   B1
+    BANK
+                     ≥ "#$%                                   ≥ "#&
+                                                                                                               T1                         T2
+                                       ≥ "#'(
+                                                    ≥ "#$
+                                                                                   Figure 3: Command sequence for in-memory operations. We
+Figure 2: An example command sequence to read the DRAM                             vary T1 and T2 to perform different operations.
+from bank B 1 , row R 1 . If we want to read from another row                          CLK
+                                                                                      CMD   ACT     IDLE       RD      IDLE   PRE      IDLE   ACT
+R 2 in the same bank, we need to first precharge that bank
+                                                                                   ofADDR   R1
+                                                                                      commands   with nominal Col1 timing, intoR1a sequence that
+                                                                                                                                               R2 violates
+and activate R 2 .
+                                                                                            B1
+                                                                                     BANK constraints
+                                                                                   timing                      B1
+                                                                                                       but performs            B1 computations.
+                                                                                                                        in-memory              B1
+                                                                                                  ≥ "#$%                             ≥ "#&
+                                                                                      Our contribution   lies on identifying
+                                                                                                                    ≥ "#'(   the  command   sequence  and
+                                                                                                                             ≥ "#$
+bit-line voltage slightly higher or lower than Vdd/2, depending on                 timing pairs that force the DRAM into a state where charge sharing
+the value stored in the cell. After the voltage on the bit-line is raised          occurs. The idea of utilizing charge sharing to perform operations
+or lowered from Vdd/2, a sense amplifier is enabled which drags                    has been previously discussed by Shibata et al. [58], Yang et al. [65],
+the voltage to Vdd or GN D, thereby amplifying the value held in                   Craninckx et al. [15], and Monteiro [49]. Similarly, the idea of open-
+the bit-line. At the same time, the bit-cell is still connected to the             ing multiple rows to perform operations on the bit-line has been
+bit-line, thus the value in the cell is preserved. Finally, the global             discussed by Akerib et al. [4], Aga et al. [1], Seshadri et al. [56, 57],
+bit-lines connect the output of the activated local row buffer to the              and Li et al. [45]. However, all previous work required hard-
+global row buffer.                                                                 ware modifications to enable in-memory computing. In con-
+  3 READ / 4 WRITE: The READ/WRITE commands apply to four or                       trast, in our work, by using specially-timed commands that violate
+eight consecutive columns according to the burst mode. Based on                    timing specification, we managed to perform row copy and logical
+the starting column address, the corresponding columns of data in                  AND/OR operations without requiring any hardware modification
+the global row buffer are read out to or written from the I/O pins.                in commodity, off-the-shelf DRAMs.
+Nominally, these commands must be sent after a row is activated in                    Our starting point is the command sequence in Figure 3. Three
+that bank, so that the target row is stored in the global row buffer.              commands, ACTIVATE(R 1 ), PRECHARGE, and ACTIVATE(R 2 ), that tar-
+    As different commands take different amounts of time to com-                   get two different rows (R 1 and R 2 ) of the same bank are executed.
+plete, it is the responsibility of the memory controller to space out              The timing intervals between commands are labelled T1 and T2 ,
+each command in order to not violate the nominal DRAM timing,                      and are controlled by the number of idle cycles in between. Under
+thereby, ensuring reliable and correct operation. We present a stan-               nominal operation, where T1 is required to be longer than t RAS ,
+dard DRAM read procedure in Figure 2 with marked time intervals                    and T2 longer than t RP , this command sequence will open row R 1 ,
+t RC D , t RAS , t RP , and t RC , which are discussed below:                      close it, and then open row R 2 , without any effect on the data stored
+                                                                                   in these rows. However, by appropriately reducing the timing in-
+      • Row Access to Column Access Delay (t RC D ): the minimum
+                                                                                   tervals T1 and T2 , outside the specification limits, we can force the
+         time between an ACTIVATE and a READ/WRITE.
+                                                                                   chip to reach a non-nominal state that realizes a set of different
+      • Row Access Strobe (t RAS ): the minimum time after the ACTI-
+                                                                                   basic operations.
+         VATE that a PRECHARGE can be sent. This is time used to open
+         a row, enable the sense amplifier, and wait for the voltage to
+         reach VDD or GN D.                                                        3.1    Basic In-Memory Operations
+      • Row Precharge (t RP ): the minimum time after the PRECHARGE                By violating the timing constraints, we are able to perform three
+         in a bank before a new row access. It ensures that the pre-               basic in-memory operations: row copy (a copy of data from one
+         viously activated row is closed and the bit-line voltage has              row to another), logical AND, and logical OR. To achieve the dif-
+         reached Vdd/2.                                                            ferent basic operations with the same command sequence as seen
+      • Row Cycle (t RC = t RAS +t RP ): the interval required between             in Figure 3, we manipulate the timing intervals and the initial data
+         accesses to different rows in the same bank.                              stored in memory.
+    In this work, we explore how command sequences that violate                    3.1.1 Row Copy. Row copy is the simplest among the three oper-
+t RP and t RAS can implement new functionality in DRAM.                            ations and performs a copy from one row, R 1 , to another, R 2 . To
+                                                                                   perform row copy, we load the data of R 1 into the bit-line, and then
+3    COMPUTE IN DRAM                                                               overwrite R 2 using the sense amplifier. We achieve this by reducing
+DRAM modules rely on MCs for correct operation, meaning that                       the timing interval T2 , shown in Figure 3, to a value significantly
+the adherence to DRAM timing constraints and the correct ordering                  shorter than t RP . This causes the second ACTIVATE command to
+of command sequences are enforced by the MC. This responsibil-                     interrupt the PRECHARGE command. In regard to T1 , the only re-
+ity provides interesting opportunities to the MC designer to use                   quirement for it is to be long enough for the sense amplifier to fully
+the DRAM outside of specification [12, 36, 47]. Violation of tim-                  drive the bit-line with the data contained in row R 1 . Note that the
+ing constraints leads to non-nominal states in the DRAM which                      value of T2 must not be too short as it could allow another row
+can potentially affect the stored data, either constructively or de-               to be opened. This can be exploited to construct other operations
+structively. In this section, we detail how to transform a sequence                (AND/OR) but is destructive for row copy.
+
+
+
+===== Page 4 =====
+
+                  ACT(R1)                  PRE                ACT(R2)                                             T1     T2
+
+                                  T1                     T2
+
+
+
+
+          MICRO-52, October 12–16, 2019, Columbus, OH, USA                                                                                                          Gao et al.
+                                                                                                                                   ACT(R1)               PRE        ACT(R2)
+       !""!                                                                                              !""
+           ""
+        2 2                                                                                               2                        ACT(R1) PRE                      ACT(R2)
+                                       changing                                                      R3=002                 changing
+   R3=002
+                                          row                                                                                  row
+Constant:1R1                                                                                       Operand:1
+                                                                                                          TODO: adjust the gray level
+                                        address                                                                              address
+                                       01 R1                                                                                       01 R1
+   R1=012                                                                                            R1=012                          1         2                          3          4
+Operand:0                                                                                         Constant:0                                             time
+             R2
+                                       00 R3                                                                                       00 R3
+  R2=102                                                                                            R2=102
+Operand:1SA                                                                                       Operand:0              1           2                     3              4          5
+                                       10 R2                                                                                       10 R2
+        SA               1             2          3           4             5              6              SA             1      2    3               4                           5
+                                                                                                                       ACT(R1) PRE ACT(R2)                                           time
+                    1 1         22                 3 3             4      45           5                           1          2                  3         4          5
+                   ACT(R1)                        PRE                  ACT(R2)             time                               T1         T2
+         1           2    3      4                                      5                                  1        2    3           4                          5
+      ACT(R1)       PRE ACT(R2)T                                                time                    ACT(R1)    PRE ACT(R2)                                         time
+                                       1                      T2
+                  T1 =       T2 = 0 idle cycle                                                                 T1 =     T2 = 0 idle cycle
+         Figure 4: Timeline for a single bit of a column in a row copy
+         operation. The data in R 1 is loaded to the bit-line, and over-                          Figure 5: Logical AND in ComputeDRAM. R 1 is loaded with
+         writes R 2 .                                                                             constant zero, and R 2 and R 3 store operands (0 and 1). The
+                                                                                                  result (0 = 1 ∧ 0) is finally set in all three rows.
+
+      !"" As the ACTIVATE and PRECHARGE commands generate the same                                                   !""
+        effect across all columns of a row, we focus on a single bit of a col-
+       2                                                                                              From the above2procedure, two observations can be made. First,
+        umn to provide insight into how row copy works. Figure 4 provides                         the row copy operation relies on charge sharing on the bit-line,
+        the timeline of a row copy  changing
+                                          operation for a single bit of a column.                 which requiresRthat                            changing
+   R3=002                                                                                                          3=002
+                                                                                                                         the source and destination    rows must share the
+        The rectangular boxes representrow       bit-line and cell capacitors. The
+                                                                                                              Operand:1
+                                                                                                  same physical                                      row implementation
+                                                                                                                   bit-line. Thus, due to the physical
+Constant:1
+        boxes’ width corresponds     address
+                                         to the capacitance (C) and their height                  of banks, the row copy operation is restricted  address
+                                                                                                                                                        to rows within the
+        represents the voltage (V   01), thus
+                                          R1 the area of the shadowed portion                     same sub-array. Second, the essential part      01ofRrow1 copy are the
+   R1=01  2
+        corresponds       to the charge (Q = CV ). The voltage level of Vdd/2                                     R =012
+Operand:0                                                                                         two consecutive1 ACTIVATE      commands. However, the PRECHARGE
+        is marked on the bit-line capacitor. Bold lines indicate that the                                    Constant:0
+                                                                                                  command is indispensable to the operation as we found that
+        word-line is open, or the   00sense
+                                          R3 amplifier is enabled.                                the second ACTIVATE would not be recognized     00 R3 by the DRAM
+   R2=102 Starting from left to right in Figure 4, we see each step of the                        if we did notRinterpose
+                                                                                                                   2=102       the PRECHARGE command before it.
+Operand:1
+        operation. The initial state of the column is that of: the bit-line                                   Operand:0
+        set to Vdd/2, the cell in R10     R2 (storing one), and the cell in R2
+                                      1 charged                                                   3.1.2 AND/OR. By further reducing the10               R2 intervals in the
+                                                                                                                                                   timing
+        discharged (storing zero). In step 1 , we send the first ACTIVATE
+       SA                                                                                         command sequence    SA of Figure 3, we managed to open three dif-
+        command, which opens the row R 1 . Step 2 shows the result of                             ferent rows simultaneously. This allows us to utilize the charge
+        the charge1 sharing,  2 and the sense amplifier
+                                                     3            4
+                                                               starting to drive
+                                                                             5 both                                            1 operations,
+                                                                                                  sharing result to build logical         2       which happen3 in-place.4               5
+        the cell in R 1 and the bit-line to Vdd . This step lasts for a while to                  We store all-zeros or all-ones to one of the opened rows in advance,
+          1 R 1 to
+        allow        2 recover3 the charge
+                                       4     in its cell. In step 3 , we5execute the              execute the command    1 sequence,
+                                                                                                                                  2       3 the logical
+                                                                                                                                        and          4     AND/OR of the             5
+     ACT(R                                                                   time                                                                                                        time
+              1)
+        PRECHARGE  PREcommand,
+                           ACT(R2) which will attempt to close row R 1 and       drive            other two rows ACT(R      1)  PRE
+                                                                                                                     will finally      ACT(R
+                                                                                                                                  appear       ) three rows. We discuss
+                                                                                                                                          in 2all
+        the bit-line to Vdd/2. The state of the column after a period of T2                       how to preserve the operands in Section 4.2.
+               T = T = 0 idle cycle                                                                                          T1 = T2 = 0 idle cycle
+        from 1executing2 the PRECHARGE command is shown in step 4 . At                                More specifically, in order  to perform the logical AND/OR oper-
+        this point, the word-line of R 1 has been zeroed out to close R 1 , but                   ations, we set both T1 and T2 to the minimum value, which means
+        the bit-line did not have enough time to be fully discharged to Vdd/2                     we execute the ACTIVATE(R 1 ), PRECHARGE, and ACTIVATE(R 2 ) com-
+        yet, and the bit-line voltage level is way above the middle point. At                     mands in rapid succession with no idle cycles in between. Assuming
+        the same time, the second ACTIVATE command is executed so as                              that the addresses of the two rows, R 1 and R 2 , are selected appropri-
+        to interrupt the PRECHARGE process. The second ACTIVATE opens                             ately, the resulting command sequence will cause a single third row
+        row R 2 and the charge starts to flow from the bit-line to the cells                      R 3 to be opened implicitly. We present the timeline of AND and OR
+        in R 2 . As the capacitance of the bit-line is much larger than the                       operations in Figures 5 and 6, respectively. The rows shown in the
+        cell’s [56], a relatively significant amount of charge is stored in                       figures are consistent with the physical layout: the row addresses
+        the bit-line, and the bit-line voltage can still be larger than Vdd/2                     are 0, 1, and 2 from top to bottom. Notice that both operations use
+        after the charge sharing, as shown in step 5 . Thus, when the sense                       exactly the same commands and timing. The only two differences
+        amplifier is enabled to drive the bit-line, together with the cell in                     are the rows used to store operands, which are enclosed in rectan-
+        R 2 , it will reinforce their values to Vdd . This successfully completes                 gles in the figure, and the operation-selecting constant saved in the
+        the copy of data from row R 1 to row R 2 in step 6 .                                      remaining row.
+
+
+
+===== Page 5 =====
+
+                ACT(R1)               PRE             ACT(R2)                                       T1      T2
+
+                           T1                    T2
+
+
+
+
+ComputeDRAM: In-Memory Compute Using Off-the-Shelf DRAMs                                            MICRO-52, October 12–16, 2019, Columbus, OH, USA
+
+
+       !""                                                                               R1R!2""
+        2                                                                                    2     00       01         10         11
+                                                                                    R3
+    R3=002
+                                changing                                               0 R =00 0             0          X
+                                                                                                                    changing       1
+                                                                                          3   2
+                                   row                                                 1
+                                                                                      Operand:1 0            1         row
+                                                                                                                        1          1
+ Constant:1
+                                 address                                                                             address
+                                01 R1                                                                                01 R1
+    R1=012                                                                             R1=01table
+                                                                           Figure 7: Truth    2   for the results produced from charge
+ Operand:0                                                                          Constant:0
+                                                                           sharing among   rows R 1 , R 2 and R 3 .
+                                00 R3                                                                                00 R3
+   R2=102                                                                              R2=102
+ Operand:1                                                                           Operand:0
+                                10 R2                                      when R 1 is 012 and R 2 is 102 , R 3 = 002 10      R2 Furthermore, we
+                                                                                                                        is opened.
+        SA                                                                 observed that theSAorder of activation influences the behavior: when
+                                                                           R 1 and R 2 are 102 and 012 respectively, R 3 = 112 is opened instead.
+                 1        2                  3         4            5      Based on this observation, 1 we speculate
+                                                                                                                 2                     3 address
+                                                                                                                             that the row        4 is  5
+         1         2    3         4                             5          updated from least 1to most2 significant
+                                                                                                                 3         4 as shown in the middle 5
+                                                                                                                        bit,
+      ACT(R1)     PRE ACT(R2)                                       time                    ACT(R
+                                                                           section of Figures     1) 6.PRE
+                                                                                               5 and         ACT(R
+                                                                                                        Notice  that2)in the case that the addresses   time
+                                                                           of R 1 and R 2 have more divergence in their bits, we found that
+              T1 =    T2 = 0 idle cycle                                                            T1 = T2 = 0 idle cycle
+                                                                           additional rows (more than    three) are opened. To exert control over
+                                                                           the behavior of our operations and for simplicity, we fix the lower
+Figure 6: Logical OR in ComputeDRAM. R 3 is loaded with
+                                                                           two bits of the addresses of R 1 and R 2 to 012 and 102 and require
+the constant one, and R 1 and R 2 store operands (0 and 1). The
+                                                                           their higher bits to be identical. This forces the address of R 3 to
+result (1 = 1 ∨ 0) is finally set in all three rows.
+                                                                           have its two lower bits be 002 and higher bits be the same as R 1
+                                                                           and R 2 , ensuring that only one intermediate row is activated.
+                                                                               We now discuss how the content of the rows affects the outcome
+    As before, in step 1 of Figures 5 and 6, we send the first ACTIVATE
+                                                                           of the operation, and how we construct logical AND/OR. Theoret-
+command which opens R 1 . In contrast to the procedure for row
+                                                                           ically, assuming that the cell capacitance in all three rows is the
+copy, we interrupt the first ACTIVATE by sending the PRECHARGE
+                                                                           same and that they are activated simultaneously, the outcome of
+immediately after it in step 2 . Due to the short timing interval,
+                                                                           the operation would be the majority value. That is, if at least two
+T1 , between the two commands, the sense amplifier is not enabled
+                                                                           rows hold a value of one, the outcome will also be one, and vice
+yet. This is important, because otherwise, the value in R1 will
+                                                                           versa. However, in reality, we open row R 1 first, therefore it has
+be restored in the bit-line and will overwrite other rows in the
+                                                                           more time to influence the bit-line, thus the three rows are not
+end. In step 3 , the second ACTIVATE is sent, thus interrupting the
+                                                                           equivalent. Figure 7 presents the truth table from experimentally
+PRECHARGE command. As described in Section 2, the PRECHARGE
+                                                                           collected results for all combinations of values in R 1 , R 2 , R 3 . Apart
+command does two things: it zeros out the word-line to close the
+                                                                           from the combination where R 1 = 1, R 2 = 0, and R 3 = 0, marked
+opened row, and drives the bit-line to Vdd/2. An adequately small T2
+                                                                           with X to indicate an unpredictable outcome, all other combinations
+timing interval can prevent both parts from being realized, meaning
+                                                                           generate the desired result. Based on this observation, we only use
+that the opened row R 1 will not be closed. On its execution, the
+                                                                           the combinations from the truth table in Figure 7 that generate
+second ACTIVATE command will change the row address from R 1
+                                                                           robust results, choosing the appropriate rows as operands and the
+to R 2 . In the process of changing the activated row address, an
+                                                                           remaining as the initial constant, to implement the logical AND/OR
+intermediate value R 3 appears on the row address bus. Previously,
+                                                                           operations. Fixing the value of R 1 to zero reduces the truth table
+the PRECHARGE was interrupted right in the beginning, so the bank
+                                                                           to the dotted circle, meaning a logical AND would be performed
+is still in the state of “setting the word-line” as in the activation
+                                                                           on the values in R 2 and R 3 . Similarly, by fixing the value of R 3 to
+process. This will drive the word-line according to the value on the
+                                                                           constant one, we reduce the truth table to the solid circle, this time
+row address bus, leading to the opening of the intermediate row R 3 .
+                                                                           performing a logical OR on the values in R 1 and R 2 .
+Besides this intermediate row, the specified destination R 2 will be
+                                                                               Therefore, in addition to the timing intervals, another prerequi-
+opened at the end of step 3 . Remember that R 1 is kept open from
+                                                                           site of logical AND/OR is the constant zero/one. Before we perform
+the start, therefore we have three different rows simultaneously
+                                                                           an AND operation, we need to copy all-zeros to the row R 1 . For OR
+activated. After the charge sharing, all cells and the bit-line reach
+                                                                           operation, similarly, we need to copy all-ones to the row R 3 . When
+to the same voltage level in step 4 . Whether the resultant voltage
+                                                                           the DRAM is initialized for computation, we store constant zeros
+is above Vdd/2 or not depends on the majority value in the cells of
+                                                                           and ones into two reserved rows in each sub-array.
+R 1 , R 2 and R 3 ; we later discuss how to implement logical AND/OR
+based on this by setting the operation-selecting constant row in
+advance. Finally, in step 5 , the result is stored in all three rows.      3.2    Influence on Refresh Rate
+Similar to the row copy operation, the logical AND/OR operations           Compared with normal memory access, we need to think about
+can be performed only within rows of the same sub-array.                   whether our in-memory compute operations require a closer pre-
+    An important consideration when implicitly opening a third row         vious refreshment and whether they give a shorter retention time
+is how to control which row is opened. According to our experiment,        to the cells they touch. For the logical AND/OR operations, we do
+
+
+
+===== Page 6 =====
+
+MICRO-52, October 12–16, 2019, Columbus, OH, USA                                                                                               Gao et al.
+
+
+assume that the cells in all three operand rows are fully charged/dis-    short of allowing us to perform arbitrary computations as inversion
+charged, which means they need to be refreshed just before the            is needed for generality. Furthermore, as variations and defects
+operation. In our implementation, as described in Section 4.2, we         in DRAM memories are inevitable, there will always be rows and
+copy operands to reserved rows to perform AND/OR, thus they are           columns that cannot be used for computation. In the following
+always recently refreshed. For row copy, the first ACTIVATE is not        section, we propose a software framework that could perform ar-
+interrupted and the sense amplifier is enabled. So, as long as the        bitrary computations using the three basic operations as building
+charge in the cell is good for a normal access, it should be good for     blocks. In parallel, we address the issue of errors due to process
+a row copy. We preserved enough time after the last ACTIVATE for          variation and manufacturing imperfections.
+both row copy and AND/OR, thus the retention time should not
+be influenced. Only the retention time for the source row in a row        4.1     Arbitrary Computations with Memory
+copy might be reduced due to a short T 1 (in Figure 3). However, the      Having the row copy and logical OR/AND operations as a start-
+length of T 1 is not critical to the functionality, and can be enlarged   ing point, the missing functionality for arbitrary computations is
+to make it more conservative.                                             the NOT operation. To resolve this limitation, previous work sug-
+                                                                          gested in situ implementation of the NOT operation in DRAM [57].
+3.3    Operation Reliability                                              We propose an alternative approach that avoids modifications to
+In previous sections, we described the command sequence and               DRAM design and requires the existence of both the regular and
+timings that perform the row copy and logical AND/OR operations.          the negated version of a value to perform computations. Thus, all
+Under ideal conditions, the operations should reliably produce            variables in our model are composed of two parts: one in regular
+the desired computations. However, through our experiments, we            form and one negated. The availability of both versions is then
+observed instances of rows and columns that when utilized would           utilized to create universal functions such as NAND, which could
+produce erroneous results. The source of these errors stems from          be used to build arbitrary computations. Equations 1 to 5 provide
+manufacturing variations across columns and the practice of row           examples of different possible operations. The right-hand side of
+remapping to circumvent faulty cells [43].                                all equations is constructed using only logical AND and OR.
+                                                                              To allow for arbitrary computations at any given point of execu-
+3.3.1 Manufacturing Variations. Due to imperfections in the manu-         tion, for every nominal computation, additional steps need to be
+facturing process, size and capacitance of elements are not uniform       taken to generate the negated pair. For example, to compute XOR
+across the chip [13, 44]. These variations make the columns be-           between A and B, using only AND/OR operations and the negated
+have differently given the same command sequence. The behavior            inputs requires three operations: Ā ∧ B, A ∧ B̄, and the logical OR
+divergence leads to a partial execution of an operation (e.g., only       of the two previous results. Under our scheme, an additional three
+a portion of the columns in a row are copied with a row copy              operations (Ā ∨ B̄, A ∨ B, and the logical AND of the two previous
+operation), or erroneous results. The offending columns are not           results) are required to compute XNOR, so as to extend the pairwise
+necessarily incapable of performing the operation. Rather, we have        value invariant of our framework to subsequent computations. As
+found that often they require different timing intervals to achieve       is evident, the adoption of a pairwise value format utilizes twice
+the operation. As it is not always possible to find a timing inter-       the amount of memory space and twice the number of operations.
+val that makes all columns work, the timing interval that covers          We believe that compared to the improvements in functionality,
+most columns is selected. The columns that still fail to perform the      these overheads are acceptable. The performance overhead imposed
+operation are regarded as “bad” columns and are excluded from             by the pairwise value format is alleviated by the mass parallelism
+in-memory computations.                                                   that row-wise computation enables. Furthermore, we actually don’t
+3.3.2 Row Remapping. Apart from variations due to the manu-               have to calculate all the negated intermediate values for some com-
+facturing process, imperfections that render some DRAM cells un-          plex functions. Through logical minimization, some intermediate
+usable can also manifest. Such errors are discovered and resolved         steps can be reduced.
+during post-manufacturing testing, with the row addresses point-             NOT: ¬(A, Ā)              = (Ā, A)                                    (1)
+ing to these faulty cells being remapped to redundant rows [5].             AND: (A, Ā) ∧ (B, B̄)      = (A ∧ B, Ā ∨ B̄)                           (2)
+This creates a complication to our technique. To perform our in-
+                                                                                OR: (A, Ā) ∨ (B, B̄)   = (A ∨ B, Ā ∧ B̄)                           (3)
+memory computing operations, we ensure that the operand rows
+are in the same sub-array by checking their addresses. However,            NAND: ¬((A, Ā) ∧ (B, B̄)) = (Ā ∨ B̄, A ∧ B)                             (4)
+for the remapped rows, the row addresses are not consistent with             XOR: (A, Ā) ⊕ (B, B̄)     = ((Ā ∧ B) ∨ (A ∧ B̄), (Ā ∨ B̄) ∧ (A ∨ B)) (5)
+the physical locations. As we cannot guarantee that they are in the
+same sub-array with any other row, we mark these as “bad” rows to         4.2     Implementation Choices
+be excluded from in-memory computations. Section 4.5 discusses            AND and OR operations can be performed on many different pairs
+how we use software remapping and an error table to solve these           of rows in one sub-array. But as shown in Figures 5 and 6, the
+challenges.                                                               computation result overwrites the data in all of the three opened
+                                                                          rows. In order to preserve the operands, and also to make the soft-
+4     IN-MEMORY COMPUTE FRAMEWORK                                         ware simple and consistent, we only perform the computation in
+In the previous section, we described how we implemented three            the first three rows in each sub-array. More specifically, the lower
+basic in-memory operations. However, the three operations fall            nine bits of R 1 , R 2 and R 3 are always 0000000012 , 0000000102 and
+
+
+
+===== Page 7 =====
+
+            ComputeDRAM: In-Memory Compute Using Off-the-Shelf DRAMs                                                          MICRO-52, October 12–16, 2019, Columbus, OH, USA
+
+
+                              Reserved       0
+                                                                                                     of a column. Due to the pairwise value format described in Sec-
+                               lines for     1
+                           computation       2                                                       tion 4.1 that allows for arbitrary computations, a total of 2n rows
+                                             3   1   0   1               1   0   1                   are required. Figure 8 provides an example of an addition in such
+1   0   1                                    4   0   1   0   A   A   A   0   1   0
+0   1   0                      Vector A      5   1   1   0   0   1   2   1   1   0
+                                                                                                     a scheme, and a visualization of how the data of a bit-serial com-
+1   1   0
+                                 !"#         6   0   0   1               0   0   1                   putation scheme would be laid out in DRAM. The example works
+0   0   1                                    7   1   1   1   1   1   1   1   1   1
+1   1   1
+                                 !"#                                                                 on two, 2-bit operand vectors, A and B, where A has three items: 0,
+                                             8   0   0   0   0   0   0   0   0   0
+0   0   0                      Vector B      9   0   0   0   0   0   0   0   0   0
+                                                                                                     2, 1, and the items in B are all 1. The row addresses are marked on
+0   0   0                                   10   1   1   1   1   1   1   1   1   1                   the left. As mentioned in Section 3, the first three rows – 0,1, and
+1   1   1                                   11                           1   0   0
+1   0   0
+                                                                                                     2 – are reserved for performing operations. The rows reserved for
+                                            12                           0   1   1
+0   1   1                       Vector S                                                             carry propagation – 15 and 16 – are also visible. We have omitted
+                                            13               0   0   1   0   0   1
+0   0   1                                   14               1   1   0   1   1   0                   the rows holding the all-one and all-zero and the rows allocated for
+1   1   0                                   15   1   1   1   1   1   0   1   1   1
+1   1   1                        Carry C    16   0   0   0   0   0   1   0   0   0
+                                                                                                     intermediate results.
+0   0   0                                                                                               At first, the carry bits are initialized to zero using the all-zero
+                                                                         time
+                                                                                                     constant row. The computation proceeds from low bits to high bits.
+            Figure 8: An example of element-wise ADD in Compute-                                     Rows 5, 6, 9, 10 are used to calculate the LSB of the summation
+            DRAM. Each vector has three, 2-bit elements. Each element                                vector S and the carry C. The DRAM operations are applied to the
+            is stored vertically, with nominal bits in white boxes and                               entire row, so all of the three items in S are generated in parallel.
+            negated bits in gray boxes.                                                              The same operation is performed for subsequent bits, until we have
+                                                                                                     processed all bits. Finally, the carry bit indicates if any of the items
+                                                                                                     in S have overflowed.
+            0000000002 (assuming 512 rows in a sub-array). These three rows
+            in each sub-array are reserved for computation in our model. With                        4.4    Copy Across Sub-arrays
+            more complex software, we could perform more operations in place
+                                                                                                     As computation progresses and the variable space grows, we may be
+            without moving data to the designated rows. But for simplicity in
+                                                                                                     required to move data across bank sub-arrays. However, we cannot
+            our design, we currently always use row copy to copy the operands
+                                                                                                     achieve that using the in-memory row copy operation, as rows in
+            and the operation-selecting constant to these three reserved rows,
+                                                                                                     different sub-arrays don’t share the same bit-lines. In such cases,
+            perform the computation, and copy the result back to the destina-
+                                                                                                     we propose to read the whole row from the source sub-array, store
+            tion row.
+                                                                                                     the data in the MC, and then write it into the destination sub-array.
+                                                                                                     Although the MC would require multiple READ/WRITE commands to
+            4.3     Bit-Serial Arithmetic                                                            go through the columns of the entire row, this approach is preferable
+            As our operations work at row-level, a parallelism of 65536× can                         to the alternative of moving the data between the memory and
+            be achieved if we perform computation at a single-bit granular-                          processor, as it reduces the distance that data has to travel.
+            ity.1 Even more parallelism can be exploited if we use multiple
+            DRAMs on a shared command bus. This makes bit-serial computa-
+            tion a great candidate for our design.                                                   4.5    Error Table
+               Bit-serial computing has been previously used with success in                         Finally, an essential part of our proposed framework is to address
+            applications such as image and signal processing [8, 10, 17, 53],                        the reliability problems brought up in Section 3.3. We resolve the
+            Deep Neural Networks (DNN) [21], and computer vision [20] due                            problem of “bad” rows and columns by excluding them from compu-
+            to the extremely high throughput it can provide. Another benefit is                      tations in software. This requires that a thorough scan be performed
+            the flexibility for arbitrary width computation. The most important                      on the entire module before it is utilized. The scanning process
+            reason to use bit-serial computing is that if we instead used a                          would generate an address record of the discovered “bad” columns
+            bit-parallel approach, we would not be able to perform complex                           and “bad” rows; we call the address record table “error table”. The
+            operations, such as addition, which require carry propagation. This                      error table is utilized on a custom address translation layer between
+            is because the use of DRAM prohibits us from propagating carry                           the software library and the memory command scheduler.
+            across different columns.                                                                   From the perspective of the software library, the items in one
+               In our scheme, to perform an operation in DRAM, the input                             vector are stored in consecutive columns and rows, indexed by
+            vectors should be aligned, and have the same length and width. The                       virtual addresses. As the software invokes the provided API func-
+            Least Significant Bit (LSB) of the value resides in the lowest row                       tions to perform in-memory computations, the translation layer
+            of that vector. The negated bit is stored in the row right above the                     while translating virtual to physical addresses skips “bad” columns
+            nominal bit; the rows holding the negated data are shaded in the                         and “bad” rows. After the appropriate remapping, the command
+            Figure 8.                                                                                sequence is sent from the memory command scheduler. A re-scan
+               A vector containing m n-bit items is stored in 2n rows and m                          of the DRAM module may be performed periodically to update the
+            bits of columns, with each item occupying one bit, out of eight,                         error table with columns and rows that became “bad” as a result
+                                                                                                     of natural wear out or changes in environmental variables (e.g.
+            1 There is a total of 65536 bits in a row throughout the module: 8 bits per column, 1K   temperature). We evaluate the effect of environmental factors on
+            columns per chip, and eight chips per rank.                                              our framework in Section 6.3.
+
+
+
+===== Page 8 =====
+
+                                              main.tex
+
+
+
+MICRO-52, October 12–16, 2019, Columbus, OH, USA                                                                                                                Gao et al.
+
+
+                                        PCIe FPGA                                                     Table 1: Evaluated DRAM modules
+ Host          SoftMC software                             SoftMC hardware
+ PC
+                                                               DDR3 PHY                       Group ID:
+         ComputeDRAM Library                                                                                                      Part Num                # Modules
+                                               DRAM                                    Vendor_Size_Freq(MHz)
+                                                            Peltier plate heater
+                 Application                             Peltier plate heater          SKhynix_2G_1333                     HMT325S6BFR8C-H9                     6
+                                        (a)
+                                                                                       SKhynix_4G_1066                    HMT451S6MMR8C-G7                      2
+                                                   Temperature Controller              SKhynix_4G_1333B                    HMT351S6BFR8C-H9                     2
+                                                                                       SKhynix_4G_1333C                    HMT351S6CFR8C-H9                     4
+                                 FPGA                                 FPGA             SKhynix_4G_1600                     HMT451S6AFR8A-PB                     2
+         DRAM and Heaters                                                              Samsung_4G_1333                     M471B5273DH0-CH9                     2
+               Temperature Controller                                                  Samsung_4G_1600                     M471B5273DH0-CK0                     2
+                                                                                       Micron_2G_1066                      CT2G3S1067M.C8FKD                    2
+                                                                                       Micron_2G_1333                     CT2G3S1339M.M8FKD                     2
+                    (b)                                         (c)                    Elpida_2G_1333                       EBJ21UE8BDS0-DJ-F                   2
+                                                                                       Nanya_4G_1333                      NT4GC64B8HG0NS-CG                     2
+Figure 9: (a) Schematic diagram of our testing framework. (b)                          TimeTec_4G_1333                      78AP10NUS2R2-4G                     2
+Picture of our testbed. (c) Thermal picture when the DRAM                              Corsair_4G_1333                    CMSA8GX3M2A1333C9                     2
+is heated to 80 ◦C.
+
+                                                                                         We implement the software framework described in Section 4
+                                                                                      by wrapping the software API of SoftMC in functions that imple-
+5    EXPERIMENTAL METHODOLOGY                                                         ment basic (row copy, logical AND/OR) and complex (XOR, ADD)
+We evaluated our work using a set of custom testbeds, each com-                       operations, thus providing a higher-level of abstraction to the user.
+posed of a host system and a Xilinx ML605 FPGA board [64] con-                        For all basic operations, the sequence of DRAM commands is first
+nected through a PCIe bus. Figure 9 presents a schematic diagram                      buffered on the FPGA and then sent to memory as a carefully timed
+and photos of our hardware testbed.                                                   batch by the hardware part of SoftMC. This ensures that the latency
+   We leveraged SoftMC v1.0 [30], an open-source programmable                         of the PCIe bus does not affect the timing in operations.
+memory controller, to directly control the DRAM module attached
+to the FPGA. For our work, we extended SoftMC to support dual-                        6     EVALUATION
+rank modules and to allow reading and writing non-repetitive bytes
+                                                                                      In this section we evaluate our proposed techniques and character-
+in a burst. SoftMC enables us to experiment with different com-
+                                                                                      ize their behavior across a wide range of DRAM chips. We evaluate
+mand sequences and timing intervals, but also imposes limitations.
+                                                                                      across a total of 32 DDR3 DRAM modules from seven different man-
+The dependence of SoftMC on the Xilinx Vertex-6 MIG module [63]
+                                                                                      ufacturers, using at least two modules from each configuration.3
+constrains the operating frequency of the memory command bus
+                                                                                      Each module is clustered in one of 13 groups based on its configu-
+and data bus at 400MHz and 800MHz, respectively, regardless of the
+                                                                                      ration and part number. Table 1 provides a detailed breakdown of
+maximum attainable rate of the DRAM module. As a result, the tim-
+                                                                                      the different DRAM configurations we used. The frequency in the
+ing intervals in our experiments are quantized to multiples of 2.5ns.
+                                                                                      group ID refers to the maximum attainable data bus frequency. As
+SoftMC can only address a fixed portion of DRAM: a single rank,
+                                                                                      we mentioned in Section 5, our testing infrastructure issues mem-
+containing eight banks, each having 1K columns and 32K rows.
+                                                                                      ory commands at a fixed frequency of 400MHz to all the modules,
+Thus, the overall addressable memory is constrained to 2GB. The
+                                                                                      and the data bus frequency is always 800MHz.
+limitations of SoftMC do not influence our design as the provided
+functionality enables a representative space for exploration. As, cur-
+rently, there is no open source command-level memory controller
+                                                                                      6.1     Proof of Concept
+for DDR4, we used DDR3 chips for our evaluation. Although DDR4                        To validate the feasibility of computing with memory, we built a
+has a higher working frequency and a lower Vdd , its basic com-                       test benchmark based on the command sequence in Figure 3. Our
+mands are exactly the same as DDR3. Thus, we believe that DDR4                        test benchmark selects a random sub-array from each bank of a
+also presents opportunity for performing in-memory operations.                        DRAM module and performs an exploratory scan to identify pairs
+   For assessing the effect of different supply voltages on the opera-                of timing intervals that produce successful computations.
+tion’s robustness, we re-programed the power management module                           At the beginning of the test, the sub-array is initialized to prede-
+of our FPGA to control the supply voltage of the DRAM. For ac-                        termined values. Following the execution of the command sequence
+cessing the effect of temperature on the reliability, we created a                    with a given pair of timing intervals, we read out the target sub-
+custom setup using peltier devices to heat up both sides of the                       array. Based on the comparison with the predetermined values, we
+DRAM modules; temperature was controlled through temperature                          check whether any computation is performed or not. If row copy or
+controller boards.2                                                                   logical AND/OR is found, we record the type of computation and
+                                                                                      the row-wise success ratio. The row-wise success ratio is defined
+2 HiLetgo W1209 12V DC Digital Temperature Controller Board; resolution, measure-     3 TimeTec and Corsair are not DRAM IC manufacturers per se, but use chips from other
+ment, and control accuracy were at a granularity of 0.1 ◦C and the refresh rate was   companies to build modules. The printed serial number on the chips are T3D2568HT-10
+0.5 seconds.                                                                          and HYE0001831, respectively.
+
+
+
+===== Page 9 =====
+
+ComputeDRAM: In-Memory Compute Using Off-the-Shelf DRAMs                                           MICRO-52, October 12–16, 2019, Columbus, OH, USA
+
+
+
+
+Figure 10: Heatmap of successfully performed operations for each DRAM group with different timing intervals. The integer
+timing intervals represent the amount of idle cycles between memory commands. Each idle cycle takes 2.5ns.
+
+
+as the ratio of columns with successful computation over the total        observe that successful timing interval configurations for row copy
+number of columns in a row. We ran the test on all 32 modules.            follow two patterns: the vertical line pattern and the diagonal line
+   Figure 10 presents the results of our exploratory scan for the 13      pattern, with most groups exhibiting a vertical line pattern. The tim-
+different DRAM groups. Due to similarity of results across modules        ing interval pairs in the vertical line pattern support the explanation
+of the same group, we opted to demonstrate the result of a single         in Section 3, where we argue that row copy can be implemented
+module from each group. Two of the groups, SKhynix_2G_1333                using a small T2 timing interval. In contrast, DRAMs from Micron,
+and SKhynix_4G_1333B, have exactly the same results, so we use a          Elpida, and Nanya exhibit a diagonal pattern. We speculate that in
+single heatmap for them.                                                  these cases, it is the sum of T1 and T2 that determines whether the
+   Each colored box in the heatmap provides the row-wise success          row copy operation is performed. Thus, the success of the operation
+ratio for a given pair of timing intervals in command cycles. Thus, a     depends on the timing interval between the two ACTIVATE com-
+timing interval T1 = 2 will introduce two idle cycles (5ns) between       mands, with the timing of the intermediate PRECHARGE command
+the first ACTIVATE and the PRECHARGE commands in Figure 3. As             not affecting the operation. More specifically, we speculate that
+we are more interested in capturing the feasibility of an operation,      DRAM modules in those groups perform a check on the timing
+we plot each heatmap using the results from the bank that provided        interval between the first ACTIVATE and the PRECHARGE command,
+the highest row success ratio for each module.                            and if the subsequent PRECHARGE command is scheduled too close
+   Blue(hatched) boxes identify timing interval pairs that resulted in    to the previous ACTIVATE, it will not be issued immediately. That is,
+a row copy operation, whereas green boxes identify timing interval        the PRECHARGE command is buffered inside the chip and is sched-
+pairs that resulted in AND/OR operations. Gray boxes indicate             uled with a delay, meaning that the effective T2 timing interval
+that a third row was modified, but the result did not match any           is smaller than the one externally defined in our test benchmark.
+interesting operation. White boxes indicate that all the data in other    Thus, the operational rationale for row copy operation in those
+rows remained the same, and there was no meaningful result in the         groups can still be explained by Section 3.
+opened two rows. The shade of each color indicates the row-wise              In regard to logical AND/OR operations, we observe that only
+success ratio in an operation. Darker shades signifies higher success     DRAMs in groups SKhynix_2G_1333 and SKhynix_4G_1333B are
+ratios. Thus, the darkest blue and green colors indicate timing           able to perform the operations across all columns of the sub-array.
+interval pairs that lead to fully functional in-memory operations.        Modules in group SKhynix_4G_1600 can also perform both oper-
+That is, using the selected timing interval pair, we were able to         ations but not across all columns of the sub-array. Although only
+produce, across all bits of a row, correct results in at least one sub-   limited groups exhibit the capability of performing AND/OR op-
+array. The existence of at least one heatmap with both dark blue and      erations, half of the groups are able to open a third row (shown
+dark green boxes acts as a proof of concept that we can perform           using gray boxes in the heatmaps). To realize the logical operations,
+row copy and logical AND/OR using off-the-shelf, unmodified,              charge sharing among three different rows is required, therefore
+commercial, DRAM.                                                         opening a third row is the key prerequisite for logical operations.
+   In more detail, from Figure 10, we observe that nearly all config-     Since these groups have met this key prerequisite, we speculate
+uration groups present the capability of performing row copy in           that they have the potential to perform AND/OR operations at
+at least a portion of the columns in a sub-array. Furthermore, we
+
+
+
+===== Page 10 =====
+
+MICRO-52, October 12–16, 2019, Columbus, OH, USA                                                                                                             Gao et al.
+
+
+
+         1.00                                                                                                    1.00
+         0.75                                                                                                    0.75
+         0.50                                                                                                    0.50
+   CDF
+
+
+
+
+         0.25                                                                                                    0.25
+         0.00         Elpida_2G_1333             Micron_2G_1333         SKhynix_2G_1333     SKhynix_4G_1333B     0.00     SKhynix_2G_1333     SKhynix_4G_1333B
+                1.0        0.5         0.0 1.0        0.5         0.0 1.0     0.5     0.0 1.0     0.5      0.0          1.0     0.5     0.0 1.0     0.5      0.0
+                                        Column Success Ratio for row copy                                           Column Success Ratio for AND/OR
+                Figure 11: The CDF shows the stability of the row copy and AND/OR operation for each memory group.
+
+
+a different command frequency. We leave the evaluation of this                              the group represented by a different line. The data for row copy is
+speculation for future work.                                                                shown in the four leftmost sub-plots of Figure 11. The sharp rise
+   Overall, the most important observation from Figure 10 is the                            at the beginning of the CDF indicates that in all modules, at least
+existence of off-the-shelf, unmodified, commercial, DRAM                                    half of the columns can reliably perform the row copy operation.
+modules in which we can perform both in-memory row copy                                     Across different modules, 53.9% to 96.9% of the columns present
+and logical AND/OR operations. Furthermore, all vendors have                                100% success ratio when performing the row copy operation. The
+some configurations of DRAM that can perform the row copy op-                               flat horizontal line in the CDF indicates that most of the remaining
+eration. The modules in the identified working group, SK hynix                              columns always fail to perform the row copy operation (having a
+DDR3 DRAMs at 1333MHz, are fabricated and distributed as regular                            zero success ratio). This result validates our strategy of producing
+DRAM memory, and have a wide adoption in commercial config-                                 an error table of “bad” columns to our software framework and
+urations. Based on the above, we speculate that logical AND/OR                              completely avoid utilizing the offending columns.
+operations could also become operational in other DRAM modules
+with minimal hardware modifications and cost. Specifically, for the                         6.2.2 AND/OR. We performed a similar test for the logical AND/OR
+modules that cannot perform operations, we hypothesize that there                           operations. Targeting eight modules from groups SKhynix_2G_-
+exist hardware in them that checks the timing of operations and                             1333 and SKhynix_4G_1333B, for all sub-arrays in eight banks from
+drops commands that are too tightly timed. Although we don’t                                each module, we performed the operations 10000 times, half AND
+know the details of that hardware due to the lack of public informa-                        and half OR, on the first three rows. Again, the operands used in the
+tion, we believe that removing, or making configurable, this portion                        test are randomly generated. Subsequently, we produced a success
+of the design is feasible without significant overhead. At the same                         ratio for each column of a sub-array. In the two rightmost sub-plots
+time, such an option will open up more opportunities for research                           of Figure 11, we can see a sharp rise in the start of those CDFs.
+like ComputeDRAM.                                                                           Among our tested modules, 92.5% to 99.98% percent of columns
+                                                                                            exhibit 100% success ratio when performing the logical AND/OR
+6.2      Robustness of Operations                                                           operations.
+After presenting a proof of concept for in-memory computing using
+off-the-shelf DRAM modules, we proceed to provide a more thor-                              6.3     Effect of Supply Voltage and Temperature
+ough exploration of the behavior of each operation. An important
+                                                                                            Having as a reference the robustness study at nominal conditions,
+consideration for the practical application of our techniques is to
+                                                                                            we expanded our study to supply voltages from 1.2V to 1.6V, with
+find out the portion of the DRAM chip that can be reliably utilized
+                                                                                            a step of 0.05V, and chip temperatures from 30 ◦C to 80 ◦C, with
+by the framework we described in Section 4. To assess that, we
+                                                                                            a step of 5 ◦C. The range of our study was dictated by practical
+performed a more detailed robustness test for each operation. The
+                                                                                            considerations. For supply voltage, the upper limit is imposed by
+robustness test was performed under nominal supply voltage (1.5V)
+                                                                                            the infrastructure, while the lower limit is imposed by the fact that
+and at room temperature (chip temperature = 25-30 ◦C).
+                                                                                            most of the DDR3 modules we tested could not be read/written
+6.2.1 Row Copy. We ran the row copy reliability benchmark only                              with a supply voltage below 1.2V. For temperature, we chose to
+on groups that exhibit the ability of performing perfect row copy in                        start from room temperature and study up to 80 ◦C on the DRAM
+at least one sub-array – Micron_2G_1333, Elpida_2G_1333, SKhynix_-                          package, as temperatures outside this range are not common for
+2G_1333, SKhynix_4G_1333B. For each module, we fixed the timing                             commodity applications. Timing intervals are fixed to the optimal
+intervals to the pair that generated the best row copy result in the                        ones identified on the exploratory scan (see Figure 10). Similar to
+previous exploratory test. For a single bank from each module, we                           the initial robustness test, under each environment setup, we ran 10
+performed 1000 times the row copy reliability test, in which differ-                        row copy scans and 100 AND/OR scans, and collected the success
+ent randomly-generated data are copied back and forth all over 32K                          ratio for each column.
+rows. Subsequently, we produced a success ratio for each column of
+a sub-array based on the times that it contained the correct result.                        6.3.1 Supply Voltage. The top part of Figure 12 presents how the
+Figure 11 presents the Cumulative Distribution Function (CDF) of                            amount of the columns that perform row copy and AND/OR opera-
+success ratio for the different DRAM groups, with each module in                            tions reliably (100% success ratio) changes as a function of supply
+
+
+
+===== Page 11 =====
+
+ComputeDRAM: In-Memory Compute Using Off-the-Shelf DRAMs                                                   MICRO-52, October 12–16, 2019, Columbus, OH, USA
+
+
+                                             Row copy             AND/OR          Table 2: Cycles of memory commands for 1-bit operation
+                                 1.00                                             using SK hynix modules under our hardware setup
+
+                                 0.75                                                     row copy      SHIFT     AND       OR     XOR      ADD
+                                 0.50
+   reliably perform operations
+
+
+
+                                                                                              18          36       172      172     444     1332
+     Portion of columns that
+
+
+
+
+                                 0.25
+                                 0.00                                             is to the “real optimal” timing interval, the higher the success ratio
+                                        1.2 1.3 1.4 1.5 1.6 1.2 1.3 1.4 1.5 1.6   goes. Because of different implementation details, the “real optimal”
+                                            Voltage (V)         Voltage (V)       timing intervals vary among the modules from different manu-
+                                 1.00                                             facturers. That is the reason why the effect of supply voltage on
+                                 0.75                                             reliability differs across manufacturers. For AND/OR operations, as
+                                                                                  the voltage drops, the circuit gets so slow that the first ACTIVATE
+                                 0.50                                             cannot even open the first row yet. Thus the success ratio drops as
+                                 0.25                                             well.
+                                                                                      To verify this timing assumption, we conducted a second timing
+                                 0.00                                             interval scan using a supply voltage of 1.2V. As we can see in
+                                        80 70 60 50 40 30    80 70 60 50 40 30
+                                         Temperature (°C)     Temperature (°C)    Figure 13, the optimal timing intervals are larger than the previous
+                                                                                  ones, which proves that the lower voltage makes the circuit slower,
+                                            Elpida_2G_1333    SKhynix_2G_1333
+                                            Micron_2G_1333    SKhynix_4G_1333B    and we need more cycles to achieve the same effect.
+
+                                                                                  6.3.2 Temperature. In regard to the effect of temperature on ro-
+Figure 12: The portion of columns that could reliably per-                        bustness (see the bottom part of Figure 12), we observe that the
+form operations with varied supply voltage and tempera-                           effect of increasing the temperature is similar to lowering the sup-
+ture for different DRAM groups.                                                   ply voltage. Essentially, the sub-plots for temperature present a
+                                                                                  “zoom in” on the top part of Figure 12. This is because at higher
+                                                                                  temperature (inside our range), the circuit’s carrier mobility de-
+                                                                                  creases, thus increasing the propagation delay and making the
+                                                                                  circuit slower [38, 54]. From the perspective of timing, it has the
+                                                                                  same effect as a lower supply voltage. Based on the above results,
+                                                                                  we conclude that our system keeps working within a reasonable
+                                                                                  variation of supply voltage (±0.1 V) and temperature. Furthermore,
+                                                                                  we find that the system designer needs to take into consideration
+                                                                                  the operational temperature of the system when selecting memory
+                                                                                  vendors.
+                                                                                     Overall, we expect that ComputeDRAM enabled DRAMs will
+Figure 13: Heatmap of successfully performed operations at                        require a production step that “bins” modules based on their ability
+a supply voltage of 1.2V – only DRAM groups that reliably                         to perform in-memory computations, in what voltage and tempera-
+performed operations at nominal voltage are included; for                         ture ranges, and with what level of reliability, similar to the process
+interpreting colors, see the colorbar of Figure 10.                               for CPUs.
+
+voltage for different memory groups. Each line represents the aver-               7    DISCUSSION
+age result among the modules in that group.                                       In this section we present a qualitative discussion of the current
+    In the top part of Figure 12 we observe that: for row copy, Micron            implementation of ComputeDRAM; we enhance this discussion by
+modules prefer higher voltage, SK hynix modules prefer lower                      including back-of-the-envelop quantitative numbers.
+voltage, and for Elpida modules, the reliability is maximized at                     The quantitative calculations are based on an extension of the
+nominal supply voltage. Though the effect of supply voltage on                    software framework discussed in Section 4 that implements a series
+the reliability differs across vendors, the pattern stays the same                of vector functions: element-wise AND, OR, XOR, SHIFT, and ADD.
+for modules in the same group, thus the behaviour is affected by                  All extended functionality was constructed using only the three
+implementation choices.                                                           basic in-memory operations we evaluated in previous sections. The
+    Reducing supply voltage increases propagation delay [54] mak-                 added operations follow the convention of bit-serial computing that
+ing the circuit “slower”. Thus, assuming a fixed frequency, the time              we described in Section 4.3, allowing us to seamlessly configure
+period of one cycle at nominal supply voltage is equivalent to more               the operation’s bit-width. Table 2 presents the number of cycles
+than one cycle at 1.2V supply voltage; that is, the signal needs more             spent on the memory command bus for the computation of a single
+time to fully propagate due to increased propagation delay. There-                bit for each of the vector function. The memory command cycles
+fore, if we alter the supply voltage, we could have a slightly changed            spent on N-bit operations can be calculated by scaling N × the data
+“effective” timing interval. The closer this “effective” timing interval          of Table 2.
+
+
+
+===== Page 12 =====
+
+MICRO-52, October 12–16, 2019, Columbus, OH, USA                                                                                                 Gao et al.
+
+
+7.1     Computational Throughput                                                 that the data and its compliment is resident in the DRAM at the
+The computational throughput and performance of ComputeDRAM                      beginning of the computation.
+is significantly affected by the characteristics of the targeted compu-             Notice that in our work many memory commands are inter-
+tation; such as, the level of parallelism and the scale of computation.          rupted before their nominal end time. As we did not reduce the
+Compared against the cost of performing a single scalar operation                energy cost for these command in the power model, the previous
+in a modern CPU, ComputeDRAM will not provide any benefit, as a                  energy numbers present a conservative estimate.
+single ADD operation accounts for over a thousand cycles and the
+DRAM command frequency is lower than that of a processor core.
+                                                                                 8    RELATED WORK & APPLICATIONS
+Furthermore, if the data being computed exhibit high locality, the
+immense bandwidth out of on-chip SRAMs and Register Files (RF)                   To our knowledge, this is the first work to demonstrate the fea-
+can significantly increase peak performance for CPUs. To achieve                 sibility of performing row copy, logical AND, and logical OR in
+high computational throughput, ComputeDRAM exploits the fact                     off-the-shelf, unmodified, commercial, DRAM.
+that its computational overhead does not change as we move from                     Near-memory [3, 11, 29, 35, 55] and in-memory [19, 22, 23, 27,
+scalar to vector operations, up to vectors of 64K elements (for a                28, 33, 34, 39–41, 46, 51, 52, 56, 59] computing has been extensively
+single module), due to the constant cost of performing row-wise                  explored over the past 25 years in an attempt to provide a solution
+computation across all eight chips of the DRAM. For example, for                 to the “Memory Wall” problem. In contrast to our work, all past
+row copy, our technique requires 18 memory cycles with a peak                    efforts required hardware modifications.
+bandwidth of 182GB/s using a single DDR3 module. On Compute-                        The concepts of copying data across rows of a DRAM sub-array,
+DRAM, 8-bit AND/OR operations take 1376 cycles providing a peak                  and performing logical operations through multi-row activation
+throughput of 19GOPS, and 8-bit ADD operation takes 10656 cycles                 and charge sharing in DRAM memory were, to our knowledge,
+for a peak throughput of 2.46GOPS. We can enhance this base-                     first discussed by Seshadri et al. [56, 57]. In contrast to our work,
+line performance by interleaving the issuing of commands across                  their designs require hardware modification on the DRAM to al-
+different banks. Moreover, we can extract further parallelism by                 low in-memory computations. Modifications to the DRAM control
+building a board with multiple DRAM slots, where a single MC will                logic were proposed to allow back-to-back ACTIVATE commands,
+control all DRAM modules simultaneously through broadcasts in                    a prerequisite of the design for performing a copy between two
+the shared memory command bus. Thus, ComputeDRAM’s ideal                         rows [56]. In contrast, we were able to successfully implement the
+targets are massive computations that exhibits a large amount of                 row copy operation, without any modifications to the DRAM, by in-
+main memory accesses.                                                            terposing and quickly interrupting a PRECHARGE command between
+    The main overhead of ComputeDRAM is the duplicated com-                      two ACTIVATE commands.
+putation and storage required by our proposed framework. This                       Similarly, Seshadri et al. [57] proposed to modify the row decoder
+inefficiency can be addressed at the compiler level. As more com-                to allow simultaneous activation of three rows, a requirement for
+plex computation is offloaded to ComputeDRAM, the compiler                       performing logical operations based on charge sharing; coinciden-
+which is responsible for translating high-level code to a sequence of            tally, a similar work [1] that targeted SRAM caches was published
+DRAM commands can perform optimization to reduce the number                      the same year. In our work, we show (Section 3.1.2) that, without
+of commands, by minimizing both the nominal and complemen-                       any modifications to the DRAM, it is feasible to simultaneously
+tary (negated version) intermediate computations. We have already                activate three rows by interrupting both ACTIVATE and PRECHARGE
+manually performed such optimization in the implementation of                    in the command sequence shown in Figure 3.
+the ADD operation in our software framework.                                        More generally, multiple prior works proposed the integration of
+    As computation in CPU and DRAM is decoupled, the overall                     processing logic inside the DRAM [18, 19, 22, 27, 34, 39, 51, 52, 59], or
+computational capability of the system is increased. Furthermore,                modifications on the DRAM design and enhancement on the basic
+as computation is moved from the CPU to the main memory the in-                  memory cell to enable native computational capabilities [4, 24, 42].
+terconnect’s utilization is reduced. This can lead to reduced latency            None of these solutions have gained widespread industry adoption,
+and runtime.                                                                     largely due to requiring modifications of the existing DRAM design
+                                                                                 and additional circuits to be added to cost optimized and low-margin
+7.2     Energy Efficiency                                                        RAM implementations.
+                                                                                    The introduction of 3D-stacked memory architectures where a
+The main benefit of ComputeDRAM is its high energy efficiency, as
+                                                                                 logic layer is coupled with a memory scheme (e.g., HMC 2.1 [31]),
+it eliminates the high energy overhead of transferring data between
+                                                                                 enabled the space for designs that expand the logic layer to include
+CPU and main memory. If data is fetched from memory to the CPU,
+                                                                                 computational capabilities [25, 50]. Though such schemes increase
+computed on, and stored back in memory, ComputeDRAM is 347×
+                                                                                 the available bandwidth, compared to off-chip memory, they fall
+more energy efficient than using a vector unit for row copy, and 48×
+                                                                                 short of fully exploiting the internal bandwidth of a DRAM.
+and 9.3× for 8-bit AND/OR and ADD, respectively. 4 Our baseline
+                                                                                    In parallel, the emergence of new materials and technologies
+is the energy used to read the operands from DRAM and write the
+                                                                                 for memories has inspired works that study how non-CMOS mem-
+result into DRAM, as memory access takes the main portion of
+                                                                                 ory technologies can be utilized to perform in-memory computa-
+the total energy consumption in our target scenario. We assume
+                                                                                 tions [28, 33, 40, 41, 46].
+4 We used VAMPIRE [26], a command-trace based DRAM power model, for the energy      Bit-serial architectures were extensively used on early mas-
+estimation.                                                                      sively parallel processing (MPP) machines such as the Goodyear
+
+
+
+===== Page 13 =====
+
+ComputeDRAM: In-Memory Compute Using Off-the-Shelf DRAMs                                                               MICRO-52, October 12–16, 2019, Columbus, OH, USA
+
+
+MPP [6, 7, 9], and Connection Machine CM-1 and CM-2 [61]. More                               Symposium on. IEEE, 336–348.
+recently, Micron proposed In-Memory Intelligence [24], a bit-serial                      [4] Avidan Akerib, Oren Agam, Eli Ehrman, and Moshe Meyassed. 2012. Using
+                                                                                             storage cells to perform computation. US Patent 8238173B2.
+computing in memory architecture. Its single-bit processing units                        [5] K. Arndt, C. Narayan, A. Brintzinger, W. Guthrie, D. Lachtrupp, J. Mauger, D.
+are able to perform basic operations such as AND and XOR, with                               Glimmer, S. Lawn, B. Dinkel, and A. Mitwalsky. 1999. Reliability of laser activated
+                                                                                             metal fuses in DRAMs. In Twenty Fourth IEEE/CPMT International Electronics
+more complex operations constructed through sequences of basic                               Manufacturing Technology Symposium. 389–394.
+primitive operations. The high levels of parallelism and through-                        [6] Kenneth E. Batcher. 1980. Architecture of a Massively Parallel Processor. In
+put make bit-serial architectures ideal for big-data problems in                             Proceedings of the 7th Annual Symposium on Computer Architecture (ISCA ’80).
+                                                                                             ACM, New York, NY, USA, 168–173.
+image [53] and signal [10] processing, Deep Neural Networks                              [7] Kenneth E. Batcher. 1980. Design of a Massively Parallel Processor. IEEE Trans.
+(DNN) [21], computer vision [20].                                                            Comput. C-29, 9 (Sept 1980), 836–840.
+                                                                                         [8] Kenneth E. Batcher. 1982. Bit-serial parallel processing systems. IEEE Trans.
+                                                                                             Comput. C-31, 5 (May 1982), 377–384.
+9    CONCLUSION                                                                          [9] Kenneth E. Batcher. 1998. Retrospective: architecture of a massively parallel
+We have demonstrated for the first time the feasibility of performing                        processor. In 25 Years of the International Symposia on Computer Architecture
+                                                                                             (Selected Papers) (ISCA ’98). ACM, New York, NY, USA, 15–16.
+in-memory operations in off-the-shelf, unmodified, commercial,                          [10] K. E. Batcher, E. E. Eddey, R. O. Faiss, and P. A. Gilmore. 1981. SAR processing on
+DRAM. Utilizing a customized memory controller, we were able                                 the MPP. Technical Report NASA-CR-166726 (N82-11801/9). Goodyear Aerospace
+                                                                                             Corporation.
+to change the timing of standard DRAM memory transactions,                              [11] Adrian M Caulfield, Laura M Grupp, and Steven Swanson. 2009. Gordon: using
+operating outside of specification, to perform massively parallel                            flash memory to build fast, power-efficient clusters for data-intensive applications.
+logical AND, logical OR, and row copy operations. We designed an                             ACM Sigplan Notices 44, 3 (2009), 217–228.
+                                                                                        [12] Karthik Chandrasekar, Sven Goossens, Christian Weis, Martijn Koedam, Benny
+algorithmic technique to compute arbitrary computations based                                Akesson, Norbert Wehn, and Kees Goossens. 2014. Exploiting expendable process-
+on the three available, non inverting, in-memory operations. We                              margins in DRAMs for run-time performance optimization. In Proceedings of the
+incorporated our algorithmic technique in a software framework to                            Conference on Design, Automation & Test in Europe (DATE ’14). European Design
+                                                                                             and Automation Association, Article 173, 6 pages. http://dl.acm.org/citation.
+run massively parallel bit-serial computations and demonstrate it                            cfm?id=2616606.2616820
+working in a real system. Finally, we characterized the capabilities                    [13] Kevin K. Chang, Abhijith Kashyap, Hasan Hassan, Saugata Ghose, Kevin Hsieh,
+                                                                                             Donghyuk Lee, Tianshi Li, Gennady Pekhimenko, Samira Khan, and Onur Mutlu.
+and robustness of the in-memory compute operations across DDR3                               2016. Understanding latency variation in modern DRAM chips: experimental
+DRAM modules from all major DRAM vendors, and under different                                characterization, analysis, and optimization. SIGMETRICS Perform. Eval. Rev. 44,
+supply voltages and temperatures.                                                            1 (June 2016), 323–336.
+                                                                                        [14] Meng-Fan Chang, Shin-Jang Shen, Chia-Chi Liu, Che-Wei Wu, Yu-Fan Lin, Ya-
+   This work has the potential for large impact on the computing                             Chin King, Chorng-Jung Lin, Hung-Jen Liao, Yu-Der Chih, and Hiroyuki Ya-
+industry with minimal hardware design changes. Currently, DRAM                               mauchi. 2013. An offset-tolerant fast-random-read current-sampling-based sense
+is solely used to store data. But our discovery that off-the-shelf                           amplifier for small-cell-current nonvolatile memory. IEEE Journal of Solid-State
+                                                                                             Circuits 48, 3 (2013), 864–877.
+DRAM can be used to perform computations, as-is, or with nominal                        [15] Jan Craninckx and Geert Van der Plas. 2007. A 65fJ/conversion-step 0-to-50MS/s
+modifications by DRAM vendors, means that with a small update                                0-to-0.7 mW 9b charge-sharing SAR ADC in 90nm digital CMOS. In 2007 IEEE
+                                                                                             International Solid-State Circuits Conference. Digest of Technical Papers. IEEE,
+to the DRAM controller, all new computers can perform massively                              246–600.
+parallel computations without needing to have data transit the                          [16] G. De Sandre, L. Bettini, A. Pirola, L. Marmonier, M. Pasotti, M. Borghi, P. Mat-
+memory bus or memory hierarchy.                                                              tavelli, P. Zuliani, L. Scotti, G. Mastracchio, F. Bedeschi, R. Gastaldi, and R. Bez.
+                                                                                             2010. A 90nm 4Mb embedded phase-change memory with 1.2V 12ns read access
+                                                                                             time and 1MB/s write throughput. In 2010 IEEE International Solid-State Circuits
+ACKNOWLEDGMENTS                                                                              Conference - (ISSCC). 268–269.
+                                                                                        [17] Denyer, Renshaw Peter B., and David. 1985. VLSI signal processing: a bit-serial
+This material is based on research sponsored by the National Sci-                            approach. Addison-Wesley Publishing Company, San Francisco, CA, USA.
+ence Foundation (NSF) under Grant No. CCF-1453112 and the Air                           [18] P. Dlugosch, D. Brown, P. Glendenning, M. Leventhal, and H. Noyes. 2014. An
+Force Research Laboratory (AFRL) and Defense Advanced Research                               efficient and scalable semiconductor architecture for parallel automata processing.
+                                                                                             IEEE Transactions on Parallel and Distributed Systems 25, 12 (Dec 2014), 3088–
+Projects Agency (DARPA) under agreement No. FA8650-18-2-7862.                                3098.
+The U.S. Government is authorized to reproduce and distribute                           [19] Jeff Draper, Jacqueline Chame, Mary Hall, Craig Steele, Tim Barrett, Jeff LaCoss,
+                                                                                             John Granacki, Jaewook Shin, Chun Chen, Chang Woo Kang, Ihn Kim, and
+reprints for Governmental purposes notwithstanding any copyright                             Gokhan Daglikoca. 2002. The architecture of the DIVA processing-in-memory
+notation thereon. The views and conclusions contained herein are                             chip. In Proceedings of the 16th International Conference on Supercomputing (ICS
+those of the authors and should not be interpreted as necessarily                            ’02). ACM, New York, NY, USA, 14–25.
+                                                                                        [20] Michael Drumheller. 1986. Connection Machine Stereomatching. In Proceedings
+representing the official policies or endorsements, either expressed                         of the Fifth AAAI National Conference on Artificial Intelligence (AAAI’86). AAAI
+or implied, of the Air Force Research Laboratory (AFRL), the De-                             Press, 748–753.
+fense Advanced Research Projects Agency (DARPA), the NSF, or                            [21] C. Eckert, X. Wang, J. Wang, A. Subramaniyan, R. Iyer, D. Sylvester, D. Blaaauw,
+                                                                                             and R. Das. 2018. Neural Cache: bit-serial in-cache acceleration of deep neural
+the U.S. Government.                                                                         networks. In 2018 ACM/IEEE 45th Annual International Symposium on Computer
+                                                                                             Architecture (ISCA). 383–396.
+REFERENCES                                                                              [22] Duncan Elliott, Michael Stumm, W. Martin Snelgrove, Christian Cojocaru, and
+                                                                                             Robert McKenzie. 1999. Computational RAM: implementing processors in mem-
+ [1] Shaizeen Aga, Supreet Jeloka, Arun Subramaniyan, Satish Narayanasamy, David             ory. IEEE Design & Test of Computers 1 (1999), 32–41.
+     Blaauw, and Reetuparna Das. 2017. Compute Caches. In High Performance Com-         [23] Duncan G. Elliott, W. Martin Snelgrove, and Michael Stumm. 1992. Computational
+     puter Architecture (HPCA), 2017 IEEE International Symposium on. IEEE, 481–492.         RAM: a memory-SIMD hybrid and its application to DSP. In 1992 Proceedings of
+ [2] Amogh Agrawal, Akhilesh Jaiswal, Chankyu Lee, and Kaushik Roy. 2018. X-                 the IEEE Custom Integrated Circuits Conference. 30.6.1–30.6.4.
+     SRAM: enabling in-memory boolean computations in CMOS static random access         [24] T. Finkbeiner, G. Hush, T. Larsen, P. Lea, J. Leidel, and T. Manning. 2017. In-
+     memories. IEEE Transactions on Circuits and Systems I: Regular Papers 99 (2018),        memory intelligence. IEEE Micro 37, 4 (2017), 30–38.
+     1–14.                                                                              [25] M. Gao, G. Ayers, and C. Kozyrakis. 2015. Practical near-data processing for
+ [3] Junwhan Ahn, Sungjoo Yoo, Onur Mutlu, and Kiyoung Choi. 2015. PIM-enabled               in-memory analytics frameworks. In 2015 International Conference on Parallel
+     instructions: a low-overhead, locality-aware processing-in-memory architec-             Architecture and Compilation (PACT). 113–124.
+     ture. In Computer Architecture (ISCA), 2015 ACM/IEEE 42nd Annual International
+
+
+
+===== Page 14 =====
+
+MICRO-52, October 12–16, 2019, Columbus, OH, USA                                                                                                                              Gao et al.
+
+
+[26] Saugata Ghose, Abdullah Giray Yaglikçi, Raghav Gupta, Donghyuk Lee, Kais                   Microarchitecture. ACM, 288–301.
+     Kudrolli, William X. Liu, Hasan Hassan, Kevin K. Chang, Niladrish Chatterjee,         [46] Shuangchen Li, Cong Xu, Qiaosha Zou, Jishen Zhao, Yu Lu, and Yuan Xie. 2016.
+     Aditya Agrawal, Mike O’Connor, and Onur Mutlu. 2018. What your DRAM                        Pinatubo: a processing-in-memory architecture for bulk bitwise operations in
+     power models are not telling you: lessons from a detailed experimental study. In           emerging non-volatile memories. In Proceedings of the 53rd Annual Design Au-
+     Abstracts of the 2018 ACM International Conference on Measurement and Modeling             tomation Conference. ACM, 173.
+     of Computer Systems (SIGMETRICS ’18). ACM, New York, NY, USA, 110–110.                [47] Jamie Liu, Ben Jaiyen, Yoongu Kim, Chris Wilkerson, and Onur Mutlu. 2013.
+[27] M. Gokhale, B. Holmes, and K. Iobst. 1995. Processing in memory: the Terasys               An experimental study of data retention behavior in modern DRAM devices:
+     massively parallel PIM array. Computer 28, 4 (April 1995), 23–31.                          implications for retention time profiling mechanisms. In Proceedings of the 40th
+[28] Qing Guo, Xiaochen Guo, Ravi Patel, Engin Ipek, and Eby G. Friedman. 2013.                 Annual International Symposium on Computer Architecture (ISCA ’13). ACM, New
+     AC-DIMM: associative computing with STT-MRAM. SIGARCH Comput. Archit.                      York, NY, USA, 60–71.
+     News 41, 3 (June 2013), 189–200.                                                      [48] Sally A. McKee. 2004. Reflections on the Memory Wall. In Proceedings of the 1st
+[29] Anthony Gutierrez, Michael Cieslak, Bharan Giridhar, Ronald G Dreslinski, Luis             Conference on Computing Frontiers (CF ’04). ACM, New York, NY, USA, 162–167.
+     Ceze, and Trevor Mudge. 2014. Integrated 3D-stacked server designs for increas-       [49] Câncio Monteiro, Yasuhiro Takahashi, and Toshikazu Sekine. 2013. Charge-
+     ing physical density of key-value stores. In ACM SIGPLAN Notices, Vol. 49. ACM,            sharing symmetric adiabatic logic in countermeasure against power analysis
+     485–498.                                                                                   attacks at cell level. Microelectronics Journal 44, 6 (2013), 496–503.
+[30] H. Hassan, N. Vijaykumar, S. Khan, S. Ghose, K. Chang, G. Pekhimenko, D.              [50] R. Nair, S. F. Antao, C. Bertolli, P. Bose, J. R. Brunheroto, T. Chen, C. . Cher, C. H. A.
+     Lee, O. Ergin, and O. Mutlu. 2017. SoftMC: a flexible and practical open-source            Costa, J. Doi, C. Evangelinos, B. M. Fleischer, T. W. Fox, D. S. Gallo, L. Grinberg,
+     infrastructure for enabling experimental DRAM studies. In 2017 IEEE International          J. A. Gunnels, A. C. Jacob, P. Jacob, H. M. Jacobson, T. Karkhanis, C. Kim, J. H.
+     Symposium on High Performance Computer Architecture (HPCA). 241–252.                       Moreno, J. K. O’Brien, M. Ohmacht, Y. Park, D. A. Prener, B. S. Rosenburg, K. D.
+[31] Hybrid Memory Cube Consortium. 2014. Hybrid Memory Cube specification                      Ryu, O. Sallenave, M. J. Serrano, P. D. M. Siegl, K. Sugavanam, and Z. Sura. 2015.
+     2.1.                                                                                       Active Memory Cube: a processing-in-memory architecture for exascale systems.
+[32] Bruce Jacob, Spencer Ng, and David Wang. 2007. Memory systems: cache, DRAM,                IBM Journal of Research and Development 59, 2/3 (March 2015), 17:1–17:14.
+     disk. Morgan Kaufmann Publishers Inc., San Francisco, CA, USA.                        [51] M. Oskin, F. T. Chong, and T. Sherwood. 1998. Active Pages: a computation model
+[33] S. Jain, A. Ranjan, K. Roy, and A. Raghunathan. 2018. Computing in memory                  for intelligent memory. In Proceedings. 25th Annual International Symposium on
+     with spin-transfer torque magnetic RAM. IEEE Transactions on Very Large Scale              Computer Architecture. 192–203.
+     Integration (VLSI) Systems 26, 3 (March 2018), 470–483.                               [52] D. Patterson, T. Anderson, N. Cardwell, R. Fromm, K. Keeton, C. Kozyrakis, R.
+[34] Yi Kang, Wei Huang, Seung-Moon Yoo, D. Keen, Zhenzhou Ge, V. Lam, P. Pattnaik,             Thomas, and K. Yelick. 1997. A case for intelligent RAM. IEEE Micro 17, 2 (March
+     and J. Torrellas. 1999. FlexRAM: toward an advanced intelligent memory system.             1997), 34–44.
+     In Proceedings 1999 IEEE International Conference on Computer Design: VLSI in         [53] JL Potter. 1983. Image processing on the massively parallel processor. Computer
+     Computers and Processors. 192–201.                                                         16, 1 (Jan 1983), 62–67.
+[35] Duckhwan Kim, Jaeha Kung, Sek Chai, Sudhakar Yalamanchili, and Saibal                 [54] Jan M Rabaey, Anantha P Chandrakasan, and Borivoje Nikolic. 2002. Digital
+     Mukhopadhyay. 2016. Neurocube: a programmable digital neuromorphic ar-                     integrated circuits. Vol. 2. Prentice Hall Englewood Cliffs.
+     chitecture with high-density 3D memory. In Computer Architecture (ISCA), 2016         [55] Parthasarathy Ranganathan. 2011. From microprocessors to nanostores: rethink-
+     ACM/IEEE 43rd Annual International Symposium on. IEEE, 380–392.                            ing data-centric systems. Computer 44, 1 (2011), 39–48.
+[36] Jeremie S Kim, Minesh Patel, Hasan Hassan, and Onur Mutlu. 2018. The DRAM             [56] V. Seshadri, Y. Kim, C. Fallin, D. Lee, R. Ausavarungnirun, G. Pekhimenko, Y.
+     latency PUF: quickly evaluating physical unclonable functions by exploiting the            Luo, O. Mutlu, P. B. Gibbons, M. A. Kozuch, and T. C. Mowry. 2013. RowClone:
+     latency-reliability tradeoff in modern commodity DRAM devices. In 2018 IEEE                fast and energy-efficient in-DRAM bulk data copy and initialization. In 2013
+     International Symposium on High Performance Computer Architecture (HPCA).                  46th Annual IEEE/ACM International Symposium on Microarchitecture (MICRO).
+     IEEE, 194–207.                                                                             185–197.
+[37] Yoongu Kim, Vivek Seshadri, Donghyuk Lee, Jamie Liu, and Onur Mutlu. 2012. A          [57] Vivek Seshadri, Donghyuk Lee, Thomas Mullins, Hasan Hassan, Amirali
+     case for exploiting subarray-level parallelism (SALP) in DRAM. ACM SIGARCH                 Boroumand, Jeremie Kim, Michael A Kozuch, Onur Mutlu, Phillip B Gibbons, and
+     Computer Architecture News 40, 3 (2012), 368–379.                                          Todd C Mowry. 2017. Ambit: in-memory accelerator for bulk bitwise operations
+[38] DBM Klaassen. 1992. A unified mobility model for device simulation-II. Temper-             using commodity DRAM technology. In Proceedings of the 50th Annual IEEE/ACM
+     ature dependence of carrier mobility and lifetime. Solid-State Electronics 35, 7           International Symposium on Microarchitecture. ACM, 273–287.
+     (1992), 961–967.                                                                      [58] Tadashi Shibata and Tadahiro Ohmi. 1992. A functional MOS transistor featuring
+[39] P. M. Kogge. 1994. EXECUBE - A new architecture for scaleable MPPs. In 1994                gate-level weighted sum and threshold operations. IEEE Transactions on Electron
+     International Conference on Parallel Processing Vol. 1, Vol. 1. 77–84.                     devices 39, 6 (1992), 1444–1455.
+[40] S. Kvatinsky, D. Belousov, S. Liman, G. Satat, N. Wald, E. G. Friedman, A. Kolodny,   [59] H. S. Stone. 1970. A logic-in-memory computer. IEEE Trans. Comput. C-19, 1 (Jan
+     and U. C. Weiser. 2014. MAGIC - memristor-aided logic. IEEE Transactions on                1970), 73–78.
+     Circuits and Systems II: Express Briefs 61, 11 (Nov 2014), 895–899.                   [60] K. Tsuchida, T. Inaba, K. Fujita, Y. Ueda, T. Shimizu, Y. Asao, T. Kajiyama, M.
+[41] S. Kvatinsky, A. Kolodny, U. C. Weiser, and E. G. Friedman. 2011. Memristor-               Iwayama, K. Sugiura, S. Ikegawa, T. Kishi, T. Kai, M. Amano, N. Shimomura,
+     based IMPLY logic design procedure. In 2011 IEEE 29th International Conference             H. Yoda, and Y. Watanabe. 2010. A 64Mb MRAM with clamped-reference and
+     on Computer Design (ICCD). 142–147.                                                        adequate-reference schemes. In 2010 IEEE International Solid-State Circuits Con-
+[42] Perry V. Lea and Richard C. Murphy. 2018. Apparatuses and methods for in-                  ference - (ISSCC). 258–259.
+     memory operations. US Patent 10049721B1.                                              [61] L. W. Tucker and G. G. Robertson. 1988. Architecture and applications of the
+[43] Donghyuk Lee, Samira Khan, Lavanya Subramanian, Saugata Ghose, Rachata                     Connection Machine. Computer 21, 8 (Aug 1988), 26–38.
+     Ausavarungnirun, Gennady Pekhimenko, Vivek Seshadri, and Onur Mutlu. 2017.            [62] Wm. A. Wulf and Sally A. McKee. 1995. Hitting the Memory Wall: implications
+     Design-induced latency variation in modern DRAM chips: characterization, anal-             of the obvious. SIGARCH Comput. Archit. News 23, 1 (March 1995), 20–24.
+     ysis, and latency reduction mechanisms. Proceedings of the ACM on Measurement         [63] Xilinx. 2011. Virtex-6 FPGA Memory Interface Solutions. https://www.xilinx.
+     and Analysis of Computing Systems 1, 1 (2017), 26.                                         com/support/documentation/ip_documentation/ug406.pdf. Accessed: 2019-08-
+[44] D. Lee, Y. Kim, G. Pekhimenko, S. Khan, V. Seshadri, K. Chang, and O. Mutlu. 2015.         30.
+     Adaptive-latency DRAM: optimizing DRAM timing for the common-case. In 2015            [64] Xilinx. 2019. ML605 Hardware User Guide. https://www.xilinx.com/support/
+     IEEE 21st International Symposium on High Performance Computer Architecture                documentation/boards_and_kits/ug534.pdf. Accessed: 2019-08-30.
+     (HPCA). 489–501.                                                                      [65] Kewei Yang and Andreas G Andreou. 1994. A multiple input differential amplifier
+[45] Shuangchen Li, Dimin Niu, Krishna T Malladi, Hongzhong Zheng, Bob Brennan,                 based on charge sharing on a floating-gate MOSFET. Analog Integrated Circuits
+     and Yuan Xie. 2017. DRISA: A DRAM-based reconfigurable in-situ accelera-                   and Signal Processing 6, 3 (1994), 197–208.
+     tor. In Proceedings of the 50th Annual IEEE/ACM International Symposium on
+

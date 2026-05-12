@@ -1,0 +1,1180 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/lec4-paper-reading/sources/original-paper/rowclone_micro13.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC4/original-paper/rowclone_micro13.pdf
+Raw URL: https://raw.githubusercontent.com/Yuntong-Hou/computer-architecture/main/LEC4/original-paper/rowclone_micro13.pdf
+Accessed: 2026-05-11 11:24:30 UTC
+
+
+
+===== Page 1 =====
+
+                          RowClone: Fast and Energy-Efficient
+                       In-DRAM Bulk Data Copy and Initialization
+                     Vivek Seshadri                         Yoongu Kim                     Chris Fallin*          Donghyuk Lee
+                 vseshadr@cs.cmu.edu                  yoongukim@cmu.edu                    cfallin@c1f.net     donghyuk1@cmu.edu
+                  Rachata Ausavarungnirun Gennady Pekhimenko                                                       Yixin Luo
+                           rachata@cmu.edu                           gpekhime@cs.cmu.edu                 yixinluo@andrew.cmu.edu
+             Onur Mutlu                   Phillip B. Gibbons†                         Michael A. Kozuch†                 Todd C. Mowry
+            onur@cmu.edu              phillip.b.gibbons@intel.com                 michael.a.kozuch@intel.com             tcm@cs.cmu.edu
+                                           Carnegie Mellon University                        †
+                                                                                                 Intel Pittsburgh
+
+ABSTRACT                                                                              Categories and Subject Descriptors
+Several system-level operations trigger bulk data copy or initial-                    B.3.1 [Memory Structures]: Semiconductor Memories
+ization. Even though these bulk data operations do not require                        D.4.2 [Storage Management]: Main Memory
+any computation, current systems transfer a large quantity of data
+back and forth on the memory channel to perform such opera-
+tions. As a result, bulk data operations consume high latency,
+                                                                                      Keywords
+bandwidth, and energy—degrading both system performance and                           DRAM, Page Copy, Page Initialization, Memory Bandwidth, Per-
+energy efficiency.                                                                    formance, Energy, In-Memory Processing, Bulk Operations
+   In this work, we propose RowClone, a new and simple mech-
+anism to perform bulk copy and initialization completely within                       1.     INTRODUCTION
+DRAM — eliminating the need to transfer any data over the mem-
+ory channel to perform such operations. Our key observation is                           The main memory subsystem is an increasingly more signifi-
+that DRAM can internally and efficiently transfer a large quantity                    cant limiter of system performance and energy efficiency for at
+of data (multiple KBs) between a row of DRAM cells and the as-                        least two reasons. First, the available memory bandwidth be-
+sociated row buffer. Based on this, our primary mechanism can                         tween the processor and main memory is not growing or expected
+quickly copy an entire row of data from a source row to a destina-                    to grow commensurately with the compute bandwidth available
+tion row by first copying the data from the source row to the row                     in modern multi-core processors [22, 25]. Second, a significant
+buffer and then from the row buffer to the destination row, via                       fraction (20% to 42%) of the energy required to access data from
+two back-to-back activate commands. This mechanism, which we                          memory is consumed in driving the high-speed bus connecting
+call the Fast Parallel Mode of RowClone, reduces the latency and                      the processor and memory [46] (calculated using [36]). Therefore,
+energy consumption of a 4KB bulk copy operation by 11.6x and                          judicious use of the available memory bandwidth is critical to en-
+74.4x, respectively, and a 4KB bulk zeroing operation by 6.0x and                     sure both high system performance and energy efficiency.
+41.5x, respectively. To efficiently copy data between rows that do                       In this work, we focus our attention on optimizing two impor-
+not share a row buffer, we propose a second mode of RowClone,                         tant classes of bandwidth-intensive memory operations that fre-
+the Pipelined Serial Mode, which uses the shared internal bus of a                    quently occur in modern systems: 1) bulk data copy—copying a
+DRAM chip to quickly copy data between two banks. RowClone                            large quantity of data from one location in physical memory to
+requires only a 0.01% increase in DRAM chip area.                                     another, and 2) bulk data initialization—initializing a large quan-
+   We quantitatively evaluate the benefits of RowClone by focus-                      tity of data to a specific value. We refer to these two operations
+ing on fork, one of the frequently invoked system calls, and five                     as bulk data operations. Prior research [41, 44] has shown that
+other copy and initialization intensive applications. Our results                     operating systems spend a significant portion of their time per-
+show that RowClone can significantly improve both single-core                         forming bulk data operations. Therefore, accelerating these op-
+and multi-core system performance, while also significantly re-                       erations will likely improve system performance. In fact, the x86
+ducing main memory bandwidth and energy consumption.                                  ISA has recently introduced instructions to provide enhanced per-
+                                                                                      formance for bulk copy and initialization (ERMSB [20]), highlight-
+                                                                                      ing the importance of bulk operations.
+*Currently at Intel Corporation.                                                         Bulk data operations degrade both system performance and en-
+                                                                                      ergy efficiency due to three reasons. First, existing systems per-
+Permission to make digital or hard copies of all or part of this work for
+personal or classroom use is granted without fee provided that copies are not         form such operations one byte/word/cache line at a time. As a
+made or distributed for profit or commercial advantage and that copies bear           result, a bulk data operation incurs high latency, directly affecting
+this notice and the full citation on the first page. Copyrights for components        the performance of the application performing the operation. For
+of this work owned by others than ACM must be honored. Abstracting with               example, a typical system today (using DDR3-1066) takes roughly
+credit is permitted. To copy otherwise, to republish, to post on servers or to        a microsecond (1046ns) to copy 4KB of data over the memory
+redistribute to lists, requires prior specific permission and/or a fee. Request       channel. Second, these operations require a large quantity of data
+permissions from permissions@acm.org
+MICRO -46, December 07-11 2013, Davis, CA, USA                                        to be transferred across the memory channel. Hence, they in-
+Copyright 2013 ACM 978-1-4503-2638-4/13/12 ...$15.00.                                 directly affect the performance of concurrently-running applica-
+
+
+                                                                                  1
+
+
+
+===== Page 2 =====
+
+tions that share the memory bandwidth. Third, the data transfer                    DRAM Chip                            Bank
+across the memory channel represents a significant fraction of the                Shared Internal Bus
+energy required to perform a bulk data operation (40% for DDR3-
+1066). Clearly, all these problems result from the fact that existing
+systems must necessarily transfer a large quantity of data over the                            Bank                   Subarray
+memory channel although neither copy nor initialization of bulk
+data requires any computation.                                                                                         Bank I/O
+   While bulk data operations can also affect performance by hog-
+ging the CPU and possibly polluting the on-chip caches, prior
+works [28, 58, 59] proposed simple solutions to address these
+problems. The proposed techniques include offloading bulk data
+operations to a separate engine to free up the CPU [28, 59] and/or                                                 Row of DRAM cells
+providing hints to the processor caches to mitigate cache pollu-                       Chip I/O
+tion [58]. However, none of these techniques eliminate the need                                                      Row buffer
+to transfer data over the memory channel, and hence, all of them
+suffer from the three problems mentioned above. This is also true                                                    Subarray
+                                                                                   Memory Channel
+for the enhanced copy and move instructions (ERMSB) recently
+introduced in the x86 ISA [20].                                                  Figure 1: High-level organization of a DRAM chip
+   Our goal is to design a mechanism that reduces the latency,
+bandwidth, and energy consumed by bulk data operations. Our                 shared across all the banks (Figure 1) is used for both read and
+approach is to provide low-cost hardware support for performing             write operations. To copy data from one bank to another, PSM
+such operations completely within main memory.1 This approach               puts the source bank in read mode, the destination bank in write
+eliminates the need to transfer data over the memory channel to             mode, and transfers the required cache lines over the internal bus
+perform a bulk data operation, and hence can potentially mitigate           from the source row to the destination row in a pipelined manner.
+the associated latency, bandwidth and energy problems.                      By doing so, PSM overlaps the latency of the read and the write
+   We propose RowClone, a simple and low-cost mechanism to ex-              operations involved in the copy. We use PSM to efficiently copy
+port bulk data copy and initialization operations to DRAM. Row-             data 1) from one bank to another and 2) from one subarray to
+Clone exploits DRAM’s internal architecture to efficiently per-             another within the same bank (Section 3.3).2 As we show in Sec-
+form these bulk data operations with low latency and energy con-            tion 7.1, PSM can reduce the latency and energy of an inter-bank
+sumption. At a high level, a modern DRAM chip consists of a                 copy operation by 1.9x and 3.2x, respectively.
+hierarchy of banks and subarrays, as shown in Figure 1. Each                   In addition to the changes required to the DRAM chip (which
+chip is made up of multiple banks that share an internal bus for            cost only 0.01% additional chip area) to support bulk copy and
+reading/writing data. Each bank in-turn contains multiple subar-            initialization operations, RowClone requires changes to different
+rays [31]. Each subarray consists of hundreds of rows of DRAM               layers of the system stack. In particular, we add two new instruc-
+cells sharing a structure called a row buffer.                              tions, memcopy and meminit, to the ISA to enable the software to
+   The key observation behind our approach is that DRAM in-                 specify occurrences of bulk copy and initialization operations to
+ternally transfers data from an entire row of DRAM cells to the             the hardware. We discuss the changes required to 1) the processor
+corresponding row buffer (even to access a single byte from that            microarchitecture and the memory controller to implement the
+row). Based on this observation, our primary mechanism effi-                two new instructions, and 2) the system software to derive maxi-
+ciently copies all the data (multiple KBs) from one row of DRAM             mum benefits from RowClone. Section 4 describes these changes.
+to another row within the same subarray in two steps: 1) copy                  Applications from standard benchmark suites like SPEC
+the data from the source row to the row buffer, and 2) copy the             CPU2006 [51] do not trigger many bulk copy or initialization
+data from the row buffer to the destination row. This mecha-                operations. However, as mentioned before, several system-level
+nism, which we call the Fast Parallel Mode (FPM) of RowClone,               functions invoke a significant fraction of copy and initialization
+requires very few modifications to DRAM, and these modifica-                operations. We discuss several such scenarios in which we can
+tions are limited to the peripheral logic of the chip. FPM reduces          employ RowClone (Section 5). We quantitatively evaluate the
+the latency and energy consumption of a bulk copy operation by              benefits of RowClone using a fork benchmark (Section 7.2), and
+11.6x and 74.4x (Section 7.1). For the system to accelerate a copy          five other copy and initialization intensive applications: system
+operation using FPM, the source and destination must be within              bootup, compilation, memcached [2], mysql [3], and a shell script
+the same subarray and the operation must span an entire row                 (Section 7.3). We also evaluate multi-programmed multi-core sys-
+(Section 3.1). Despite these constraints, FPM can accelerate two            tem workloads that consist of a mix of memory-intensive and
+widely used primitives in modern systems: 1) Copy-on-Write – a              copy/initialization-intensive applications. Our evaluations show
+technique used by operating systems to postpone expensive copy              that RowClone significantly improves both system performance
+operations [6, 8, 47, 50, 57], and 2) Bulk Zeroing – used for bulk          and energy efficiency.
+memory initialization [7, 9, 45, 58] (Section 5.2 discusses several            We make the following contributions:
+applications of Copy-on-Write and Bulk Zeroing in more detail).
+   To make RowClone more generally applicable to other copy op-                • We show that the internal organization of DRAM presents
+erations between rows that do not share a row buffer, we pro-                    an opportunity to perform bulk copy and initialization op-
+pose a second mode of RowClone, called the Pipelined Serial Mode                 erations efficiently and quickly within DRAM.
+(PSM). PSM exploits the fact that the DRAM chip’s internal bus
+                                                                            2
+                                                                              The DRAM hierarchy consists of higher levels, e.g., ranks and
+1
+ In this work, we assume DRAM-based main memory, predom-                    channels. However, as these transfers happen across DRAM
+inantly used by existing systems. Extending our mechanisms to               chips, data copy across such levels must necessarily happen over
+other emerging memory technologies is part of our future work.              the memory channel.
+
+
+                                                                        2
+
+
+
+===== Page 3 =====
+
+     • We propose RowClone, a simple and low-cost mechanism                                                                                                         row                              wordline
+       to export bulk copy and initialization operations to DRAM
+
+
+
+
+                                                                                                                                             Row Decoder
+                                                                                                                                                                                      capacitor
+
+
+
+
+                                                                                                                                                                                                                             bitline
+       via the memory controller. With only a 0.01% increase in
+       DRAM chip area, RowClone can potentially reduce the la-                                                                                                                                               access
+       tency/energy of a 4KB copy by 11.6x/74.4x.                                                                                                                                     cell                 transistor
+     • We analyze the benefits of RowClone by using it to acceler-
+       ate two widely-used primitives in modern systems: Copy-                                                                                                                      sense amplifier
+       on-Write and Bulk Zeroing. Our evaluations with a variety                                                                     row buffer
+       of workloads show that RowClone significantly improves
+       the performance and energy efficiency of both single-                                                                       Figure 2: Internal organization of a DRAM subarray
+       core and multi-core systems and outperforms a memory-
+       controller-based DMA approach [59].                                                                                of the corresponding subarray with the address A, which raises
+                                                                                                                          the wordline of the corresponding row. As a result, all cells of the
+2.                 DRAM BACKGROUND                                                                                        row are connected to the corresponding bitlines and in turn to the
+   In this section, we provide a brief background on DRAM orga-                                                           sense amplifiers. Depending on the initial state of the cells, they
+nization and operation required to understand RowClone. As we                                                             lose/gain charge, thereby raising/lowering the voltage level on the
+will describe in Section 3, RowClone exploits the internal orga-                                                          corresponding bitlines (state Ë). In this state, the sense amplifiers
+nization of modern DRAM chips as much as possible, and hence                                                              detect the deviation from 21 VDD and begin to amplify the devia-
+requires very few changes to existing DRAM chip designs.                                                                  tion (state Ì). In the process, they also drive the DRAM cells back
+   As briefly mentioned in Section 1, a modern DRAM chip con-                                                             to their original state. Once the amplification process is complete,
+sists of multiple DRAM banks, which are further divided into mul-                                                         all the sense amplifiers and bitlines are at a stable state (VDD or 0)
+tiple subarrays (Figure 1). Figure 2 shows the internal organiza-                                                         and the cells are fully restored to their initial state (state Í).
+tion of a subarray. Each subarray consists of a 2-D array of DRAM                                                            The required data can be accessed from the sense amplifiers
+cells connected to a single row of sense amplifiers, also referred to                                                     as soon as their voltage levels reach a threshold (state Ì). This
+as the row buffer. A DRAM cell consists of two components: 1) a                                                           is done by issuing a READ or WRITE command to the bank with
+capacitor, which represents logical state in terms of charge, and 2)                                                      the corresponding column address. Upon receiving the READ com-
+an access transistor that determines if the cell is currently being                                                       mand, the bank I/O logic (Figure 1) accesses the required data
+accessed. A sense amplifier is a component that is used to sense                                                          from the corresponding sense amplifiers using a set of global
+the state of the DRAM cell and amplify the state to a stable voltage                                                      bitlines that are shared across all subarrays [31] (not shown in
+level. The wire that connects the DRAM cell to the corresponding                                                          the figure for clarity) and transfers the data to the shared in-
+sense amplifier is called a bitline and the wire that controls the ac-                                                    ternal bus outside the bank. From there, the data is transferred
+cess transistor of a DRAM cell is called a wordline. Each subarray                                                        on to the memory channel connecting the DRAM and the mem-
+contains a row decoding logic that determines which row of cells                                                          ory controller. The WRITE command operates similarly except the
+(if any) is currently being accessed.                                                                                     data flows in the opposite direction. If the subsequent access is
+   At a high level, accessing a cache line from a subarray involves                                                       to the same row, then it can be performed by simply issuing a
+three steps: 1) activating the row containing the cache line – this                                                       READ/WRITE command while the row is still activated.
+copies the data from the row of DRAM cells to the row buffer,                                                                When the DRAM controller wants to access data from a dif-
+2) reading/writing the cache line – this transfers the data from/to                                                       ferent row in the bank, it must first take the subarray back to
+the corresponding sense amplifiers within the row buffer to/from                                                          the precharged state. This is done by issuing the PRECHARGE com-
+the processor through the internal bus shared by all the banks,                                                           mand to the bank. The precharge operation involves two steps.
+and 3) precharging the subarray – this clears the sense amplifiers                                                        First, it feeds the row decoder with the sentinel input (—), low-
+and prepares the subarray for a subsequent access.                                                                        ering the wordline corresponding to the currently activated row.
+   Figure 3 pictorially shows the three steps of a subarray access.                                                       This essentially disconnects the cells from the corresponding bit-
+In the initial precharged state Ê, the sense amplifiers and the bit-                                                      lines. Second, it drives the sense amplifiers and the bitlines back
+lines are maintained at an equilibrium voltage level of 12 VDD (half                                                      to the equilibrium voltage level of 21 VDD (state Ï – we intention-
+the maximum voltage, VDD ). The row decoder is fed with a sen-                                                            ally ignore state Î for now as it is part of our mechanism to be
+tinel input (—), such that all the wordlines within the subarray are                                                      described in Section 3.1).
+lowered, i.e., no row is connected to the sense amplifiers.                                                                  In the following section, we describe the design and implemen-
+   To access data from a row A of a subarray, the DRAM con-                                                               tation of RowClone, which exploits the afore-described internal
+troller first issues an ACTIVATE command with the row address.                                                            organization of DRAM to accelerate bulk data operations within
+Upon receiving this command, the bank feeds the row decoder                                                               DRAM while incurring low implementation cost.
+
+                   Precharged                                                                             Activation                                                                                       Precharging
+                        Ê                                         Ë                                          Ì                                                        Í                                           Ï
+     Row Decoder
+
+
+
+
+                                                  Row Decoder
+
+
+
+
+                                                                                                                                                                                             Row Decoder
+                                                                                            Row Decoder
+
+
+
+
+                                                                                                                                                      Row Decoder
+
+
+
+
+                    0                                           VDD                                        VDD                                                      VDD                                       0
+                            q         0                                    ?        ?                                 ?       ?                                             q   0                                       q          0
+                                                                    V +δ
+                                                                                 V -δ
+
+
+
+
+                                                                                                                 0.9VDD
+                                                                                                                          0.1VDD
+                        2 DD
+
+                                   2 DD
+
+
+
+
+                                                                  2 DD
+
+                                                                               2 DD
+
+
+
+
+                                                                                                                                                                                                                  2 DD
+
+                                                                                                                                                                                                                             2 DD
+                                                                                                                                                                          VDD
+                          V
+                                     V
+
+
+
+
+                                                                                                                                                                                                                    V
+                                                                                                                                                                                                                               V
+                                                                                                                                                                                0
+                        1
+
+                                   1
+
+
+
+
+                                                                  1
+
+                                                                               1
+
+
+
+
+                                                                                                                                                                                                                  1
+
+                                                                                                                                                                                                                             1
+
+
+
+
+—                              ?      ?       A                            ?        ?   A      Read/                  1       0          A                 Read/            1   0      —                                 ?         ?
+                                                                                               Write                                                       Write
+                                     Figure 3: Steps involved in accessing a cache line from a subarray (figure adapted from [31])
+
+
+                                                                                                                 3
+
+
+
+===== Page 4 =====
+
+3.                 ROWCLONE: DETAILED DESIGN                                                         will achieve this effect, modern DRAM chips do not allow an-
+   RowClone consists of two mechanisms based on two observa-                                         other ACTIVATE to an already activated bank – the expected result
+tions about DRAM operation. First, in order to access any data                                       of such an action is undefined. This is because a modern DRAM
+(even a single byte), DRAM internally transfers an entire row of                                     chip allows at most one row (subarray) within each bank to be
+data from the DRAM cells to the corresponding row buffer. Our                                        activated. If a bank that already has a row (subarray) activated re-
+first mechanism exploits this observation to efficiently copy data                                   ceives an ACTIVATE to a different subarray, the currently activated
+between two rows that share a row buffer. We call this the Fast                                      subarray must first be precharged [31].4
+Parallel Mode (FPM). Second, a single internal bus is shared across                                      To support FPM, we propose the following change to the
+all banks within a chip to perform both read and write operations.                                   DRAM chip in the way it handles back-to-back ACTIVATEs. When
+Our second mechanism exploits this observation to copy cache                                         an already activated bank receives an ACTIVATE to a row, the chip
+lines between two banks in a pipelined manner. We call this the                                      processes the command similar to any other ACTIVATE if and only
+Pipelined Serial Mode (PSM). Although not as fast as FPM, PSM                                        if the command is to a row that belongs to the currently activated
+has fewer constraints and hence is more generally applicable. We                                     subarray. If the row does not belong to the currently activated
+now describe each of these modes in detail.                                                          subarray, then the chip takes the action it normally does with
+                                                                                                     back-to-back ACTIVATEs—e.g., drop it. Since the logic to determine
+3.1                 Fast Parallel Mode (FPM)                                                         the subarray corresponding to a row address is already present in
+   The Fast Parallel Mode is designed to copy data from a source                                     today’s chips, implementing FPM only requires a comparison to
+row to a destination row within the same subarray. FPM exploits                                      check if the row address of an ACTIVATE belongs to the currently
+the fact that DRAM has the ability to transfer an entire row of                                      activated subarray, the cost of which is almost negligible.
+data from the DRAM cells to the corresponding row buffer. FPM                                            Summary. To copy data from src to dst within the same
+first copies the data from the source row to the row buffer and                                      subarray, FPM first issues an ACTIVATE to src. This copies the
+then copies the data from the row buffer to the destination row.                                     data from src to the subarray row buffer. FPM then issues an
+The observation behind FPM’s implementation is as follows:                                           ACTIVATE to dst. This modifies the input to the subarray row-
+                                                                                                     decoder from src to dst and connects the cells of dst row to
+                   If a DRAM cell is connected to a bitline that is at a stable                      the row buffer. This, in effect, copies the data from the sense
+                   state (either VDD or 0) instead of the equilibrium state                          amplifiers to the destination row. As we show in Section 7.1, with
+                   ( 21 VDD ), then the data in the cell is overwritten with the                     these two steps, FPM copies a 4KB page of data 11.6x faster and
+                   data (voltage level) on the bitline.                                              with 74.4x less energy than an existing system.
+                                                                                                         Limitations. FPM has two constraints that limit its general
+The reason for this behavior is that the cell induces only a small                                   applicability. First, it requires the source and destination rows to
+perturbation in the voltage level of the bitline. Therefore, when                                    be within the same subarray. Second, it cannot partially copy data
+the bitline is at a stable state, any perturbation caused by the cell                                from one row to another. Despite these limitations, we show that
+on the bitline is so small that the sense amplifier drives the bitline                               FPM can be immediately applied to today’s systems to acceler-
+(and hence the cell) back to the original stable state of the bitline.                               ate two commonly used primitives in modern systems – Copy-
+   To copy data from a source row (src) to a destination row (dst)                                   on-Write and Bulk Zeroing (Section 5). In the following section,
+within the same subarray, FPM first activates the source row. At                                     we describe the second mode of RowClone – the Pipelined Serial
+the end of the activation, the sense amplifiers and the bitlines are                                 Mode (PSM). Although not as fast or energy-efficient as FPM, PSM
+in a stable state corresponding to the data of the source row. The                                   addresses these two limitations of FPM.
+cells of the source row are fully restored to their original state.
+This is depicted by state Í in Figure 4. In this state, simply lower-                                3.2    Pipelined Serial Mode (PSM)
+ing the wordline of src and raising the wordline corresponding to                                       The Pipelined Serial Mode efficiently copies data from a source
+dst connects the cells of the destination row with the stable bit-                                   row in one bank to a destination row in a different bank. PSM
+lines. Based on the observation made above, doing so overwrites                                      exploits the fact that a single internal bus that is shared across all
+the data on the cells of the destination row with the data on the                                    the banks is used for both read and write operations. This enables
+bitlines, as depicted by state Î in Figure 4.3                                                       the opportunity to copy an arbitrary quantity of data one cache
+                                                                                                     line at a time from one bank to another in a pipelined manner.
+Í                   src activated                         Î src copied to dst                           More specifically, to copy data from a source row in one bank to
+                                                                                                     a destination row in a different bank, PSM first activates the corre-
+     Row Decoder
+
+
+
+
+                                                             Row Decoder
+
+
+
+
+                    VDD
+                            q    0    src                                  0       q   0   src       sponding rows in both banks. It then puts the source bank in the
+                    0                                                      VDD                       read mode, the destination bank in the write mode, and transfers
+                            0    q    dst Lower src                                q   0   dst       data one cache line (corresponding to a column of data—64 bytes)
+                                            Raise dst
+                          VDD
+
+
+
+
+                                                                                 VDD
+
+
+
+
+                                                                                                     at a time. For this purpose, we propose a new DRAM command
+                                0
+
+
+
+
+                                                                                       0
+
+
+
+
+                                                                                                     called TRANSFER. The TRANSFER command takes four parameters:
+src                         1    0                        dst                      1   0             1) source bank index, 2) source column index, 3) destination bank
+                                                                                                     index, and 4) destination column index. It copies the cache line
+                        Figure 4: Fast Parallel Mode of RowClone                                     corresponding to the source column index in the activated row of
+                                                                                                     the source bank to the cache line corresponding to the destination
+  Implementation. Lowering the wordline corresponding to                                             column index in the activated row of the destination bank.
+src and raising the wordline corresponding to dst can be                                                Unlike READ/WRITE which interact with the memory channel
+achieved by simply changing the input to the subarray row de-                                        connecting the processor and main memory, TRANSFER does not
+coder from src to dst. While issuing an ACTIVATE to the dst row                                      transfer data outside the chip. Figure 5 pictorially compares the
+3                                                                                                    4
+  A recent prior work, TL-DRAM [34], uses this observation to                                          Some DRAM manufacturers design their chips to drop back-to-
+move data between two segments within the same subarray.                                             back ACTIVATEs to the same bank.
+
+
+                                                                                                 4
+
+
+
+===== Page 5 =====
+
+operation of the TRANSFER command with that of READ and WRITE.             nism uses PSM to first copy the data from src to a temporary row
+The dashed lines indicate the data flow corresponding to the three         (tmp) in a different bank. It then uses PSM again to copy the data
+commands. As shown in the figure, in contrast to the READ or               back from tmp to dst. The capacity lost due to reserving one row
+WRITE commands, TRANSFER does not transfer data from or to the             within each bank is negligible (0.0015% for a bank with 64k rows).
+memory channel.
+                                                                           3.4      Mechanism for Bulk Data Initialization
+              Source Bank                   Destination Bank                   Bulk data initialization sets a large block of memory to a spe-
+                                                                           cific value. To perform this operation efficiently, our mechanism
+                Source Row                     Destination Row
+                Row Buffer                       Row Buffer
+                                                                           first initializes a single DRAM row with the corresponding value.
+   Chip                                                                    It then uses the appropriate copy mechanism (from Section 3.3) to
+                Bank I/O                         Bank I/O
+                                TRANSFER                                   copy the data to the other rows to be initialized.
+                                                                               Bulk Zeroing (or BuZ), a special case of bulk initialization, is
+                                 Chip I/O                                  a frequently occurring operation in today’s systems [28, 58]. To
+                                                                           accelerate BuZ, one can reserve one row in each subarray that
+ Internal Data Bus           READ        WRITE
+                                                                           is always initialized to zero. By doing so, our mechanism can
+                          To Memory Channel                                use FPM to efficiently BuZ any row in DRAM by copying data
+                                                                           from the reserved zero row of the corresponding subarray into
+        Figure 5: Pipelined Serial Mode of RowClone                        the destination row. The capacity loss of reserving one row out of
+                                                                           512 rows in each subarray is very modest (0.2%).
+Implementation. Implementing TRANSFER requires changes to                      Although the reserved zero rows can potentially lead to gaps
+1) the DRAM chip and 2) the DRAM interface. First, the chip                in the physical address space, we can use an appropriate mem-
+I/O logic should be augmented with logic to disconnect the in-             ory interleaving technique that maps consecutive rows to differ-
+ternal DRAM bus from the memory channel during a TRANSFER                  ent subarrays. Such a technique ensures that the reserved zero
+and logic to transfer data appropriately between banks. Our cal-           rows are contiguously located in the physical address space. Note
+culations using a publicly available 2Gb 55nm DDR3 DRAM tech-              that interleaving techniques commonly used in today’s systems
+nology model [43] show that these changes (additional muxes)               (e.g., row or cache line interleaving [39]) have this property.
+incur only a 0.01% die area cost. Second, the memory controller
+needs to provide four parameters along with TRANSFER. To mini-
+mize the changes to the existing DRAM interface, we make TRANS-            4.     END-TO-END SYSTEM DESIGN
+FER a two-cycle command. In the first cycle, the controller sends             So far, we described RowClone, a DRAM substrate that can ef-
+TRANSFER with the source bank ID and the source column index,              ficiently perform bulk data copy and initialization. In this section,
+and in the second cycle, it sends the destination bank ID and the          we describe the changes to the ISA, the processor microarchitec-
+destination column index.                                                  ture and the operating system that will enable the system to effi-
+Summary. To copy data from a source row in one bank to a                   ciently exploit the RowClone DRAM substrate.
+destination row in a different bank, PSM first activates the cor-
+responding rows in each bank. For each cache line to be copied             4.1      ISA Support
+between the two rows, PSM issues TRANSFER with the appropri-                  To enable the software to communicate occurrences of bulk
+ate parameters. By overlapping the latency of the read and write           copy and initialization operations to the hardware, we introduce
+operations involved in the copy, PSM results in a 1.9x reduction           two new instructions to the ISA: memcopy and meminit. Table 1
+in latency and 3.2x reduction in energy of a 4KB bulk copy op-             describes the semantics of these two new instructions. We de-
+eration compared to performing the required operations over the            liberately keep the semantics of the instructions simple in order
+memory channel.                                                            to relieve the software from worrying about microarchitectural
+                                                                           aspects of RowClone such as row size, alignment, etc. (discussed
+3.3    Mechanism for Bulk Data Copy                                        in Section 4.2.1). Note that such instructions are already present
+   When the data from a source row (src) needs to be copied to a           in some of the instructions sets in modern processors – e.g., rep
+destination row (dst), there are three possible cases depending on         movsd, rep stosb, ermsb in x86 [20] and mvcl in IBM S/390 [19].
+the location of src and dst: 1) src and dst are within the same
+subarray, 2) src and dst are in different banks, 3) src and dst                 Instruction   Operands         Semantics
+are in different subarrays within the same bank. For case 1 and
+case 2, RowClone uses FPM and PSM, respectively, to complete                    memcopy       src, dst, size   Copy size bytes from src to dst
+the operation (as described in Sections 3.1 and 3.2).                           meminit       dst, size, val   Set size bytes to val at dst
+   For the third case, when src and dst are in different subar-            Table 1: Semantics of the memcopy and meminit instructions
+rays within the same bank, one can imagine a mechanism that
+uses the global bitlines (shared across all subarrays within a bank           There are three points to note regarding the execution seman-
+– described in [31]) to copy data across the two rows in different         tics of these operations. First, the processor does not guarantee
+subarrays. However, we do not employ such a mechanism for two              atomicity for both memcopy and meminit, but note that exist-
+reasons. First, it is not possible in today’s DRAM chips to activate       ing systems also do not guarantee atomicity for such operations.
+multiple subarrays within the same bank simultaneously. Second,            Therefore, the software must take care of atomicity requirements
+even if we enable simultaneous activation of multiple subarrays,           using explicit synchronization. However, the microarchitectural
+as in [31], transferring data from one row buffer to another us-           implementation will ensure that any data in the on-chip caches
+ing the global bitlines requires the bank I/O circuitry to switch          is kept consistent during the execution of these operations (Sec-
+between read and write modes for each cache line transfer. This            tion 4.2.2). Second, the processor will handle any page faults dur-
+switching incurs significant latency overhead. To keep our de-             ing the execution of these operations. Third, the processor can
+sign simple, for such an intra-bank copy operation, our mecha-             take interrupts during the execution of these operations.
+
+
+                                                                       5
+
+
+
+===== Page 6 =====
+
+4.2     Processor Microarchitecture Support                                 troller identifies a dirty cache line belonging to the source region
+   The microarchitectural implementation of the new instruc-                while performing a copy, it creates an in-cache copy of the source
+tions, memcopy and meminit, has two parts. The first part de-               cache line with the tag corresponding to the destination cache
+termines if a particular instance of memcopy or meminit can be              line. This has two benefits. First, it avoids the additional memory
+fully/partially accelerated by RowClone. The second part involves           flush required for the dirty source cache line. Second and more
+the changes required to the cache coherence protocol to ensure              importantly, the controller does not have to wait for all the dirty
+coherence of data in the on-chip caches. We discuss these parts in          source cache lines to be flushed before it can perform the copy.7
+this section.                                                                  Although RowClone requires the memory controller to man-
+                                                                            age cache coherence, it does not affect memory consistency — i.e.,
+4.2.1     Source/Destination Alignment and Size                             concurrent readers or writers to the source or destination regions
+   For the processor to accelerate a copy/initialization operation          involved in the copy/initialization. As mentioned before, a bulk
+using RowClone, the operation must satisfy certain alignment and            copy/initialization operation is not guaranteed to be atomic even
+size constraints. Specifically, for an operation to be accelerated by       in current systems, and the software needs to explicitly perform
+FPM, 1) the source and destination regions should be within the             the operation within a critical section to ensure atomicity.
+same subarray, 2) the source and destination regions should be
+row-aligned, and 3) the operation should span an entire row. On             4.3     Software Support
+the other hand, for an operation to be accelerated by PSM, the                 The minimum support required from the system software is the
+source and destination regions should be cache line-aligned and             use of the proposed memcopy and meminit instructions to indi-
+the operation must span a full cache line.                                  cate bulk data operations to the processor. Although one can have
+   Upon encountering a memcopy/meminit instruction, the pro-                a working system with just this support, maximum latency and
+cessor divides the region to be copied/initialized into three por-          energy benefits can be obtained if the hardware is able to acceler-
+tions: 1) row-aligned row-sized portions that can be accelerated            ate most copy operations using FPM rather than PSM. Increasing
+using FPM, 2) cache line-aligned cache line-sized portions that can         the likelihood of the use of the FPM mode requires further support
+be accelerated using PSM,5 and 3) the remaining portions that can           from the operating system (OS) on two aspects: 1) page mapping,
+be performed by the processor. For the first two regions, the pro-          and 2) granularity of copy/initialization.
+cessor sends appropriate requests to the memory controller which
+completes the operations and sends an acknowledgment back to                4.3.1     Subarray-Aware Page Mapping
+the processor. The processor completes the operation for the third             The use of FPM requires the source row and the destination row
+region similarly to how it is done in today’s systems.6                     of a copy operation to be within the same subarray. Therefore, to
+                                                                            maximize the use of FPM, the OS page mapping algorithm should
+4.2.2     Managing On-Chip Cache Coherence
+                                                                            be aware of subarrays so that it can allocate a destination page of
+   RowClone allows the memory controller to directly                        a copy operation in the same subarray as the source page. More
+read/modify data in memory without going through the on-                    specifically, the OS should have knowledge of which pages map to
+chip caches. Therefore, to ensure cache coherence, the memory               the same subarray in DRAM. We propose that DRAM expose this
+controller appropriately handles cache lines from the source and            information to software using the small EEPROM that already ex-
+destination regions that may be cached in the on-chip caches                ists in today’s DRAM modules. This EEPROM, called the Serial
+before issuing the copy/initialization operations to memory.                Presence Detect (SPD) [26], stores information about the DRAM
+   First, the memory controller writes back any dirty cache line            chips that is read by the memory controller at system bootup. Ex-
+from the source region. This is because the main memory version             posing the subarray mapping information will require only a few
+of such a cache line is likely stale. Copying the data in-memory            additional bytes to communicate the bits of the physical address
+before flushing such cache lines will lead to stale data being copied       that map to the subarray index.8
+to the destination region. Second, the memory controller invali-               Once the OS has the mapping information between physical
+dates any cache line (clean or dirty) from the destination region           pages and subarrays, it can maintain multiple pools of free pages,
+that is cached in the on-chip caches. This is because after per-            one pool for each subarray. When the OS allocates the destination
+forming the copy operation, the cached version of these blocks              page for a copy operation (e.g., for a Copy-on-Write operation), it
+may contain stale data. The memory controller already has the               chooses the destination page from the same pool (subarray) as the
+ability to perform such flushes and invalidations to support Di-            source page. Note that this approach does not require contiguous
+rect Memory Access (DMA) [21]. After performing the neces-                  pages to be placed within the same subarray. As mentioned be-
+sary flushes and invalidations, the memory controller performs              fore, commonly used memory interleaving techniques spread out
+the copy/initialization operation. To ensure that cache lines of            contiguous pages across as many banks/subarrays as possible to
+the destination region are not cached again by the processor in             improve parallelism. Therefore, both the source and destination
+the meantime, the memory controller blocks all requests (includ-            of a bulk copy operation can be spread out across many subarrays.
+ing prefetches) to the destination region until the copy or initial-
+ization operation is complete.                                              7
+                                                                              In Section 7.3, we will consider another optimization, called
+   While simply performing the flushes and invalidates as men-              RowClone-Zero-Insert, which inserts clean zero cache lines into
+tioned above will ensure coherence, we propose a slightly mod-              the cache to further optimize Bulk Zeroing. This optimization
+ified solution to handle dirty cache lines of the source region to          does not require further changes to our proposed modifications to
+reduce memory bandwidth consumption. When the memory con-                   the cache coherence protocol.
+                                                                            8
+5
+                                                                              To increase DRAM yield, DRAM manufacturers design chips
+  Since TRANSFER copies only a single cache line, a bulk copy using         with spare rows that can be mapped to faulty rows [18]. Our
+PSM can be interleaved with other commands to memory.                       mechanism can work with this technique by either requiring that
+6
+  Note that the CPU can offload all these operations to the memory          each faulty row is remapped to a spare row within the same sub-
+controller. In such a design, the CPU need not be made aware of             array, or exposing the location of all faulty rows to the memory
+the DRAM organization (e.g., row size, subarray mapping, etc.).             controller so that it can use PSM to copy data across such rows.
+
+
+                                                                        6
+
+
+
+===== Page 7 =====
+
+4.3.2     Granularity of Copy/Initialization                               just a small number of example scenarios that incur a large num-
+   The second aspect that affects the use of FPM is the granularity        ber of copy and initialization operations.
+at which data is copied/initialized. FPM has a minimum granular-              Process Forking. fork is a frequently-used system call in mod-
+ity at which it can copy/initialize data. There are two factors that       ern operating systems (OS). When a process (parent) calls fork,
+affect this minimum granularity: 1) the size of each DRAM row,             it creates a new process (child) with the exact same memory im-
+and 2) the memory interleaving employed by the controller.                 age and execution state as the parent. This semantics of fork
+   First, FPM copies all the data of the source row to the desti-          makes it useful for different scenarios. Common uses of the fork
+nation row (across the entire DIMM). Therefore, the minimum                system call are to 1) create new processes, and 2) create stateful
+granularity of copy using FPM is at least the size of the row. Sec-        threads from a single parent thread in multi-threaded programs.
+ond, to extract maximum bandwidth, some memory interleaving                One main limitation of fork is that it results in a CoW operation
+techniques, like cache line interleaving, map consecutive cache            whenever the child/parent updates a shared page. Hence, despite
+lines to different memory channels in the system. Therefore, to            its wide usage, as a result of the large number of copy operations
+copy/initialize a contiguous region of data with such interleaving         triggered by fork, it remains one of the most expensive system
+strategies, FPM must perform the copy operation in each channel.           calls in terms of memory performance [47].
+The minimum amount of data copied by FPM in such a scenario                   Initializing Large Data Structures. Initializing large data struc-
+is the product of the row size and the number of channels.                 tures often triggers Bulk Zeroing. In fact, many managed lan-
+   To maximize the likelihood of using FPM, the system or appli-           guages (e.g., C#, Java, PHP) require zero initialization of variables
+cation software must ensure that the region of data copied (initial-       to ensure memory safety [58]. In such cases, to reduce the over-
+ized) using the memcopy (meminit) instructions is at least as large        head of zeroing, memory is zeroed-out in bulk.
+as this minimum granularity. For this purpose, we propose to ex-              Secure Deallocation. Most operating systems (e.g., Linux [7],
+pose this minimum granularity to the software through a special            Windows [45], Mac OS X [48]) zero out pages newly allocated to a
+register, which we call the Minimum Copy Granularity Register              process. This is done to prevent malicious processes from gaining
+(MCGR). On system bootup, the memory controller initializes the            access to the data that previously belonged to other processes or
+MCGR based on the row size and the memory interleaving strat-              the kernel itself. Not doing so can potentially lead to security
+egy, which can later be used by the OS for effectively exploiting          vulnerabilities, as shown by prior works [9, 13, 16, 17].
+RowClone. Note that some previously proposed techniques such                  Process Checkpointing. Checkpointing is an operation during
+as sub-wordline activation [54] or mini-rank [56, 60] can be com-          which a consistent version of a process state is backed-up, so
+bined with RowClone to reduce the minimum copy granularity,                that the process can be restored from that state in the future.
+further increasing the opportunity to use FPM.                             This checkpoint-restore primitive is useful in many cases includ-
+                                                                           ing high-performance computing servers [6], software debugging
+5.    APPLICATIONS                                                         with reduced overhead [50], hardware-level fault and bug toler-
+                                                                           ance mechanisms [10, 11], and speculative OS optimizations to
+   RowClone can be used to accelerate any bulk copy and initial-           improve performance [8, 57]. However, to ensure that the check-
+ization operation to improve both system performance and en-               point is consistent (i.e., the original process does not update data
+ergy efficiency. In this paper, we quantitatively evaluate the effi-       while the checkpointing is in progress), the pages of the process
+cacy of RowClone by using it to accelerate two primitives widely           are marked with copy-on-write. As a result, checkpointing often
+used by modern system software: 1) Copy-on-Write and 2) Bulk               results in a large number of CoW operations.
+Zeroing. We now describe these primitives followed by several                 Virtual Machine Cloning/Deduplication. Virtual machine (VM)
+applications that frequently trigger them.                                 cloning [33] is a technique to significantly reduce the startup cost
+5.1     Primitives Accelerated by RowClone                                 of VMs in a cloud computing server. Similarly, deduplication is
+                                                                           a technique employed by modern hypervisors [55] to reduce the
+   Copy-on-Write (CoW) is a technique used by most modern oper-
+                                                                           overall memory capacity requirements of VMs. With this tech-
+ating systems (OS) to postpone an expensive copy operation until
+                                                                           nique, different VMs share physical pages that contain the same
+it is actually needed. When data of one virtual page needs to be
+                                                                           data. Similar to forking, both these operations likely result in a
+copied to another, instead of creating a copy, the OS points both
+                                                                           large number of CoW operations for pages shared across VMs.
+virtual pages to the same physical page (source) and marks the
+                                                                              Page Migration. Bank conflicts, i.e., concurrent requests to dif-
+page as read-only. In the future, when one of the sharers attempts
+                                                                           ferent rows within the same bank, typically result in reduced row
+to write to the page, the OS allocates a new physical page (desti-
+                                                                           buffer hit rate and hence degrade both system performance and
+nation) for the writer and copies the contents of the source page
+                                                                           energy efficiency. Prior work [53] proposed techniques to miti-
+to the newly allocated page. Fortunately, prior to allocating the
+                                                                           gate bank conflicts using page migration. The PSM mode of Row-
+destination page, the OS already knows the location of the source
+                                                                           Clone can be used in conjunction with such techniques to 1) sig-
+physical page. Therefore, it can ensure that the destination is al-
+                                                                           nificantly reduce the migration latency and 2) make the migra-
+located in the same subarray as the source, thereby enabling the
+                                                                           tions more energy-efficient.
+processor to use FPM to perform the copy.
+                                                                              CPU-GPU Communication. In many current and future proces-
+   Bulk Zeroing (BuZ) is an operation where a large block of mem-
+                                                                           sors, the GPU is or is expected to be integrated on the same chip
+ory is zeroed out. As mentioned in Section 3.4, our mechanism
+                                                                           with the CPU. Even in such systems where the CPU and GPU
+maintains a reserved row that is fully initialized to zero in each
+                                                                           share the same off-chip memory, the off-chip memory is parti-
+subarray. For each row in the destination region to be zeroed out,
+                                                                           tioned between the two devices. As a consequence, whenever a
+the processor uses FPM to copy the data from the reserved zero-
+                                                                           CPU program wants to offload some computation to the GPU, it
+row of the corresponding subarray to the destination row.
+                                                                           has to copy all the necessary data from the CPU address space
+5.2     Applications that Use CoW/BuZ                                      to the GPU address space [23]. When the GPU computation is
+                                                                           finished, all the data needs to be copied back to the CPU address
+  We now describe seven example applications or use-cases that
+                                                                           space. This copying involves a significant overhead. By spreading
+extensively use the CoW or BuZ operations. Note that these are
+
+
+                                                                       7
+
+
+
+===== Page 8 =====
+
+out the GPU address space over all subarrays and mapping the ap-          billion instruction traces of the representative portions of these
+plication data appropriately, RowClone can significantly speed up         workloads. We use the instruction throughput (IPC) metric to
+these copy operations. Note that communication between differ-            measure single-core performance. We evaluate multi-core runs
+ent processors and accelerators in a heterogeneous System-on-a-           using the weighted speedup metric, a widely-used measure of sys-
+chip (SoC) is done similarly to the CPU-GPU communication and             tem throughput for multi-programmed workloads [14], as well
+can also be accelerated by RowClone.                                      as five other performance/fairness/bandwidth/energy metrics, as
+   In the following sections, we quantitatively compare RowClone          shown in Table 7.
+to existing systems and show that RowClone significantly im-
+proves both system performance and energy efficiency.                     7.    EVALUATIONS
+                                                                             In this section, we quantitatively evaluate the benefits of Row-
+6.    METHODOLOGY                                                         Clone. We first analyze the raw latency and energy improvement
+Simulation. Our evaluations use an in-house cycle-level multi-            enabled by the DRAM substrate to accelerate a single 4KB copy
+core simulator along with a cycle-accurate command-level DDR3             and 4KB zeroing operation (Section 7.1). We then discuss the re-
+DRAM simulator. The multi-core simulator models out-of-order              sults of our evaluation of RowClone using fork (Section 7.2) and
+cores, each with a private last-level cache.9 We integrate Row-           six copy/initialization intensive applications (Section 7.3). Sec-
+Clone into the simulator at the command-level. We use DDR3                tion 7.4 presents our analysis of RowClone on multi-core sys-
+DRAM timing constraints [27] to calculate the latency of differ-          tems and Section 7.5 provides quantitative comparisons to mem-
+ent operations. Since TRANSFER operates similarly to READ/WRITE,          ory controller based DMA engines.
+we assume TRANSFER to have the same latency as READ/WRITE. For
+our energy evaluations, we use DRAM energy/power models from              7.1      Latency and Energy Analysis
+Rambus [43] and Micron [36]. Although, in DDR3 DRAM, a row                   Figure 6 shows the sequence of DRAM commands issued by the
+corresponds to 8KB across a rank, we assume a minimum in-                 baseline, FPM and PSM (inter-bank) to perform a 4KB copy oper-
+DRAM copy granularity (Section 4.3.2) of 4KB – same as the page           ation. The figure also shows the overall latency incurred by each
+size used by the operating system (Debian Linux) in our evalua-           of these mechanisms, assuming DDR3-1066 timing constraints.
+tions. For this purpose, we model a DRAM module with 512-byte             Note that a 4KB copy involves copying 64 64B cache lines. For
+rows per chip (4KB across a rank). Table 2 specifies the major            ease of analysis, only for this section, we assume that no cache
+parameters used for our simulations.                                      line from the source or the destination region are cached in the
+                                                                          on-chip caches. While the baseline serially reads each cache line
+  Component              Parameters                                       individually from the source page and writes it back individually
+                         1–8 cores, OoO 128-entry window,                 to the destination page, FPM parallelizes the copy operation of
+  Processor                                                               all the cache lines by using the large internal bandwidth available
+                         3-wide issue, 8 MSHRs/core
+                                                                          within a subarray. PSM, on the other hand, uses the new TRANSFER
+                         1MB per core, private,                           command to overlap the latency of the read and write operations
+  Last-level Cache
+                         64-byte cache line, 16-way associative           involved in the page copy.
+                         One per channel, 64-entry read queue,
+  Memory Controller                                                        Baseline
+                         64-entry write queue
+                                                                           ACT s    R1   R2 ... k ... R64 PRE ACT d W1 W2 ... k ... W64 PRE
+                         DDR3-1066 (8-8-8) [27], 2 channels,
+  Memory System                                                                                                                     1046ns
+                         1 rank per channel, 8 banks per rank,
+                                                                           FPM
+       Table 2: Configuration of the simulated system
+                                                                           ACT s ACT d PRE
+Workloads. We evaluate the benefits of RowClone using 1) a                                       90ns
+case study of the fork system call, an important operation used            PSM (Inter-bank)                              540ns
+by modern operating systems, 2) six copy/initialization inten-             ACT s ACT d Tr1 Tr2 ... k ... Tr64 PRE PRE
+sive benchmarks: bootup, compile, forkbench, memcached [2],
+mysql [3], and shell (Section 7.3 describes these benchmarks),                                                                      time
+and 3) a wide variety of multi-core workloads comprising
+                                                                          ACT s — ACTIVATE source, ACT d — ACTIVATE destination
+the copy/initialization intensive applications running alongside
+                                                                          R — READ, W — WRITE, Tr — TRANSFER, PRE — PRECHARGE
+memory-intensive applications from the SPEC CPU2006 bench-
+mark suite [51]. Note that benchmarks such as SPEC CPU2006,               Figure 6: Command sequence and latency for Baseline,
+which predominantly stress the CPU, typically use a small num-            FPM, and Inter-bank PSM for a 4KB copy operation. Intra-
+ber of page copy and initialization operations and therefore would        bank PSM simply repeats the operations for Inter-bank
+serve as poor individual evaluation benchmarks for RowClone.              PSM twice (source row to temporary row and temporary
+   We collected instruction traces for our workloads using                row to destination row). The figure is not drawn to scale.
+Bochs [1], a full-system x86-64 functional emulator, running a
+GNU/Linux system. We modify the kernel’s implementation of                   Table 3 shows the reduction in latency and energy consump-
+page copy/initialization to use the memcopy and meminit instruc-          tion due to our mechanisms for different cases of 4KB copy and
+tions and mark these instructions in our traces.10 We collect 1-          zeroing operations. To be fair to the baseline, the results include
+ 9                                                                        only the energy consumed by the DRAM and the DRAM channel.
+   Since our mechanism primarily affects off-chip memory traffic,
+ we expect our results and conclusions to be similar with shared          We draw two conclusions from our results.
+ caches as well.                                                             First, FPM significantly improves both the latency and the en-
+10                                                                        ergy consumed by bulk data operations — 11.6x and 6x reduction
+   For our fork benchmark (described in Section 7.2), we used the
+ Wind River Simics full system simulator [4] to collect the traces.       in latency of 4KB copy and zeroing, and 74.4x and 41.5x reduction
+
+
+                                                                      8
+
+
+
+===== Page 9 =====
+
+                               Absolute             Reduction             larger for S = 64MB compared to S = 128MB. Depending on the
+                                      Memory               Memory         value of S and N , anywhere between 14% to 66% of the memory
+            Mechanism       Latency    Energy    Latency    Energy        traffic arises from copy operations. This shows that accelerating
+                               (ns)       (µJ)                            copy operations using RowClone has the potential to significantly
+                 Baseline     1046        3.6     1.00x      1.0x         improve the performance of the fork operation.
+ Copy
+
+
+
+
+                     FPM        90       0.04    11.62x     74.4x
+        Inter-Bank - PSM       540        1.1     1.93x      3.2x
+
+
+
+
+                                                                            Fraction of Memory
+                                                                            Traffic due to Copy
+                                                                                                         0.9             S =64MB             S =128MB
+        Intra-Bank - PSM      1050        2.5     0.99x      1.5x                                        0.8
+                                                                                                         0.7
+ Zero
+
+
+
+
+                Baseline       546        2.0     1.00x      1.0x                                        0.6
+                   FPM          90       0.05     6.06x     41.5x                                        0.5
+                                                                                                         0.4
+Table 3: DRAM latency and memory energy reductions due                                                   0.3
+to RowClone                                                                                              0.2
+                                                                                                         0.1
+in memory energy of 4KB copy and zeroing. Second, although                                                     2    4    8   16 32 64 128 256 512 1k 2k 4k 8k 16k
+PSM does not provide as much benefit as FPM, it still reduces the
+latency and energy of a 4KB inter-bank copy by 1.9x and 3.2x,
+                                                                                                                   N (Number of Pages Updated) (log scale)
+while providing a more generally applicable mechanism.                               Figure 7: FMTC of forkbench for varying S and N
+   When an on-chip cache is employed, any line cached from the
+source or destination page can be served at a lower latency than             Figure 8 plots the performance (IPC) of FPM and PSM for fork-
+accessing main memory. As a result, in such systems, the baseline         bench, normalized to that of the baseline system. We draw two
+will incur a lower latency to perform a bulk copy or initializa-          conclusions from the figure. First, FPM significantly improves the
+tion compared to a system without on-chip caches. However, as             performance of forkbench for both values of S and most values
+we show in the following sections (7.2–7.4), even in the presence         of N . The peak performance improvement is 2.2x for N = 16k
+of on-chip caching, the raw latency/energy improvement due to             (30% on average across all data points). As expected, the perfor-
+RowClone translates to significant improvements in both overall           mance improvement of FPM increases as the number of pages up-
+system performance and energy efficiency.                                 dated increases. The trend in performance improvement of FPM
+                                                                          is similar to that of FMTC (Figure 7), confirming our hypothe-
+7.2     The fork System Call                                              sis that FPM’s performance improvement primarily depends on
+   As mentioned in Section 5.2, fork is one of the most expensive         FMTC. Second, PSM does not provide considerable performance
+yet frequently-used system calls in modern systems [47]. Since            improvement over the baseline. This is because the large on-chip
+fork triggers a large number of CoW operations (as a result of            cache in the baseline system buffers the writebacks generated by
+updates to shared pages from the parent or child process), Row-           the copy operations. These writebacks are flushed to memory at
+Clone can significantly improve the performance of fork.                  a later point without further delaying the copy operation. As a
+   To analyze this, we use a simple benchmark, forkbench. The             result, PSM, which just overlaps the read and write operations in-
+performance of fork depends on two parameters: 1) the size                volved in the copy, does not improve latency significantly in the
+of the address space used by the parent—which determines how              presence of a large on-chip cache. On the other hand, FPM, by
+much data may potentially have to be copied, and 2) the number            copying all cache lines from the source row to destination in par-
+of pages updated after the fork operation by either the parent or         allel, significantly reduces the latency compared to the baseline
+the child—which determines how much data are actually copied.             (which still needs to read the source blocks from main memory),
+To exercise these two parameters, forkbench first creates an ar-          resulting in high performance improvement.
+ray of size S and initializes the array with random values. It then
+forks itself. The child process updates N random pages (by up-                                           2.2
+                                                                              (normalized to baseline)
+
+
+
+
+dating a cache line within each page) and exits; the parent process                                                                                               PM
+                                                                               Instructions per Cycle
+
+
+
+
+                                                                                                         2.0
+                                                                                                         1.8                                               ne-F
+waits for the child process to complete before exiting itself.
+                                                                                                         1.6                                       w   Clo
+   As such, we expect the number of copy operations to depend                                            1.4
+                                                                                                                                                 Ro
+on N —the number of pages copied. Therefore, one may expect                                              1.2
+RowClone’s performance benefits to be proportional to N . How-                                           1.0
+ever, an application’s performance typically depends on the over-                                        0.8                                   RowClone-PSM
+                                                                                                         0.6
+all memory access rate [52], and RowClone can only improve per-                                          0.4
+formance by reducing the memory access rate due to copy opera-                                                          S = 64MB        S = 128MB
+                                                                                                         0.2
+tions. As a result, we expect the performance improvement due to
+RowClone to primarily depend on the fraction of memory traffic                                                 2   4     8   16    32   64    128 256 512      1k      2k   4k   8k 16k
+(total bytes transferred over the memory channel) generated by                                                          N (Number of Pages Updated) (log scale)
+copy operations. We refer to this fraction as FMTC—Fraction of            Figure 8: Performance improvement due to RowClone for
+Memory Traffic due to Copies.                                             forkbench with different values of S and N
+   Figure 7 plots FMTC of forkbench for different values of S
+(64MB and 128MB) and N (2 to 16k) in the baseline system. As                 Figure 9 shows the reduction in DRAM energy consumption
+the figure shows, for both values of S, FMTC increases with in-           (considering both the DRAM and the memory channel) of FPM
+creasing N . This is expected as a higher N (more pages updated           and PSM modes of RowClone compared to that of the baseline for
+by the child) leads to more CoW operations. However, because of           forkbench with S = 64MB. Similar to performance, the overall
+the presence of other read/write operations (e.g., during the ini-        DRAM energy consumption also depends on the total memory
+tialization phase of the parent), for a given value of N , FMTC is        access rate. As a result, RowClone’s potential to reduce DRAM
+
+
+                                                                      9
+
+
+
+===== Page 10 =====
+
+energy depends on the fraction of memory traffic generated by
+                                                                                                                                                           Read      Write       Copy   Initialization
+copy operations. In fact, our results also show that the DRAM
+
+
+
+
+                                                                                                                          Fraction of Traffic
+                                                                                                                                                1.0
+energy reduction due to FPM and PSM correlate well with FMTC
+(Figure 7). By efficiently performing the copy operations, FPM                                                                                  0.8
+reduces DRAM energy consumption by up to 80% (average 50%,
+                                                                                                                                                0.6
+across all data points). Similar to FPM, the energy reduction of
+PSM also increases with increasing N with a maximum reduction                                                                                   0.4
+of 9% for N =16k.
+                                                                                                                                                0.2
+
+                       1.0
+  Energy Consumption
+
+
+
+
+                                                                                                                                                       bootup     compile forkbench mcached     mysql     shell
+   Normalized DRAM
+
+
+
+
+                       0.9
+                       0.8                                                                      Figure 10: Fraction of memory traffic due to read, write,
+                       0.7                                                                      copy and initialization operations
+                       0.6
+                       0.5
+                                                                                                applications which have a negligible number of copy operations
+                       0.4
+                                      Baseline                                                  (mcached, compile, and mysql).
+                       0.3
+                                      RowClone-PSM                                                 Further analysis indicated that, for these applications, although
+                       0.2
+                       0.1            RowClone-FPM                                              the operating system zeroes out any newly allocated page, the ap-
+                                                                                                plication typically accesses almost all cache lines of a page imme-
+                             2    4   8   16 32 64 128 256 512 1k 2k 4k 8k 16k                  diately after the page is zeroed out. There are two phases: 1) the
+                                 N (Number of Pages Updated) (log scale)                        phase when the OS zeroes out the page, and 2) the phase when the
+Figure 9: Comparison of DRAM energy consumption of dif-                                         application accesses the cache lines of the page. While the base-
+ferent mechanisms for forkbench (S = 64MB)                                                      line incurs cache misses during phase 1, RowClone, as a result of
+                                                                                                performing the zeroing operation completely in memory, incurs
+                                                                                                cache misses in phase 2. However, the baseline zeroing operation
+   In a system that is agnostic to RowClone (i.e., one that does not                            is heavily optimized for memory-level parallelism (MLP) [40]. In
+consider the relative performance benefits of FPM and PSM while                                 contrast, the cache misses in phase 2 have low MLP. As a result,
+allocating pages), we expect the performance improvement and                                    incurring the same misses in Phase 2 (as with RowClone) causes
+energy reduction of RowClone to be in between that of FPM and                                   higher overall stall time for the application (because the latencies
+PSM. By making the system software aware of RowClone (Sec-                                      for the misses are serialized) than incurring them in Phase 1 (as in
+tion 4.3), we can approximate the maximum performance and en-                                   the baseline), resulting in RowClone’s performance degradation
+ergy benefits by increasing the likelihood of the use of FPM.                                   compared to the baseline.
+                                                                                                   To address this problem, we introduce a variant of RowClone,
+7.3             Copy/Initialization Intensive Applications                                      RowClone-Zero-Insert (RowClone-ZI). RowClone-ZI not only ze-
+   In this section, we analyze the benefits of RowClone on six                                  roes out a page in DRAM but it also inserts a zero cache line
+copy/initialization intensive applications, including one instance                              into the processor cache corresponding to each cache line in the
+of the forkbench described in the previous section. Table 4 de-                                 page that is zeroed out. By doing so, RowClone-ZI avoids the
+scribes these applications.                                                                     cache misses during both phase 1 (zeroing operation) and phase 2
+                                                                                                (when the application accesses the cache lines of the zeroed page).
+ Name                        Description                                                        As a result, it improves performance for all benchmarks, notably
+ bootup                      A phase booting up the Debian operating system.                    forkbench (by 66%) and shell (by 40%), compared to the baseline.
+                             The compilation phase from the GNU C compiler (while
+ compile                                                                                                                                                            9%                                        40%
+                             running cc1).                                                                                2.4                                                                        4%
+                                                                                                 Instructions per cycle
+
+
+
+
+                                                                                                                          2.2
+                             An instance of the forkbench described in Section 7.2                                        2.0
+ forkbench
+                             with S = 64MB and N = 1k.                                                                    1.8                          15%
+                             Memcached [2], a memory object caching system, a                                             1.6
+ mcached                     phase inserting many key-value pairs into the memcache.                                      1.4                                                66%
+                                                                                                                          1.2                                                            4%
+                             MySQL [3], an on-disk database system, a phase loading                                       1.0
+ mysql
+                             the sample employeedb database.                                                              0.8
+                             A Unix shell script running ‘find’ on a directory tree with                                  0.6
+ shell                       ‘ls’ on each sub-directory (involves filesystem accesses                                     0.4                                         Baseline      RowClone        RowClone-ZI
+                             and spawning new processes).                                                                 0.2
+
+        Table 4: Copy/Initialization-intensive benchmarks                                                                                             bootup    compile forkbench mcached         mysql      shell
+                                                                                                Figure 11: Performance improvement of RowClone and
+   Figure 10 plots the fraction of memory traffic due to copy, ini-                             RowClone-ZI. Value on top indicates percentage improvement
+tialization, and regular read/write operations for the six applica-                             of RowClone-ZI over baseline.
+tions. For these applications, between 10% and 80% of the memory
+traffic is generated by copy and initialization operations.                                       Table 5 shows the percentage reduction in DRAM energy and
+   Figure 11 compares the IPC of the baseline with that of                                      memory bandwidth consumption with RowClone and RowClone-
+RowClone and a variant of RowClone, RowClone-ZI (described                                      ZI compared to the baseline. While RowClone significantly
+shortly). As can be seen from the figure, the RowClone-based                                    reduces both energy and memory bandwidth consumption for
+initialization mechanism slightly degrades performance for the                                  bootup, forkbench and shell, it has negligible impact on both met-
+
+
+                                                                                           10
+
+
+
+===== Page 11 =====
+
+rics for the remaining three benchmarks. The lack of energy and                                                 1.40
+
+
+
+
+                                                                                Normalized Weighted
+                                                                                                                           Baseline       RowClone       RowClone-ZI
+bandwidth benefits in these three applications is due to serial ex-                                             1.35
+ecution caused by the the cache misses incurred when the proces-                                                1.30
+
+
+
+
+                                                                                     Speedup
+sor accesses the zeroed out pages (i.e., phase 2, as described above),                                          1.25
+which also leads to performance degradation in these workloads                                                  1.20
+(as also described above). RowClone-ZI, which eliminates the                                                    1.15
+                                                                                                                1.10
+cache misses in phase 2, significantly reduces energy consump-
+                                                                                                                1.05
+tion (between 15% to 69%) and memory bandwidth consumption                                                      1.00
+(between 16% and 81%) for all benchmarks compared to the base-                                                  0.95
+line. We conclude that RowClone-ZI can effectively improve per-
+formance, memory energy, and memory bandwidth efficiency in                                                                               50 Workloads
+page copy and initialization intensive single-core workloads.                 Figure 12: System performance improvement of RowClone
+                                                                              for 4-core workloads
+                     Energy Reduction       Bandwidth Reduction
+      Application                                                               Table 7 shows the number of workloads and six metrics that
+                     RowClone        +ZI    RowClone         +ZI
+                                                                              evaluate the performance, fairness, memory bandwidth and en-
+           bootup           39%      40%             49%     52%              ergy efficiency improvement due to RowClone compared to the
+          compile           -2%      32%              2%     47%              baseline for systems with 2, 4, and 8 cores. For all three systems,
+        forkbench           69%      69%             60%     60%              RowClone significantly outperforms the baseline on all metrics.
+         mcached             0%      15%              0%     16%
+            mysql           -1%      17%              0%     21%                                                                          Number of Cores         2         4     8
+             shell          68%      67%             81%     81%                                     Number of Workloads                                         138        50    40
+                                                                                       Weighted Speedup [14] Improvement                                         15%       20%   27%
+Table 5: DRAM energy and bandwidth reduction due to
+                                                                                      Instruction Throughput Improvement                                         14%       15%   25%
+RowClone and RowClone-ZI (indicated as +ZI)
+                                                                                      Harmonic Speedup [35] Improvement                                          13%       16%   29%
+                                                                                  Maximum Slowdown [12, 29, 30] Reduction                                         6%       12%   23%
+7.4     Multi-core Evaluations                                                 Memory Bandwidth/Instruction [49] Reduction                                       29%       27%   28%
+   As RowClone performs bulk data operations completely within                       Memory Energy/Instruction Reduction                                         19%       17%   17%
+DRAM, it significantly reduces the memory bandwidth consumed
+by these operations. As a result, RowClone can benefit other ap-              Table 7: Effect of RowClone on multi-core performance,
+plications running concurrently on the same system. We evalu-                 fairness, bandwidth, and energy
+ate this benefit of RowClone by running our copy/initialization-
+intensive applications alongside memory-intensive applications                   To provide more insight into the benefits of RowClone
+from the SPEC CPU2006 benchmark suite [51] (i.e., those applica-              on multi-core systems, we classify our copy/initialization-
+tions with last-level cache MPKI greater than 1). Table 6 lists the           intensive benchmarks into two categories: 1) Moderately
+set of applications used for our multi-programmed workloads.                  copy/initialization-intensive (compile, mcached, and mysql) and
+                                                                              highly copy/initialization-intensive (bootup, forkbench, and shell).
+ Copy/Initialization-intensive benchmarks                                     Figure 13 shows the average improvement in weighted speedup
+ bootup, compile, forkbench, mcached, mysql, shell                            for the different multi-core workloads, categorized based on the
+                                                                              number of highly copy/initialization-intensive benchmarks. As
+ Memory-intensive benchmarks from SPEC CPU2006                                the trends indicate, the performance improvement increases with
+ bzip2, gcc, mcf, milc, zeusmp, gromacs, cactusADM, leslie3d, namd,           increasing number of such benchmarks for all three multi-core
+ gobmk, dealII, soplex, hmmer, sjeng, GemsFDTD, libquantum, h264ref,          systems, indicating the effectiveness of RowClone in accelerating
+ lbm, omnetpp, astar, wrf, sphinx3, xalancbmk
+                                                                              bulk copy/initialization operations.
+Table 6: List of benchmarks used for multi-core evaluation
+                                                                                    Improvement over Baseline
+
+
+
+
+                                                                                                                35
+                                                                                       Weighted Speedup
+
+
+
+
+   We generate multi-programmed workloads for 2-core, 4-core                                                    30
+and 8-core systems. In each workload, half of the cores run                                                     25
+copy/initialization-intensive benchmarks and the remaining cores
+                                                                                                                20
+run memory-intensive SPEC benchmarks. Benchmarks from each
+category are chosen at random.                                                                                  15
+   Figure 12 plots the performance improvement due to Row-                                                      10
+Clone and RowClone-ZI for the 50 4-core workloads we evaluated                                                   5
+(sorted based on the performance improvement due to RowClone-
+ZI). Two conclusions are in order. First, although RowClone de-                                                        0   1          0   1   2      0   1   2   3     4
+grades performance of certain 4-core workloads (with compile,                                             2-core      4-core               8-core
+mcached or mysql benchmarks), it significantly improves perfor-                                  Number of Highly Copy/Initialization-intensive Benchmarks
+mance for all other workloads (by 10% across all workloads). Sec-             Figure 13: Effect of increasing copy/initialization intensity
+ond, like in our single-core evaluations (Section 7.3), RowClone-
+ZI eliminates the performance degradation due to RowClone and                    We conclude that RowClone is an effective mechanism to im-
+consistently outperforms both the baseline and RowClone for all               prove system performance, energy efficiency and bandwidth effi-
+workloads (20% on average).                                                   ciency of future, bandwidth-constrained multi-core systems.
+
+
+                                                                         11
+
+
+
+===== Page 12 =====
+
+7.5    Memory-Controller-based DMA                                           lution, and 2) using idle cores/threads to perform zeroing ahead
+   One alternative way to perform a bulk data operation is to use            of time. While the proposed optimizations reduce the negative
+the memory controller to complete the operation using the reg-               performance impact of zeroing, their mechanism does not reduce
+ular DRAM interface (similar to some prior approaches [28, 59]).             memory bandwidth consumption of the bulk zeroing operations.
+We refer to this approach as the memory-controller-based DMA                 In contrast, RowClone significantly reduces the memory band-
+(MC-DMA). MC-DMA can potentially avoid the cache pollution                   width consumption and the associated energy overhead.
+caused by inserting blocks (involved in the copy/initialization) un-            Compute-in-Memory. Prior works (e.g., [32, 42]) have in-
+necessarily into the caches. However, it still requires data to be           vestigated mechanisms to add logic closer to memory to perform
+transferred over the memory bus. Hence, it suffers from the large            bandwidth-intensive computations (e.g., SIMD vector operations)
+latency, bandwidth, and energy consumption associated with the               more efficiently. The main limitation of such approaches is that
+data transfer. Because the applications used in our evaluations do           adding logic to DRAM significantly increases the cost of DRAM.
+not suffer from cache pollution, we expect the MC-DMA to per-                In contrast, RowClone exploits DRAM’s internal organization and
+form comparably or worse than the baseline. In fact, our evalua-             operation to perform bandwidth-intensive copy and initialization
+tions show that MC-DMA degrades performance compared to our                  operations quickly and efficiently in DRAM with low cost.
+baseline by 2% on average for the six copy/initialization intensive
+applications (16% compared to RowClone). In addition, the MC-                9.    CONCLUSION
+DMA does not conserve any DRAM energy, unlike RowClone.                         We introduced RowClone, a new technique for exporting bulk
+                                                                             data copy and initialization operations to DRAM. Based on the key
+                                                                             observation that DRAM can internally transfer multiple kilo-bytes
+8.    RELATED WORK                                                           of data between the DRAM cells and the row buffer, our fastest
+   To our knowledge, this is the first paper to propose a concrete           mechanism copies an entire row of data between rows that share
+mechanism to perform bulk data copy and initialization opera-                a row buffer, with very few changes to the DRAM architecture,
+tions completely in DRAM. In this section, we discuss related                while leading to significant reduction in the latency and energy
+work and qualitatively compare them to RowClone.                             of performing bulk copy/initialization. We also propose a more
+   Patents on Data Copy in DRAM. Several patents [5, 15, 37,                 flexible mechanism that uses the internal data bus of a chip to effi-
+38] propose the abstract notion that the row buffer can be used to           ciently copy data between different banks within a chip. Our eval-
+copy data from one row to another. These patents have several                uations using copy and initialization intensive applications show
+drawbacks. First, they do not provide any concrete mechanism                 that RowClone can significantly reduce memory bandwidth con-
+used to perform the copy operation. Second, while using the row              sumption for both single-core and multi-core systems (by 28% on
+buffer to copy data between two rows is possible only when the               average for 8-core systems), resulting in significant system per-
+two rows are within the same subarray, these patents make no                 formance improvement and memory energy reduction (27% and
+such distinction. Third, these patents do not discuss the support            17%, on average, for 8-core systems).
+required from the other layers of the system to realize a work-                 We conclude that our approach of performing bulk copy and
+ing system. Finally, these patents do not provide any concrete               initialization completely in DRAM is effective in improving both
+evaluation to show the benefits of performing copy operations in-            system performance and energy efficiency for future, bandwidth-
+DRAM. In contrast, RowClone is more generally applicable, and                constrained, multi-core systems. We hope that greatly reducing
+we discuss concrete changes required to all layers of the system             the bandwidth, energy and performance cost of bulk data copy
+stack from the DRAM architecture to the system software.                     and initialization can lead to new and easier ways of writing data-
+   Offloading Copy/Initialization Operations.                   Prior        intensive applications that would otherwise need to be designed
+works [28, 59] have proposed mechanisms to 1) offload bulk                   to avoid bulk data copy and initialization operations.
+data copy/initialization operations to a separate engine, and
+2) reduce the impact of pipeline stalls (by waking up instructions           ACKNOWLEDGMENTS
+dependent on a copy operation as soon as the necessary blocks                We thank the reviewers for their valuable feedback and sugges-
+are copied without waiting for the entire copy operation to                  tions, which improved the paper’s quality. We thank Brian Hi-
+complete), and 3) reduce cache pollution by using hints from                 rano from Oracle and Uksong Kang, Churoo Park, Jung-Bae Lee,
+software to decide whether to cache blocks involved in the copy              and Joo Sun Choi from Samsung for their helpful comments at
+or initialization. While we have already shown the effectiveness             various stages of this project. We acknowledge the members of
+of RowClone compared to offloading bulk data operations to a                 the SAFARI and LBA research groups for their feedback and the
+separate engine (Section 7.5), the techniques to reduce pipeline             stimulating research environment they provide. We acknowledge
+stalls and cache pollution [28] can be naturally combined with               the support of AMD, IBM, Intel, Oracle, Qualcomm, and Samsung.
+RowClone to further improve performance.                                     This research was partially supported by NSF (CCF-0953246, CCF-
+   Bulk Memory Initialization. Jarrod et al. [24] propose a                  1147397, CCF-1212962), Intel University Research Office Mem-
+mechanism for avoiding the memory access required to fetch                   ory Hierarchy Program, Intel Science and Technology Center for
+uninitialized blocks on a store miss by using a specialized cache to         Cloud Computing, and Semiconductor Research Corporation.
+keep track of uninitialized regions of memory. RowClone can po-
+tentially be combined with this mechanism. While Jarrod et al.’s             REFERENCES
+approach can be used to reduce bandwidth consumption for irreg-
+ular initialization (initializing different pages with different val-         [1] Bochs IA-32 emulator project.
+ues), RowClone can be used to push regular initialization (e.g., ini-             http://bochs.sourceforge.net/.
+tializing multiple pages with the same values) to DRAM, thereby               [2] Memcached: A high performance, distributed memory
+freeing up the CPU to perform other useful operations.                            object caching system. http://memcached.org.
+   Yang et al. [58] propose to reduce the cost of zero initialization         [3] MySQL: An open source database.
+by 1) using non-temporal store instructions to avoid cache pol-                   http://www.mysql.com.
+
+
+                                                                        12
+
+
+
+===== Page 13 =====
+
+ [4] Wind River Simics full system simulation.                              [33] H. A. Lagar-Cavilla et al. SnowFlock: Rapid virtual machine
+     http://www.windriver.com/products/simics/.                                  cloning for cloud computing. In EuroSys, 2009.
+ [5] J. Ahn. Memory device having page copy mode. U.S. patent               [34] D. Lee et al. Tiered-Latency DRAM: A low-latency and
+     5886944, 1999.                                                              low-cost DRAM architecture. In HPCA, 2013.
+ [6] J. Bent et al. PLFS: A checkpoint filesystem for parallel              [35] Kun Luo et al. Balancing thoughput and fairness in SMT
+     applications. In SC, 2009.                                                  processors. In ISPASS, 2001.
+ [7] D. P. Bovet and M. Cesati. Understanding the Linux Kernel,             [36] Micron. DDR3 SDRAM system-power calculator, 2011.
+     page 388. O’Reilly Media, 2005.                                        [37] D. M. Morgan and M. A. Shore. DRAMs having on-chip row
+ [8] F. Chang and G. A. Gibson. Automatic I/O hint generation                    copy circuits for use in testing and video imaging and
+     through speculative execution. In OSDI, 1999.                               method for operating same. U.S. patent 5440517, 1995.
+ [9] J. Chow et al. Shredding Your Garbage: Reducing data                   [38] Kaori Mori. Semiconductor memory device including copy
+     lifetime through secure deallocation. In USENIX SS, 2005.                   circuit. U.S. patent 5854771, 1998.
+[10] K. Constantinides et al. Software-Based Online Detection of            [39] S. P. Muralidhara et al. Reducing memory interference in
+     Hardware Defects: Mechanisms, architectural support, and                    multi-core systems via application-aware memory channel
+     evaluation. In MICRO, 2007.                                                 partitioning. In MICRO, 2011.
+[11] K. Constantinides et al. Online Design Bug Detection: RTL              [40] O. Mutlu et al. Efficient Runahead Execution:
+     analysis, flexible mechanisms, and evaluation. In MICRO,                    Power-efficient memory latency tolerance. IEEE Micro,
+     2008.                                                                       26(1), 2006.
+[12] Reetuparna Das et al. Application-aware prioritization                 [41] J. K. Ousterhout. Why aren’t operating systems getting
+     mechanisms for on-chip networks. In MICRO, 2009.                            faster as fast as hardware. In USENIX SC, 1990.
+[13] A. M. Dunn et al. Eternal Sunshine of the Spotless Machine:            [42] D. Patterson et al. A case for Intelligent RAM. IEEE Micro,
+     Protecting privacy with ephemeral channels. In OSDI, 2012.                  17(2), 1997.
+[14] S. Eyerman and L. Eeckhout. System-level performance                   [43] Rambus. DRAM power model, 2010.
+     metrics for multiprogram workloads. IEEE Micro, (3), 2008.             [44] M. Rosenblum et al. The impact of architectural trends on
+[15] P. B. Gillingham and R. Torrance. DRAM page copy method.                    operating system performance. In SOSP, 1995.
+     U.S. patent 5625601, 1997.                                             [45] M. E. Russinovich et al. Windows Internals, page 701.
+[16] J. A. Halderman et al. Lest We Remember: Cold boot attacks                  Microsoft Press, 2009.
+     on encryption keys. In USENIX SS, 2008.                                [46] G. Sandhu. DRAM scaling and bandwidth challenges. In
+[17] K. Harrison and S. Xu. Protecting cryptographic keys from                   WETI, 2012.
+     memory disclosure attacks. In DSN, 2007.                               [47] R. F. Sauers et al. HP-UX 11i Tuning and Performance,
+[18] M. Horiguchi and K. Itoh. Nanoscale Memory Repair.                          chapter 8. Memory Bottlenecks. Prentice Hall, 2004.
+     Springer, 2011.                                                        [48] A. Singh. Mac OS X Internals: A Systems Approach.
+[19] IBM Corporation. Enterprise Systems Architecture/390                        Addison-Wesley Professional, 2006.
+     Principles of Operation, 2001.                                         [49] S. Srinath et al. Feedback Directed Prefetching: Improving
+[20] Intel. Intel 64 and IA-32 Architectures Optimization Reference              the performance and bandwidth-efficiency of hardware
+     Manual. April 2012.                                                         prefetchers. In HPCA, 2007.
+[21] Intel. Intel 64 and IA-32 Architectures Software Developer’s           [50] S. M. Srinivasan et al. Flashback: A lightweight extension
+     Manual, volume 3A, chapter 11, page 12. April 2012.                         for rollback and deterministic replay for software
+[22] E. Ipek et al. Self Optimizing Memory Controllers: A                        debugging. In USENIX ATC, 2004.
+     reinforcement learning approach. In ISCA, 2008.                        [51] Standard Performance Evaluation Corporation. SPEC
+[23] T. B. Jablin et al. Automatic CPU-GPU communication                         CPU2006. http://www.spec.org/cpu2006.
+     management and optimization. In PLDI, 2011.                            [52] L. Subramanian et al. MISE: Providing performance
+[24] L. A. Jarrod et al. Avoiding Initialization Misses to the Heap.             predictability and improving fairness in shared main
+     In ISCA, 2002.                                                              memory systems. In HPCA, 2013.
+[25] JEDEC. Server memory roadmap. http://www.jedec.                        [53] K. Sudan et al. Micro-pages: Increasing DRAM efficiency
+     org/sites/default/files/Ricki_Dee_Williams.pdf.                             with locality-aware data placement. In ASPLOS, 2010.
+[26] JEDEC. Standard No. 21-C. Annex K: Serial Presence Detect              [54] A. N. Udipi et al. Rethinking DRAM design and organization
+     (SPD) for DDR3 SDRAM Modules, 2011.                                         for energy-constrained multi-cores. In ISCA, 2010.
+[27] JEDEC. DDR3 SDRAM, JESD79-3F, 2012.                                    [55] C. A. Waldspurger. Memory resource management in
+[28] X. Jiang et al. Architecture support for improving bulk                     VMware ESX server. In OSDI, 2002.
+     memory copying and initialization performance. In PACT,                [56] F.A. Ware and C. Hampel. Improving power and data
+     2009.                                                                       efficiency with threaded memory modules. In ICCD, 2006.
+[29] Y. Kim et al. ATLAS: A scalable and high-performance                   [57] B. Wester et al. Operating system support for
+     scheduling algorithm for multiple memory controllers. In                    application-specific speculation. In EuroSys, 2011.
+     HPCA, 2010.                                                            [58] X. Yang et al. Why Nothing Matters: The impact of zeroing.
+[30] Y. Kim et al. Thread Cluster Memory Scheduling: Exploiting                  In OOPSLA, 2011.
+     differences in memory access behavior. In MICRO, 2010.                 [59] L. Zhao et al. Hardware support for bulk data movement in
+[31] Y. Kim et al. A case for exploiting subarray-level parallelism              server platforms. In ICCD, 2005.
+     (SALP) in DRAM. In ISCA, 2012.                                         [60] H. Zheng et al. Mini-rank: Adaptive DRAM architecture for
+[32] P. M. Kogge. EXECUBE - A new architecture for scaleable                     improving memory power efficiency. In MICRO, 2008.
+     MPPs. In ICPP, 1994.
+
+
+                                                                       13
+

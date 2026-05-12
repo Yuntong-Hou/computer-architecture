@@ -1,0 +1,1474 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/lec4-paper-reading/sources/original-paper/figaro-fine-grained-in-dram-data-relocation-and-caching_micro20.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC4/original-paper/figaro-fine-grained-in-dram-data-relocation-and-caching_micro20.pdf
+Raw URL: https://raw.githubusercontent.com/Yuntong-Hou/computer-architecture/main/LEC4/original-paper/figaro-fine-grained-in-dram-data-relocation-and-caching_micro20.pdf
+Accessed: 2026-05-11 11:24:26 UTC
+
+
+
+===== Page 1 =====
+
+                FIGARO: Improving System Performance
+        via Fine-Grained In-DRAM Data Relocation and Caching
+      Yaohua Wang? Lois Orosa† Xiangjun Peng ? Yang Guo? Saugata Ghose‡ Minesh Patel†
+  Jeremie S. Kim† Juan Gómez Luna† Mohammad Sadrosadati§ Nika Mansouri Ghiasi† Onur Mutlu†‡
+                 ? National University of Defense Technology     † ETH Zürich                Chinese University of Hong Kong
+   University of Illinois at Urbana–Champaign ‡ Carnegie Mellon University § Institute of Research in Fundamental Sciences
+
+
+    Main memory, composed of DRAM, is a performance bot-                 for decades, as latency improvements are traded off to instead
+tleneck for many applications, due to the high DRAM access               decrease the cost-per-bit of DRAM [14, 80, 81, 106, 111, 134].
+latency. In-DRAM caches work to mitigate this latency by aug-            To understand why, we study the high-level organization of
+menting regular-latency DRAM with small-but-fast regions of              a DRAM chip, as shown in Figure 1. The chip consists of
+DRAM that serve as a cache for the data held in the regular-             multiple DRAM banks (eight in DDR4 DRAM [52]), where
+latency (i.e., slow) region of DRAM. While an effective in-DRAM          each bank is comprised of multiple homogeneous subarrays
+cache can allow a large fraction of memory requests to be served         (i.e., two-dimensional tiles) [72] of DRAM cells. Each DRAM
+from a fast DRAM region, the latency savings are often hindered          cell stores a bit of data in the form of charge. Reads and
+by inefficient mechanisms for migrating (i.e., relocating) copies        writes cannot be performed directly on the cell, as the cell
+of data into and out of the fast regions. Existing in-DRAM               holds only a limited amount of charge (in order to keep the
+caches have two sources of inefficiency: (1) their data reloca-          cell area small), and this amount is too small to drive the I/O
+tion granularity is an entire multi-kilobyte row of DRAM, even           circuitry. Instead, a cell in a subarray is connected via a bitline
+though much of the row may never be accessed due to poor                 to the subarray’s local row buffer (consisting of sense ampli-
+data locality; and (2) because the relocation latency increases          fiers) [72,82]. A local row buffer is used to sense, amplify, and
+with the physical distance between the slow and fast regions,            hold the contents of one row of DRAM. Each subarray has
+multiple fast regions are physically interleaved among slow              its own local row buffer, which consumes a relatively large
+regions to reduce the relocation latency, resulting in increased         area compared to a row of DRAM cells. To amortize this area
+hardware area and manufacturing complexity.                              and achieve low cost-per-bit, a commodity DRAM connects
+    We propose a new substrate, FIGARO, that uses existing               many DRAM cells to each sense amplifier on a single bitline
+shared global buffers among subarrays within a DRAM bank                 (e.g., 512–2048 cells per bitline). Doing so results in a long
+to provide support for in-DRAM data relocation across subar-             bitline to accommodate the number of attached DRAM cells,
+rays at the granularity of a single cache block. FIGARO has a            and a long bitline has high parasitic capacitance. Bitline ca-
+distance-independent latency within a DRAM bank, and avoids              pacitance has a direct impact on DRAM access latency: the
+complex modifications to DRAM (such as the interleaving of               longer the bitline, the higher the parasitic capacitance, and,
+fast and slow regions). Using FIGARO, we design a fine-grained           thus, the longer the latency required to bring the data from a
+in-DRAM cache called FIGCache. The key idea of FIGCache is               row of DRAM cells into the local row buffer [81]. The local
+to cache only small, frequently-accessed portions of different           row buffers in a bank are connected to a shared global row
+DRAM rows in a designated region of DRAM. By caching only                buffer, which interfaces with the chip’s I/O drivers.
+the parts of each row that are expected to be accessed in the near                                                                            DRAM Cell
+                                                                                                            Subarray        Bitline
+                                                                                                 Bank
+
+
+
+
+future, we can pack more of the frequently-accessed data into                                                                                       Wordline
+FIGCache, and can benefit from additional row hits in DRAM
+                                                                          Chip I/O
+
+
+
+
+                                                                                                                                                      …
+                                                                                                               ...
+
+
+
+
+(i.e., accesses to an already-open row, which have a lower la-                                                                                        …
+
+tency than accesses to an unopened row). FIGCache provides                                                                                        …
+                                                                                                                                              …
+                                                                                                                                          …
+                                                                                                                                      …
+                                                                                                                                …
+
+
+
+
+benefits for systems with both heterogeneous DRAM banks (i.e.,                                          Global Row Buffer        Local Row Buffer
+banks with fast regions and slow regions) and conventional                           DRAM Chip            DRAM Bank               DRAM Subarray
+homogeneous DRAM banks (i.e., banks with only slow regions).                          Figure 1. Logical organization of a DRAM chip.
+    Our evaluations across a wide variety of applications show
+that FIGCache improves the average performance of a system                  To improve DRAM latency while maintaining low cost-per-
+using DDR4 DRAM by 16.3% and reduces average DRAM energy                 bit, prior works modify the DRAM organization to implement
+consumption by 7.8% for 8-core workloads, over a conventional            an in-DRAM cache [15, 81, 94, 134]. Many of these works
+system without in-DRAM caching. We show that FIGCache                    take the approach shown in Figure 2a, where they introduce
+outperforms state-of-the-art in-DRAM caching techniques, and             heterogeneous subarrays into DRAM banks. In such a bank,
+that its performance gains are robust across many system and             one type of subarray (labeled a slow subarray in the figure)
+mechanism parameters.                                                    has a regular (i.e., slow) access latency and large capacity,
+                                                                         while a second type of subarray (labeled fast subarray) has
+1. Introduction                                                          a low access latency but small capacity (i.e., the subarray’s
+  DRAM has long been the dominant technology for main                    bitlines are kept short to reduce parasitic capacitance and,
+memory systems. As many modern applications require                      thus, latency). An in-DRAM cache maintains a copy of a
+greater amounts of DRAM to hold increasing amounts of data,              subset of rows from the slow subarrays in the fast subarrays,
+manufacturers are increasing the capacity of DRAM chips via              typically caching the hottest (i.e., most frequently accessed,
+manufacturing process technology scaling. However, unlike                or most recently used) rows to increase the probability that
+capacity, DRAM access latency has not decreased significantly
+
+
+                                                                     1
+
+
+
+===== Page 2 =====
+
+     DRAM Bank                DRAM Bank                DRAM Bank            GARO operations are performed by enabling two local row
+     Slow Subarray            Slow Subarray           Slow Subarray
+                                                                            buffers to transfer data in an unaligned manner between each
+                                                                            other (i.e., data from one column in the source local row buffer
+                                                                            can be written to a different column in the destination local
+  Fast Subarray (cache)
+                                                                            row buffer) via the global row buffer, without any use of the
+                                                                            off-chip memory channel. By making novel use of existing
+                                                                            structures within DRAM, we implement FIGARO with only
+     Slow Subarray            Slow Subarray           Slow Subarray
+                                                                            modest changes to the peripheral logic within DRAM (<0.3%
+                                                                            chip area overhead), without any changes to the cell arrays.
+                                                                               Based on FIGARO, we propose a fine-grained in-DRAM
+                                                                            cache (FIGCache), as shown in Figure 2b. FIGCache avoids
+  Fast Subarray (cache)    Fast Subarray (cache)      Reserved Row          the pitfalls of state-of-the-art in-DRAM cache designs [15,
+                                                         (cache)
+                                                                            81, 94, 134]. The key idea of FIGCache is to cache only a
+                                                                            portion of a DRAM row (i.e., a row segment) via FIGARO,
+ (a) State-of-the-Art     (b) FIGCache Using       (c) FIGCache Using       instead of caching an entire DRAM row at a time. This row
+   In-DRAM Cache             Fast Subarrays          Slow Subarrays         segment granularity based caching approach yields three ben-
+Figure 2. (a) State-of-the-art in-DRAM cache in a hetero-                   efits. First, it increases the performance of in-DRAM caches,
+geneous bank with many fast subarrays interleaved among                     because a single in-DRAM cache row (in the fast subarray)
+slow subarrays; (b) FIGCache in a heterogeneous bank with                   can now contain small fragments of multiple DRAM rows
+fewer fast subarrays; (c) FIGCache in a conventional bank                   that are likely to be accessed before the fragment is evicted
+with no fast subarrays.                                                     from the cache. By significantly reducing the amount of cache
+                                                                            space wasted on unaccessed data, both the in-DRAM cache
+a memory request can be served by the fast subarrays (i.e.,
+                                                                            hit rate and row buffer hit rate increase substantially. Sec-
+with low latency).
+                                                                            ond, it simplifies the in-DRAM cache design. FIGARO has a
+    Unfortunately, existing in-DRAM cache designs suffer from               distance-independent relocation latency within a DRAM bank,
+the inefficient data relocation operations that copy data be-               reducing the number of fast subarrays needed to keep the la-
+tween the slow and fast subarrays. There are two main rea-                  tency low compared to state-of-the-art in-DRAM caches (e.g.,
+sons for this inefficiency. First, the data relocation granularity          FIGCache provides benefits with only two fast subarrays per
+is the size of an entire DRAM row. In modern DRAM, a row                    bank) and eliminating the need to interleave fast subarrays
+contains a large amount of data (8 kB in DDR4 [52]). However,               among slow subarrays. Third, it allows in-DRAM caching
+it is difficult for an application to access the entire contents of         to provide potential benefit for conventional DRAM chips
+a row when the row is opened, as (1) the application may not                that contain only slow subarrays (as shown in Figure 2c).
+have high spatial locality [3, 4, 34, 145], and (2) interference            Even without subarrays with lower access latencies, FIGARO
+among multiple programs running on a multicore processor                    allows us to use a small number of rows in a slow subarray
+limits data reuse from an open row [33, 35, 40, 70, 71, 84, 99,             to contain the most frequently-accessed fragments of select
+102, 104, 110, 140, 141, 143, 144, 147, 155]. As a result, when a           DRAM rows. This increases the row buffer hit rate signifi-
+row in an in-DRAM cache is opened, only a small subset of                   cantly, allowing a greater fraction of memory requests to be
+the cached row is typically accessed before the row is evicted              served with the lower row hit latency (as a row already open
+from the cache. Second, there is a trade-off in current designs             in a row buffer has a lower access latency than an unopened
+between relocation latency and design complexity. The further               row). As we discuss in Section 6, FIGCache can help mitigate
+away a slow subarray is physically from the fast subarray,                  security attacks such as RowHammer [21, 29, 68, 69, 107, 108]
+the higher the latency that is required to perform the data                 and row buffer based side channel attacks [118], in addition
+relocation. To reduce the relocation latency, many fast subar-              to its performance benefits.
+rays are employed and interleaved among slow subarrays (as
+shown in Figure 2a), which leads to increased area overhead                    Our evaluations show that on a system with both fast sub-
+(e.g., each fast subarray requires its own local row buffer and             arrays and slow subarrays (Figure 2b), FIGCache improves
+peripheral circuitry [72, 82]) and manufacturing complexity.                performance by 16.3% and reduces DRAM energy by 7.8%, on
+    To avoid these inefficiencies, we propose a new approach                average across 20 eight-core workloads, over a conventional
+to efficient data relocation support across subarrays within a              system without in-DRAM caching. FIGCache outperforms a
+DRAM bank that uses (mostly) existing structures within a                   state-of-the-art in-DRAM cache design [15], with an average
+modern DRAM device. As shown in Figure 1, all of the sub-                   performance improvement of 4.6% for 8-core workloads. We
+arrays in a bank share a single global row buffer. The global               show that even in a system without any fast subarrays (Fig-
+row buffer in a bank serves to connect one column’s worth of                ure 2c), if we reserve 64 of the DRAM rows in a slow subarray
+data from an active local row buffer in the same bank to the                as an in-DRAM cache, FIGCache provides considerable per-
+I/O drivers in a chip. Across a rank of chips (i.e., a group of             formance gain (12.5% on average). We demonstrate that the
+chips operating in lockstep), the global row buffers of a single            performance benefits of FIGCache are robust across many sys-
+bank can hold one cache line (i.e., 64 bytes) of data. We make              tem and mechanism parameters (e.g., cache capacity, caching
+the key observation that the global row buffer in a DRAM                    granularity, replacement policy, hot data identification pol-
+bank is interconnected with all of the local row buffers of the             icy). We conclude that FIGCache is a robust and efficient
+subarrays in the bank. By safely relaxing some constraints in               mechanism to reduce DRAM access latency.
+the operation of the DRAM chip, we can use the global row                      We make the following contributions in this work:
+buffer to facilitate fine-grained relocation across subarrays               • We propose FIGARO, an efficient substrate that enables fine
+(i.e., copying only a single column of data in a DRAM chip,                   granularity (i.e., column granularity) data relocation across
+which translates to copying a cache block in a DRAM rank).                    subarrays in a memory bank, at a latency that is indepen-
+Using this insight, we design a substrate called FIGARO. FI-                  dent of the distance of subarrays from each other. FIGARO
+
+
+                                                                        2
+
+
+
+===== Page 3 =====
+
+  uses (mostly) existing structures in a modern DRAM chip,                                 subarray 0     column          bank
+  with its modifications requiring <0.3% chip area overhead.                                                       ...    local bitline
+                                                                              DRAM cell
+• We propose FIGCache, an efficient in-DRAM cache based                                                            ...
+  on FIGARO. FIGCache caches fragments of a DRAM row                           wordline                            ...     column decoder
+  at the granularity of a row segment, which can be as
+  small as a cache block. Doing so significantly improves                        sense         local row buffer (LRB)
+  in-DRAM caching performance over state-of-the-art in-
+
+
+
+
+                                                                                                          ...
+                                                                               amplifier                                          global bitline
+  DRAM caches. Unlike prior works, FIGCache can be im-                                     subarray n-1
+  plemented in DRAM chips with both heterogeneous (i.e.,                                                                   ...
+  slow and fast) subarrays and homogeneous (i.e., only slow)
+                                                                                                global row buffer (GRB)            to chip I/O logic
+  subarrays.
+• We comprehensively evaluate the performance and en-                          Figure 3. Detailed DRAM bank and subarray organization.
+  ergy efficiency of FIGCache. We show that it substantially
+  improves both the performance and energy efficiency of                      using a column decoder to connect to the GRB. The column is
+  single-core and multi-core systems with DDR4 DRAM, and                      chosen based on the memory address requested by the DRAM
+  that it outperforms state-of-the-art in-DRAM caches.                        command that is being performed.
+2. Background                                                                    DRAM Operations. The memory controller issues four
+   We provide background about DRAM organizations and                         commands to access and update data within DRAM. First, the
+operations to understand how FIGARO works. For more                           memory controller activates the DRAM row containing the
+information, we refer the readers to prior works that cover                   data. The ACTIVATE command latches the selected DRAM
+DRAM in detail [14, 15, 16, 33, 39, 40, 41, 61, 62, 63, 65, 67, 72, 73,       row into the LRB of the subarray that contains the row. Sec-
+74, 80, 81, 82, 88, 89, 97, 126, 127, 130, 131, 147].                         ond, once the activation finishes, the memory controller is-
+   DRAM Organization. A modern main memory subsys-                            sues a READ or WRITE command, which operates on a col-
+tem consists of one or more memory channels, where each                       umn of data. On a READ, one column of the LRB is selected
+channel contains a memory controller that manages a ded-                      using the column decoder and is sent to the GRB via global
+icated subset of DRAM modules. The modules in a single                        bitlines. The GRB then drives the data to the chip I/O logic,
+channel share an off-chip bus that is used to issue commands                  which sends the data out of the DRAM chip to the memory
+and transfer data between DRAM modules and memory con-                        controller. While a row is activated, the memory controller
+troller, which typically resides in the processor. Each module                can issue subsequent READ/WRITE commands to access
+is made up of multiple DRAM chips, which are grouped into                     other columns of data from the LRB if there are other mem-
+one or more ranks. For modern x8 DRAM chips in the same                       ory requests to the same row. This is called a row buffer hit.
+rank, there are typically 8 chips that hold data (with some                   Finally, the controller precharges the LRB and the subarray by
+modules containing an additional chip for error-correcting                    issuing a PRECHARGE command to prepare all of the bitlines
+codes, or ECC [58, 98, 115, 116]). All chips belonging to the                 for a subsequent ACTIVATE command to a different row.
+same rank operate in lockstep (i.e., the same command is is-                     The latencies of the above commands is governed by timing
+sued and performed by all chips simultaneously), and one row                  parameters defined in an industry-wide standard [49, 51, 52,
+of DRAM cells are distributed across all of the chips within a                72, 76, 81], which is set largely depending on the length of
+rank. The chips in a rank, in combination, provide 64 bytes of                local bitlines in the subarray. This is because every local
+data (and 8 bytes of ECC code for modules with the extra chip)                bitline has an associated parasitic capacitance whose value
+for each memory request. As Figure 1 shows, a chip is divided                 is proportional to the length of the bitline. This parasitic
+into multiple banks, which can serve memory requests (i.e.,                   capacitance increases the subarray operation latencies during
+loads or stores) in parallel and independently of each other.                 ACTIVATE and PRECHARGE [81].
+Each bank typically consists of 32–64 two-dimensional arrays                  3. Existing In-DRAM Cache Designs
+of DRAM cells called subarrays [17, 72, 127, 128, 131].                           DRAM manufacturers often choose a long bitline length to
+   In this work, we focus on data movement operations across                  accommodate a greater number of rows (and, thus, increase
+subarrays within a bank. Figure 3 provides more detail about                  DRAM capacity) [81]. To alleviate long DRAM latencies that
+the subarray structure. Each subarray typically contains 512–                 result from longer bitlines, prior works propose in-DRAM
+2048 rows of DRAM cells, which are connected to a local row                   caches [15, 81, 94, 134]. The key idea of an in-DRAM cache is
+buffer (LRB). The LRB consists of a set of sense amplifiers                   to introduce heterogeneity into DRAM, where one region has
+that are used to open (i.e., activate) one row at a time in the               a fast access latency with short local bitline length, while the
+subarray. Each vertical line of cells is connected to one sense               other has bitline length and access latency same as regular
+amplifier in the LRB via a local bitline wire. Cells within a                 (i.e., slow) DRAM. To yield the highest performance benefits,
+row share a wordline. All of the LRBs in a bank are connected                 the fast region is used as an in-DRAM cache for hot data.
+to a shared global row buffer (GRB) [15, 48, 64, 72, 101], which              We discuss three main approaches that prior works take in
+is much narrower than the LRB. The GRB is connected to                        building in-DRAM caches.
+the LRBs using a set of global bitlines [48, 82]. The GRB                         Heterogeneous Subarray Based Design. Tiered-Laten-
+is composed of high-gain sense amplifiers that detect and                     cy (TL) DRAM [81] divides a subarray into fast (near) and slow
+amplify perturbations caused by a single LRB on the global                    (far) segments that have short and long bitlines, respectively,
+bitlines [48]. The GRB width is usually correlated with the                   by adding bitline isolation transistors between the two seg-
+data output width of the chip (e.g., in an x8 data/ECC chip,                  ments. The fast segment can serve as an in-DRAM cache. A
+which sends 8 bits of data/ECC for each of the eight data                     row can be quickly copied between the two segments via the
+bursts that make up one read, the GRB is 64-bit). Since the                   bitlines, via a back-to-back activation operation resembling
+GRB is much narrower than an LRB, a single column (i.e., a                    RowClone [127]. The main disadvantage of TL-DRAM [81]
+small number of bits; 64 in an x8 chip) of the LRB is selected                comes from the intrusive nature of the bitline isolation tran-
+
+
+                                                                          3
+
+
+
+===== Page 4 =====
+
+sistors inside the subarray. Isolation transistors are different               row (and therefore its locality behavior) remain the same as
+from the existing cell access transistors in DRAM, which are                   the source row in the slow subarray.
+specially designed with low leakage [94, 123]. When placed                        Second, data relocation latency increases substantially as
+in the middle of a subarray, isolation transistors require large               the physical relocation distance increases. Each relocation
+cost and can affect DRAM yield. For DRAM chips that use                        requires the relocated row to be written to each intermediate
+the popular open-bitline architecture [60, 88, 97], TL-DRAM                    subarray between the source subarray and the destination
+increases the area overhead significantly (by 3.15%) [15]. As                  subarray. As a result, the further away a slow subarray is
+a result, such isolation-transistor-based in-DRAM cache de-                    physically from the fast subarray, the higher the latency is for
+signs can potentially face a relatively high barrier to adoption               the data relocation into and out of the in-DRAM cache. To mit-
+by commercial DRAM vendors.                                                    igate this distance-dependent latency, both DAS-DRAM and
+    Heterogeneous Bank Based Design Without Data Re-                           LISA-VILLA add multiple fast subarrays into DRAM banks,
+location Support. CHARM [134] introduces heterogeneity                         physically interleaving the fast subarrays among slow subar-
+within each bank by designing a few fast subarrays with                        rays to reduce the average distance between a slow subarray
+(1) short bitlines for faster data sensing, and (2) close place-               and its closest fast subarray. Doing so greatly increases the
+ment to the chip I/O for faster data transfer. Fast subarrays                  area overhead (e.g., each new subarray requires additional
+maintain the same cell array structure as traditional DRAM,                    peripheral circuitry, such as decoders and a local row buffer)
+leading to simple design and with little effect on DRAM yield.                 and manufacturing complexity.
+To fully exploit the potential of fast subarrays, CHARM uses                      As a result, while DAS-DRAM and LISA-VILLA represent
+an OS-based scheme to statically allocate frequently used                      the state-of-the-art for in-DRAM caches, their inefficiencies
+data to fast subarrays based on program profiling informa-                     significantly impact the benefits and practicality of the mech-
+tion. The main shortcoming of CHARM is that data relocation                    anisms.
+between fast and slow subarrays must be done through the                       4. FIGARO Substrate
+memory channel using the narrow global data bus of DRAM,                          To solve the inefficiencies of state-of-the-art in-DRAM
+which incurs high latency and reduces opportunities to use                     cache designs, we propose Fine-Grained In-DRAM Data Relo-
+dynamic in-DRAM cache management polices that adapt to                         cation (FIGARO), a new substrate that enables fine granularity
+dynamic program phase changes (and that requires more                          data relocation across the subarrays in a bank at a distance-
+frequent data relocation than static profiling-based policies).                independent latency. FIGARO can relocate data at the column
+This substantially limits the potential benefits of CHARM,                     granularity in a bank (i.e., 64 bits in an x8 DRAM chip, which
+and makes the overall performance gain of in-DRAM cache                        corresponds to 64-byte cache block granularity in a rank). FI-
+depend heavily on the effectiveness of the static, profiling                   GARO significantly improves in-DRAM caching in two ways:
+based cache management policy.                                                 (1) it enables caching at the granularity of what we call a row
+    Heterogeneous Bank Based Design With Bulk Data                             segment (consisting of one or more contiguous cache blocks),
+Relocation Support. By taking advantage of DRAM struc-                         and thus a single in-DRAM cache row can now contain row
+tures, DAS-DRAM [94] and LISA-VILLA [15] extend the func-                      segments from multiple DRAM rows, leading to higher cache
+tionality of CHARM [134] with in-DRAM bulk data relocation                     utilization and higher row buffer hit rates; and (2) it reduces
+mechanisms. These mechanisms dynamically relocate data                         the need for a large number of fast subarrays per bank (e.g.,
+between fast and slow subarrays without using the narrow                       we use only two for our default configuration in this paper),
+global data bus, enabling faster and more efficient relocation.                and they no longer need to be interleaved among normal sub-
+This allows for the efficient implementation of dynamic in-                    arrays, leading to low area overhead and low manufacturing
+DRAM cache management policies. Specifically, DAS-DRAM                         complexity.
+enables DRAM row relocation across subarrays in a bank                         4.1. FIGARO Design
+through a row of relocation cells in each subarray. The LISA                      FIGARO is built upon the key observation (as we discuss in
+substrate [15] (upon which the LISA-VILLA in-DRAM caching                      Section 2) that all of the private per-subarray local row buffers
+mechanism is built) further improves the relocation latency                    (LRBs) in a bank are connected to a single shared global row
+with wide inter-subarray links, serving as a direct data relo-                 buffer (GRB). By taking advantage of this connectivity, FI-
+cation path between especially physically-adjacent subarrays.                  GARO can perform column-granularity data relocation across
+Unfortunately, the overall performance of state-of-the-art                     subarrays at a distance-independent latency, without using
+in-DRAM caches is greatly limited by two characteristics of                    the off-chip memory channel.
+the existing in-DRAM data relocation support.                                     Transferring Data Between Two Local Row Buffers.
+    First, the data relocation granularity is large and fixed                  To relocate data, FIGARO introduces a new DRAM command,
+(i.e., an entire DRAM row is relocated at a time). Due to the                  RELOC (relocate column). Within a DRAM chip, RELOC copies
+limited row buffer locality exhibited by many programs [33],                   one column of data from the LRB of one subarray to the LRB
+most of the in-DRAM cache hits are actually to only a small                    of another subarray within the same bank, via the GRB. Re-
+subset of a cached DRAM row, leaving the rest of the DRAM                      call from Section 2 that as eight x8 data chips work together
+row untouched before the row is evicted from the cache (i.e.,                  in lockstep in a rank, the GRB across all chips is 64 bytes,
+most of the row is brought into the cache without providing                    and, thus, a RELOC command in such a rank-based system
+any benefit). The interference among concurrently running                      copies one cache block (i.e., 64 bytes). The RELOC command
+programs in a multicore system further hurts the row buffer                    has two parameters: (1) the source address and (2) the desti-
+locality [33, 35, 40, 70, 71, 84, 99, 102, 104, 110, 140, 141, 143, 144,       nation address. The source address in RELOC consists of only
+147, 155]. Thus, caching an entire DRAM row is usually not                     the column address (since the source is an LRB containing
+necessary and leads to poor utilization of the in-DRAM cache                   an already-activated row, as we describe below), while the
+(i.e., fast subarray) space. Note that while a cached row can                  destination address consists of the destination subarray in-
+take advantage of low latencies in the fast subarray, its row                  dex (since the destination is a not-yet-active LRB), and the
+buffer hit rate does not change, as the contents of the cached                 corresponding column address. Note that our new command
+
+
+                                                                           4
+
+
+
+===== Page 5 =====
+
+can be easily added by using one of the undefined encodings                       consuming sensing of intermediate local row buffers during
+reserved for future use in the DRAM standard [52], similar to                     data relocation, as the data moves from the LRB of one sub-
+new DRAM commands that have been proposed in previous                             array to the next. As a result, the relocation latency (and
+studies [15, 72, 127, 128].                                                       energy) is directly dependent on the number of intermediate
+   Figure 4 illustrates how FIGARO relocates one column of                        local row buffer operations. Unlike existing relocation sub-
+data from a source subarray (subarray A) to a destination                         strates that use local bitlines and isolation transistors for data
+subarray (subarray B) in a DRAM chip using the RELOC com-                         movement [15, 94], the latency of RELOC comes mainly from
+mand. First, the memory controller issues an ACTIVATE                             the sensing of the GRB and the driving of the destination
+command to one row in subarray A ( 1 in Figure 4), which                          LRB, both via the global bitlines. While the latency difference
+copies data from the selected row to subarray A’s local row                       between relocation operations to different subarrays is depen-
+buffer (LRB). Second, the memory controller issues a RELOC                        dent on the length of global bitlines, a longer global bitline
+command. The RELOC command relocates one column of data                           length has a relatively small impact on the relocation latency,
+(A3 in Figure 4) from subarray A’s LRB to subarray B’s LRB.                       as global bitlines are made of metal with lower capacitance
+To do this, RELOC selects the desired column of data from                         and resistance than local bitlines [134].
+subarray A’s LRB (column 3) using A’s column decoder ( 2 ),                          Similar to standard READ/WRITE operations in DRAM,
+which loads the column into the global row buffer (GRB; 3 ),                      whose latencies are set to accommodate worst-case accesses
+and at the same time connects the GRB to subarray B using                         to the furthest subarray, we set the RELOC latency based on
+B’s column decoder, which places the column of data from                          the worst case (i.e., the latency of relocating data between two
+subarray A in the correct column (column 1) of subarray B’s                       subarrays that are the furthest away from each other when
+LRB ( 4 ). Multiple RELOC commands can be issued at this                          connected via the global row buffer). We use this worst-case
+point, copying multiple columns of data from the activated                        latency (plus a safety margin; see Section 4.2) as the timing
+source row to subarray B’s LRB. Third, the memory controller                      parameter for RELOC.
+issues an ACTIVATE command to subarray B ( 5 ), overwrit-                            Issuing Multiple Activations Without a Precharge.
+ing only the corresponding column in the activated row with                       To activate src and dst rows one after another without
+the new data (i.e., A3). Fourth, the memory controller issues a                   precharging either row, we must relax the existing constraint
+PRECHARGE command to prepare the entire bank for future                           that only one row in a bank can be active at a time. Existing
+accesses (not shown in the figure).                                               memory controllers do not allow another ACTIVATE com-
+  ACTIVATE subarray A         RELOC col 3  B col 1     ACTIVATE subarray B       mand to be issued to an already-activated bank because the
+  SRC: Subarray A             SRC: Subarray A           SRC: Subarray A           row decoder hierarchy (i.e., the global and local row decoders)
+   A0 A1 A2 A3
+                  LRB
+                               A0 A1 A2 A3               A0 A1 A2 A3              cannot simultaneously drive two wordlines [72]. While a row
+ 1 A4 A5 A6 A7      column                                                        is active, the wordline corresponding to the row needs to re-
+                              A4 A5 A6 A7               A4 A5 A6 A7
+                    decoder
+                                                    2                             main asserted, so that the cells of the row remain connected
+  A0 A1 A2 A3                 A0 A1 A2 A3       3       A0 A1 A2 A3               to the LRB. In existing DRAM chips, the decoder hierarchy
+                                                                                  latches and drives only one-row address, which the mem-
+  DST: Subarray B             DST: Subarray B           DST: Subarray B           ory controller provides along with an ACTIVATE command.
+   B0 B1 B2 B3                 B0 B1 B2 B3               B0 A3 B2 B3              To enable FIGARO, we employ a similar technique to prior
+  B4 B5 B6 B7                 B4 B5 B6 B7               B45 B5 B6 B7              work on subarray-level parallelism [72]: we add a latch to the
+                                  A3                    B0 A3 B2 B3
+                                                                                  decoding logic of each subarray to store an additional row
+                                                1
+                                                                                  address for holding the source row of RELOC, and extend the
+                                 4          3                                     local row decoder of each subarray, such that it can choose
+           GRB                                  A3
+                                                                                  between the row address in this latch and the conventional
+  Figure 4. An example of data relocation using FIGARO.                           row address bus (to identify the destination row of RELOC).
+   During the RELOC command, FIGARO relies on the fact                               Enabling Unaligned Data Relocation. In a DRAM chip,
+that the GRB has a higher drive strength than the LRB [48].                       the column decoder latches and drives only one column ad-
+Therefore, when the destination LRB is connected to the GRB                       dress per bank, which determines which portion of the LRB
+( 3 in Figure 4), the GRB has enough drive strength to induce                     is connected to the GRB. Because conventional DRAM acti-
+charge perturbation to the idle (i.e., precharged) bitlines of                    vates only one subarray at a time, the column decoder sends
+the destination subarray, allowing the destination LRB to                         a single column address to all LRBs in the bank.
+sense and latch this perturbation even though we are not                             To enable unaligned data relocation (i.e., relocating data
+activating the destination subarray. The GRB will also help                       from column A in the src subarray LRB to column B in the
+to quickly drive the corresponding local sense amplifiers and                     dst subarray LRB, where A 6= B), we need to modify the
+the bitlines in the destination subarray to a stable state (either                column decoding logic. When the memory controller sends
+Vdd or 0). Therefore, when the destination row is activated,                      two column addresses simultaneously (one for the source
+the DRAM cells connected to the bitlines in a stable state will                   subarray in RELOC, and the other for the destination subarray),
+be overwritten, while all other cells in the row will maintain                    we add a multiplexer to the column decoder of each subarray,
+their original values [15, 81, 127] (as seen in 5 in Figure 4).                   to allow the decoder to choose which of the two column
+This requires no modification to existing DRAM. Note that                         addresses it reads (based on whether the subarray contains
+for DRAM modules that contain an additional chip for ECC                          the src or the dst LRB). As the existing address bus in DRAM
+information, since the data chips and ECC chip operate in                         is wide enough to transfer two column addresses at once [72],
+lockstep (Section 2), the corresponding ECC code is trans-                        we do not need to change the physical DRAM interface.1
+ferred together with the data during the relocation process.
+   Distance-Independent Latency of RELOC. The latency                                 1 RELOC uses 21 bits to express the column addresses: 7 bits to identify the
+of existing data relocation substrates in a DRAM bank [15,94]                     source column in the open row of the bank, 7 bits to identify the destination
+is distance-dependent because these substrates perform time-                      subarray index, and 7 bits to identify the destination column.
+
+
+                                                                              5
+
+
+
+===== Page 6 =====
+
+4.2. Latency and Energy Analysis                                                                           43% guardband for RELOC on top of our SPICE simulation
+   We perform detailed circuit-level SPICE simulations to find                                             results, resulting in a 1 ns latency. This results in a total la-
+the latency of the RELOC operation. We analyze a SPICE-level                                               tency of 63.5 ns to relocate one column (i.e., two ACTIVATEs,
+model of the entire cell array of a modern DRAM chip (i.e.,                                                one RELOC, and one PRECHARGE). We estimate the energy
+row decoder, cell capacitor, access transistor, sense ampli-                                               consumption of a one-cache-block (rank-level) FIGARO data
+fier, bitline capacitor and resistor) with 22 nm DRAM tech-                                                relocation operation to be 0.03 µJ, using the Micron power
+nology parameters, based on an open-source DRAM SPICE                                                      calculator [100].
+model [39]. We use 22 nm PTM low-power transistor mod-                                                     5. Fine-Grained In-DRAM Cache Design
+els [8, 148] to implement the access transistors and the sense
+                                                                                                              FIGARO can improve the efficiency of in-DRAM caches [15,
+amplifiers. In our SPICE simulations, we run 108 iterations
+                                                                                                           94] by enabling (1) the ability to relocate data into and out
+of Monte-Carlo simulations with a ±5% margin on every
+                                                                                                           of the cache at the fine granularity of a row segment instead
+parameter of each circuit component, to account for man-
+                                                                                                           of an entire row, resulting in higher performance; and (2) de-
+ufacturing process variation and for the worst-case cells in
+                                                                                                           signs that avoid the need for a large number of fast (yet low-
+DRAM. Across all iterations, we observe that RELOC operates
+                                                                                                           capacity) subarrays interleaved among slow subarrays and
+correctly. We report the latency of RELOC based on the Monte-
+                                                                                                           thus easier to manufacture, resulting in lower area overhead
+Carlo simulation iteration with the highest access latency.
+                                                                                                           and lower complexity. We use FIGARO as the foundation of a
+   To aid the explanation of our SPICE simulation of RELOC,                                                new in-DRAM cache called FIGCache (fine-grained in-DRAM
+we use an example that performs RELOC from the Src column                                                  cache). FIGCache co-locates hot row segments from slow
+of LRB S in subarray S to the Dst column of LRB D in sub-                                                  subarrays into a small number of rows that serve as a cache.
+array D through the GRB, as shown in Figure 5a. Figure 5b                                                  To manage the cache, FIGCache uses a tag store (FTS) in the
+shows the voltage of the bitlines for both the Src column                                                  memory controller to hold metadata about currently-cached
+(which holds data value 1 in each cell) and the Dst column                                                 segments, and employs a simple policy for identifying which
+during the RELOC process over time according to our SPICE                                                  segments should be brought into the cache (Section 3). When
+simulation. We explain this RELOC process step by step.                                                    a row segment needs to be brought into the cache, FIGCache
+Subarray S
+                                                                tRCD (35ns)
+                                                                                        1ns                uses multiple RELOC commands (one for each cache block
+                     Src Column          VDD
+                                                                                                           in the segment) to copy data from the slow subarray into
+                                          Voltage (V)
+
+
+
+
+                 …                                       Bitlines in
+                                                        Src Column
+                                                                                                           the cache. Likewise, a dirty evicted row segment is written
+                 … W X    Y   Z                                                                            back from the cache to its location in the slow subarray using
+                                                               Bitlines in Dst Column                      RELOC commands. Rows serving as the cache can either be
+                                        VDD/2
+Subarray D
+ Dst Column                                                              Time (ns)
+                                                                                                           implemented using small fast subarrays, reserved rows within
+                                  GRB                                                   5 ACT D            slow subarrays, or fast rows within a subarray (Section 5.2).
+                 …                                                                   4 data in LRB D
+                 …
+                                                                          3 LRB D senses data              5.1. FIGCache Tag Store
+                                                                                                              A row segment is brought into FIGCache to lower the la-
+ W X   Y     Z
+                                                 1 ACT S               2 RELOC SrcD Dst
+(a) Example RELOC Operation                     (b) Illustration of RELOC Bitline Voltages                 tency for subsequent accesses to the segment. For each mem-
+           Figure 5. Detailed RELOC operation and timing.                                                  ory request, in order to know whether it should be serviced
+                                                                                                           by the cache or by the slow subarrays, the memory controller
+    First, before the RELOC command is issued, an ACTIVATE                                                 needs to store information about which row segments are
+(ACT) command is sent to subarray S at time 0 ( 1 ). After                                                 currently cached. To this end, we introduce a FIGCache tag
+35 ns (based on the standard-specified tRAS parameter [52];                                                store (FTS) in the memory controller. As shown in Figure 6,
+ 2 ), the bitlines are fully restored to VDD . Second, the mem-                                            we maintain a fixed portion of the tag store for each bank.
+ory controller sends the RELOC command to relocate (copy)                                                  Within each portion, there is a separate entry for each in-
+data from LRB S to LRB D through the GRB. RELOC turns                                                      DRAM cache slot in the bank (where each fixed-size slot
+on the connection between the Src column in LRB S and the                                                  is the size of one row segment). For each entry, FTS holds
+Dst column in LRB D. Third, after a small amount of time                                                   four fields: (1) a tag holding the original address of the row
+( 3 ), the voltage of the source bitlines in the Src column first                                          segment; (2) a valid bit (V in the figure); (3) a dirty bit (D);
+drops, as these fully-driven bitlines share charge with the                                                and (4) a benefit counter (Benefit), which is used for cache
+precharged bitlines in the Dst column though the GRB. This                                                 replacement. In a bank, FIGCache acts as a fully-associative
+causes the corresponding sense amplifiers in LRB D to sense                                                cache, and, thus, the entries within each portion of the FTS
+the charge difference and start amplifying the perturbation,                                               are maintained as a fully-associative structure.
+during which the GRB helps amplification with higher drive                                                                       Bank 0               Bank 1             Bank n-1
+strength. In a very short time (less than 1 ns), bitlines in the                                           Slot Tag (Original Address) V D Benefit
+Dst column are fully driven with the value that is originally                                               0
+stored in LRB S ( 4 ). Finally, an ACTIVATE command is sent                                                 1                                                    . . .
+                                                                                                            ...
+
+
+
+
+                                                                                                                        ...
+
+
+
+
+                                                                                                                                   ...
+                                                                                                                                         ...
+
+
+                                                                                                                                               ...
+
+
+
+
+                                                                                                                                                     ...
+
+                                                                                                                                                           ...
+                                                                                                                                                           ...
+                                                                                                                                                           ...
+
+
+
+
+                                                                                                                                                                         ...
+
+                                                                                                                                                                               ...
+                                                                                                                                                                               ...
+                                                                                                                                                                               ...
+
+
+
+
+to subarray D ( 5 ), overwriting the DRAM cells connected to                                               511
+the bitlines in the Dst column, while maintaining the existing
+                                                                                                                              Figure 6. FIGCache tag store (FTS).
+values of the other cells in the row [15, 81, 127].
+    Using SPICE simulations, we find that the latency of RELOC                                               An FTS entry is set as valid when a row segment is relo-
+is 0.57 ns (accounting for the worst case of relocating data                                               cated to the corresponding in-DRAM cache slot. For every
+via the global row buffer between the two subarrays that are                                               memory request, the memory controller looks up the FTS
+the furthest away from each other). We add a guardband to                                                  portion associated with the bank of the corresponding re-
+the RELOC latency, similar to what DRAM manufacturers do                                                   quest to determine whether or not the request is a hit in the
+to account for process and temperature variation (e.g., the                                                in-DRAM cache. If the request is a FIGCache hit (i.e., an
+ACTIVATE timing, tRCD , has been observed to have extra                                                    FTS entry matches the row segment ID of the request), its
+margins of 13.3% [12] and 17.3% [80]). We add a conservative                                               corresponding entry’s benefit counter is incremented if the
+
+
+                                                                                                       6
+
+
+
+===== Page 7 =====
+
+value is not saturated (we empirically set the counter size to                   Unlike prior works [15, 94, 134], whose direct connections
+5 bits in this work), and the memory controller redirects the                    between subarrays can incur highly-distance-dependent la-
+request to the in-DRAM cache. If the request is a write, the                     tencies for data relocation (causing designers to interleave
+entry’s dirty bit is set. We next discuss how FIGCache misses                    many fast subarrays among slow subarrays to bound the re-
+are handled.                                                                     location latency), FIGARO provides a distance-independent
+   Choosing Row Segments to Insert Into the Cache. We                            relocation latency (Section 4.1), as all relocation operations
+rely on a very simple policy, called insert-any-miss, to iden-                   go through the global row buffer and global bitlines that are
+tify when a row segment should be inserted into the cache:                       shared across all subarrays in a bank. This allows FIGCache
+every FIGCache miss for a memory request triggers a row                          to employ only a small number of fast subarrays (we use
+segment relocation into the cache. This policy is designed to                    only two per bank in this work), which reduces both the area
+achieve the highest utilization of the in-DRAM cache. While                      overhead (fewer subarrays per bank lead to fewer peripheral
+more sophisticated policies (e.g., adding only those segments                    circuitry blocks that are needed for that bank) and manufac-
+whose access frequencies exceed a certain threshold) can be                      turing complexity (fewer fast subarrays lead to less design
+used to limit the number of segments inserted into FIGCache,                     and placement complexity).
+such policies typically spend additional area and energy on                          Building In-DRAM Cache with Slow Subarrays. As
+calculating statistics. We evaluate the sensitivity of FIGCache                  FIGARO facilitates the co-location of multiple hot row seg-
+to various insertion policies in Section 9, and find that the                    ments into the same DRAM row, the row buffer hit rate is ex-
+performance gain of FIGCache is robust to different policies,                    pected to increase, thus lowering the average DRAM latency.
+and that our simple insert-any-miss policy performs well.                        Our row-granularity replacement policy further increases
+   Cache Replacement Policy. FIGCache manages cache                              the likelihood of increased row buffer hit rates. As a result,
+replacement at the row granularity. When a new row segment                       with a low-overhead relocation mechanism, FIGCache can
+needs to be inserted, and no free segments are available in                      improve performance even without the aid of reduced-latency
+the cache, FIGCache calculates the cumulative benefit of each                    subarrays. This enables us to build the in-DRAM cache in con-
+in-DRAM cache row, by summing together the benefit values                        ventional homogeneous DRAM chips without introducing
+of each cached row segment in the row.2 The row with the                         heterogeneity into DRAM banks.
+lowest total benefit score is selected for eviction. FIGCache                        We propose to reserve a small number of DRAM rows per
+maintains a register that holds the ID of the row to be evicted                  bank in a slow subarray, to serve as the in-DRAM cache. Note
+(6 bits in our configuration), and maintains a single bitvector                  that DRAM row reservation is a widely-used optimization
+(8 bits in our configuration) that tracks which row segments                     method in both academia [31, 39, 126, 128, 141] and indus-
+in the row have not yet been evicted. When a new in-DRAM                         try [95]. One potential issue with using rows in an existing
+cache row is selected for eviction, the bitvector is set to all                  slow subarray is that FIGARO cannot efficiently relocate data
+ones, marking all of the row segments in the selected row                        within the same subarray. As a result, to avoid the overheads
+for eviction. From the marked row segments, the one with                         of relocation, we simply do not cache any row segments from
+the lowest individual benefit score is evicted, making room                      the same subarray that FIGCache’s rows reside in. Given that
+for the segment being inserted, and its corresponding bit                        existing DRAM chips employ a large number of subarrays
+in the bitvector is cleared. The other row segments remain                       (i.e., 32 to 64) in each bank [17, 72, 128], the loss of caching
+marked for eviction in the bitvector, and the next time that a                   opportunity is negligible. An alternative can be to reserve
+row segment needs to be inserted, the marked row segment                         DRAM rows in two subarrays, and relocate the row segments
+with the lowest score is evicted. This process continues for                     of one of those subarrays to the reserved rows in the other
+every insertion until no more marked row segments remain,                        subarray. However, to simplify the cache management logic,
+at which point a new row is selected for eviction.                               we do not evaluate such a setup in our work.
+   We choose to perform eviction at a row granularity in order
+                                                                                     Building In-DRAM Cache with Fast Rows in a Subar-
+to take advantage of temporal locality across row segments.
+                                                                                 ray. Two recent works, CROW [39] and CLR-DRAM [97],
+The benefits of FIGCache increase when multiple row seg-
+                                                                                 use the idea of cell coupling, where the same bit is written to
+ments in an open FIGCache row are accessed, as memory
+                                                                                 into two or more cells along the same bitline [39] or word-
+accesses to open rows are faster than memory accesses to
+                                                                                 line [97] within a subarray. Cell coupling reduces the access
+closed rows. By evicting all of the segments in a row, we can
+                                                                                 latency when the coupled cells are activated together, as all
+pack the row with row segments that are accessed close in
+                                                                                 of the coupled cells now drive their charge simultaneously,
+time to each other, increasing the chance (due to locality) that
+                                                                                 increasing the speed at which the data value can be sensed by
+the segments will again be accessed together, thus increasing
+                                                                                 a sense amplifier. As a result, a row of coupled cells acts as a
+the row buffer hit rate in the in-DRAM cache. We compare
+                                                                                 fast DRAM row, enabling a similar effect as fast subarrays (i.e.,
+our row-granularity replacement policy with commonly-used
+                                                                                 low-latency access) without the need for a separate subarray.
+replacement policies that can be applied at the row segment
+granularity in Section 9, and show that our row-granularity                          Based on the structures proposed in CROW [39] and CLR-
+replacement policy achieves higher performance due to the                        DRAM [97] to write the same bit into multiple cells con-
+higher row buffer hit rate it enables.                                           currently, FIGARO can be extended to relocate data from a
+                                                                                 conventional slow DRAM row to a fast row. When relocat-
+5.2. In-DRAM Cache Design                                                        ing data from global row buffer to the destination local row
+  Building In-DRAM Cache with Fast Subarrays. One                                buffer, RELOC can utilize the mechanisms proposed in existing
+way to implement the in-DRAM cache is to add fast subar-                         works [39, 97] so that each bit in the global row buffer can be
+rays to a DRAM bank, in addition to the regular (i.e., slow)                     written into multiple cells (i.e., cells in the fast DRAM row)
+subarrays, similar to prior works [15, 94, 134]. A fast subarray                 in the destination subarray. We leave evaluation of such a
+achieves low access latency by reducing the bitline length [81].                 mechanism to future work.
+    2 We can use the Dirty-Block Index [125] to simplify the summing oper-           Tiered-Latency (TL) DRAM [81] enables fast rows within a
+ation, as it can help to efficiently maintain per-row benefit scores.            subarray by adding isolation transistors along the bitlines of
+
+
+                                                                             7
+
+
+
+===== Page 8 =====
+
+the subarray. When the isolation transistors are open, only             We leave the evaluation of both attacks and potential miti-
+a small number of rows remain connected to the local row              gation techniques using FIGCache to future work.
+buffer, providing similar performance to a fast subarray. To
+build FIGCache on top of TL-DRAM, we can use RELOC to                 7. Experimental Methodology
+cache data from the slow rows of one subarray into the fast              We evaluate FIGCache using a modified version of Ramu-
+rows of a different subarray, as RELOC cannot relocate data           lator [73, 122], a cycle-accurate DRAM simulator, coupled
+when the source and destination are in the same subarray              with our in-house processor simulator. We collect user-level
+without incurring additional overheads (i.e., the use of a sec-       application traces using Pin [96]. Table 1 shows a summary
+ond subarray to serve as an intermediate buffer). We leave a          of our system configuration. We set the default row segment
+detailed implementation and evaluation of a TL-DRAM-based             size as 1/8th of a DRAM row, and study the effect of various
+FIGCache to future work.                                              row segment sizes on the performance of FIGCache (Sec-
+                                                                      tion 9). For the fast subarray design, we use the open-source
+6. Other Use Cases for FIGARO and FIGCache                            SPICE model developed for LISA-VILLA [15], where slow
+   We believe that FIGARO and FIGCache can enable multiple            and fast subarrays have 512 and 32 DRAM rows, respectively,
+new use cases (other than FIGCache in DDRx DRAM). We                  and where timing parameters for activation (tRCD ), precharge
+briefly discuss two such cases, and leave it to future work to        (tRP ), and restoration (tRAS ) in fast subarrays can be reduced
+design and evaluate mechanisms that enable these use cases.           by 45.5%, 38.2%, and 62.9% respectively.
+   FIGARO with Emerging DRAM Technologies. Al-
+                                                                                                     8 cores, 3.2 GHz, 3-wide issue, 256-entry inst. window
+though we evaluate FIGARO and FIGCache for DDR4 DRAM,                      Processor
+                                                                                                        8 MSHRs/core, L1 4-way 64 kB, L2 8-way 256 kB
+both solutions can be applied to other DRAM-based memory                Last-Level Cache                       2 MB/core, 64 B cache block, 16-way
+technologies with similar bank organizations to DDR4, such             Memory Controller        64-entry RD/WR request queues, FR-FCFS scheduling [121, 158]
+                                                                                                                  DDR4, 800 MHz bus frequency,
+as 3D-stacked High-Bandwidth Memory (HBM) [1,77,78] and                                                1 channel for single-core/4 channels for eight-core,
+GDDR5 memory for GPUs [50].                                                 DRAM                            1 rank, 4 bank groups with 4 banks each,
+                                                                                                64 subarrays per bank, 8 kB row size, 4 GB capacity per channel,
+   Mitigating DRAM Security Vulnerabilities with FIG-                                        address interleaving: {row, rank, bankgroup, bank, channel, column}
+Cache. FIGCache can be used to reduce the vulnerability                    FIGARO                    rank-level RELOC granularity: 64 B, RELOC latency: 1 ns
+of DRAM to row-buffer-conflict-based attacks. We briefly                   FIGCache
+                                                                                                      row segment: 1/8th of DRAM row (16 cache blocks),
+                                                                                              fast subarray reduces tRCD / tRP / tRAS by 45.5% / 38.2% / 62.9% [15],
+examine two potential vulnerabilities: (1) RowHammer and                                                     in-DRAM cache size: 64 rows per bank
+(2) side channel attacks in DRAM.                                         LISA-VILLA                        in-DRAM cache size: 512 rows per bank
+
+   RowHammer [21, 29, 68, 69, 107, 108] is a vulnerability that                  Table 1. Simulated system configuration.
+takes place when two or more rows in the same bank are                   To evaluate energy consumption, we model all major com-
+accessed frequently. These frequent accesses cause the two            ponents of our evaluated system based on prior works [11,
+(or more) rows to be repeatedly open and closed due to row            147], including CPU cores, L1/L2/last-level caches, off-chip
+buffer conflicts, hammering (i.e., inducing bit flips in) the         interconnects, and DRAM. We use several tools for this, in-
+data stored in neighboring DRAM rows. FIGCache helps                  cluding McPAT 1.0 [87] for the CPU cores, CACTI 6.5 [105]
+to reduce the impact of RowHammer because FIGCache dy-                for the caches, Orion 3.0 [57] for the interconnect, and a
+namically relocates frequently-accessed data into a single            modified version of DRAMPower [13] for DRAM.
+row. Frequently-accessed row segments can be cached by                   As shown in Table 2, we evaluate twenty single-thread
+FIGCache in the same in-DRAM cache row, which eliminates              applications from the TPC [142], MediaBench [30], Mem-
+the need to repeatedly open and close the DRAM rows that              ory Scheduling Championship [19], Biobench [7], and SPEC
+hold each segment. FIGCache reduces the probability that              CPU 2006 [137] benchmark suites. We classify the applica-
+RowHammer can take place on the in-DRAM cache rows,                   tions into two categories: memory intensive (greater than
+as FIGCache’s cache insertion policy keeps row segments               10 last-level cache misses per kilo-instruction, or MPKI) and
+accessed around the same time as one another in a single row,         memory non-intensive (less than 10 MPKI). To evaluate the
+significantly reducing the frequency at which multiple in-            effect of FIGCache on a multicore system, we form 20 eight-
+DRAM cache rows need to be opened/closed (see Section 8.1).           core multiprogrammed workloads. We vary the load on the
+   A DRAM-row-based side channel attack can be used by                memory system by generating workloads where 25%, 50%,
+a malicious program to locate and monitor the memory ac-              75%, and 100% of the applications are memory intensive. To
+cesses of a victim program without the victim’s knowledge             demonstrate the performance improvement of FIGCache on
+or permission [118]. In a scenario where the attacker’s data          multithreaded workloads, we evaluate canneal and fluidan-
+is located in the same bank as data belonging to the victim,          imate from PARSEC [10], and radix from SPLASH-2 [150].
+a side channel can be established by monitoring the access            For both the single-core applications and eight-core work-
+time variation caused by row buffer conflicts. DRAMA [118]            loads, each core executes at least one billion instructions.
+demonstrates that this access time variation, coupled with            We report the instruction-per-cycle (IPC) speedup for single-
+knowledge of where the attacker’s data resides in physical            core applications, and weighted speedup [133] as the system
+memory, can be used to determine when the victim is access-           performance metric [28] for the eight-core workloads. For
+ing its data, revealing information such as when a user is            multithreaded workloads, we execute the entire application,
+performing each keystroke while entering a URL into the ad-           and report the improvement in execution time.
+dress bar of a browser. The attack works because the attacker
+can observe information about row hits and misses to specific                Category                              Benchmark Name
+DRAM rows where its data is co-located with that of the vic-                                         zeusmp, leslie3d, mcf, GemsFDTD, libquantum
+tim. FIGCache breaks this ability by caching select portions              Memory Intensive
+                                                                                                             bwaves, lbm, com, tigr, mum
+of DRAM rows, which alters the row hit and miss patterns                                                 h264ref, bzip2, gromacs, gcc, bfssandy
+for the cached data. Because the attack depends on precise              Memory Non-Intensive
+                                                                                                          grep, wc-8443, sjeng, tpcc64, tpch2
+row hit/miss information, FIGCache’s caching behavior can             Table 2. Benchmarks used for single-core and multipro-
+mitigate the attack.                                                  grammed workloads.
+
+
+                                                                  8
+
+
+
+===== Page 9 =====
+
+8. Evaluation                                                                     improvement of 16.8% over Base. Despite not having cache
+   We evaluate four realistic configurations to understand the                    rows with faster access times, FIGCache-Slow retains a large
+benefits of FIGCache:                                                             fraction of the benefits of FIGCache-Fast, with an average
+• Base: a baseline system with conventional DDR4 DRAM;                            performance gain of 5.9% and 12.4% for single-thread and
+• LISA-VILLA [15]: a state-of-the-art in-DRAM cache;                              multiprogrammed workloads, respectively.
+• FIGCache-Slow: our in-DRAM cache with cache rows stored                           Second, we observe that compared with LISA-VILLA,
+  in 64 reserved rows of one existing slow subarray (i.e., a                     which employs 16 fast subarrays and interleaves them among
+  system with conventional homogeneous DRAM subarrays);                          the normal subarrays, FIGCache-Fast provides 4.7% higher
+• FIGCache-Fast: our in-DRAM cache with cache rows stored                        performance averaged across our 20 eight-core workloads,
+  in two small fast subarrays (with a total of 64 rows).                         despite employing only two fast subarrays. This is because
+We also evaluate two idealized configurations to examine the                     even though FIGCache-Fast has much fewer fast subarrays
+impact of certain system parameters:                                             per bank, FIGCache-Fast caches only 1/8th of a row at a time
+• FIGCache-Ideal: an unrealistic version of FIGCache-Fast                        and co-locates multiple row segments with high expected
+  where the row segment relocation latency is zero; and                          temporal locality in a single cache row. The increased row
+• LL-DRAM: a system where all subarrays in the DRAM chips                        buffer hit rate in the in-DRAM cache (see analysis below)
+  are fast (i.e., low latency).                                                  provides most of FIGCache-Fast’s benefits over LISA-VILLA.
+8.1. Performance                                                                 These benefits also allow FIGCache-Slow to outperform LISA-
+   Figures 7 and 8 show the performance improvement over                         VILLA by 1.9% on average across all of our multiprogrammed
+Base for our single-thread applications (using a one-core                        workloads, even though FIGCache-Slow has no fast subarrays
+system) and eight-application multiprogrammed workloads                          at all. We conclude that reducing the granularity of caching
+(using an eight-core system), respectively. In both figures,                     and co-locating multiple row segments into a single cache
+we group the applications and workloads based on memory                          row is greatly effective for improving the performance of an
+intensity (see Section 7). We make four observations from                        in-DRAM cache.
+the figures.                                                                         Third, the benefits of FIGCache-Fast and FIGCache-Slow
+   First, both FIGCache-Slow and FIGCache-Fast always im-                         increase as workload memory intensity increases. On aver-
+prove performance over Base. For our single-thread appli-                         age, compared to Base, FIGCache-Fast and FIGCache-Slow
+cations, FIGCache-Fast provides an average speedup over                           provide 27.1% and 20.6% speedup for 100% memory inten-
+Base of 1.5% (up to 2.9%) for memory non-intensive applica-                       sive eight-core workloads, respectively, whereas they achieve
+tions, and 16.1% (up to 22.5%) for memory intensive applica-                      more modest speedups of 3.9% and 3.2%, respectively, for 25%
+tions. For our multiprogrammed workloads, FIGCache-Fast                           memory intensive workloads. There are multiple reasons
+improves the weighted speedup over Base by an average                             for the increased benefits for memory intensive workloads:
+of 3.9%, 12.9%, 21.8%, and 27.1% for workloads in the 25%,                        these workloads (1) are more likely to generate requests that
+50%, 75%, and 100% memory intensive categories, respec-                           compete for the same memory bank (i.e., they induce bank
+tively. Across all 20 eight-core workloads, the average per-                      conflicts by accessing different rows), which FIGCache can
+formance improvement of FIGCache-Fast is 16.3%. FIGCache-                         potentially alleviate by gathering the accessed row segments
+Fast achieves speedups for our three multithreaded appli-                         of each conflicting row into a single cache row; and (2) may in
+cations as well (not shown in the figure), with an average                        some cases be more sensitive to DRAM latency. The potential
+                                       LISA-VILLA        FIGCache-Slow       FIGCache-Fast           FIGCache-Ideal         LL-DRAM
+                         1.05                                                    1.30
+                                             Memory Non-Intensive                                        Memory Intensive
+    Speedup Over Base
+
+
+
+
+                         1.04                                                    1.25
+                                                                                 1.20
+                         1.03
+                                                                                 1.15
+                         1.02
+                                                                                 1.10
+                         1.01                                                    1.05
+                         1.00                                                    1.00
+
+
+
+                           Figure 7. Performance of in-DRAM caching mechanisms for single-thread applications, normalized to Base.
+                                       LISA-VILLA         FIGCache-Slow      FIGCache-Fast           FIGCache-Ideal         LL-DRAM
+                         1.45
+                                         25%                         50%                       75%                          100%
+                         1.40
+     Speedup Over Base
+
+
+
+
+                         1.35
+                         1.30
+                         1.25
+                         1.20
+                         1.15
+                         1.10
+                         1.05
+                         1.00
+
+
+ Figure 8. Performance of in-DRAM caching mechanisms for eight-core multiprogrammed workloads, normalized to Base.
+
+
+                                                                             9
+
+
+
+===== Page 10 =====
+
+correlation between bank conflicts and FIGCache effective-                                                               100%
+                                                                                                                                                                             LISA-VILLA                                       FIGCache-Slow                                                                 FIGCache-Fast
+
+
+
+
+                                                                                                   DRAM Row Buffer Hit Rate
+ness is corroborated by the fact that our eight-core multi-                                                                                                                  1-core                                                                                                          8-core
+programmed workloads achieve much larger performance                                                                           80%
+improvements than our single-core applications. Individual
+                                                                                                                               60%
+applications in multiprogrammed workloads are likely to in-
+terfere with each other, thus exacerbating bank conflicts [33,                                                                 40%
+35, 40, 70, 71, 84, 99, 102, 104, 110, 140, 141, 143, 144, 147, 155],
+which FIGCache can help to alleviate.                                                                                          20%
+
+   Fourth, FIGCache-Fast approaches the ideal performance                                                                       0%
+improvement of both FIGCache-Ideal and LL-DRAM, coming                                                                                    Non-
+                                                                                                                                        Intensive Intensive                                                                   25%                                      50%                                   75%                                   100%
+within 1.9% and 4.6% respectively, on average, for our eight-
+core system. These improvements indicate that the latency of                                       Figure 10. DRAM row buffer hit rate of LISA-VILLA,
+cache insertion in FIGCache is low. When a FIGCache miss                                           FIGCache-Slow, and FIGCache-Fast.
+occurs, the memory controller opens the row containing the
+data that is being requested. While the row is open, the                                           cache replacement policy (Section 5.1), which increases the
+memory controller uses RELOC operations to relocate the                                            row buffer hit rate by taking into account the temporal local-
+row segment data into the cache. Since the row is already                                          ity of multiple row segments during co-location. In contrast,
+open, the first ACTIVATE command discussed in Section 4.2                                          LISA-VILLA caches an entire DRAM row at a time, and thus
+is not needed, which greatly reduces the time required for                                         the row buffer hit rate cannot be improved fundamentally
+relocation. The resulting relocation latency is low enough                                         beyond the existing row buffer hit rate of the original row. As
+that FIGCache can, in many cases, behave similarly to low-                                         a result, LISA-VILLA can benefit only from the reduced laten-
+latency DRAM, without the associated challenges of low-                                            cies of a fast subarray. We conclude that both FIGCache-Slow
+latency DRAM (e.g., small capacity, high cost).                                                    and FIGCache-Fast are effective at improving row buffer hit
+   Overall, we conclude that FIGCache significantly reduces                                        rate due to their ability to efficiently co-locate multiple row
+DRAM latency and outperforms a state-of-the-art in-DRAM                                            segments from different source rows into a single in-DRAM
+caching mechanism, while approaching the performance of a                                          cache row.
+low-latency DRAM design with only fast subarrays.                                                  8.2. System Energy Consumption
+   Cache Hit Rate. Figure 9 illustrates the in-DRAM cache                                             Figure 11 shows the overall system energy consumption for
+hit rate of LISA-VILLA, FIGCache-Slow, and FIGCache-Fast,                                          Base, FIGCache-Slow, and FIGCache-Fast, averaged across
+averaged across each workload category. We observe that                                            each workload category. We break down the system energy
+despite having fewer or no fast subarrays, and having sig-                                         into the energy consumed by the CPU, caches (L1, L2, and
+nificantly fewer rows reserved for caching, FIGCache-Slow                                          LLC), off-chip interconnect (labeled off-chip in the figure),
+and FIGCache-Fast have comparable cache hit rates to LISA-                                         and DRAM.
+VILLA across all workloads. This is because due to the limited                                                                                                       CPU                                  L1&L2                                               LLC                           Off-Chip                                              DRAM
+row buffer locality in many applications, caching an entire                                                             100%
+                                                                                                   Energy Normalized to Base
+
+
+
+
+                                                                                                                               90%
+DRAM row (as opposed to a row segment), leads to ineffi-                                                                       80%
+cient cache utilization since most of each cached row is not                                                                   70%
+used. The finer granularity employed by FIGCache elimi-                                                                        60%
+nates much of this inefficient utilization without sacrificing                                                                 50%                                 1-core                                                                                                                        8-core
+the cache hit rate with a smaller cache. FIGCache-Slow re-                                                                     40%
+sults in a slightly lower cache hit ratio than FIGCache-Fast                                                                   30%
+
+because, as we discuss in Section 5.2, FIGCache-Slow does not                                                                  20%
+
+cache row segments from the subarray where the reserved                                                                        10%
+                                                                                                                               0%
+rows are allocated.
+                                                                                                                                      Base
+
+
+
+
+                                                                                                                                                                                Base
+
+
+
+
+                                                                                                                                                                                                                       Base
+
+
+
+
+                                                                                                                                                                                                                                                                    Base
+
+
+
+
+                                                                                                                                                                                                                                                                                                           Base
+
+
+
+
+                                                                                                                                                                                                                                                                                                                                                   Base
+                                                                                                                                                             FIGCache-Fast
+
+
+
+
+                                                                                                                                                                                                       FIGCache-Fast
+
+
+
+
+                                                                                                                                                                                                                                              FIGCache-Fast
+
+
+
+
+                                                                                                                                                                                                                                                                                           FIGCache-Fast
+
+
+
+
+                                                                                                                                                                                                                                                                                                                                  FIGCache-Fast
+
+
+
+
+                                                                                                                                                                                                                                                                                                                                                                          FIGCache-Fast
+                                                                                                                                             FIGCache-Slow
+
+
+
+
+                                                                                                                                                                                       FIGCache-Slow
+
+
+
+
+                                                                                                                                                                                                                              FIGCache-Slow
+
+
+
+
+                                                                                                                                                                                                                                                                           FIGCache-Slow
+
+
+
+
+                                                                                                                                                                                                                                                                                                                  FIGCache-Slow
+
+
+
+
+                                                                                                                                                                                                                                                                                                                                                          FIGCache-Slow
+                                     LISA-VILLA      FIGCache-Slow            FIGCache-Fast
+                  100%
+In-DRAM Cache Hit Rate
+
+
+
+
+                                     1-core                          8-core
+                         80%                                                                                                         Non-Intensive Intensive                                                                  25%                                          50%                                75%                                   100%
+
+                         60%                                                                       Figure 11. Energy and energy breakdown of LISA-VILLA,
+                                                                                                   FIGCache-Slow, and FIGCache-Fast, normalized to Base.
+                         40%
+                                                                                                      We draw two observations from the figure. First, for each
+                         20%                                                                       workload category, both FIGCache-Slow and FIGCache-Fast
+                                                                                                   consume less energy than Base. For the memory intensive
+                         0%
+                                 Non-
+                                                              50%             75%      100%
+                                                                                                   single-core applications, FIGCache-Slow and FIGCache-Fast
+                               Intensive Intensive   25%
+                                                                                                   reduce the system energy consumption by an average of
+Figure 9. In-DRAM cache hit rate of LISA-VILLA, FIGCache-                                          6.9% and 11.1%, respectively, compared to Base. Second, we
+Slow, and FIGCache-Fast.                                                                           observe that the energy reduction comes from two sources:
+                                                                                                   (1) improved row buffer hit rate, which helps to amortize the
+   Row Buffer Hit Rate. Unlike with the cache hit rate,                                            energy of ACTIVATE and PRECHARGE commands on many
+FIGCache-Slow and FIGCache-Fast both have significantly-                                           memory accesses; and (2) reduced execution time, which
+higher (18% higher on average) row buffer hit rates for the                                        saves static energy across each component. For FIGCache-
+entire DRAM system than LISA-VILLA, as we observe in                                               Fast, there is a third source of energy reduction, as the faster
+Figure 10. This is due to two reasons: (1) the smaller row seg-                                    ACTIVATE and PRECHARGE commands enabled by the fast
+ment granularity used by FIGCache; and (2) our benefit-based                                       subarrays further reduce both dynamic and static energy.
+
+
+                                                                                              10
+
+
+
+===== Page 11 =====
+
+Overall, we conclude that FIGCache is effective at reducing                 sizes, cache replacement policies and hot row segment iden-
+system energy consumption.                                                  tification policies. As FIGCache-Slow has similar trends with
+8.3. Hardware Overhead                                                      FIGCache-Fast for these configurations, we show results for
+   DRAM Area and Power Overhead. FIGARO adds a col-                         only FIGCache-Fast.
+umn address MUX, row address MUX, and a row address                         9.1. In-DRAM Cache Capacity
+latch to each DRAM subarray. Our RTL-level evaluation                          We examine how the number of fast subarrays in each
+using a 22 nm technology shows that each column MUX oc-                     DRAM bank affects performance. Figure 12 shows the
+cupies an area of 4.7 µm2 and consumes 2.1 µW, while each                   speedup of FIGCache-Fast over Base as we vary the num-
+row MUX occupies an area of 18.8 µm2 and consumes 8.4 µW.                   ber of fast subarrays (FS in the figure) from 1 to 16. We
+Each row address latch stores the 40-bit partially predecoded               make two observations from the figure. First, FIGCache-
+row address, and occupies an area of 35.2 µm2 with a power                  Fast’s performance improvement increases with increasing
+consumption of 19.1 µW. For the system configurations de-                   in-DRAM cache capacity. A larger number of fast subarrays
+scribed in Table 1, the overall area overhead is less than 0.3%             reduces the number of evictions, and has the potential to
+of an entire DRAM chip. The overall power consumption is                    provide more opportunities for FIGCache-Fast to reduce ac-
+negligible as an activation consumes 51.2 mW [72].                          cess latency for rows that would otherwise be evicted from a
+   FIGCache-Fast introduces two fast subarrays per bank as                  smaller in-DRAM cache. Second, more fast subarrays provide
+an inclusive in-DRAM cache, which is transparent to the                     diminishing returns on FIGCache’s performance improve-
+operating system. Each fast subarray contains 32 rows (vs.                  ment, even though they come with additional storage and
+512 rows in each slow subarray). Using area estimates from                  complexity overheads. For example, increasing the number
+prior works [15, 94], we calculate that a fast subarray, includ-            of fast subarrays from 2 to 4 and from 4 to 8 improves per-
+ing cells and sense amplifiers, requires 22.6% of the area of a             formance by less than 2.7% and 0.8%, respectively, for 100%
+slow subarray. As a result, in our DRAM configuration (see                  memory intensive eight-core workloads. We implement two
+Table 1) where each bank has 64 slow subarrays, the two fast                fast subarrays per bank to achieve a balance between perfor-
+subarrays introduced by FIGCache-Fast add 0.7% to the area of               mance improvement and in-DRAM storage overhead.
+the DRAM chip. In comparison, LISA-VILLA [15] adds 16 fast                                                 1 FS     2 FS     4 FS   8 FS       16 FS    LL-DRAM
+subarrays to each bank, which have an area overhead of 5.6%                                     1.40
+                                                                                                             1-core                         8-core
+of the DRAM chip. FIGCache-Slow has a lower area overhead                                       1.35
+                                                                            Speedup Over Base
+
+
+than FIGCache-Fast, as it uses rows in existing subarrays in-                                   1.30
+stead of adding new subarrays, eliminating the area required                                    1.25
+for additional sense amplifiers. As a result, FIGCache-Slow                                     1.20
+has an area overhead of only 0.2% in the DRAM chip.                                             1.15
+   Memory Controller. On the memory controller side, we                                         1.10
+add the FTS (Section 5), which incurs modest storage over-                                      1.05
+head. We assume one FTS portion per bank, where each                                            1.00
+                                                                                                         Non-
+portion has 512 entries. Each entry of FTS consists of a row                                           Intensive Intensive   25%      50%         75%     100%
+segment address tag, a 5-bit benefit counter, and the dirty and
+valid bits. The width of the tag is dependent on the number                                     Figure 12. Performance with different cache capacities.
+of cached row segments in one bank. For the configuration in
+Section 7, there are 256K row segments per bank (32K DRAM                   9.2. Row Segment Size
+rows per bank, 8 row segments per DRAM row), which re-                          We vary the size of a row segment to understand its impact
+quires a tag size of 19 bits. In total, each entry requires 26 bits.        on performance. While a larger row segment size can poten-
+Therefore, for each channel in our DRAM configuration (see                  tially expose a greater number of opportunities for exploiting
+Table 1), which contains 16 banks with 512 FTS entries per                  spatial locality within a DRAM row, there are three down-
+bank, the total storage required for the FTS is 26.0 kB. Note               sides: (1) many applications do not make use of the contents
+that compared to LISA-VILLA [15], the additional cost of FTS                of an entire row when the row is open, causing a row segment
+is only the 3-bit row segment index per entry. Using Mc-                    size that is too large to lead to cache underutilization; (2) the
+PAT [87], we compute the total area of all FTS tables to be                 caching latency increases, as a larger row segment requires
+0.496 mm2 at the 22 nm technology node, which is only 1.44%                 more RELOC operations to be issued; and (3) for a given in-
+of the area consumed by the 16 MB last-level cache.                         DRAM cache size, a larger row segment size means fewer row
+   We evaluate the access time and power consumption of                     segments can be cached. Figure 13 shows the performance of
+FTS using CACTI [105]. We find that the access time is only                 FIGCache-Fast with row segment sizes ranging from 8 cache
+0.11 ns, which is small enough that we do not expect it to have             blocks (i.e., 512 B, 1/16th of a DRAM row) to 128 cache blocks
+a significant impact on the overall cycle time of the memory                (i.e., 8 kB, the entire row). We make two observations from
+controller. To determine power consumption, we analyze the                  the figure. First, we find that FIGCache-Fast performs slightly
+FTS activity for our applications, accounting for all of the                worse than LISA-VILLA [15] when the row segment size is an
+major table operations. Using CACTI [105] and assuming                      entire DRAM row (128 cache blocks). This is due to the higher
+a 22 nm technology node, we find that the table consumes                    data relocation latency required by FIGCache, as 128 RELOC
+0.187 mW on average. This is only 0.07% of the average power                operations are needed, and highlights the benefits of smaller
+consumed by the last-level cache. We include this additional                row segment sizes. Second, we find a peak in performance
+power consumption in our system energy evaluations.                         at a row segment size of 16 cache blocks (i.e., 1 kB, 1/8th of
+                                                                            a DRAM row), as it outperforms other row segment sizes
+9. Sensitivity Studies                                                      across all of our workload categories, and, thus, we choose
+  In this section, we evaluate our design with various config-              this as the row segment size in our implementation. Note
+urations, including different cache capacities, row segment                 that while we do not evaluate it, FIGCache can be modified
+
+
+                                                                       11
+
+
+
+===== Page 12 =====
+
+                    1.30
+                               512B       1kB
+                                          1KB         2kB
+                                                      2KB       4KB
+                                                                4kB      8KB
+                                                                         8kB          LISA-VILLA        eight-core workloads, due to its increased row buffer hit rate
+                                 1-core                                8-core                           from successfully improving temporal locality in in-DRAM
+                                                                                                        cache rows. We conclude that our fine-grained in-DRAM
+Speedup Over Base
+
+                    1.25
+
+                    1.20                                                                                cache with its row-granularity replacement policy is effective
+                    1.15
+                                                                                                        at capturing temporal locality across cached row segments.
+                    1.10                                                                                9.4. Row Segment Insertion Policy
+                                                                                                            We use a simple insert-any-miss policy to identify which
+                    1.05
+                                                                                                        row segments to cache (as we discuss in Section 5.1), where
+                    1.00
+                             Non-
+                                                                                                        we insert every row segment that misses in the in-DRAM
+                           Intensive Intensive        25%        50%            75%       100%          cache into the cache. However, it is possible to be more ju-
+                                                                                                        dicious in deciding which row segments should be inserted
+           Figure 13. Performance with different row segment sizes.                                     into the cache. One example is increasing the threshold of
+                                                                                                        the number of consecutive cache misses to the row segment
+to support heterogeneous and/or dynamic row segment sizes                                               before the segment is inserted. While a higher threshold can
+(as opposed to the static row segment size that we currently                                            potentially reduce cases where a row segment is accessed only
+use). We leave such a design to future work.                                                            once across a large time period (in which case it cannot bene-
+                                                                                                        fit from caching), it can also (1) reduce the benefits of caching
+9.3. In-DRAM Cache Replacement Policy                                                                   (by waiting too long to cache a row segment with high tempo-
+   As we discuss in Section 5.1, we implement a new row-                                                ral locality), and (2) require additional metadata (as accesses
+granularity benefit-based cache replacement policy for FIG-                                             to uncached row segments now need to be tracked). To un-
+Cache, where the eviction granularity (an entire row) differs                                           derstand the potential benefits of a more judicious insertion
+from the insertion granularity (a single row segment). The                                              policy, we evaluate different threshold values (where a value
+different eviction and insertion granularities allow us to im-                                          of 1 is our policy of caching a row segment after a miss to
+prove opportunities for exploiting temporal locality across                                             it), ideally assuming that the additional storage required for
+row segments in an in-DRAM cache row by packing recently-                                               higher thresholds does not introduce additional latency.
+accessed row segments together into a single cache row. To                                                  Figure 15 shows FIGCache-Fast’s average performance,
+understand the benefits of our policy, we evaluate how FIG-                                             normalized to Base, for four threshold values (1, 2, 4, 8). We
+Cache performs with three other commonly-used replace-                                                  make two observations from the figure. First, increasing the
+ment policies. Figure 14 shows the performance (normal-                                                 threshold from 1 to 2 minimally increases the performance of
+ized to Base) of FIGCache-Fast using our replacement policy                                             memory non-intensive workloads, though further threshold
+(RowBenefit in the figure), along with FIGCache-Fast’s perfor-                                          increases can result in worse performance than a threshold of
+mance using: (1) SegmentBenefit, a traditional benefit-based                                            1. Second, for memory intensive workloads, a higher thresh-
+policy [81] where the granularity of eviction is the same as                                            old leads to worse performance, by decreasing the number of
+that of insertion (a row segment for FIGCache), and only the                                            cache hits (latter not shown). Therefore, we conclude that
+one row segment with the lowest benefit score anywhere in                                               a threshold of 1 (i.e., our simple insert-any-miss policy) is
+the in-DRAM cache is evicted; (2) LRU, a traditional policy                                             effective for performance.
+that evicts the least-recently-used row segment; and (3) Ran-
+dom, a policy that evicts a row segment at random from any                                                                  1.30
+                                                                                                                                     Threshold 1    Threshold 2   Threshold 4          Threshold 8
+row in the cache.                                                                                                                        1-core                         8-core
+                                                                                                        Speedup Over Base
+
+
+
+
+                                                                                                                            1.25
+                               Random           LRU         SegmentBenefit        RowBenefit
+                    1.30                                                                                                    1.20
+                                 1-core                                8-core
+Speedup Over Base
+
+
+
+
+                    1.25                                                                                                    1.15
+                    1.20                                                                                                    1.10
+                    1.15                                                                                                    1.05
+                    1.10                                                                                                    1.00
+                                                                                                                                     Non-
+                    1.05                                                                                                           Intensive Intensive   25%      50%            75%       100%
+
+                    1.00
+                             Non-                                                                       Figure 15. Performance with different row segment insertion
+                           Intensive Intensive        25%        50%            75%       100%
+                                                                                                        thresholds.
+Figure 14. Performance with different in-DRAM cache re-                                                 10. Related Work
+placement policies for FIGCache.
+                                                                                                           To our knowledge, this work is the first to propose an effi-
+  We make two observations from the figure. First, FIGCache-                                            cient fine-grained in-DRAM data relocation substrate, which
+Fast outperforms Base by more than 12.5% on average across                                              enables a new fine-grained in-DRAM cache design. We al-
+both single-thread and multithreaded workloads with all four                                            ready quantitatively demonstrate that FIGCache outperforms
+cache replacement policies, indicating the benefits of fine-                                            the most closely-related state-of-the-art in-DRAM cache de-
+granularity in-DRAM caching regardless of the exact replace-                                            sign, LISA-VILLA [15]. In this section, we briefly discuss other
+ment policy employed. Second, our RowBenefit policy either                                              related works that propose (1) other designs for in-DRAM
+performs the same as, or outperforms, all three commonly-                                               caches, (2) in-DRAM data relocation support, (3) designs that
+used policies, with its benefits increasing as workloads be-                                            improve the row buffer hit rate; and (4) DRAM latency and
+come more memory intensive. The RowBenefit policy im-                                                   power reduction mechanisms.
+proves the performance of FIGCache-Fast by 4.1% over the                                                   In-DRAM Caching Mechanisms. As we discuss in Sec-
+next-best policy (SegmentBenefit) for 100% memory intensive                                             tion 3, there are three main approaches that prior works
+
+
+                                                                                                   12
+
+
+
+===== Page 13 =====
+
+take in building in-DRAM caches: (1) a heterogeneous sub-               and in non-cached rows. At the software level, prior work
+array based design (Tiered-Latency DRAM [81]), (2) a het-               proposes to reduce the size of a memory page in the operating
+erogeneous bank based design without data relocation sup-               system to what it calls micro-pages [141], in order to improve
+port (CHARM [134]), and (3) a heterogeneous bank based                  spatial locality within a page. The reduced page size allows
+design with bulk data relocation support (DAS-DRAM [94]                 for multiple micro-pages to fit into a single DRAM row, and
+and LISA-VILLA [15]). Like FIGCache, these works build                  increases the row buffer hit rate by co-locating heavily-used
+their in-DRAM caches out of DRAM cells. Several earlier                 micro-pages into the same row. While this approach is similar
+works [38,42,44,45,59,120] on cached DRAM integrate SRAM                to how FIGCache collects multiple cached row segments into
+caches into the DRAM modules, usually at very high area                 a single DRAM row, micro-pages do not have hardware sup-
+overhead [72, 81].                                                      port for relocation, and must instead use high-latency memcpy
+   Similar to traditional caching mechanisms that relocate              operations through the memory controller to relocate data.
+data into a dedicated cache, CROW [39], CLR-DRAM [97],                  Other techniques to improve the row buffer hit rate include
+and Multiple Clone Row DRAM (MCR-DRAM) [20] decrease                    changing the memory scheduling policy (e.g., [9, 32, 46, 47,
+the access latency for frequently-accessed DRAM rows by                 55, 56, 70, 71, 103, 109, 110, 112, 121, 139, 140, 144, 153, 158]) to
+coupling multiple cells together for a single bit of data, thus         result in more row buffer hits or introducing new memory
+increasing the amount of charge that is driven to a sense               allocation policies [24, 54, 56, 90, 104, 114, 145, 146, 151, 154]
+amplifier when a row is activated. As we discuss in Section 5.2,        to reduce inter-thread interference at the row buffer. These
+FIGCache can be built on top of the hardware mechanisms                 techniques are orthogonal to FIGCache.
+that CROW and CLR-DRAM use to manage the fast rows.                        DRAM Latency and Power Reduction. To reduce
+While FIGCache can also be integrated with MCR-DRAM,                    DRAM access latency, prior works enable reduced DRAM
+such a design can become more complex, as MCR-DRAM                      timing parameters by exploiting the charge level of DRAM
+depends on the OS to manage which pages are assigned to                 cells [23, 40, 67, 89, 117, 132, 147, 156] or by driving bit-
+its fast rows [20].                                                     lines with charge from multiple cells that contain the same
+   In-DRAM Data Relocation Support.                 The DAS-            data [20, 39, 97]. Several other works [12, 14, 23, 65, 66, 79, 80]
+DRAM [94] and LISA [15] substrates provide support for                  employ optimized timing parameters that take advantage
+bulk data migration across subarrays, as we discuss in Sec-             of variation in and across DRAM chips to speed up DRAM
+tion 3. Another mechanism for bulk data relocation in DRAM              accesses. Aside from latency reduction, recent studies pro-
+is RowClone-FPM [127]. However, as RowClone-FPM re-                     pose to reduce DRAM row activation and I/O power con-
+locates data only within a subarray, it can not be used to              sumption through efficient row buffer designs (e.g., multiple
+build an in-DRAM cache that caches data from multiple sub-              sub-row buffers [35], row buffer caches [43, 92, 93, 149], ea-
+arrays in a bank. RowClone-PSM [127] is a mechanism that                ger writeback [53, 76, 83, 138]), sub-rank memory [2, 157],
+relocates data at column granularity across different DRAM              silent writeback elimination [85, 86], special data encod-
+banks, using the shared global data bus inside DRAM (which              ing schemes [34, 124, 135, 136], an OS-based scheduler to
+connects to the memory channel). Unfortunately, by using                select different power modes [26], a page-hit-aware low
+the global data bus, RowClone-PSM blocks memory requests                power design [91], and DRAM voltage and/or frequency scal-
+to all banks during data relocation, reducing the overall bank-         ing [16, 25, 27, 36, 37, 106]. FIGCache provides a new solution
+level parallelism [75, 110]. If RowClone-PSM is used to relo-           for DRAM latency and power reduction, which can poten-
+cate 4 kB of data between two subarrays in separate banks, it           tially be combined with these existing approaches.
+decreases system performance by 24% compared to using a                 11. Conclusion
+conventional memcpy operation [15]. RowClone-PSM’s per-                    In this work, we observe that existing in-DRAM cache
+formance is even lower for data relocation between subarrays            designs are inefficient due to (1) the coarse granularity (i.e.,
+in the same bank, as this requires two RowClone-PSM opera-              a DRAM row) at which they cache data and (2) hardware
+tions (one moving data from the source subarray to a second             designs that result in high area overhead and manufacturing
+bank that serves as an intermediate buffer, and another mov-            complexity. We eliminate these inefficiencies by introduc-
+ing data from the second bank to the destination subarray in            ing FIGARO, a new, low-cost DRAM substrate that enables
+the original bank) [127]. Network-on-Memory (NoM) [119]                 data relocation (i.e., copying) at the granularity of a DRAM
+overcomes this inter-bank limitation of RowClone-PSM with               column within a chip (cache block within a rank) with only
+fast and efficient data relocation across banks within 3D-              minor modifications to existing peripheral circuitry in com-
+stacked DRAM, via the use of higher connectivity between                modity DRAM chips. Using FIGARO, we build FIGCache, a
+banks provided by a network in the logic layer. FIGARO is               fine-grained in-DRAM cache, which greatly improves over-
+orthogonal to NoM.                                                      all performance and energy consumption, and has a signif-
+   Mechanisms to Improve Row Buffer Hit Rate. Sev-                      icantly simpler design than existing in-DRAM caches. We
+eral works mitigate the negative effects of low row buffer              believe and hope that future works and architectures can
+hit rates by reducing the amount of activated data, either by           exploit the FIGARO substrate to enable more use cases and
+enabling partial row buffer activation, designing smaller row           application-/system-level performance and energy benefits.
+buffers, or by in-DRAM data layout or transfer transforma-
+tions. Examples of these works include fine-grained activa-             Acknowledgments
+tion [22], Half-DRAM [155], selective bitline activation [143],            We thank the anonymous reviewers, SAFARI group mem-
+partial row activation [84], efficient 3D-stacked DRAM de-              bers for the feedback and the stimulating research environ-
+signs [18, 113], gather-scatter DRAM [129], data reorganiza-            ment. This work was supported by a Hunan Province Science
+tion in 3D-stacked DRAM [5,6], and row buffer locality aware            and Technology Planning project (No. 2019RS2027), a Na-
+caching in hybrid memories [152]. FIGCache is orthogonal                tional University of Defense Technology research project (No.
+to these designs, and can be combined with them to reduce               18/19-QNCXJ-WYH), and the industrial partners of SAFARI,
+the amount of unused activated data both in cached rows                 especially Google, Huawei, Intel, Microsoft, and VMware.
+
+
+                                                                   13
+
+
+
+===== Page 14 =====
+
+References                                                                            [26] V. Delaluz, A. Sivasubramaniam, M. Kandemir, N. Vijaykrishnan, and
+                                                                                           M. J. Irwin, “Scheduler-Based DRAM Energy Management,” in DAC,
+                                                                                           2002.
+ [1] Advanced Micro Devices, Inc., “High Bandwidth Memory.” https:                    [27] Q. Deng, D. Meisner, L. Ramos, T. F. Wenisch, and R. Bianchini, “Mem-
+     //www.amd.com/en/technologies/hbm                                                     Scale: Active Low-Power Modes for Main Memory,” in ASPLOS, 2011.
+ [2] J. H. Ahn, N. P. Jouppi, C. Kozyrakis, J. Leverich, and R. S. Schreiber,         [28] S. Eyerman and L. Eeckhout, “System-Level Performance Metrics for
+     “Improving System Energy Efficiency with Memory Rank Subsetting,”                     Multiprogram Workloads,” IEEE Micro, 2008.
+     TACO, 2012.                                                                      [29] P. Frigo, E. Vannacci, H. Hassan, V. van der Veen, O. Mutlu, C. Giuffrida,
+ [3] J. Ahn, S. Hong, S. Yoo, O. Mutlu, and K. Choi, “A Scalable Processing-               H. Bos, and K. Razavi, “TRRespass: Exploiting the Many Sides of Target
+     in-Memory Accelerator for Parallel Graph Processing,” in ISCA, 2015.                  Row Refresh,” in IEEE S&P, 2020.
+ [4] J. Ahn, S. Yoo, O. Mutlu, and K. Choi, “PIM-Enabled Instructions: A              [30] J. E. Fritts, F. W. Steiling, J. A. Tucek, and W. Wolf, “MediaBench II
+     Low-Overhead, Locality-Aware Processing-in-Memory Architecture,”                      Video: Expediting the Next Generation of Video Systems Research,”
+     in ISCA, 2015.                                                                        MICPRO, 2009.
+ [5] B. Akin, F. Franchetti, and J. C. Hoe, “Data Reorganization in Memory            [31] F. Gao, G. Tziantzioulis, and D. Wentzlaff, “ComputeDRAM: In-
+     Using 3D-Stacked DRAM,” in ISCA, 2015.                                                Memory Compute Using Off-the-Shelf DRAMs,” in MICRO, 2019.
+ [6] B. Akin, J. C. Hoe, and F. Franchetti, “HAMLeT: Hardware Accelerated             [32] S. Ghose, H. Lee, and J. F. Martínez, “Improving Memory Scheduling
+     Memory Layout Transform Within 3D-Stacked DRAM,” in HPEC, 2014.                       via Processor-Side Load Criticality Information,” in ISCA, 2013.
+ [7] K. Albayraktaroglu, A. Jaleel, Xue Wu, M. Franklin, B. Jacob, Chau-Wen           [33] S. Ghose, T. Li, N. Hajinazar, D. Senol Cali, and O. Mutlu, “Demystifying
+     Tseng, and D. Yeung, “BioBench: A Benchmark Suite of Bioinformatics                   Complex Workload–DRAM Interactions: An Experimental Study,” in
+     Applications,” in ISPASS, 2005.                                                       SIGMETRICS, 2019.
+ [8] Arizona State Univ., NIMO Group, “Predictive Technology Model,”                  [34] S. Ghose, A. G. Yağlıkçı, R. Gupta, D. Lee, K. Kudrolli, W. X. Liu,
+     2012. http://ptm.asu.edu/                                                             H. Hassan, K. K. Chang, N. Chatterjee, A. Agrawal, M. O’Connor,
+ [9] R. Ausavarungnirun, K. K. Chang, L. Subramanian, G. H. Loh, and                       and O. Mutlu, “What Your DRAM Power Models Are Not Telling You:
+     O. Mutlu, “Staged Memory Scheduling: Achieving High Performance                       Lessons from a Detailed Experimental Study,” SIGMETRICS, 2018.
+     and Scalability in Heterogeneous Systems,” in ISCA, 2012.                        [35] N. D. Gulur, R. Manikantan, M. Mehendale, and R. Govindarajan, “Mul-
+[10] C. Bienia, S. Kumar, J. P. Singh, and K. Li, “The PARSEC Benchmark                    tiple Sub-Row Buffers in DRAM: Unlocking Performance and Energy
+     Suite: Characterization and Architectural Implications,” in PACT, 2008.               Improvement Opportunities,” in ICS, 2012.
+[11] A. Boroumand, S. Ghose, Y. Kim, R. Ausavarungnirun, E. Shiu,                     [36] J. Haj-Yahya, M. Alser, J. Kim, A. G. Yağlıkçı, N. Vijaykumar, E. Rotem,
+     R. Thakur, D. Kim, A. Kuusela, A. Knies, P. Ranganathan, and O. Mutlu,                and O. Mutlu, “SysScale: Exploiting Multi-Domain Dynamic Voltage
+     “Google Workloads for Consumer Devices: Mitigating Data Movement                      and Frequency Scaling for Energy Efficient Mobile Processors,” in ISCA,
+     Bottlenecks,” in ASPLOS, 2018.                                                        2020.
+[12] K. Chandrasekar, S. Goossens, C. Weis, M. Koedam, B. Akesson,                    [37] J. Haj-Yahya, Y. Sazeides, M. Alser, E. Rotem, and O. Mutlu, “Techniques
+     N. Wehn, and K. Goossens, “Exploiting Expendable Process-Margins                      for Reducing the Connected-Standby Energy Consumption of Mobile
+     in DRAMs for Run-Time Performance Optimization,” in DATE, 2014.                       Devices,” in HPCA, 2020.
+[13] K. Chandrasekar, C. Weis, B. Akesson, N. Wehn, and K. Goossens,                  [38] C. A. Hart, “CDRAM in a Unified Memory Architecture,” in COMPCON,
+     “Towards Variation-Aware System-Level Power Estimation of DRAMs:                      1994.
+     An Empirical Approach,” in DAC, 2013.                                            [39] H. Hassan, M. Patel, J. S. Kim, A. G. Yaglikci, N. Vijaykumar, N. Man-
+[14] K. K. Chang, A. Kashyap, H. Hassan, , S. Ghose, K. Hsieh, D. Lee,                     sourighiasi, S. Ghose, and O. Mutlu, “CROW: A Low-Cost Substrate
+     T. Li, G. Pekhimenko, S. Khan, and O. Mutlu, “Understanding Latency                   for Improving DRAM Performance, Energy Efficiency, and Reliability,”
+     Variation in Modern DRAM Chips: Experimental Characterization,                        in ISCA, 2019.
+     Analysis, and Optimization,” in SIGMETRICS, 2016.                                [40] H. Hassan, G. Pekhimenko, N. Vijaykumar, V. Seshadri, D. Lee, O. Ergin,
+[15] K. K. Chang, P. J. Nair, , D. Lee, S. Ghose, M. K. Qureshi, and O. Mutlu,             and O. Mutlu, “ChargeCache: Reducing DRAM Latency by Exploiting
+     “Low-Cost Inter-Linked Subarrays (LISA): Enabling Fast Inter-Subarray                 Row Access Locality,” in HPCA, 2016.
+     Data Movement in DRAM,” in HPCA, 2016.                                           [41] H. Hassan, N. Vijaykumar, S. Khan, S. Ghose, K. Chang, G. Pekhimenko,
+[16] K. K. Chang, A. G. Yaglikci, A. Agrawal, N. Chatterjee, S. Ghose,                     D. Lee, O. Ergin, and O. Mutlu, “SoftMC: A Flexible and Practical Open-
+     A. Kashyap, H. Hassan, D. Lee, M. O’Connor, and O. Mutlu, “Un-                        Source Infrastructure for Enabling Experimental DRAM Studies,” in
+     derstanding Reduced-Voltage Operation in Modern DRAM Devices:                         HPCA, 2017.
+     Experimental Characterization, Analysis, and Mechanisms,” in SIG-                [42] A. Hegde, N. K. Vijaykrishnan, M. T. Kandemir, and M. J. Irwin, “VL-
+     METRICS, 2017.                                                                        CDRAM: Variable Line Sized Cached DRAMs,” in CODES+ISSS, 2003.
+[17] K. K. Chang, D. Lee, Z. Chishti, A. R. Alameldeen, C. Wilkerson, Y. Kim,         [43] E. Herrero, J. González, R. Canal, and D. Tullsen, “Thread Row Buffers:
+     and O. Mutlu, “Improving DRAM Performance by Parallelizing Re-                        Improving Memory Performance Isolation and Throughput in Multi-
+     freshes with Accesses,” in HPCA, 2014.                                                programmed Environments,” IEEE TC, 2013.
+[18] N. Chatterjee, M. O’Connor, D. Lee, D. R. Johnson, S. W. Keckler,                [44] H. Hidaka, Y. Matsuda, M. Asakura, and K. Fujishima, “The Cache
+     M. Rhu, and W. J. Dally, “Architecting an Energy-Efficient DRAM                       DRAM Architecture: A DRAM with an On-Chip Cache Memory,” IEEE
+     System for GPUs,” in HPCA, 2017.                                                      Micro, 1990.
+[19] N. Chatterjee, R. Balasubramonian, M. Shevgoor, S. H. Pugsley, A. N.             [45] W.-C. Hsu and J. E. Smith, “Performance of Cached DRAM Organiza-
+     Udipi, A. Shafiee, K. Sudan, M. Awasthi, and Z. Chishti, “Memory                      tions in Vector Supercomputers,” in ISCA, 1993.
+     Scheduling Championship (MSC),” 2012. https://www.cs.utah.edu/                   [46] I. Hur and C. Lin, “Adaptive History-Based Memory Schedulers,” in
+     ~rajeev/jwac12/                                                                       MICRO, 2004.
+[20] J. Choi, W. Shin, J. Jang, J. Suh, Y. Kwon, Y. Moon, and L.-S. Kim,              [47] E. İpek, O. Mutlu, J. F. Martínez, and R. Caruana, “Self-Optimizing
+     “Multiple Clone Row DRAM: A Low Latency and Area Optimized                            Memory Controllers: A Reinforcement Learning Approach,” in ISCA,
+     DRAM,” in ISCA, 2015.                                                                 2008.
+[21] L. Cojocar, J. S. Kim, M. Patel, L. Tsai, S. Saroiu, A. Wolman, and              [48] K. Itoh, VLSI Memory Chip Design. Springer Science & Business
+     O. Mutlu, “Are We Susceptible to Rowhammer? An End-to-End                             Media, 2013.
+     Methodology for Cloud Providers,” in IEEE S&P, 2020.                             [49] JEDEC Solid State Technology Assn., JESD79-3F: DDR3 SDRAM Stan-
+[22] E. Cooper-Balis and B. Jacob, “Fine-Grained Activation for Power                      dard, July 2012.
+     Reduction in DRAM,” IEEE Micro, 2010.                                            [50] JEDEC Solid State Technology Assn., JESD212C: Graphics Double Data
+[23] A. Das, H. Hassan, and O. Mutlu, “VRL-DRAM: Improving DRAM                            Rate (GDDR5) SGRAM Standard, February 2016.
+     Performance via Variable Refresh Latency,” in DAC, 2018.                         [51] JEDEC Solid State Technology Assn., JESD209-4B: Low Power Double
+[24] R. Das, R. Ausavarungnirun, O. Mutlu, A. Kumar, and M. Azimi,                         Data Rate 4 (LPDDR4) Standard, March 2017.
+     “Application-to-Core Mapping Policies to Reduce Memory System                    [52] JEDEC Solid State Technology Assn., JESD79-4B: DDR4 SDRAM Stan-
+     Interference in Multi-Core Systems,” in HPCA, 2013.                                   dard, June 2017.
+[25] H. David, C. Fallin, E. Gorbatov, U. R. Hanebutte, and O. Mutlu, “Mem-           [53] M. Jeon, C. Li, A. L. Cox, and S. Rixner, “Reducing DRAM Row Activa-
+     ory Power Management via Dynamic Voltage/Frequency Scaling,” in                       tions with Eager Read/Write Clustering,” TACO, 2013.
+     ICAC, 2011.
+
+
+                                                                                 14
+
+
+
+===== Page 15 =====
+
+[54] M. K. Jeong, D. H. Yoon, D. Sunwoo, M. Sullivan, I. Lee, and M. Erez,                [78] D. Lee, S. Ghose, G. Pekhimenko, S. Khan, and O. Mutlu, “Simultaneous
+     “Balancing DRAM Locality and Parallelism in Shared Memory CMP                             Multi-Layer Access: Improving 3D-Stacked Memory Bandwidth at
+     Systems,” in HPCA, 2012.                                                                  Low Cost,” TACO, 2016.
+[55] A. Jog, O. Kayiran, A. K. Mishra, M. T. Kandemir, O. Mutlu, R. Iyer, and             [79] D. Lee, S. M. Khan, L. Subramanian, S. Ghose, R. Ausavarungnirun,
+     C. R. Das, “Orchestrated Scheduling and Prefetching for GPGPUs,” in                       G. Pekhimenko, V. Seshadri, and O. Mutlu, “Design-Induced Latency
+     ISCA, 2013.                                                                               Variation in Modern DRAM Chips: Characterization, Analysis, and
+[56] A. Jog, O. Kayiran, N. C. Nachiappan, A. K. Mishra, M. T. Kandemir,                       Latency Reduction Mechanisms,” SIGMETRICS, 2017.
+     O. Mutlu, R. Iyer, and C. R. Das, “OWL: Cooperative Thread Array                     [80] D. Lee, Y. Kim, G. Pekhimenko, S. Khan, V. Seshadri, K. Chang, and
+     Aware Scheduling Techniques for Improving GPGPU Performance,” in                          O. Mutlu, “Adaptive-Latency DRAM: Optimizing DRAM Timing for
+     ASPLOS, 2013.                                                                             the Common-Case,” in HPCA, 2015.
+[57] A. B. Kahng, B. Lin, and S. Nath, “Explicit Modeling of Control and                  [81] D. Lee, Y. Kim, V. Seshadri, J. Liu, L. Subramanian, and O. Mutlu,
+     Data for Improved NoC Router Estimation,” in DAC, 2012.                                   “Tiered-Latency DRAM: A Low Latency and Low Cost DRAM Archi-
+[58] U. Kang, H.-S. Yu, C. Park, H. Zheng, J. Halbert, K. Bains, S. Jang, and                  tecture,” in HPCA, 2013.
+     J. Choi, “Co-Architecting Controllers and DRAM to Enhance DRAM                       [82] D. Lee, L. Subramanian, R. Ausavarungnirun, J. Choi, and O. Mutlu,
+     Process Scaling,” in The Memory Forum, 2014.                                              “Decoupled Direct Memory Access: Isolating CPU and IO Traffic by
+[59] G. Kedem and R. P. Koganti, “WCDRAM: A Fully Associative Integrated                       Leveraging a Dual-Data-Port DRAM,” in PACT, 2015.
+     Cached-DRAM with Wide Cache Lines,” Duke Univ. Dept. of Computer                     [83] H.-H. S. Lee, G. S. Tyson, and M. K. Farrens, “Eager Writeback – A
+     Science, Tech. Rep. CS-1997-03, 1997.                                                     Technique for Improving Bandwidth Utilization,” in MICRO, 2000.
+[60] B. Keeth, DRAM Circuit Design: Fundamental and High-Speed Topics.                    [84] Y. Lee, H. Kim, S. Hong, and S. Kim, “Partial Row Activation for Low-
+     John Wiley & Sons, 2007.                                                                  Power DRAM System,” in HPCA, 2017.
+[61] S. Khan, D. Lee, Y. Kim, A. Alameldeen, C. Wilkerson, and O. Mutlu,                  [85] Y. Lee, S. Kim, S. Hong, and J. Lee, “Skinflint DRAM System: Minimiz-
+     “The Efficacy of Error Mitigation Techniques for DRAM Retention                           ing DRAM Chip Writes for Low Power,” in HPCA, 2013.
+     Failures: A Comparative Experimental Study,” in SIGMETRICS, 2014.                    [86] K. M. Lepak and M. H. Lipasti, “On the Value Locality of Store Instruc-
+[62] S. Khan, D. Lee, and O. Mutlu, “PARBOR: An Efficient System-Level                         tions,” in ISCA, 2000.
+     Technique to Detect Data-Dependent Failures in DRAM,” in DSN, 2016.                  [87] S. Li, J. H. Ahn, R. D. Strong, J. B. Brockman, D. M. Tullsen, and N. P.
+[63] S. Khan, C. Wilkerson, Z. Wang, A. R. Alameldeen, D. Lee, and O. Mutlu,                   Jouppi, “McPAT: An Integrated Power, Area, and Timing Modeling
+     “Detecting and Mitigating Data-Dependent DRAM Failures by Exploit-                        Framework for Multicore and Manycore Architectures,” in MICRO,
+     ing Current Memory Content,” in MICRO, 2017.                                              2009.
+[64] R. Kho, D. Boursin, M. Brox, P. Gregorius, H. Hoenigschmid, B. Kho,                  [88] J. Liu, B. Jaiyen, Y. Kim, C. Wilkerson, and O. Mutlu, “An Experi-
+     S. Kieser, D. Kehrer, M. Kuzmenka, U. Moeller, P. Petkov, M. Plan,                        mental Study of Data Retention Behavior in Modern DRAM Devices:
+     M. Richter, I. Russell, K. Schiller, R. Schneider, K. Swaminathan, B. We-                 Implications for Retention Time Profiling Mechanisms,” in ISCA, 2013.
+     ber, J. Weber, I. Bormann, F. Funfrock, M. Gjukic, W. Spirkl, H. Steffens,           [89] J. Liu, B. Jaiyen, R. Veras, and O. Mutlu, “RAIDR: Retention-Aware
+     J. Weller, and T. Hein, “75nm 7Gb/s/Pin 1Gb GDDR5 Graphics Memory                         Intelligent DRAM Refresh,” in ISCA, 2012.
+     Device with Bandwidth-Improvement Techniques,” in ISSCC, 2009.                       [90] L. Liu, Z. Cui, M. Xing, Y. Bao, M. Chen, and C. Wu, “A Software
+[65] J. S. Kim, M. Patel, H. Hassan, and O. Mutlu, “Solar-DRAM: Reducing                       Memory Partition Approach for Eliminating Bank-Level Interference
+     DRAM Access Latency by Exploiting the Variation in Local Bitlines,”                       in Multicore Systems,” in PACT, 2012.
+     in ICCD, 2018.                                                                       [91] S. Liu, S. O. Memik, Y. Zhang, and G. Memik, “A Power and Tempera-
+[66] J. S. Kim, M. Patel, H. Hassan, and O. Mutlu, “The DRAM Latency PUF:                      ture Aware DRAM Architecture,” in DAC, 2008.
+     Quickly Evaluating Physical Unclonable Functions by Exploiting the                   [92] G. H. Loh, “3D-Stacked Memory Architectures for Multi-Core Proces-
+     Latency-Reliability Tradeoff in Modern Commodity DRAM Devices,”                           sors,” in ISCA, 2008.
+     in HPCA, 2018.                                                                       [93] G. H. Loh, “A Register-File Approach for Row Buffer Caches in Die-
+[67] J. S. Kim, M. Patel, H. Hassan, L. Orosa, and O. Mutlu, “D-RaNGe:                         Stacked DRAMs,” in MICRO, 2011.
+     Using Commodity DRAM Devices to Generate True Random Numbers                         [94] S.-L. Lu, Y.-C. Lin, and C.-L. Yang, “Improving DRAM Latency with
+     with Low Latency and High Throughput,” in HPCA, 2019.                                     Dynamic Asymmetric Subarray,” in MICRO, 2015.
+[68] J. S. Kim, M. Patel, A. G. Yaglikçi, H. Hassan, R. Azizi, L. Orosa, and              [95] W.-M. Lu, B.-F. Hung, and M.-S. Huang, “Method for Controlling a
+     O. Mutlu, “Revisiting RowHammer: An Experimental Analysis of                              DRAM,” U.S. Patent Appl. 12/116,208, 2009.
+     Modern DRAM Devices and Mitigation Techniques,” in ISCA, 2020.                       [96] C.-K. Luk, R. Cohn, R. Muth, H. Patil, A. Klauser, G. Lowney, S. Wallace,
+[69] Y. Kim, R. Daly, J. Kim, C. Fallin, J. H. Lee, D. Lee, C. Wilkerson, K. Lai,              V. J. Reddi, and K. Hazelwood, “Pin: Building Customized Program
+     and O. Mutlu, “Flipping Bits in Memory without Accessing Them: An                         Analysis Tools with Dynamic Instrumentation,” in PLDI, 2005.
+     Experimental Study of DRAM Disturbance Errors,” in ISCA, 2014.                       [97] H. Luo, T. Shahroodi, H. Hassan, M. Patel, A. G. Yaglikçi, L. Orosa,
+[70] Y. Kim, D. Han, O. Mutlu, and M. Harchol-Balter, “ATLAS: A Scalable                       J. Park, and O. Mutlu, “CLR-DRAM: A Low-Cost DRAM Architecture
+     and High-Performance Scheduling Algorithm for Multiple Memory                             Enabling Dynamic Capacity-Latency Trade-Off,” in ISCA, 2020.
+     Controllers,” in HPCA, 2010.                                                         [98] Y. Luo, S. Govindan, B. Sharma, M. Santaniello, J. Meza, A. Kansal, J. Liu,
+[71] Y. Kim, M. Papamichael, O. Mutlu, and M. Harchol-Balter, “Thread                          B. Khessib, K. Vaid, and O. Mutlu, “Characterizing Application Memory
+     Cluster Memory Scheduling: Exploiting Differences in Memory Access                        Error Vulnerability to Optimize Data Center Cost via Heterogeneous-
+     Behavior,” in MICRO, 2010.                                                                Reliability Memory,” in DSN, 2014.
+[72] Y. Kim, V. Seshadri, D. Lee, J. Liu, and O. Mutlu, “A Case for Exploiting            [99] J. Meza, J. Li, and O. Mutlu, “A Case for Small Row Buffers in Non-
+     Subarray-Level Parallelism (SALP) in DRAM,” in ISCA, 2012.                                Volatile Main Memories,” in ICCD, 2012.
+[73] Y. Kim, W. Yang, and O. Mutlu, “Ramulator: A Fast and Extensible                    [100] Micron Technology, Inc., “Calculating Memory System Power for
+     DRAM Simulator,” in IEEE CAL, 2015.                                                       DDR3,” Technical Note TN-41-01, 2007.
+[74] S. Koppula, L. Orosa, A. G. Yaglikçi, R. Azizi, T. Shahroodi, K. Kanel-             [101] Y. Moon, Y.-H. Cho, H.-B. Lee, B.-H. Jeong, S.-H. Hyun, B.-C. Kim,
+     lopoulos, and O. Mutlu, “EDEN: Enabling Energy-Efficient, High-                           I.-C. Jeong, S.-Y. Seo, J.-H. Shin, S.-W. Choi, H.-S. Song, J.-H. Choi,
+     Performance Deep Neural Network Inference Using Approximate                               K.-H. Kyung, Y.-H. Jun, and K. Kim, “1.2V 1.6Gb/s 56nm 6F2 4Gb DDR3
+     DRAM,” in MICRO, 2019.                                                                    SDRAM with Hybrid-I/O Sense Amplifier and Segmented Sub-Array
+[75] C. J. Lee, V. Narasiman, O. Mutlu, and Y. N. Patt, “Improving Memory                      Architecture,” in ISSCC, 2009.
+     Bank-Level Parallelism in the Presence of Prefetching,” in MICRO, 2009.             [102] T. Moscibroda and O. Mutlu, “Memory Performance Attacks: Denial
+[76] C. J. Lee, V. Narasiman, E. Ebrahimi, O. Mutlu, and Y. N. Patt, “DRAM-                    of Memory Service in Multi-Core Systems,” in USENIX Security, 2007.
+     Aware Last-Level Cache Writeback: Reducing Write-Caused Interfer-                   [103] J. Mukundan and J. F. Martínez, “MORSE: Multi-objective Reconfig-
+     ence in Memory Systems,” in Univ. of Texas at Austin, HPS Research                        urable Self-Optimizing Memory Scheduler,” in HPCA, 2012.
+     Group, Tech. Rep. TR-HPS-2010-2, 2010.                                              [104] S. P. Muralidhara, L. Subramanian, O. Mutlu, M. Kandemir, and
+[77] D. U. Lee, K. W. Kim, K. W. Kim, K. S. Lee, S. J. Byeon, J. H. Kim,                       T. Moscibroda, “Reducing Memory Interference in Multicore Systems
+     J. H. Cho, J. Lee, and J. H. Chun, “A 1.2 V 8 Gb 8-Channel 128 GB/s                       via Application-Aware Memory Channel Partitioning,” in MICRO, 2011.
+     High-Bandwidth Memory (HBM) Stacked DRAM with Effective I/O                         [105] N. Muralimanohar, R. Balasubramonian, and N. P. Jouppi, “CACTI 6.0:
+     Test Circuits,” JSSC, 2015.                                                               A Tool to Model Large Caches,” HP Laboratories, 2009.
+
+
+
+
+                                                                                    15
+
+
+
+===== Page 16 =====
+
+[106] O. Mutlu, “Memory Scaling: A Systems Architecture Perspective,” in                  [134] Y. H. Son, S. O, Y. Ro, J. W. Lee, and J. H. Ahn, “Reducing Memory
+      IMW, 2013.                                                                                Access Latency with Asymmetric DRAM Bank Organizations,” in ISCA,
+[107] O. Mutlu, “The RowHammer Problem and Other Issues We May Face                             2013.
+      As Memory Becomes Denser,” in DATE, 2017.                                           [135] Y. Song and E. Ipek, “More Is Less: Improving the Energy Efficiency
+[108] O. Mutlu and J. S. Kim, “RowHammer: A Retrospective,” TCAD, 2020.                         of Data Movement via Opportunistic Use of Sparse Codes,” in MICRO,
+[109] O. Mutlu and T. Moscibroda, “Stall-Time Fair Memory Access Schedul-                       2015.
+      ing for Chip Multiprocessors,” in MICRO, 2007.                                      [136] M. R. Stan and W. P. Burleson, “Bus-Invert Coding for Low-Power I/O,”
+[110] O. Mutlu and T. Moscibroda, “Parallelism-Aware Batch Scheduling:                          TVLSI, 1995.
+      Enhancing Both Performance and Fairness of Shared DRAM Systems,”                    [137] Standard Performance Evaluation Corporation, “SPEC CPU® 2006.”
+      in ISCA, 2008.                                                                            https://www.spec.org/cpu2006/
+[111] O. Mutlu and L. Subramanian, “Research Problems and Opportunities                   [138] J. Stuecheli, D. Kaseridis, D. Daly, H. C. Hunter, and L. K. John, “The Vir-
+      in Memory Systems,” in SUPERFRI, 2014.                                                    tual Write Queue: Coordinating DRAM and Last-Level Cache Policies,”
+[112] K. J. Nesbit, N. Aggarwal, J. Laudon, and J. E. Smith, “Fair Queuing                      in ISCA, 2010.
+      Memory Systems,” in MICRO, 2006.                                                    [139] L. Subramanian, D. Lee, V. Seshadri, H. Rastogi, and O. Mutlu, “The
+[113] M. O’Connor, N. Chatterjee, D. Lee, J. Wilson, A. Agrawal, S. W. Keckler,                 Blacklisting Memory Scheduler: Achieving High Performance and
+      and W. J. Dally, “Fine-Grained DRAM: Energy-Efficient DRAM for                            Fairness at Low Cost,” in ICCD, 2014.
+      Extreme Bandwidth Systems,” in MICRO, 2017.                                         [140] L. Subramanian, D. Lee, V. Seshadri, H. Rastogi, and O. Mutlu, “BLISS:
+[114] H. Park, S. Baek, J. Choi, D. Lee, and S. H. Noh, “Regularities Considered                Balancing Performance, Fairness and Complexity in Memory Access
+      Harmful: Forcing Randomness to Memory Accesses to Reduce Row                              Scheduling,” TPDS, 2016.
+      Buffer Conflicts for Multi-Core, Multi-Bank Systems,” in ASPLOS, 2013.              [141] K. Sudan, N. Chatterjee, D. Nellans, M. Awasthi, R. Balasubramonian,
+[115] M. Patel, J. Kim, T. Shahroodi, H. Hassan, and O. Mutlu, “Bit-Exact                       and A. Davis, “Micro-Pages: Increasing DRAM Efficiency with Locality-
+      ECC Recovery (BEER): Determining DRAM On-Die ECC Functions by                             Aware Data Placement,” in ASPLOS, 2010.
+      Exploiting DRAM Data Retention Characteristics,” in MICRO, 2020.                    [142] Transaction Processing Performance Council, “TPC Benchmarks
+[116] M. Patel, J. S. Kim, H. Hassan, and O. Mutlu, “Understanding and Mod-                     Overview.” http://www.tpc.org/information/benchmarks5.asp
+      eling On-Die Error Correction in Modern DRAM: An Experimental                       [143] A. N. Udipi, N. Muralimanohar, N. Chatterjee, R. Balasubramonian,
+      Study Using Real Devices,” in DSN, 2019.                                                  A. Davis, and N. P. Jouppi, “Rethinking DRAM Design and Organiza-
+[117] M. Patel, J. S. Kim, and O. Mutlu, “The Reach Profiler (REAPER): En-                      tion for Energy-Constrained Multi-Cores,” in ISCA, 2010.
+      abling the Mitigation of DRAM Retention Failures via Profiling at                   [144] H. Usui, L. Subramanian, K. K. Chang, and O. Mutlu, “DASH: Deadline-
+      Aggressive Conditions,” in ISCA, 2017.                                                    Aware High-Performance Memory Scheduler for Heterogeneous Sys-
+[118] P. Pessl, D. Gruss, C. Maurice, M. Schwarz, and S. Mangard, “DRAMA:                       tems with Hardware Accelerators,” TACO, 2016.
+      Exploiting DRAM Addressing for Cross-CPU Attacks,” in USENIX                        [145] N. Vijaykumar, E. Ebrahimi, K. Hsieh, P. B. Gibbons, and O. Mutlu, “The
+      Security, 2016.                                                                           Locality Descriptor: A Holistic Cross-Layer Abstraction to Express
+[119] S. H. S. Rezaei, M. Modarressi, R. Ausavarungnirun, M. Sadrosadati,                       Data Locality in GPUs,” in ISCA, 2018.
+      O. Mutlu, and M. Daneshtalab, “NoM: Network-on-Memory for Inter-                    [146] N. Vijaykumar, A. Jain, D. Majumdar, K. Hsieh, G. Pekhimenko,
+      Bank Data Transfer in Highly-Banked Memories,” IEEE CAL, 2020.                            E. Ebrahimi, N. Hajinazar, P. B. Gibbons, and O. Mutlu, “A Case for
+[120] S. Rixner, “Memory Controller Optimizations for Web Servers,” in                          Richer Cross-layer Abstractions: Bridging the Semantic Gap with
+      MICRO, 2004.                                                                              Expressive Memory,” in ISCA, 2018.
+[121] S. Rixner, W. J. Dally, U. J. Kapasi, P. Mattson, and J. D. Owens, “Memory          [147] Y. Wang, A. Tavakko, L. Orosa, S. Ghose, N. M. Ghiasi, M. Patel, J. S.
+      Access Scheduling,” in ISCA, 2000.                                                        Kim, H. Hassan, M. Sadrosadati, and O. Mutlu, “Reducing DRAM
+[122] SAFARI Research Group, “Ramulator: A DRAM Simulator — GitHub                              Latency via Charge-Level-Aware Look-Ahead Partial Restoration,” in
+      Repository.” https://github.com/CMU-SAFARI/ramulator                                      MICRO, 2018.
+[123] T. Schloesser, F. Jakubowski, J. v. Kluge, A. Graham, S. Slesazeck,                 [148] Wei Zhao and Yu Cao, “New Generation of Predictive Technology
+      M. Popp, P. Baars, K. Muemmler, P. Moll, K. Wilson, A. Buerke,                            Model for Sub-45nm Design Exploration,” in ISQED, 2006.
+      D. Koehler, J. Radecker, E. Erben, U. Zimmermann, T. Vorrath, B. Fis-               [149] D. H. Woo, N. H. Seong, and H.-H. S. Lee, “Pragmatic Integration of an
+      cher, G. Aichmayr, R. Agaiby, W. Pamler, T. Schuster, W. Bergner, and                     SRAM Row Cache in Heterogeneous 3-D DRAM Architecture Using
+      W. Mueller, “6F2 Buried Wordline DRAM Cell for 40nm and Beyond,”                          TSV,” TVLSI, 2013.
+      in IEDM, 2008.                                                                      [150] S. C. Woo, M. Ohara, E. Torrie, J. P. Singh, and A. Gupta, “The SPLASH-
+[124] H. Seol, W. Shin, J. Jang, J. Choi, J. Suh, and L. S. Kim, “Energy Efficient              2 Programs: Characterization and Methodological Considerations,” in
+      Data Encoding in DRAM Channels Exploiting Data Value Similarity,”                         ISCA, 1995.
+      in ISCA, 2016.                                                                      [151] M. Xie, D. Tong, K. Huang, and X. Cheng, “Improving System Through-
+[125] V. Seshadri, A. Bhowmick, O. Mutlu, P. B. Gibbons, M. A. Kozuch, and                      put and Fairness Simultaneously in Shared Memory CMP Systems via
+      T. C. Mowry, “The Dirty-Block Index,” in ISCA, 2014.                                      Dynamic Bank Partitioning,” in HPCA, 2014.
+[126] V. Seshadri, K. Hsieh, A. Boroumand, D. Lee, M. A. Kozuch, O. Mutlu,                [152] H. Yoon, J. Meza, R. Ausavarungnirun, R. A. Harding, and O. Mutlu,
+      P. B. Gibbons, and T. C. Mowry, “Fast Bulk Bitwise AND and OR in                          “Row Buffer Locality Aware Caching Policies for Hybrid Memories,” in
+      DRAM,” IEEE CAL, 2015.                                                                    ICCD, 2012.
+[127] V. Seshadri, Y. Kim, C. Fallin, D. Lee, R. Ausavarungnirun, G. Pekhi-               [153] G. L. Yuan, A. Bakhoda, and T. M. Aamodt, “Complexity Effective
+      menko, Y. Luo, O. Mutlu, P. B. Gibbons, M. A. Kozuch, and T. C. Mowry,                    Memory Access Scheduling for Many-Core Accelerator Architectures,”
+      “RowClone: Fast and Energy-Efficient In-DRAM Bulk Data Copy and                           in MICRO, 2009.
+      Initialization,” in MICRO, 2013.                                                    [154] H. Yun, R. Mancuso, Z.-P. Wu, and R. Pellizzoni, “PALLOC: DRAM
+[128] V. Seshadri, D. Lee, T. Mullins, H. Hassan, A. Boroumand, J. Kim, M. A.                   Bank-Aware Memory Allocator for Performance Isolation on Multicore
+      Kozuch, O. Mutlu, P. B. Gibbons, and T. C. Mowry, “Ambit: In-Memory                       Platforms,” in RTAS, 2014.
+      Accelerator for Bulk Bitwise Operations Using Commodity DRAM                        [155] T. Zhang, K. Chen, C. Xu, G. Sun, T. Wang, and Y. Xie, “Half-DRAM:
+      Technology,” in MICRO, 2017.                                                              A High-Bandwidth and Low-Power DRAM Architecture from the
+[129] V. Seshadri, T. Mullins, A. Boroumand, O. Mutlu, P. B. Gibbons, M. A.                     Rethinking of Fine-Grained Activation,” in ISCA, 2014.
+      Kozuch, and T. C. Mowry, “Gather-Scatter DRAM: In-DRAM Address                      [156] X. Zhang, Y. Zhang, B. R. Childers, and J. Yang, “Restore Truncation
+      Translation to Improve the Spatial Locality of Non-Unit Strided Ac-                       for Performance Improvement in Future DRAM Systems,” in HPCA,
+      cesses,” in MICRO, 2015.                                                                  2016.
+[130] V. Seshadri and O. Mutlu, “Simple Operations in Memory to Reduce                    [157] H. Zheng, J. Lin, Z. Zhang, E. Gorbatov, H. David, and Z. Zhu, “Mini-
+      Data Movement,” in Advances in Computers, Volume 106, 2017.                               Rank: Adaptive DRAM Architecture for Improving Memory Power
+[131] V. Seshadri and O. Mutlu, “In-DRAM Bulk Bitwise Execution Engine,”                        Efficiency,” in MICRO, 2008.
+      in Advances in Computers, 2020, available as arXiv:1905.09822 [cs.AR].              [158] W. K. Zuravleff and T. Robinson, “Controller for a Synchronous DRAM
+[132] W. Shin, J. Yang, J. Choi, and L.-S. Kim, “NUAT: A Non-Uniform Access                     That Maximizes Throughput by Allowing Memory Requests and Com-
+      Time Memory Controller,” in HPCA, 2014.                                                   mands to Be Issued Out of Order,” U.S. Patent 5,630,096, 1997.
+[133] A. Snavely, D. M. Tullsen, and G. Voelker, “Symbiotic Jobscheduling
+      for a Simultaneous Multithreaded Processor,” in ASPLOS, 2000.
+
+
+
+                                                                                     16
+

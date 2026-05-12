@@ -1,0 +1,1671 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/lec4-paper-reading/sources/original-paper/2111.00082v6.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC4/original-paper/2111.00082v6.pdf
+Raw URL: https://raw.githubusercontent.com/Yuntong-Hou/computer-architecture/main/LEC4/original-paper/2111.00082v6.pdf
+Accessed: 2026-05-11 11:24:19 UTC
+
+
+
+===== Page 1 =====
+
+                                                  PiDRAM: A Holistic End-to-end FPGA-based Framework
+                                                               for Processing-in-DRAM
+                                               Ataberk Olgun§              Juan Gómez Luna§      Konstantinos Kanellopoulos§                                  Behzad Salami§
+                                                                                      §
+                                                                          Hasan Hassan      Oḡuz Ergin†    Onur Mutlu§
+                                                                   §                       †
+                                                                       ETH Zürich              TOBB University of Economics and Technology
+                                           Commodity DRAM based processing-using-memory (PuM)                      propose to place compute logic near memory arrays (e.g., pro-
+                                        techniques that are supported by off-the-shelf DRAM chips                  cessing capability in the memory controller, logic layer of
+                                        present an opportunity for alleviating the data movement bottle-           3D-stacked memory, or near the memory array within the
+                                        neck at low cost. However, system integration of these techniques          memory chip) [2–4, 12, 20–22, 25, 31, 34, 37, 39, 45–47, 51, 53, 57,
+                                        imposes non-trivial challenges that are yet to be solved. Potential        58, 66, 67, 79, 80, 84, 111, 118, 121, 131, 133, 153, 162, 173, 176–178].
+arXiv:2111.00082v6 [cs.AR] 4 Sep 2023
+
+
+
+
+                                        solutions to the integration challenges require appropriate tools to       These techniques are called processing-near-memory (PnM)
+                                        develop any necessary hardware and software components. Un-                techniques [120]. Another set of techniques propose to
+                                        fortunately, current proprietary computing systems, specialized            leverage analog properties of memory (e.g., SRAM, DRAM,
+                                        DRAM-testing platforms, or system simulators do not provide                and NVM) operation to perform computation in different
+                                        the flexibility and/or the holistic system view that is necessary          ways (e.g., leveraging non-deterministic behavior in mem-
+                                        to properly evaluate and deal with the integration challenges of           ory array operation to generate random numbers, perform-
+                                        commodity DRAM based PuM techniques.                                       ing bitwise operations within the memory array by exploit-
+                                           We design and develop PiDRAM, the first flexible end-to-end             ing analog charge sharing properties of DRAM operation)
+                                        framework that enables system integration studies and evalua-              [1,5–9,17,19,24,28,32,36,42–44,54–56,69,73,82,83,91–93,102–
+                                        tion of real, commodity DRAM based PuM techniques. PiDRAM                  104, 114, 134, 137, 145, 148, 152, 156, 160, 163, 168, 171, 172]. These
+                                        provides software and hardware components to rapidly integrate             techniques are known as processing-using-memory (PuM) tech-
+                                        PuM techniques across the whole system software and hardware               niques [120].
+                                        stack. We implement PiDRAM on an FPGA-based RISC-V system.                    A subset of PuM proposals devise mechanisms that enable
+                                        To demonstrate the flexibility and ease of use of PiDRAM, we               computation using DRAM arrays [5, 9, 28, 32, 44, 54, 82, 83, 103,
+                                        implement and evaluate two state-of-the-art commodity DRAM                 134, 145, 148, 160, 168]. These mechanisms provide significant
+                                        based PuM techniques: (i) in-DRAM copy and initialization (Row-            performance benefits and energy savings by exploiting the
+                                        Clone) and (ii) in-DRAM true random number generation (D-                  high internal bit-level parallelism of DRAM for (1) bulk data
+                                        RaNGe). We describe how we solve key integration challenges                copy and initialization operations at row granularity [1,28,134,
+                                        to make such techniques work and be effective on a real-system             148, 160], (2) bitwise operations [6–8, 103, 104, 114, 143–145, 147,
+                                        prototype, including memory allocation, alignment, and coher-              149, 168], (3) arithmetic operations [1, 9, 17, 32, 36, 42, 43, 55, 56,
+                                        ence. We observe that end-to-end RowClone speeds up bulk copy              73, 91–93, 102, 103, 152, 163, 171], and (4) security primitives
+                                        and initialization operations by 14.6× and 12.6×, respectively             (e.g., true random number generation [83], physical unclonable
+                                        over conventional CPU copy, even when coherence is supported               functions [82, 126]). Recent works [44, 82, 83] show that some
+                                        with inefficient cache flush operations. Over PiDRAM’s extensible          of these PuM mechanisms can already be reliably supported in
+                                        codebase, integrating both RowClone and D-RaNGe end-to-end                 contemporary, off-the-shelf DRAM chips.1 Given that DRAM
+                                        on a real RISC-V system prototype takes only 388 lines of Verilog          is the dominant main memory technology, these commodity
+                                        code and 643 lines of C++ code.                                            DRAM based PuM techniques2 provide a promising way to
+                                                                                                                   improve the performance and energy efficiency of existing and
+                                        1. Introduction                                                            future systems at no additional DRAM hardware cost.
+                                                                                                                      Integration of these PuM mechanisms in a real system im-
+                                        Main memory is a major performance and energy bottleneck in                poses non-trivial challenges that require further research to
+                                        computing systems [48,120]. One way of overcoming the main                 find appropriate solutions. For example, in-DRAM bulk data
+                                        memory bottleneck is to move computation into/near memory,                 copy and initialization techniques [28, 145] require modifica-
+                                        a paradigm known as processing-in-memory (PiM) [120]. PiM                  tions to memory management that affect different parts of
+                                        reduces memory latency between the memory units and the                    the system. First, these techniques have specific memory al-
+                                        compute units, enables the compute units to exploit the large              location and alignment requirements (e.g., page-granularity
+                                        internal bandwidth within memory devices, and reduces the                  source and destination operand arrays should be allocated and
+                                        overall power consumption of the system by eliminating the
+                                        need for transferring data over power-hungry off-chip inter-                   1We are especially interested in PiM techniques that do not require any
+
+                                        faces [48, 120].                                                           modification to the DRAM chips or the DRAM interface.
+                                                                                                                       2 Commodity DRAM based PuM techniques are PuM techniques that can
+                                           Recent works propose a variety of PiM techniques to al-                 already be supported in existing off-the-shelf DRAM chips without any modi-
+                                        leviate the data movement problem. One set of techniques                   fication to DRAM chips or DRAM interfaces.
+
+
+                                                                                                               1
+
+
+
+===== Page 2 =====
+
+aligned in the same DRAM subarray) that are not satisfied               perform PuM operations. For example, the memory controller
+by existing memory allocation primitives (e.g., malloc [106],           can be extended with a single state machine in its hardware
+posix_memalign [108]). Second, in-DRAM copy requires effi-              description to implement a new DDRx command sequence
+cient handling of memory coherence, such that the contents              with user-defined timing parameters to implement a new PuM
+of the source operand in DRAM are up-to-date.                           technique (i.e., perform a new PuM operation). Second, an
+   None of these system integration challenges of PuM mech-             ISA-transparent controller (PuM Operations Controller, POC) su-
+anisms can be efficiently studied in existing general-purpose           pervises PuM execution. POC exposes the PuM operations to
+computing systems (e.g., personal computers, cloud comput-              the software components of PiDRAM over a memory-mapped
+ers, embedded systems), special-purpose testing platforms               interface to the processor, allowing the programmer to per-
+(e.g., SoftMC [60]), or system simulators (e.g., gem5 [18,              form PuM operations using the PiDRAM framework by exe-
+132], Ramulator [90, 138], Ramulator-PIM [140], zsim [141],             cuting conventional LOAD/STORE instructions. The memory-
+DAMOVSim [125,139], and other simulators [35,169,170,175]).             mapped interface allows PiDRAM to be easily ported to sys-
+First, many commodity DRAM based PuM mechanisms in                      tems that implement different instruction set architectures.
+DRAM rely on non-standard DDRx operation, where timing                  PiDRAM contains two main software components. First, an ex-
+parameters for DDRx commands are violated [44, 82, 83] (or              tensible library allows system designers to implement software
+otherwise new DRAM commands are added, which requires                   support for PuM mechanisms. This library contains customiz-
+new chip designs and interfaces). Existing general-purpose              able functions that communicate with POC to perform PuM
+computing systems do not permit dynamically changing DDRx               operations. Second, a custom supervisor software contains the
+timing parameters, which is required to integrate these PuM             necessary OS primitives (e.g., memory management) to enable
+mechanisms into real systems. Second, prior works show that             end-to-end implementations of commodity DRAM based PuM
+the reliability of commodity DRAM based PuM mechanisms is               techniques.
+highly dependent on environmental conditions such as tem-
+perature and voltage fluctuations [82, 83] and process varia-               We demonstrate a prototype of PiDRAM on an FPGA-based
+tion. These effects are exacerbated by the non-standard be-             RISC-V system [11]. To demonstrate the flexibility and ease
+havior of PuM mechanisms in real DRAM devices. Although                 of use of PiDRAM, we implement two prominent PuM tech-
+special-purpose testing platforms (e.g., SoftMC [60]) can be            niques: (1) RowClone [148], an in-DRAM data copy and ini-
+used to conduct reliability studies, these platforms do not model       tialization technique, and (2) D-RaNGe [83], an in-DRAM true
+an end-to-end computing system, where system integration                random number generation technique based on activation-
+of PuM mechanisms can be studied. System simulators (e.g.,              latency failures. In order to support RowClone (Section 5),
+those aforementioned) can model end-to-end computing sys-               (i) we customize the PiDRAM memory controller to issue
+tems. However, they (i) do not model DRAM operation that                carefully-engineered sequences of DRAM commands that per-
+violates manufacturer-recommended timing parameters, (ii)               form data copy (and initialization) operations in DRAM, and
+do not have a way of interfacing with real DRAM chips that              (ii) we extend the custom supervisor software to implement a
+embody undisclosed and unique characteristics that have im-             new memory management mechanism that satisfies the mem-
+plications on how PuM techniques are integrated into real               ory allocation and alignment requirements of RowClone. For
+systems (e.g., proprietary and chip-specific DRAM internal              D-RaNGe (Section 6), we extend (i) the PiDRAM memory con-
+address mapping [30, 89, 130]), and (iii) cannot support charac-        troller with a new state machine that periodically performs
+terization studies on the reliability of PuM mechanisms since           DRAM accesses with reduced activation latencies to generate
+system simulators do not model environmental conditions and             random numbers [83] and a new hardware random number
+process variation.                                                      buffer that stores the generated random numbers, and (ii) the
+   Our goal is to design and implement a flexible real-system           custom supervisor software with a function that retrieves the
+platform that can be used to solve system integration chal-             random numbers from the hardware buffer to the user program.
+lenges and analyze trade-offs of end-to-end implementations             Our end-to-end evaluation of (i) RowClone demonstrates up
+of commodity DRAM based PuM mechanisms. To this end,                    to 14.6× speedup for bulk copy and 12.6× initialization opera-
+we develop Processing-in-DRAM (PiDRAM) framework, the                   tions over CPU copy (i.e., conventional memcpy), even when
+first flexible, end-to-end, and open source framework that en-          coherence is satisfied using inefficient cache flush operations,
+ables system integration studies and evaluation of real PuM             and (ii) D-RaNGe demonstrates that an end-to-end integra-
+techniques using real unmodified DRAM devices.                          tion of D-RaNGe can provide true random numbers at high
+                                                                        throughput (8.30 Mb/s) and low latency (4-bit random number
+   PiDRAM facilitates system integration studies of new com-
+                                                                        in 220 ns), even without any hardware or software optimiza-
+modity DRAM based PuM mechanisms by providing four cus-
+                                                                        tions. Implementing both PuM techniques over the Verilog and
+tomizable hardware and software components that can be used
+                                                                        C++ codebase provided by PiDRAM requires only 388 lines of
+as a common basis to enable system support for such mecha-
+                                                                        Verilog code and 643 lines of C++ code.
+nisms in real systems. PiDRAM contains two main hardware
+components. First, a custom, easy-to-extend memory controller
+allows for implementing new DRAM command sequences that                   Our contributions are as follows:
+
+
+                                                                    2
+
+
+
+===== Page 3 =====
+
+• We develop PiDRAM, the first flexible framework that en-                                                                                              bitlines are depicted in red in Fig. 1. Wordline drivers drive the
+  ables end-to-end integration and evaluation of PuM mecha-                                                                                             wordlines and sense amplifers read the values on the bitlines.
+  nisms using real unmodified DRAM chips.                                                                                                               A DRAM cell is connected to a bitline via an access transis-
+• We develop a prototype of PiDRAM on an FPGA-based plat-                                                                                               tor ➎. When enabled, an access transistor allows charge to
+  form. To demonstrate the ease-of-use and evaluation benefits                                                                                          flow between a DRAM cell and the cell’s bitline.
+  of PiDRAM, we implement two state-of-the-art DRAM-based                                                                                               DRAM Operation. When all DRAM rows in a bank are closed,
+  PuM mechanisms, RowClone and D-RaNGe, and evaluate                                                                                                    DRAM bitlines are precharged to a reference voltage level of
+  them on PiDRAM’s prototype using unmodified DDR3 chips.                                                                                                 2 . The memory controller sends an activate (ACT ) com-
+                                                                                                                                                        VDD
+
+• We devise a new memory management mechanism that sat-                                                                                                 mand to the DRAM module to drive a DRAM wordline (i.e.,
+  isfies the memory allocation and alignment requirements                                                                                               enable a DRAM row). Enabling a DRAM row starts the charge
+  of RowClone. We demonstrate that our mechanism enables                                                                                                sharing process. Each DRAM cell connected to the DRAM row
+  RowClone end-to-end in the full system, and provides sig-                                                                                             starts sharing its charge with its bitline. This causes the bitline
+  nificant performance improvements over traditional CPU-                                                                                               voltage to deviate from VDD2 (i.e., the charge in the cell perturbs
+  based copy and initialization operations (memcpy [107] and                                                                                            the bitline voltage). The sense amplifier senses the deviation in
+  calloc [105]) as demonstrated on our PiDRAM prototype.                                                                                                the bitline and amplifies the voltage of the bitline either to VDD
+• We implement and evaluate a state-of-the-art DRAM-based                                                                                               or to 0. As such, an ACT command copies one DRAM row to
+  true random number generation technique (D-RaNGe). Our                                                                                                the sense amplifiers (i.e., row buffer). The memory controller
+  implementation provides a solid foundation for future work                                                                                            can send READ/WRITE commands to transfer data from/to the
+  on system integration of DRAM-based PuM security primi-                                                                                               sense amplifier array. Once the memory controller needs to ac-
+  tives (e.g., PUFs [13, 82], TRNGs [13, 123, 124]), implemented                                                                                        cess another DRAM row, the memory controller can close the
+  using real unmodified DRAM chips.                                                                                                                     enabled DRAM row by sending a precharge (PRE) command on
+                                                                                                                                                        the command bus. The PRE command first disconnects DRAM
+2. Background                                                                                                                                           cells from their bitlines by disabling the enabled wordline and
+We provide the relevant background on DRAM organization,                                                                                                then precharges the bitlines to VDD  2 .
+DRAM operation and commodity DRAM based PuM tech-                                                                                                       DRAM Timing Parameters. DRAM datasheets specify a set
+niques. We refer the reader to prior works for more com-                                                                                                of timing parameters that define the minimum time window
+prehensive background about DRAM organization and opera-                                                                                                between valid combinations of DRAM commands [26,27,81,98].
+tion [26, 29, 49, 50, 87, 89, 95, 99, 100, 113, 123, 128].                                                                                              The memory controller must wait for tRCD, tRAS, and tRP
+                                                                                                                                                        nanoseconds between successive ACT → RD, ACT → ACT, and
+2.1. DRAM Background
+                                                                                                                                                        PRE → ACT commands, respectively (Figure 1, bottom). Prior
+DRAM-based main memory is organized hierarchically. Fig. 1                                                                                              works show that these timing parameters can be violated (e.g.,
+(top) depicts this organization. A processor is connected to one                                                                                        successive ACT → RD commands may be issued with a shorter
+or more memory channels (DDRx in the figure) ➊. Each chan-                                                                                              time window than tRCD) to improve DRAM access latency [26,
+nel has its own command, address, and data buses. Multiple                                                                                              27, 81, 96, 98], implement physical unclonable functions [13,
+memory modules can be plugged into a single channel. Each                                                                                               82, 126], generate true random numbers [83, 123, 124], copy
+module contains several DRAM chips ➋. Each chip contains                                                                                                data [44, 148], and perform bitwise AND/OR operations [44,
+multiple DRAM banks that can be accessed independently ➌.                                                                                               143–145, 149] in commodity DRAM devices.
+Data transfers between DRAM memory modules and proces-                                                                                                  DRAM Internal Address Mapping. DRAM manufacturers
+sors occur at cache block granularity. The cache block size is                                                                                          use DRAM-internal address mapping schemes [30, 89, 130]
+typically 64 bytes in current systems.                                                                                                                  to translate from logical (e.g., row, bank, column) DRAM ad-
+                                                                                   DRAM Subarray                                                        dresses that are used by the memory controller to physical
+                                                DRAM
+                                                Bank
+                                                                                                       4                         DRAM Cell              DRAM addresses that are internal to the DRAM chip (e.g., the
+                                                                                     DRAM Row
+                                                             Wordline 
+            Controller
+
+
+
+
+                                                                                                                                                        physical position of a DRAM row within the chip). These
+                          1
+                                                                                                           Wordline 
+
+
+
+
+                                Chip
+                                                                         Drivers
+
+
+
+
+                                                                                                                       Drivers
+  Memory 
+
+
+
+
+                                         DDRx
+                         DDRx   Chip
+                                                 ...
+
+
+
+
+                                                                                                                                                        schemes allow (i) post-manufacturing row repair techniques to
+                                  ...
+
+
+
+
+                                                                                                                                        Capacitor
+
+
+                                Chip
+
+                                                                                                                                                        map erroneous DRAM rows to redundant DRAM rows and (ii)
+                                                                                                                                  Access 
+
+                                DRAM     2      DRAM
+                                                                                                                                 Transistor   5
+ CPU                            Module          Bank
+
+
+                                                                                                                                                        DRAM manufacturers to organize DRAM internals in a cost-
+                                                                                    Sense Amplifiers
+                                                       3
+
+                                                           tRAS                                                                                         efficient and reliable way [76, 159]. DRAM-internal address
+    DRAM
+   Command                              ACT                 RD                                PRE                                ACT                    mapping schemes can be substantially different across different
+     Bus                                                                                                                                                DRAM chips [15, 30, 63, 70, 75–77, 88, 96, 110, 127, 129, 130, 142].
+                                                tRCD                                                       tRP
+                           *All commands target the same DRAM bank                                                               time                   Thus, consecutive logical DRAM row addresses might not point
+                                                                                                                                                        to physical DRAM rows in the same subarray.
+Figure 1: DRAM organization (top). Timing diagram of DRAM
+commands (bottom).                                                                                                                                      2.2. PuM Techniques
+    Inside a DRAM bank, DRAM cells are laid out as a two di-                                                                                            Prior work proposes a variety of in-DRAM computation mech-
+mensional array of wordlines (i.e., DRAM rows) and bitlines                                                                                             anisms (i.e., PuM techniques) that (i) have great potential to
+(i.e., DRAM columns) ➍. Wordlines are depicted in blue and                                                                                              improve system performance and energy efficiency [9, 28, 40,
+
+
+                                                                                                                                                    3
+
+
+
+===== Page 4 =====
+
+54, 144, 145, 147–151] or (ii) can provide low-cost security prim-           First, implementing new DDRx command sequences that
+itives [13, 14, 82, 83, 124, 126]. A subset of these in-DRAM             perform PuM operations requires modifications to the mem-
+computation mechanisms are demonstrated on real DRAM                     ory controller. Existing general purpose computers do not
+chips [13, 44, 82, 83, 124, 126]. We describe the major relevant         support customizations to the memory controller to dynami-
+prior works briefly:                                                     cally modify manufacturer-recommended DRAM timing pa-
+RowClone [148] is a low-cost DRAM architecture that can                  rameters [27, 60, 81, 83, 98]. This hinders the possibility of
+perform bulk data movement operations (e.g., copy, initializa-           studying end-to-end implementations of PuM techniques on
+tion) inside DRAM chips at high performance and low energy.              such platforms. Second, PuM techniques impose data mapping
+Ambit [144, 145, 147, 150, 151] is a new DRAM substrate that             and allocation requirements (Section 5) that are not satisfied
+can perform (i) bitwise majority (and thus bitwise AND/OR)               by current memory management and allocation mechanisms
+operations across three DRAM rows by simultaneously acti-                (e.g., malloc [106]). Current OS memory management schemes
+vating three DRAM rows and (ii) bitwise NOT operations on a              must be augmented to satisfy these requirements. Existing
+DRAM row using 2-transistor 1-capacitor DRAM cells [72,112].             specialized DRAM testing platforms (e.g., SoftMC [60]) do not
+ComputeDRAM [44] demonstrates in-DRAM copy (previ-                       have system support to enable this. By design, these plat-
+ously proposed by RowClone [148]) and bitwise AND/OR op-                 forms are not built for system integration. Hence, it is difficult
+erations (previously proposed by Ambit [145]) on real DDR3               to evaluate system-level mechanisms that enable PuM tech-
+chips. ComputeDRAM performs in-DRAM operations by issu-                  niques on DRAM testing platforms. Third, system simulators
+ing carefully-engineered, valid sequences of DRAM commands               (i) do not model DRAM operation that violates manufacturer-
+with violated tRAS and tRP timing parameters (i.e., by not               recommended timing parameters, (ii) do not have a way of
+obeying manufacturer-recommended timing parameters de-                   interfacing with real DRAM chips that embody undisclosed
+fined in DRAM chip specifications [116]). By issuing command             and unique characteristics that have implications on how PuM
+sequences with violated timing parameters, ComputeDRAM                   techniques are integrated into real systems (e.g., proprietary
+activates two or three DRAM rows in a DRAM bank in quick                 and chip-specific DRAM internal address mapping [30,89,130])
+succession (i.e., performs two or three row activations). Com-           that influence PuM operations, and (iii) cannot support studies
+puteDRAM leverages (i) two row activations to transfer data              on the reliability of PuM techniques since system simulators
+between two DRAM rows and (ii) three row activations to per-             do not model environmental conditions and process variation.
+form the majority function in real unmodified DRAM chips.                We summarize the limitations of the relevant experimental
+D-RaNGe [83] is a state-of-the-art high-throughput DRAM-                 platforms later in Table 4.
+based true random number generation technique. D-RaNGe                       Our goal is to develop a flexible end-to-end framework
+leverages the randomness in DRAM activation (tRCD) failures              that enables rapid system integration of commodity DRAM
+as its entropy source. D-RaNGe extracts random bits from                 based PuM techniques and facilitates studies on end-to-end
+DRAM cells that fail with 50% probability when accessed with             full-system implementations of PuM techniques using real
+a reduced (i.e., violated) tRCD. D-RaNGe demonstrates high-              DRAM devices. To this end, we develop PiDRAM.
+quality true random number generation on a vast number of
+real DRAM chips across multiple generations.                             4. PiDRAM
+QUAC-TRNG [124] demonstrates that four DRAM rows can                     Implementing commodity DRAM based PuM techniques end-
+be activated in a quick succession using an ACT-PRE-ACT                  to-end requires developing new hardware (HW) and software
+command sequence (called QUAC) with violated tRAS and                    (SW) components or augmenting existing components with
+tRP timing parameters in real DDR4 DRAM chips. QUAC-                     new functionality (e.g., memory allocation for RowClone re-
+TRNG uses QUAC to generate true random numbers at high                   quires a new memory allocation routine in the OS, Section 5.1).
+throughput and low latency.                                              To ease the process of modifying various components across
+                                                                         the hardware and software stack to implement new PuM tech-
+3. Motivation                                                            niques, PiDRAM provides key HW and SW components. Fig-
+Implementing DRAM-based PuM techniques and integrating                   ure 2 presents an overview of the HW and SW components of
+them into a real system requires modifications across the hard-          the PiDRAM framework. Later in Section 4.3, we describe the
+ware and software stack. End-to-end implementations of PuM               general workflow for executing a PuM operation on PiDRAM.
+techniques require proper tools that (i) are flexible, to enable
+rapid development of PuM techniques and (ii) support real
+DRAM devices, to correctly observe the effects of reduced
+                                                                         4.1. Hardware Components
+DRAM timing operations that are fundamental to enabling                  PiDRAM comprises two key hardware components. Both of
+commodity DRAM based PuM in real unmodified DRAM de-                     these components are designed with the goal to provide a flexi-
+vices. Existing general-purpose computers, specialized DRAM              ble and easy to use framework for evaluating PuM techniques.
+testing platforms (e.g., those aforementioned, Section 1) cannot            ❶ PuM Operations Controller (POC). POC decodes and
+be used to study end-to-end implementations of commodity                 executes PiDRAM instructions (e.g., RowClone-Copy [148]
+DRAM based PuM techniques.                                               that are used by the programmer to perform PuM operations.
+
+
+                                                                     4
+
+
+
+===== Page 5 =====
+
+                 User Application                    Rocket                     PuM Ops.  1               PiDRAM   2
+                                                     Chip                       Controller                Memory Controller
+
+
+
+
+                                                                                                                                                                      DRAM Module
+                       System Calls                                             (POC)
+                               4                         RISC-V 
+
+
+
+
+                                                                                                                                     Physical Interface
+        Custom Supervisor Software                      CPU Core
+                                                                                 Instruction Register
+                                                                                                                                                            DDR3 
+                     Function Calls                    STORE Instruction            Flag Register
+                                                                                                               Command                                    Interface
+                    pumolib 3                           LOAD Instruction            Data Register
+                                                                                                               Scheduler
+
+                 pumolib function
+                                                                                Memory Bus
+Figure 2: PiDRAM overview. Modified hardware (in green) and software (in blue) components. Unmodified components are in
+gray. A pumolib function executes load and store instructions in the CPU to perform PuM operations (in red). We use yellow to
+highlight the key hardware structures that are controlled by the user to perform PuM operations.
+
+POC communicates with the rest of the system over two well-                            are left open following a DRAM row activation) to exploit
+defined interfaces. First, it communicates with the CPU over                           temporal locality in memory accesses to the DRAM module.
+a memory-mapped interface, where the CPU can send data                                 LOAD/STORE memory requests are simply handled by the
+to or receive data from POC using memory store and load                                command scheduler in a latency-optimized way. Thus, new
+instructions. The CPU accesses the memory-mapped regis-                                modules that are implemented to provide new PuM function-
+ters (instruction, data, and flag registers) in POC to execute                         ality (e.g., a state machine that controls the execution of a
+in-DRAM operations. This improves the portability of the                               new PuM operation) in the custom memory controller do not
+framework and facilitates porting the framework to systems                             compromise the performance of LOAD/STORE memory re-
+that employ different instruction set architectures. Second,                           quests. (iii) The Configuration Register File (CRF) comprises
+POC communicates with the memory controller to perform                                 16 user-programmable registers that store the violated timing
+PuM operations in the DRAM chip over a simple hardware                                 parameters used for DDRx sequences that trigger PuM opera-
+interface. To do so, POC (i) requests the memory controller                            tions (e.g., activation latency used in generating true random
+to perform a PuM operation, (ii) waits until the memory con-                           numbers using D-RaNGe [83], see Section 6) and miscellaneous
+troller performs the operation, and (iii) receives the result of                       parameters for PuM implementations (e.g., true random num-
+the PuM operation from the memory controller. The CPU can                              ber generation period for D-RaNGe, see Section 6). In our
+read the result of the operation by executing load instructions                        implementation, CRF stores only the timing parameters used
+that target the data register in POC.                                                  for performing PuM operations (e.g., RowClone and D-RaNGe).
+    ❷ Custom Memory Controller. PiDRAM’s memory con-                                   We do not store every standard DDRx timing parameter (i.e.,
+troller provides an easy-to-extend basis for commodity DRAM                            non-violated, which are used exactly as defined as in DRAM
+based PuM techniques that require issuing DRAM commands                                chip specifications) in the CRF. Instead these timings are em-
+with violated timing parameters [13, 44, 82, 83, 124]. The mem-                        bedded in the command scheduler.
+ory controller is designed modularly and requires easy-to-make
+modifications to its scheduler to implement new PuM tech-                              4.2. Software Components
+niques. For instance, our modular design enables supporting                            PiDRAM comprises two key software components that comple-
+RowClone operations (Section 5) in just 60 lines of Verilog code                       ment and control PiDRAM’s hardware components to provide
+on top of the baseline custom memory controller’s scheduler                            a flexible and easy to use end-to-end PuM framework.
+that implements conventional DRAM operations (e.g., read,                                 ❸ PuM Operations Library (pumolib). The extensible
+write).                                                                                library (PuM operations library) allows system designers to
+    The custom memory controller employs three key sub-                                implement software support for PuM techniques. Pumolib
+modules to facilitate the implementation of new PuM tech-                              contains customizable functions that interface with POC to
+niques. (i) The Periodic Operations Module periodically issues                         perform PuM operations in real unmodified DRAM chips. The
+DDR3 refresh [117] and interface maintenance commands [52].                            customizable functions hide the hardware implementation de-
+(ii) A simple DDR3 Command Scheduler supports conventional                             tails of PuM techniques implemented in PiDRAM from soft-
+DRAM operations (e.g., activate, precharge, read, and write).                          ware developers (that use pimolib). For example, although
+This scheduler applies an open-bank policy (i.e., DRAM banks                           we expose PuM techniques to software via memory LOAD-
+                                                                  Table 1: Pumolib functions
+ Function             Arguments                              Description
+ set_timings          RowClone_T1, RowClone_T2, tRCD         Updates CRF registers with the timing parameters used in RowClone (T1 and T2) and D-RaNGe (tRCD) operations.
+                                                             Updates CRF registers, configuring the random number generator to to access the DRAM cache block at address
+ rng_configure        period, address, bit_offsets
+                                                             every period cycles and collect the bits at bit_offsets from the cache block.
+ copy_row             source_address, destination_address    Performs a RowClone-Copy operation in DRAM from the source_address to the destination_address.
+ activation_failure   address                                Induces an activation failure in a DRAM location pointed by the address.
+ buf_size             -                                      Returns the number of random words in the random number buffer.
+ rand_dram            -                                      Returns 32 bits (i.e., random words) from the random number buffer.
+
+
+
+
+                                                                                   5
+
+
+
+===== Page 6 =====
+
+               User Application                  Rocket                     POC                        PiDRAM  
+                                                 Chip                   4                              Memory Controller
+
+
+
+
+                                                                                                                                                                DRAM Module
+                 1     System Calls                                           copy_row (S, D)
+
+
+
+
+                                                                                                                               Physical Interface
+                                                      RISC-V 
+        Custom Supervisor Software                                      5 Start (S) Ack (A) Fin. (F)
+                                                     CPU Core                                                                                         DDR3 
+                2 copy_row (S, D) 
+                                                                               1       0       0       6
+                                                3 STORE Instruction             0 7 1           1 9        Command        8                         Interface
+                     S: source D: destination
+                      pumolib                   10   LOAD Instruction         Data Register
+                                                                                                           Scheduler
+
+                copy_row (S, D)
+                                                                            Memory Bus
+                                        Figure 3: Workflow for a PiDRAM RowClone-Copy operation
+
+/STORE operations (POC is exposed as a memory-mapped                                the copy_row instruction (i.e., the instruction that performs a
+module, Section 4.1), PuM techniques can also be exposed via                        RowClone-Copy operation in DRAM) ④ and the second store
+specialized instructions provided by ISA extensions. Pumolib                        instruction sets the Start flag in the flag register to logic-1 ⑤
+hides such implementation details from the user of the library                      in POC. When the Start flag is set, POC instructs the PiDRAM
+and contributes to the modular design of the framework.                             memory controller to perform a RowClone-Copy operation
+   We implement a general protocol that defines how program-                        using violated timing parameters ⑥. The POC waits until the
+mers express the information required to execute PuM op-                            memory controller starts executing the operation, after which
+erations to the PuM operations controller (POC). A typical                          it sets the Start flag to logic-0 and the Ack flag to logic-1 ⑦,
+function in pumolib performs a PuM operation in four steps:                         indicating that it started the execution of the PuM operation.
+It (i) writes a PiDRAM instruction to the POC’s instruction                         The PiDRAM memory controller performs the RowClone-Copy
+register, (ii) sets the Start flag in POC’s flag register, (iii) waits              operation by issuing a set of DRAM commands with violated
+for the POC to set the Ack flag in POC’s flag register, and (iv)                    timing parameters ⑧. When the last DRAM command is is-
+reads the result of the PuM operation from POC’s data register                      sued, the memory controller sets the Finish flag (denoted as
+(e.g., the true random number after performing an in-DRAM                           Fin. in Figure 3) in the flag register to logic-1 ⑨, indicating
+true random number generation operation, Section 6). We list                        the end of execution for the last PuM operation that the mem-
+the currently implemented pumolib functions in Table 1.                             ory controller acknowledged. The copy function periodically
+   ❹ Custom Supervisor Software. PiDRAM provides a cus-                             checks either the Ack or the Finish flag in the flag register
+tom supervisor software that implements the necessary OS                            (depending on a user-supplied argument) by executing load
+primitives (i.e., virtual memory management, memory alloca-                         instructions that target the flag register ⑩. When the periodi-
+tion and alignment) for end-to-end implementation of PuM                            cally checked flag is set, the copy function returns. This way,
+techniques. This facilitates developing end-to-end integration                      the copy function optionally blocks until the start (i.e., the Ack
+of PuM techniques in the system as these techniques require                         flag is set) or the end (i.e., the Finish flag is set) of the execution
+modifications across the software stack. For example, integrat-                     of the PuM operation (in this example, RowClone-Copy).3
+ing RowClone end-to-end in the full system requires a new
+memory allocation mechanism (Section 5.1) that can satisfy                          4.4. Use Cases
+the memory allocation constraints of RowClone [148]. Thus,
+we implement the necessary functions and data structures                            PiDRAM is primarily designed to study end-to-end implemen-
+in the custom supervisor software to implement an alloca-                           tations of commodity DRAM based PuM techniques [13, 44, 82,
+tion mechanism that satisfies RowClone’s constraints. This                          83,123] on real systems. Beyond commodity DRAM based PuM
+allows PiDRAM to be extended easily to implement support                            techniques, many prior works propose minor modifications to
+for new PuM techniques that share similar memory allocation                         DRAM arrays to enable various arithmetic [9, 32, 40, 54] and
+constraints (e.g., Ambit [145], SIMDRAM [54], and QUAC-                             bitwise operations [9, 145, 147, 149, 151] and security primi-
+TRNG [124], as shown in Table 2).                                                   tives [126]. These PuM techniques share common memory
+                                                                                    allocation and coherence requirements (Section 5.1) that must
+4.3. Execution of a PuM Operation                                                   be satisfied to enable their end-to-end integration into a real
+We describe the general workflow for a PiDRAM operation                             system. PiDRAM facilitates the implementation of PuM tech-
+(e.g., RowClone-Copy [148], random number generation using                          niques and enables rapid exploration of such integration chal-
+D-RaNGe [83]) in Figure 3 over an example copy_row() func-
+                                                                                        3 The data register is not used in a RowClone-Copy [148] operation because
+tion that is called by the user to perform a RowClone-Copy
+                                                                                    the result of the RowClone-Copy operation is stored in memory (i.e., the
+operation in DRAM.                                                                  source memory row is copied to the destination memory row). The data
+   The user makes a system call to the custom supervi-                              register is used in a D-RaNGe [83] operation, as described in Section 6. When
+sor software ① that in turn calls the copy_row(source,                              used, the command scheduler stores the random numbers generated by the D-
+                                                                                    RaNGe operation in the data register. To read the generated random number,
+destination) function in the pumolib ②. The function ex-
+                                                                                    we implement a pumolib function called rand_dram() that executes load
+ecutes two store instructions in the RISC-V core ③. The                             instructions in the RISC-V core to retrieve the random number from the data
+first store instruction updates the instruction register with                       register in POC.
+
+
+                                                                               6
+
+
+
+===== Page 7 =====
+
+lenges on a real DRAM-based system. Table 2 describes some                        generate the RISC-V hardware system. Our custom supervisor
+of the PuM case studies PiDRAM can enable.                                        software extends the RISC-V Proxy Kernel [136] to support
+   Other than providing an easy-to-use basis for end-to-end                       the necessary OS primitives on PiDRAM’s prototype. Figure 4
+implementations of commodity DRAM based PuM techniques,                           shows our prototype.
+PiDRAM can be easily extended with a programmable micro-                                                 Host Machine
+processor placed near the memory controller to study sys-
+tem integration challenges of Processing-near-Memory (PnM)
+techniques (e.g., efficient pointer chasing [57, 58, 65], general-
+purpose compute [158], machine learning [74, 86, 94, 101, 122],
+databases [21, 22, 97], graph processing [16]).                                                   FPGA Board
+
+4.5. PiDRAM’s HW & SW Components: Summary
+                                                                                                   RISC-V System
+We identify and build two hardware components (PuM Oper-                                                                          PiM-Enabled DIMM
+ations Controller and Custom Memory Controller) and two
+software components (PuM Operations Library, Custom Super-
+visor Software) as key components that are commonly required                                        Figure 4: PiDRAM’s FPGA prototype
+by end-to-end PuM implementaions. We reuse these key com-
+ponents to implement two different PuM mechanisms (Row-                           Simulation Infrastructure. To aid the users in testing the
+Clone in Section 5 and D-RaNGe in Section 6) in PiDRAM. The                       correctness of any modifications they make on top of PiDRAM,
+key components can be reused in the same way to implement                         we provide the developers with a Verilog simulation environ-
+other PuM mechanisms (e.g., the ones in Table 2). However,                        ment that injects regular READ/WRITE commands and custom
+reusing a component does not mean that the component can                          commands (e.g., update the Configurable Register File (CRF),
+simply be instantiated in a system and the system will be able                    perform RowClone-Copy, generate random numbers) to the
+to perform PuM operations immediately.                                            memory controller. When used in conjunction with the Micron
+   We acknowledge that these components require modifica-                         DDR3 Verilog model provided by Xilinx [164], the simulation
+tions to implement new PuM techniques in PiDRAM and pos-                          environment can help the developers to easily understand if
+sibly to integrate PiDRAM into other systems. In fact, we                         something unexpected is happening in their implementation
+quantify the degree of these modifications in our RowClone                        (e.g., if timing parameters are violated).
+and D-RaNGe case studies. We show that the key components                         Open Source Repository. We make PiDRAM freely available
+form a useful and easy-to-extend basis for PuM techniques                         to the research community as open source software at https:
+with our Verilog and C code complexity analyses for both use                      //github.com/CMU-SAFARI/PiDRAM. Our repository includes
+cases (Sections 5.5.1 and 6.2).                                                   the full PiDRAM prototype that has RowClone (Section 5) and
+                                                                                  D-RaNGe (Section 6) implemented end-to-end on the RISC-V
+4.6. PiDRAM Prototype                                                             system.
+We develop a prototype of the PiDRAM framework on an FPGA-
+based platform. We use the Xilinx ZC706 FPGA board [167]                          5. Case Study #1: End-to-end RowClone
+to interface with real DDR3 modules. Xilinx provides a DDR3                       We implement support for ComputeDRAM-based (i.e., using
+PHY IP [164] that exposes a low-level “DFI” interface [33]                        carefully-engineered sequences of valid DRAM commands
+to the DDR3 module on the board. We use this interface to                         with violated timing parameters) RowClone (in-DRAM copy-
+issue DRAM commmands to the DDR3 module. We use the                               /initialization) operations on PiDRAM to conduct a detailed
+existing RISC-V based SoC generator, Rocket Chip [11], to                         study of the challenges associated with implementing Row-
+Table 2: Various known PuM techniques that can be studied using PiDRAM. PuM techniques we implement in this work are
+highlighted in bold.
+    PuM Technique            Description                Integration Challenges
+    ComputeDRAM-based [44]   Bulk data-copy and ini-    (i) memory allocation and alignment mechanisms that map source & destination operands of a copy operation
+    RowClone [148]           tialization within DRAM    into same DRAM subarray; (ii) memory coherence, i.e., source operand must be up-to-date in DRAM.
+                             True random number         (i) periodic generation of true random numbers; (ii) memory scheduling policies that minimize the interference
+    D-RaNGe [83]
+                             generation using DRAM      caused by random number requests.
+    ComputeDRAM-based [44]   Bitwise operations in      (i) memory allocation and alignment mechanisms that map operands of a bitwise operation into same DRAM
+    Ambit [145]              DRAM                       subarray; (ii) memory coherence, i.e., operands of the bitwise operations must be up-to-date in DRAM.
+                                                        (i) memory allocation and alignment mechanisms that map operands of an arithmetic operation into same DRAM
+                             Arithmetic operations in
+    SIMDRAM [54]                                        subarray; (ii) memory coherence, i.e., operands of the arithmetic operations must be up-to-date in DRAM; (iii) bit
+                             DRAM
+                                                        transposition, i.e., operand bits must be laid out vertically in a single DRAM bitline.
+                             Physical     unclonable
+    DL-PUF [82]                                         memory scheduling policies that minimize the interference caused by generating PUF responses.
+                             functions in DRAM
+    QUAC-TRNG [123]    and   True random number         (i) periodic generation of true random numbers; (ii) memory scheduling policies that minimize the interference
+    Talukder+ [13]           generation using DRAM      caused by random number requests; (iii) efficient integration of the SHA-256 cryptographic hash function.
+
+
+
+                                                                              7
+
+
+
+===== Page 8 =====
+
+Clone end-to-end on a real system. None of the relevant prior                                  Bank X                     Bank Y
+
+works [44, 54, 143, 145, 148, 149, 151, 160] provide a clear de-                            DRAM ROW           Source 1
+                                                                                                                             1
+scription or a real system demonstration of a working memory           Subarray W   Source 2                   Target 1
+
+allocation mechanism that can be implemented in a real operat-                          2      Target 2
+                                                                                                          3
+                                                                                                                          Source 3
+
+ing system to expose RowClone capability to the programmer.
+                                                                                               Target 3                   Source 4
+                                                                                                                                              4
+                                                                       Subarray Z                                         Target 4
+5.1. Implementation Challenges
+Data Mapping. RowClone has data mapping and alignment
+requirements that cannot be satisfied by current memory allo-          Figure 5: A DRAM chip with two banks and two subarrays. Only
+cation mechanisms (e.g., malloc [106]). We identify four major         one operation (i.e., operation ➍) can succeed as its operands
+                                                                       satisfy all of mapping, alignment and granularity constraints.
+issues that complicate the process of implementing support
+for RowClone in real systems. First, the source and destination
+operands (i.e., page (4 KiB)-sized arrays) of the copy opera-          addresses to physical DRAM addresses. General-purpose pro-
+tion must reside in the same DRAM subarray. We refer to this           cessors use complex functions to map physical addresses to
+as the mapping problem. Second, the source and destination             DDRx addresses (e.g., DRAM banks, rows and columns) [62].
+operands must be aligned to DRAM rows. We refer to this                The operating system (OS) maps virtual addresses to physi-
+as the alignment problem. Third, the size of the copied data           cal addresses to provide isolation between multiple processes.
+must be a multiple of the DRAM row size. The size constraint           Only these virtual addresses are exposed to the programmer.
+defines the granularity at which we can perform bulk-copy              Without control over the virtual address → DRAM address
+operations using RowClone. We refer to this as the granular-           mapping, the programmer cannot easily place data in a way
+ity problem. Fourth, RowClone must operate on up-to-date               that satisfies the mapping and alignment requirements of an
+data that resides in main memory. Modern systems employ                in-DRAM copy operation.
+caches to exploit locality in memory accesses and reduce mem-             We implement a new memory allocation mechanism that
+ory latency. Thus, cache blocks (typically 64 B) of either the         can perform memory allocation for RowClone (in-DRAM
+source or the destination operands of the RowClone operation           copy/initialization) operations. This mechanism enables page-
+may have cache block copies present in the cache hierarchy.            granularity RowClone operations (i.e., a virtual page can be
+Before performing RowClone, the cached copies of pieces of             copied to another virtual page using RowClone) without intro-
+both source and destination operands must be invalidated and           ducing any changes to the programming model. The mecha-
+written back to main memory. We refer to this as the memory            nism places the operands of RowClone operations in the same
+coherence problem.                                                     DRAM subarray while maximizing the bank-level parallelism
+   We explain the data mapping and alignment requirements              in regular DRAM accesses (reads & writes) to these operands
+of RowClone using Figure 5. The figure depicts a simplified            (such that the commonly-performed streaming accesses to
+version of a DRAM chip with two banks and two subarrays.               these operands benefit from bank-level parallelism in DRAM).
+The operand Source 1 cannot be copied to the operand Target            Figure 6 depicts an overview of our memory allocation mecha-
+1 as the operands do not satisfy the granularity constraint            nism.
+(➊). Performing such a copy operation would overwrite the
+                                                                                               Memory
+remaining (i.e., non-Target 1) data in Target 1’s DRAM row              Operands                                DRAM Device
+                                                                                               Blocks
+with the remaining (i.e., non-Source 1) data in Source 1’s DRAM
+row. Source 2 cannot be copied to Target 2 as Target 2 is not                                   MBA00         BANK X                 BANK Y
+aligned to its DRAM row (➋). Source 3 cannot be copied to                Array                  MBA01          MBA00                  MBA01
+Target 3, as these operands are not mapped to the same DRAM
+                                                                           A
+                                                                                                 ...
+
+
+
+
+subarray (➌). In contrast, Source 4 can be copied to Target 4                                                  MBB00                  MBB01
+using in-DRAM copy because these operands are (i) mapped                                       MBAXX
+to the same DRAM subarray, (ii) aligned to their DRAM rows
+and (iii) occupy their rows completely (i.e., the operands have                                 MBB00
+sizes equal to DRAM row size) (➍).                                                                                                   MBAXX
+                                                                         Array                  MBB01
+                                                                                                                                     MBBXX
+                                                                           B
+                                                                                                  ...
+
+
+
+
+5.2. Memory Allocation Mechanism
+Computing systems employ various layers of address map-                                        MBBXX
+pings that obfuscate the DRAM row-bank-column address                    Figure 6: Overview of our memory allocation mechanism
+mapping from the programmer [30, 61], which makes allocat-
+ing source and target operands as depicted in Figure 5-(➍)                At a high level, our memory allocation mechanism (i) splits
+difficult. DRAM manufacturers employ DRAM-internal ad-                 the source and destination operands into page-sized virtually-
+dress mapping schemes (Section 2.1) that translate from logical        addressed memory blocks, (ii) allocates two physical pages in
+(e.g., memory-controller-visible DRAM row, bank, column)               different DRAM rows in the same DRAM subarray, (iii) assigns
+
+
+                                                                   8
+
+
+
+===== Page 9 =====
+
+these physical pages to virtual pages that correspond to the              Finding the DRAM Rows in a Subarray. Finding the DRAM
+source and destination memory blocks at the same index such               row addresses that belong to the same subarray is not straight-
+that the source block can be copied to the destination block              forward due to DRAM-internal mapping schemes employed by
+using RowClone. We repeat this process until we exhaust                   DRAM manufacturers (Section 5.1). It is extremely difficult to
+the page-sized memory blocks. As the mechanism processes                  learn which DRAM address (i.e., bank-row-column) is actually
+subsequent page-sized memory blocks of the two operands,                  mapped to a physical location (e.g., a subarray) in the DRAM
+it allocates physical pages from a different DRAM bank to                 device, as these mappings are not exposed through publicly
+maximize bank-level parallelism in streaming accesses to these            accessible datasheets or standard definitions [71, 116, 130]. We
+operands.                                                                 make the key observation that the entire mapping scheme need
+                                                                          not be available to successfully perform RowClone operations.
+   To overcome the mapping, alignment, and granularity prob-
+lems, we implement our memory management mechanism in                        We observe that for a set of {source, destination} DRAM row
+the custom supervisor software of PiDRAM. We expose the                   address pairs, RowClone operations repeatedly succeed with a
+allocation mechanism using the alloc_align(N, ID) system                  100% probability. We hypothesize that these pairs of DRAM
+call. The system call returns a pointer to a contiguous array of          row addresses are mapped to the same DRAM subarray. We
+N bytes in the virtual address space (i.e., one operand). Multi-          identify these row address pairs by conducting a RowClone suc-
+ple calls with the same ID to alloc_align(N, ID) place the                cess rate experiment where we repeatedly perform RowClone
+allocated arrays in the same subarray in DRAM, such that they             operations between every source, destination row address pair
+can be copied from one to another using RowClone. If N is                 in a DRAM bank. Our experiment works in three steps: we (i)
+too large such that it exceeds the size of available physical             initialize both the source and the destination row with random
+memory, alloc_align fails and causes an exception. Our                    data, (ii) perform a RowClone operation from the source to the
+implementation of RowClone requires application developers                destination row, and (iii) compare the data in the destination
+to directly use alloc_align to allocate data instead of malloc            row with the source row. RowClone success rate is calculated
+and similar function calls.                                               as the number of bits that differ between the source and des-
+                                                                          tination rows’ data divided by the number of bits stored in a
+  The custom supervisor software maintains three key struc-               row (8 KiB in our prototype). If there is no difference between
+tures to make alloc_align() work: (i) Subarray Mapping                    the source and the destination rows’ data (i.e., the RowClone
+Table (SAMT), (ii) Allocation ID Table (AIT), and (iii) Initializer       success rate for the source and the destination row is 100%), we
+Rows Table (IRT).                                                         infer that the RowClone operation was successful. We repeat
+1) Subarray Mapping Table (SAMT). We use the Subarray                     the experiment for 1000 iterations for each row address pair
+Mapping Table (SAMT) to maintain a list of physical page ad-              and if every iteration is successful, we store the address pair in
+dresses that point to DRAM rows that are in the same DRAM                 the SAMT, indicating that the row address pair is mapped to dif-
+subarray. alloc_align() queries SAMT to find physical ad-                 ferent rows in the same DRAM subarray. The same RowClone
+dresses that map to rows in one subarray.                                 success rate experiment could be conducted in other systems
+                                                                          that are based on PiDRAM or in a PiDRAM prototype that
+    SAMT contains the physical pages that point to DRAM rows
+                                                                          uses a different DRAM module. Since the RowClone success
+in each subarray. SAMT is indexed using subarray identifiers
+                                                                          rate experiment is a one-time process, its overheads (e.g., time
+(SA IDs) in the range [0, number of subarrays). SAMT con-
+                                                                          taken to iterate over all DRAM rows using our experiment) are
+tains an entry for every subarray. An entry consists of two
+                                                                          amortized over the lifetime of such a system.
+elements: (i) the number of free physical address tuples and
+(ii) a list of physical address tuples. Each tuple in the list con-       2) Allocation ID Table (AIT). To keep track of different
+tains two physical addresses that respectively point to the first         operands that are allocated by alloc_align using the same
+and second halves of the same DRAM row. The list of tuples                ID (used to place different arrays in the same subarray), we
+contains all the physical addresses that point to DRAM rows               use the Allocation ID Table (AIT). AIT entries are indexed
+in the DRAM subarray indexed by the SAMT entry. We allo-                  by allocation IDs (the parameter ID of the alloc_align call).
+cate free physical pages listed in an entry and assign them to            Each AIT entry stores a pointer to an SAMT entry. The SAMT
+the virtual pages (i.e., memory blocks) that make up the row-             entry pointed by the AIT entry contains the set of physical
+copy operands (i.e., arrays) allocated by alloc_align(). We               addresses that were allocated using the same allocation ID. AIT
+slightly modify our high-level memory allocation mechanism                entries are used by the alloc_align function to find which
+to allow for two memory blocks (4 KiB virtually-addressed                 DRAM subarray can be used to allocate DRAM rows from,
+pages) of an array to be placed in the same DRAM row, as the              such that the newly allocated array can be copied to other
+page size in our system is 4 KiB, and the size of a DRAM row              arrays allocated using the same ID.
+is 8 KiB. We call two memory blocks in the same operand that              3) Initializer Rows Table (IRT). To find which row in a
+are placed in the same DRAM row sibling memory blocks (also               DRAM subarray can be used as the source operand in zero-
+called sibling pages). The parameter N of the alloc_align()               initialization (RowClone-Initialize) operations, we maintain
+call defines this relationship: We designate memory blocks                the Initializer Rows Table (IRT). The IRT is indexed using
+that are precisely N/2 bytes apart as sibling memory blocks.              physical page numbers. RowCopy-Initialize operations query
+
+
+                                                                      9
+
+
+
+===== Page 10 =====
+
+the IRT to obtain the physical address of the DRAM row that is          blocks of the source (destination) row of the RowClone opera-
+initialized with zeros and that belong to the same subarray as          tion using CLFLUSH.
+the destination operand (i.e., the DRAM row to be initialized
+with zeros).                                                            5.4. RowClone-Copy and RowClone-Initialize
+   Figure 7 describes how alloc_align() works over an end-              We support the RowClone-Copy and RowClone-Initialize oper-
+to-end example. Using the RowClone success rate experi-                 ations in our custom supervisor software via two functions: (i)
+ment (described above), the custom supervisor software (CSS             RowClone-Copy, rcc(void *dest, void *src, int size)
+for short) finds the DRAM rows that are in the same subar-              and (ii) RowClone-Initialize, rci(void* dest, int size).
+ray (➊) and initializes the Subarray Mapping Table (SAMT).              rcc copies size number of contiguous bytes in the virtual ad-
+The programmer allocates two 128 KiB arrays, A and B, via               dress space starting from the src memory address to the dest
+alloc_align() using the same allocation id (0), with the in-            memory address. rci initializes size number of contiguous
+tent to copy from A to B (➋). CSS allocates contiguous ranges           bytes in the virtual address space starting from the dest mem-
+of virtual addresses to A and B, and then splits the virtual ad-        ory address. We expose rcc and rci to user-level programs
+dress ranges into page-sized memory blocks (➌). CSS assigns             using system calls defined in the custom supervisor software.
+consecutive memory blocks to consecutive DRAM banks and                    rcc (i) splits the source and destination operands into page-
+accesses the Allocation ID Table (AIT) with the allocation id           aligned, page-sized blocks, (ii) traverses the page table (Fig-
+(➍) for each memory block. By accessing the AIT, CSS re-                ure 7-➑) to find the physical address of each block (i.e., the
+trieves the subarray id that points to a SAMT entry. The SAMT           address of a DRAM row), (iii) flushes all cache blocks corre-
+entry corresponds to the subarray that contains the arrays              sponding to the source operand and invalidates all cache blocks
+that are allocated using the allocation id (➎). CSS accesses the        corresponding to the destination operand, and (iv) performs a
+SAMT entry to retrieve two physical addresses that point to             RowClone operation from the source row to the destination
+the same DRAM row. CSS maps a memory block and its sibling              row using pumolib’s copy_row() function.
+memory block (i.e., the memory block that is N/2 bytes away                rci (i) splits the destination operand into page-aligned, page-
+from this memory block, where N is the size argument of the             sized blocks, (ii) traverses the page table to find the physical
+alloc_align() call) to these two physical addresses, such that          address of the destination operand, (iii) queries the Initializer
+they are mapped to the first and the second halves of the same          Rows Table (IRT, see Section 5.2) to obtain the physical address
+DRAM row (➏). Once allocated, these physical addresses are              of the initializer row (i.e., source operand), (iv) invalidates the
+pinned to main memory and cannot be swapped out to storage.             cache blocks corresponding to the destination operand, and (v)
+Finally, CSS updates the page table with the physical addresses         performs a RowClone operation from the initializer row to the
+to map the memory blocks to the same DRAM row (➐).                      destination row using using pumolib’s copy_row() function.
+
+5.3. Maintaining Memory Coherence                                       5.5. Evaluation
+Since memory instructions update the cached copies of data              We evaluate our solutions for the challenges in implementing
+(Section 5.1), a naive implementation of RowClone can poten-            RowClone end-to-end on a real system using PiDRAM. We
+tially operate on stale data because cached copies of RowClone          modify the custom memory controller to implement DRAM
+operands can be modified by CPU store instructions. Thus, we            command sequences (ACT → P RE → ACT ) to trigger Row-
+need to ensure memory coherence to prevent RowClone from                Clone operations. We set the tRAS and tRP parameters to 10
+operating on stale data.                                                ns (below the manufacturer-recommended 37.5 ns for tRAS
+    We implement a new custom RISC-V instruction, called                and 13.5 ns for tRP [117]). We modify our custom supervisor
+CLFLUSH, to flush dirty cache blocks to DRAM (RISC-V does               software to implement our memory allocation mechanism and
+not implement any cache management operations [161]) so as              add support for RowClone-Copy (rcc) and RowClone-Initialize
+to ensure RowClone operates on up-to-date data. A CLFLUSH               (rci) operations.
+instruction flushes (invalidates) a physically addressed dirty          5.5.1. Experimental Methodology. Table 3 describes the
+(clean) cache block. CLFLUSH or other cache management                  configuration of the components in our system. We use the
+operations with similar semantics are supported in X86 [68]             pipelined and in-order Rocket core with 16 KiB L1 data cache
+and ARM architectures [10]. Thus, the CLFLUSH instruction               and 4-entry TLB as the main processor of our system. We use
+(that we implement) provides a minimally invasive solution              the 1 GiB DDR3 module available on the ZC706 board as the
+(i.e., it requires no changes to the specification of commercial        main memory where we conduct PuM operations.
+ISAs) to the memory coherence problem.
+                                                                                     Table 3: PiDRAM system configuration
+    We modify the non-blocking data cache and the Rocket core
+modules (defined in NBDCache.scala and rocket.scala in Rocket                CPU: 50 MHz; in-order Rocket core [11]; TLB 4 entries DTLB; LRU policy
+Chip [11], respectively) to implement CLFLUSH. We modify                     L1 Data Cache: 16 KiB, 4-way; 64 B line; random replacement policy
+the RISC-V GNU compiler toolchain [135] to expose CLFLUSH                    DRAM Memory: 1 GiB DDR3; 800MT/s; single rank; 8 KiB row size
+as an instruction to C/C++ applications. Before executing a
+RowClone Copy or Initialization operation (see Section 5.4),               Implementing RowClone requires an additional 198 lines
+the custom supervisor software flushes (invalidates) the cache          of Verilog code over PiDRAM’s existing Verilog design. We
+
+
+                                                                   10
+
+
+
+===== Page 11 =====
+
+                            Allocate 128 KiB A and B to same subarray                   1                                                                              8
+                   2          A = alloc_align(128*1024, 0);                                                         Characterize RowClone
+                                                                                                                                                                                Copy 128 KiBs from A to B
+                              B = alloc_align(128*1024, 0);                                                             Success Rate                                            rcc(A, B, 128*1024);
+
+                                                                                                                                                                                          Access page table to find
+                                                                                                              Initialize Subarray                                                          source and destination
+                                             3                            4                                     Mapping Table                                                                   DRAM rows
+
+                                        VAA00
+                                                      Bank 0                                                                                           6
+                                                                                                                                               VAA00       VAA16            7            Page Table
+                   Array                VAA01
+                                                      Bank 1
+                                                                                                                                                                           Virt. Addr.       Physical Address
+                     A
+
+
+
+                                         ...
+                                                                                                                                                                             VAA00           B0 SA0 ROW0
+                                                      Bank 7                                                                              PA11 PA12    PA21 PA22   …         VAA01           B1 SA0 ROW0
+                                        VAA31
+                                                                          Allocation                      Subarray                                                           VAA02           B2 SA0 ROW0
+                                                      Bank 0               ID Table
+                                        VAB00                                                           Mapping Table
+                                                                           Bank 7                                                                                            VAA16           B0 SA0 ROW0
+                                                                                                              Bank 7
+                   Array                 ...                              0 → SA0                        Entry – SA0                           4 KB        4 KB              VAA17           B1 SA0 ROW0
+                     B                                                    1 → SA3      5                 Entry – SA1
+                                                                                                                                                 DRAM ROW                    VAB00           B0 SA0 ROW4
+                                                      Bank 7
+                                        VAB31                                                                                                                                VAB01           B1 SA0 ROW4
+
+
+                                  Figure 7: Alloc_align() and RowClone-Copy (rcc, see Section 5.4) workflow.
+
+add 43 and 522 lines of C code to pumolib and to our custom                     tialization throughput
+                                                                                               Page Table    when data in DRAM is up-to-date (i.e.,
+supervisor software, respectively, to implement RowClone in                     when no  VA
+                                                                                         VA
+                                                                                            coherence      operations
+                                                                                                  B0 SA0 ROW0
+                                                                                                  B1 SA0 ROW0
+                                                                                                                      are needed).       A01
+
+
+
+the software components.                                                        Bare-Metal. We assume that RowClone operations always
+                                                                                                                                         A02
+
+               # of
+                      PA – PA PA – PA   PA – PA
+               Free Pairs         11    12       21    22          K1
+                                                                     SAMT target data
+                                                                          K2             VA       B0 SA0 ROW0
+                                                                                              thatB1isSA0
+                                                                                                       allocated  correctly in DRAM (i.e., there is no
+                                                                                                                                         A16
+                                                                                         VA               ROW0
+                          SAMT                                         Bank 7                                                            A17
+
+   Table 8 describes
+                   Bank 0the mapping
+                                Bank 1    scheme we use in our customSAMT Entry
+                                                                                overhead VA
+                                                                                            introduced      by
+                                                                                                  B0 SA0 ROW4
+                                                                                                               address translation, IRT accesses, and
+                                                                                                                                         B01
+
+memory controller         to translate
+                 SAMT Entry   SAMT Entry from physical to DRAM row-             CLFLUSH  VA operations).
+                                                                                                  B1 SA0 ROW4We directly issue RowClone operations
+                                                                                                                                         B02
+
+
+bank-column addresses. We map physical addresses to DRAM                        via pumolib using physical addresses. Traditional CPU-copy
+                                                                                operations     (executed on the Rocket core) also use physical
+                                                             # of
+columns, banks, and rows from lower-order bits Free         to Pairs
+                                                                higher-
+                                                                      PA PA     …   PA PA         11,    12                K1,      K2
+
+
+
+order bits to exploit the bank-level parallelism in memory                      addresses.
+accesses to consecutive physical pages. We note that our mem-                   No Flush. We assume that the programmer uses the
+ory management mechanism is compatible with other physical                      alloc_align function to allocate the operands of RowClone
+address → DRAM address mappings [62]. For example, for a                        operations. We use a version of rcc and rci system calls that
+mapping scheme where page offset bits (physical address (PA)                    do not use CLFLUSH to flush cache blocks of source and des-
+[11:0]) include all or a subset of the bank address bits, a single              tination operands of RowClone operations. We run the No
+RowClone operand (i.e., a 4 KiB page) would be split across                     Flush configuration on our custom supervisor software. Both
+multiple DRAM banks. This only coarsens the granularity of                      rcc and rci, and traditional CPU-copy operations use virtual
+RowClone operations as the sibling pages that must be copied                    addresses.
+in unison, to satisfy the granularity constraint, increases. We                 5.5.2. Workloads. For the two configurations, we run a mi-
+expect that for other complex or unknown physical address →                     crobenchmark that consists of two programs, copy and init, on
+DRAM address mapping schemes, the characterization of the                       our prototype. Both programs take the argument N , where
+DRAM device for RowClone success rate would take longer. In                     copy copies an N -byte array to another N -byte array and init
+the worst case, DRAM row addresses that belong to the same                      initializes an N -byte array to all zeros. Both programs have
+DRAM subarray can be found by testing all combinations of                       two versions: (i) CPU-copy, which copies/initializes data using
+physical addresses for their RowClone success rate.                             memory loads and stores, (ii) RowClone, which uses Row-
+        Physical                                                                                                 Clone operations to perform copy/initialization. All programs
+                              Physical Page Number                        Page Offset
+        Address
+                       29                                         12 11                       0
+                                                                                                                 use alloc_align to allocate data. The performance results
+        DRAM                                                                                                     we present in this section are the average of a 1000 runs. To
+                               Row               Bank           Column          Byte Offset
+        Address                                                                                                  maintain the same initial system state for both CPU-copy and
+                       29                 16 15         13 12             3 2                 0
+                                                                                                                 RowClone, we flush all cache blocks before each one of the
+Figure 8: Physical address to DRAM address mapping in                                                            1000 runs. We run each program for array sizes (N ) that are
+PiDRAM. Byte offset is used to address the byte in the DRAM                                                      powers of two and 8 KiB < N < 8 M iB, and find the av-
+burst.                                                                                                           erage copy/initialization throughput across all 1000 runs (by
+   We evaluate rcc and rci operations under two configura-                                                       measuring the # of elapsed CPU cycles to execute copy/initial-
+tions to understand the copy/initialization throughput improve-                                                  ization operations) for CPU-copy, RowClone-Copy (rcc), and
+ments provided by rcc and rci over traditional CPU-copy op-                                                      RowClone-Initialize (rci).4
+erations performed by the Rocket core, and to understand the                                                        We analyze the overheads of CLFLUSH operations on copy-
+overheads introduced by end-to-end support for commodity                                                         /initialization throughput that rcc and rci can provide. We
+DRAM based PuM operations. We test two configurations: (i)                                                       measure the execution time of CLFLUSH operations in our
+Bare-Metal, to find the maximum RowClone throughput our im-                                                      prototype to find how many CPU cycles it takes to flush a (i)
+plementation provides solely using pumolib, and (ii) No Flush,                                                      4 We tested RowClone operations using alloc_align() with up to 8 MiB
+to understand the benefits our end-to-end implementation (i.e.,                                                  of allocation size since we observed diminishing returns on performance
+with system support) of RowClone can provide in copy/ini-                                                        improvement provided by RowClone operations on larger array sizes.
+
+
+                                                                                                        11
+
+
+
+===== Page 12 =====
+
+dirty and (ii) clean cache block on average across 1000 measure-                                                                    We make two major observations: First, rcc improves the
+ments. We simulate various scenarios (described in Figure 11)                                                                    copy throughput by 58.3× for 8 KiB and by 118.5× for 8 MiB ar-
+where we assume a certain fraction of the operands of Row-                                                                       rays, whereas rci improves initialization throughput by 31.4×
+Clone operations are cached and dirty.                                                                                           for 8 KiB and by 88.7× for 8 MiB arrays. Second, we observe
+                                                                                                                                 that the throughput improvement provided by rcc and rci im-
+5.5.3. Bare-Metal RowClone. Figure 9 shows the throughput                                                                        proves non-linearly as the array size increases. The execution
+improvement provided by rcc and rci for copy and initialize                                                                      time (in Rocket core clock cycles) of rcc and rci operations
+over CPU-copy and CPU-initialization for increasing array                                                                        (not shown in Figure 10) does not increase linearly with the ar-
+sizes.                                                                                                                           ray size. For example, the execution time of rcc is 397 and 584
+               500
+                                        RowClone-Copy                           RowClone-Initialize                              cycles at 8 KiB and 16 KiB array sizes, respectively, resulting
+ Improvement
+
+
+
+
+               375
+  Throughput
+
+
+
+
+               250
+                                                                                                                                 in a 1.47 × increase in execution time between 8 KiB and 16
+               125                                                                                                               KiB array sizes. However, the execution time of rcc is 92,656
+                 0                                                                                                               and 187,335 cycles at 4 MiB and 8 MiB array sizes, respectively,
+                      8 KiB
+
+
+
+
+                                                            128 KiB
+
+                                                                      256 KiB
+
+                                                                                  512 KiB
+
+                                                                                            1 MiB
+
+                                                                                                    2 MiB
+
+                                                                                                            4 MiB
+
+                                                                                                                    8 MiB
+                               16 KiB
+
+                                          32 KiB
+
+                                                   64 KiB
+
+
+
+
+                                                                                                                                 resulting in a 2.02 × increase in execution time between 4
+                                                                                                                                 MiB and 8 MiB array sizes. We make similar observations on
+                                                                 Array Size                                                      the execution time of rci. For every RowClone operation,
+Figure 9: RowClone-Copy and RowClone-Initialize over tradi-                                                                      rcc and rci walk the page table to find the physical addresses
+tional CPU-copy and -initialization for the Bare-Metal config-                                                                   corresponding to the source (rcc) and the destination (rcc and
+uration                                                                                                                          rci) operands. We attribute the non-linear increase in rcc and
+                                                                                                                                 rci’s execution time to (i) the locality exploited by the Rocket
+     We make two major observations. First, we observe that
+                                                                                                                                 core in accesses to the page table and (ii) the diminishing con-
+rcc and rci provide significant throughput improvement over
+                                                                                                                                 stant cost in the execution time of both rcc and rci due to
+traditional CPU-copy and CPU-initialization. The through-
+                                                                                                                                 common instructions executed to perform a system call.
+put improvement provided by rcc ranges from 317.5× (for
+8 KiB arrays) to 364.8× (for 8 MiB arrays). The throughput
+improvement provided by rci ranges from 172.4× to 182.4×.                                                                        5.5.5. CLFLUSH Overhead. We find that our implementation
+Second, the throughput improvement provided by rcc and rci                                                                       of CLFLUSH takes 45 Rocket core clock cycles to flush a dirty
+increases as the array size increases. This increase saturates                                                                   cache block and 6 Rocket core cycles to invalidate a clean
+when the array size reaches 1 MiB. The load/store instructions                                                                   cache block. We estimate the throughput improvement of rcc
+used by CPU-copy and CPU-initialization access the operands                                                                      and rci including the CLFLUSH overhead. We assume that
+in a streaming manner. The eviction of dirty cache blocks (i.e.,                                                                 all cache blocks of the source and destination operands are
+the destination operands of copy and initialization operations)                                                                  cached, and that a fraction of the all cached cache blocks is
+interfere with other memory requests on the memory bus.5                                                                         dirty (quantified on the x-axis). We do not include the overhead
+We attribute the observed saturation at 1 MiB array size to the                                                                  of accessing the data (e.g., by using load instructions) after the
+interference on the memory bus.                                                                                                  data gets copied in DRAM. Figure 11 shows the estimated
+                                                                                                                                 improvement in copy and initialization throughput that rcc
+5.5.4. No Flush RowClone. We analyze the overhead in                                                                             and rci provide for 8 MiB arrays.
+copy/initialization throughput introduced by system support                                                                                    20
+                                                                                                                                                           14.6       RowClone-Copy       RowClone-Initialize
+(Section 5.2). Figure 10 shows the throughput improvement of
+                                                                                                                                 Improvement
+                                                                                                                                  Throughput
+
+
+
+
+                                                                                                                                               15   12.6
+copy and initialization provided in the No Flush configuration                                                                                 10
+                                                                                                                                                                   5.1 6.2
+by rcc and rci operations.                                                                                                                     5                               3.2 3.9      2.4 2.9      1.9 2.3
+               200                                                                                                                             0
+                                       RowClone-Copy                             RowClone-Initialize
+Improvement
+ Throughput
+
+
+
+
+               150                                                                                                                                  0% Dirty      25% Dirty   50% Dirty     75% Dirty   100% Dirty
+               100                                                                                                                                                  Fraction of Dirty Cache Blocks
+                50
+                 0                                                                                                               Figure 11: Throughput improvement provided by rcc and rci
+                     8 KiB
+
+                              16 KiB
+
+                                         32 KiB
+
+                                                   64 KiB
+
+                                                            128 KiB
+
+                                                                      256 KiB
+
+                                                                                  512 KiB
+
+                                                                                            1 MiB
+
+                                                                                                    2 MiB
+
+                                                                                                            4 MiB
+
+                                                                                                                    8 MiB
+
+
+
+
+                                                                                                                                 with CLFLUSH over Rocket’s CPU-copy.
+                                                                                                                                    We make three major observations. First, even with in-
+                                                              Array Size
+                                                                                                                                 efficient cache flush operations, rcc and rci provide 3.2×
+ Figure 10: Throughput improvement provided by RowClone-                                                                         and 3.9× higher throughput over the CPU-copy and CPU-
+ Copy and RowClone-Initialize over traditional CPU-copy and                                                                      initialization operations, assuming 50% of the cache blocks
+-initialization for the NoFlush configuration.                                                                                   of the 8 MiB source operand are dirty, respectively. Second,
+                                                                                                                                 as the fraction of dirty cache blocks increases, the through-
+   5 Because the data cache in our prototype employs random replacement
+                                                                                                                                 put improvement provided by both rcc and rci decreases
+policy, as the array size increases, the fraction of cache evictions among all
+memory requests also increases, causing larger interference on the memory
+                                                                                                                                 (down to 1.9× for rcc and 2.3× for rci for 100% dirty cache
+bus (i.e., more memory requests to satisfy all cache evictions). The interference                                                block fraction). Third, we observe that rci can provide better
+saturates at 1 MiB array size.                                                                                                   throughput improvement compared to rcc when we include
+
+
+                                                                                                                            12
+
+
+
+===== Page 13 =====
+
+the CLFLUSH overhead. This is because rci flushes cache
+
+
+
+
+                                                                                                                                                                                                                                                                               % Execution Time
+                                                                                                1.5                                                                                                                                                                     100%
+                                                                                                                    RowClone-Copy Speedup
+blocks of one operand (destination), whereas rcc flushes cache                                  1.4                                                                                                                                                                     80%
+
+
+
+
+                                                                                      Speedup
+                                                                                                1.3                 Fraction of Time Spent on memcpy()                                                                                                                  60%
+blocks of both operands (source and destination).                                               1.2                                                                                                                                                                     40%
+                                                                                                1.1                                                                                                                                                                     20%
+   We do not study the distribution of dirty cache block frac-                                    1                                                                                                                                                                     0%
+
+tions in real applications as that is not the goal of our CLFLUSH                                            k-8          k-1
+                                                                                                                                6
+                                                                                                                                           k-3
+                                                                                                                                                 2
+                                                                                                                                                            k-6
+                                                                                                                                                                  4                28                56                12                02
+                                                                                                                                                                                                                                              4
+                                                                                                                                                                                                                                                               04
+                                                                                                                                                                                                                                                                    8
+                                                                                                      fo r         fo r             fo r             fo r                    k-1               k-2               k-5               k-1                   k-2
+                                                                                                                                                                      fo r              fo r              fo r              fo r                  fo r
+overhead analysis. However, if a large dirty cache block frac-                                                                                              Fork Configurations
+tion causes severe overhead in a real application, the system                         Figure 12: Forkbench speedup (bars, left y-axis) and time spent
+designer or the user of the system would likely decide not to                         on memcpy by the CPU baseline (curve, right y-axis)
+offload the operation to PuM (i.e., performing rcc operations
+instead of CPU-Copy). PiDRAM’s prototype can be useful for                            Forkbench. We observe that RowClone-Copy can signifi-
+studies on different PuM system integration aspects, including                        cantly improve the performance of forkbench by up to 42.9%.
+such offloading decisions.                                                            RowClone-Copy’s performance improvement increases as the
+   We observe that the CLFLUSH operations are inefficient                             number of pages copied increase. This is because the copy
+in supporting coherence for RowClone operations. Even so,                             operations accelerated by rcc contribute a larger amount to
+we see that RowClone-Copy and RowClone-Initialization pro-                            the total execution time of the workload. The memcpy func-
+vides throughput improvements ranging from 1.9× to 14.6×.                             tion calls take 86% of the CPU-copy baseline’s time during
+We expect the throughput improvement benefits to increase                             forkbench execution for N = 2048.
+as coherence between the CPU caches and PIM accelerators                              Compile. RowClone-Initialize improves the performance of
+become more efficient with new techniques [21, 22, 146].                              compile by 9%. Only an estimated 17% of the execution time of
+                                                                                      compile is used for zero-allocation by the CPU-initialization
+5.5.6. Real Workload Study. The benefit of rcc and rci on a                           baseline, rci reduces the overhead of zero-allocation by (i)
+full application depends on what fraction of execution time is                        performing in-DRAM bulk-initialization and (ii) executing a
+spent on bulk data copy and initialization. We demonstrate the                        smaller number of instructions.
+benefit of rcc and rci on forkbench [148] and compile [148]
+                                                                                      Libquantum. To demonstrate that PiDRAM can run real
+workloads with varying fractions of time spent on bulk data
+                                                                                      workloads, we run a SPEC2006 [154] workload (libquantum).
+copy and initialization, to show that our infrastructure can
+                                                                                      We modify the calloc (allocates and zero initializes memory)
+enable end-to-end execution and estimation of benefits on
+                                                                                      function call to allocate data using alloc_align, and initialize
+real workloads.6 We especially study forkbench in detail to
+                                                                                      data using rci for allocations that are larger than 8 KiBs.
+demonstrate how the benefits vary with the time spent on data
+                                                                                         Using rci to bulk initialize data in libquantum improves
+copying in the baseline for this workload.
+                                                                                      end-to-end application performance by 1.3% (compared to the
+   Forkbench first allocates N memory pages and copies data                           baseline that uses CPU-Initialization). This improvement is
+to these pages from a buffer in the process’s memory and then                         brought by rci, which initializes a total amount of 512 KiBs
+accesses 32K random cache blocks within the newly allocated                           of memory7 using RowClone operations. We note that the
+pages to emulate a workload that frequently spawns new pro-                           proportion of store instructions executed by libquantum to
+cesses. We evaluate forkbench under varying bulk data copy                            initialize arrays in the CPU-initialization baseline is only 0.2%
+sizes where we sweep N from 8 to 2048 in increasing powers                            of all dynamic instructions in the libquantum workload which
+of two.                                                                               amounts to an estimated 2.3% of the total runtime of libquan-
+   Compile first zero-allocates (calloc or rci) two pages (8                          tum. Thus, the 1.3% end-to-end performance improvement
+KiBs) and then executes a number of arithmetic and memory                             provided by rci, which can ideally speed up only 2.3% of the
+instructions to operate on the zero-allocated data. We carefully                      total runtime, is reasonable, and we expect it to increase with
+develop the compile microbenchmark to maintain a realistic                            the initialization intensity of workloads.
+ratio between the number of arithmetic and memory instruc-                            Summary. We conclude from our evaluation that end-to-
+tions executed and zero-allocation function calls made, which                         end implementations of RowClone (i) can be efficiently sup-
+we obtain by profiling gcc [109]. We use the No-Flush config-                         ported in real systems by employing memory allocation mech-
+uration of our RowClone implementation for both forkbench                             anisms that satisfy the memory alignment, mapping, granu-
+and compile.                                                                          larity requirements (Section 5.1) of RowClone operations, (ii)
+   Figure 12 plots the speedup provided by rcc over the CPU-                          can greatly improve copy/initialization throughput in real sys-
+copy (bars, left y-axis) baseline, and the proportion of time                         tems, and (iii) require cache coherence mechanisms (e.g., PIM-
+spent on memcpy functions by the CPU-copy baseline (blue                              optimized coherence management [21, 22, 146]) that can flush
+curve, right y-axis), for various configurations of forkbench on                      dirty cache blocks of RowClone operands efficiently to achieve
+the x-axis.                                                                           optimal copy/initialization throughput improvement. PiDRAM
+   6 A full workload study (i.e., with system calls to a full operating system        can be used to estimate end-to-end workload execution bene-
+such as Linux) of forkbench and compile is out of the scope of this paper.            fits provided by RowClone operations. Our experiments using
+Our infrastructure currently cannot execute all possible workloads due to the
+limited library and system call functionality provided by the RISC-V Proxy                      7 In libquantum, there are 16 calls to calloc that exceed the 8 KiB allocation
+
+Kernel [136].                                                                         size. We only bulk initialize data using rci for these 16 calls.
+
+
+                                                                                 13
+
+
+
+===== Page 14 =====
+
+libquantum, forkbench, and compile show that (i) PiDRAM                   we implement reduced latency access to DRAM by (i) extend-
+can run real workloads, (ii) our end-to-end implementation of             ing the scheduler of the custom memory controller and (ii)
+RowClone operates correctly, and (iii) RowClone can improve               adding a pumolib function activation_failure(address)
+the performance of real workloads in a real system, even when             which induces an activation failure on the DRAM cache block
+inefficient CLFLUSH operations are used to maintain memory                pointed by the address parameter.
+coherence.
+                                                                          6.2. Evaluation and Results
+6. Case Study #2: End-to-end D-RaNGe                                      Experimental Methodology. We run a microbenchmark
+Prior work on DRAM-based random number generation tech-                   to understand the effect of the TRNG period on true random
+niques [13, 83, 123] do not integrate and evaluate their tech-            number generation throughput observed by a program run-
+niques end-to-end in a real system.          We evaluate one              ning on the Rocket core. The microbenchmark consists of a
+DRAM-based true random number generation technique, D-                    loop that (i) checks the availability of random numbers using
+RaNGe [83], end-to-end using PiDRAM. We implement support                 buf_size() and (ii) reads a random number from the buffer
+for D-RaNGe in PiDRAM by enabling access to DRAM with                     using rand_dram(). We execute the microbenchmark until we
+reduced activation latency (i.e., tRCD set to values lower than           read one 10
+                                                                                   million bytes of random numbers.
+
+
+
+
+                                                                                  TRNG Throughput (Mb/s)
+manufacturer recommendations).                                                                             8
+                                                                                                           6
+                                                                                                           4
+6.1. D-RaNGe Implementation
+                                                                                                           2
+We implement a simple version of D-RaNGe in PiDRAM.                                                        0
+PiDRAM’s D-RaNGe controller collects true random numbers                                                       220   350   480         610          740   870   1000
+                                                                                                                                 TRNG Period (ns)
+from four DRAM cells in the same DRAM cache block in-
+side one DRAM bank. We implement the D-RaNGe controller                   Figure 13: TRNG throughput observed by our microbenchmark
+                                                                          for TRNG periods ranging from 220 ns to 1000 ns
+within the Periodic Operations Module (Section 4.1). The D-
+RaNGe controller (i) periodically accesses a DRAM cache block             Results. The D-RaNGe controller can perform reduced-
+with reduced tRCD, (ii) reads four of the TRNG DRAM cells in              latency accesses frequently, every 220 ns. Figure 13 depicts
+the cache block, (iii) stores the four bits read from the TRNG            the TRNG throughput observed by the microbenchmark for
+cells in a 1 KiB random number buffer. We reserve multiple                TRNG periods in the range [220 ns, 1000 ns] with increments
+configuration registers in the configuration register file (CRF)          of 10 ns. We observe that the TRNG throughput decreases
+to configure (i) the TRNG period (in nanoseconds) used by the             from 8.30 Mb/s at 220 ns TRNG period to 1.90 Mb/s at 1000 ns
+D-RaNGe controller to periodically generate random numbers                TRNG period. D-RaNGe [83] reports 25.2 Mb/s TRNG through-
+by accessing DRAM with reduced activation latency while the               put using a single DRAM bank when there are four random
+buffer is not full (the D-RaNGe controller accesses DRAM ev-              cells in a cache block. PiDRAM’s D-RaNGe controller can be
+ery TRNG period), (ii) the timing parameter (tRCD) used to                optimized to generate random numbers more frequently to
+induce activation latency failures and (iii) the physical location        match D-RaNGe’s observed maximum throughput.8 We leave
+(DRAM bank, row, column addresses, and bit offset within the              such optimizations to PiDRAM’s D-RaNGe controller for future
+DRAM column) of the TRNG cells to read. We implement two                  work.
+pumolib functions: (i) buf_size(), which returns the num-                    Including the modifications to the custom memory controller
+ber of random words (4-bytes) available in the buffer, and (ii)           and pumolib, implementing D-RaNGe and reduced-latency
+rand_dram(), which returns one random word that is read                   DRAM access requires an additional 190 lines of Verilog and
+from the buffer. The two functions first execute PiDRAM in-               74 lines of C code over PiDRAM’s existing codebase. We con-
+structions in the POC that update the data register either with           clude that our D-RaNGe implementation (i) provides a basis
+(i) the number of random words available (when buf_size() is              for PiDRAM developers to study end-to-end implementations
+called) or (ii) a random word read from the random number                 of DRAM-based true random number generators, (ii) shows
+buffer (when rand_dram() is called). The two functions then               that PiDRAM’s hardware and software components facilitate
+access the data register using LOAD instructions to retrieve              the implementation of new commodity DRAM based PuM
+either the size of the random number buffer or a random num-              techniques, specifically those that are related to security. Our
+ber. The application developer reads true random numbers                  reduced-latency DRAM access implementation provides a ba-
+using these two functions in pumolib.
+                                                                               8 D-RaNGe has a smaller true random number generation (TRNG) latency
+Random Cell Characterization. D-RaNGe requires the sys-
+                                                                          (i.e., takes a smaller amount of time to generate a 4-bit random number) than
+tem designer to characterize the DRAM module for activation               PiDRAM. PiDRAM has a larger TRNG latency due to (i) discrepancies in the
+latency failures to find DRAM cells that fail with a 50% proba-           data path (i.e., on-chip interconnect) in D-RaNGe’s simulated system and
+bility (i.e., randomly) when accessed with reduced tRCD. Fol-             PiDRAM’s prototype and (ii) the TRNG period of the D-RaNGe controller
+                                                                          (D-RaNGe controller performs a reduced tRCD access only as frequently
+lowing the methodology presented in [83], the system designer             as one every 220 ns). The D-RaNGe controller can be optimized further to
+can characterize a DRAM device or use an automated proce-                 reduce the TRNG period by down to the DRAM row cycle time (tRC standard
+dure to find cells that fail with a 50% probability. In PiDRAM,           timing parameter, typically 45 ns [117]).
+
+
+                                                                     14
+
+
+
+===== Page 15 =====
+
+sis for other PuM techniques for security purposes, such as the             FPGA board. Modifying design constraints is a straightforward
+DRAM-latency physical unclonable functions (DL-PUF [82])                    task involving looking up the FPGA manufacturer datasheets
+and QUAC-TRNG [124] (Section 4.4). We leave further explo-                  and modifying design constraint files [165]. Manufacturers
+ration on end-to-end implementations of D-RaNGe, DL-PUF,                    may provide different DDRx PHY IPs for different FPGAs. For-
+and QUAC-TRNG, as well as end-to-end analyses of the secu-                  tunately, these IPs typically expose similar (based on the DFI
+rity benefits they provide using PiDRAM for future work.                    standard [33]) interfaces to user hardware (in our case, to
+                                                                            PiDRAM’s memory controller). Thus, other PiDRAM proto-
+7. Extending PiDRAM                                                         types on different FPGA boards can be developed with small
+We briefly describe the modifications required to extend                    yet careful modifications to the ZC706 prototype design we
+PiDRAM (i) with new DRAM commands and DRAM timing                           provide.
+parameters, (ii) with new case studies, and (iii) to support new
+FPGA boards.                                                                8. Related Work
+New DRAM Commands and Timing Parameters. Imple-
+menting new DRAM commands or modifying DRAM timing                          To our knowledge, this is the first work to develop a flexible,
+parameters require modifications to PiDRAM’s memory con-                    open-source framework that enables integration and evalu-
+troller. This is straightforward as PiDRAM’s memory con-                    ation of commodity DRAM based processing-using-memory
+troller’s Verilog design is modular and uses well-defined inter-            (PuM) techniques on real DRAM chips by providing the neces-
+faces: It is composed of multiple modules that perform separate             sary hardware and software components. We demonstrate the
+tasks. For example, the memory request scheduler comprises                  first end-to-end implementation of RowClone and D-RaNGe
+two main components: (1) command timer, and (2) command                     using real DRAM chips. We compare the features of PiDRAM
+scheduler. To serve LOAD and STORE memory requests, the                     with other state-of-the-art prototyping and evaluation plat-
+command scheduler maintains state (e.g., which row is ac-                   forms in Table 4 and discuss them below. The four features we
+tive) for every bank. The command scheduler selects the next                use for comparison are:
+DRAM command to satisfy the LOAD or STORE memory re-                        1. Interface with real DRAM chips: The platform allows
+quest and queries the command timer with the selected DRAM                      running experiments using real DRAM chips.
+command. The command timer checks for all possible standard                 2. Flexible memory controller (MC) for PuM: The plat-
+DRAM timing constraints and outputs a valid bit if the selected                 form provides a flexible memory controller that can easily
+command can be issued in that FPGA clock cycle. To extend                       be extended to perform (e.g., as in PiDRAM) or emulate (e.g.,
+the memory controller with a new standard DRAM command                          as in PiMulator [119]) new PuM operations.
+(e.g., to implement a newer standard like DDR4 or DDR5), a                  3. System software support: The platform provides support
+PiDRAM developer simply needs to (i) add a new timing con-                      for running system software such as operating systems or
+straint by replicating the logic in the command timer and (ii)                  supervisor software (e.g., RISC-V PK [136]).
+extend the command scheduler to correctly maintain the bank                 4. Open-source: The platform is available as open source
+state.                                                                          software.
+New Case Studies. Implementing new techniques (e.g., those                     Silent-PIM [78]. Silent-PIM proposes a new DRAM design
+that are listed in Table 2) to perform new case studies requires            that incorporates processing units capable of vector arithmetic
+modifications to PiDRAM’s hardware and software compo-                      computation. Silent-PIM’s goal is to evaluate PIM techniques
+nents. We describe the required modifications over an example               on a new, PIM-capable DRAM device using standard DRAM
+ComputeDRAM-based in-DRAM bitwise operations case study.                    commands (e.g., as defined in DDR4 [71]); it does not provide
+    To implement ComputeDRAM-based in-DRAM bitwise op-                      an evaluation platform or prototype. In contrast, PiDRAM is
+erations, the developers need to (i) extend the custom command              designed for researchers to rapidly integrate and evaluate PuM
+scheduler in PiDRAM’s memory controller with a new state                    techniques that use real DRAM devices. PiDRAM provides key
+machine that schedules new DRAM command sequences (ACT-                     hardware and software components that facilitate end-to-end
+PRE-ACT) with an appropriate set of violated timing parame-                 implementations of PuM techniques.
+ters (our ComputeDRAM-based in-DRAM copy implementa-                           SoftMC [52, 60] SoftMC is an FPGA-based DRAM testing
+tion provides a solid basis for this), (ii) expose the functionality        infrastructure. SoftMC can issue arbitrary sequences of DDR3
+to the processor by implementing new PiDRAM instructions in                 commands to real DRAM modules. SoftMC is widely used in
+the PuM controller (e.g., by replicating and customizing the ex-            prior work that studies the performance, reliability and security
+isting logic for decoding and executing RowClone operations),               of real DRAM chips [13,14,28,38,41,50,59,77,83,85,96,127,155].
+(iii) and make modifications to the software library to expose              SoftMC is built to test DRAM modules, not to study end-to-end
+the new instruction to the programmer (e.g., by replicating the             implementations of PuM techniques. Thus, SoftMC (i) does
+copy_row function’s behavior, described in Table 1).                        not support application execution on a real system, and (ii)
+Porting to New FPGA Boards. Developing new PiDRAM                           cannot use DRAM modules as main memory. While SoftMC
+prototypes on different FPGA boards could require modifi-                   is useful in studies that perform exhaustive search on all pos-
+cations to design constraints (e.g., top level input/outputs to             sible sequences of DRAM commands to potentially uncover
+physical FPGA pins) and the DDRx PHY IP depending on the                    undocumented DRAM behavior (e.g., ComputeDRAM [44],
+
+
+                                                                       15
+
+
+
+===== Page 16 =====
+
+                 Table 4: Comparison of PiDRAM with related state-of-the-art prototyping and evaluation platforms
+ Platforms                                          Interface with real DRAM chips    Flexible MC for PuM     System software support     Open-source
+ Silent-PIM [78]                                                    ✗                           ✗                        ✓                    ✗
+ SoftMC [60]                                                   ✓(DDR3)                          ✗                        ✗                    ✓
+ ComputeDRAM [44]                                              ✓(DDR3)                          ✗                        ✗                    ✗
+ MEG [174]                                                      ✓(HBM)                          ✗                        ✓                    ✓
+ PiMulator [119]                                                    ✗                           ✓                        ✗                    ✓
+ Commercial platforms (e.g., ZYNQ [166])                       ✓(DDR3/4)                        ✗                        ✓                    ✗
+ Simulators [18, 35, 90, 132, 140, 169, 170, 175]                   ✗                           ✓                  ✓(potentially)             ✓
+ PiDRAM (this work)                                            ✓(DDR3)                          ✓                        ✓                    ✓
+
+QUAC-TRNG [123]), PiDRAM is developed to study end-to-                           microarchitectural aspects of PuM techniques (e.g., data allo-
+end implementations of PuM techniques. PiDRAM provides                           cation and coherence mechanisms). Such studies cannot be
+an FPGA-based prototype that comprises a RISC-V system and                       conducted using closed-source computing systems.
+supports using DRAM modules both for storing data (i.e., as                         Simulators. Many prior works propose full-system
+main memory) and performing PuM computation.                                     (e.g., [18, 132]), trace-based (e.g., [64, 90, 140, 169, 170, 175]), and
+   ComputeDRAM [44]. ComputeDRAM partially demon-                                instrumentation-based (e.g., [35, 64, 169]) simulators that can
+strates that two DRAM-based state-of-the-art PuM techniques,                     be used to evaluate PuM techniques. Although useful, these
+RowClone [148] and Ambit [145], are already possible on real                     simulators do not model DRAM behavior and cannot integrate
+off-the-shelf DDR3 chips. ComputeDRAM uses SoftMC to                             proprietary device characteristics (e.g., DRAM internal address
+demonstrate in-DRAM copy and bitwise AND/OR operations                           mapping) into their simulations, without conducting a rigorous
+on real DDR3 chips. ComputeDRAM’s goal is not to develop a                       characterization study. Moreover, the effects of environmental
+framework to facilitate end-to-end implementations of PuM                        conditions (e.g., temperature, voltage) on DRAM chips are un-
+techniques. Therefore, it does not provide (i) a flexible mem-                   likely to be modeled on accurate, full-system simulators as it
+ory controller for PuM or, (ii) support for system software.                     would require excessive computation, which would negatively
+PiDRAM provides the necessary software and hardware com-                         impact the already poor performance (200K instructions per
+ponents to facilitate end-to-end implementations of PuM tech-                    second) of full system simulators [141]. In contrast, PiDRAM
+niques.                                                                          interfaces with real DRAM devices and its prototype achieves
+   MEG [174]. MEG is an open-source system emulation                             a 50 MHz clock speed (and can be improved further) which lets
+platform for enabling FPGA-based operation interfacing with                      PiDRAM execute > 10M instructions per second (assuming < 5
+High-Bandwidth Memory (HBM). MEG aims to efficiently re-                         cycles per instruction). PiDRAM can be used to study end-to-
+trieve data from HBM and perform the computation in the                          end implementations of PuM techniques and explore solutions
+host processor implemented as a soft core on the FPGA. Un-                       that take into account the effects related to the environmental
+like PiDRAM, MEG does not implement a flexible memory                            conditions of real DRAM devices. Future versions of PiDRAM
+controller that is capable of performing PuM operations. We                      could be easily extended (e.g., with real hardware that allows
+demonstrate the flexibility of PiDRAM by implementing two                        controlling DRAM temperature and voltage [115, 157]) to ex-
+state-of-the-art PuM techniques [83, 148]. We believe MEG                        periment with different DRAM temperature and voltage levels
+and PiDRAM can be combined to get the functionality and                          to better understand the effects of these environmental con-
+prototyping power of both works.                                                 ditions on the reliability of PuM operations. Using PiDRAM,
+   PiMulator [119]. PiMulator is an open-source PiM emu-                         experiments that require executing real workloads can take an
+lation platform. PiMulator implements a main memory and a                        order of magnitude shorter wall clock time compared to using
+PiM model using SystemVerilog, allowing FPGA emulation of                        full-system simulators.
+PiM architectures. PiMulator enables easy emulation of new                          Other Related Work. Prior works (see Section 2.2) (i)
+PiM techniques. However, it does not allow end-to-end exe-                       propose or (ii) demonstrate using real DRAM chips, several
+cution of workloads that use PiM techniques and it does not                      DRAM-based PuM techniques that can perform computa-
+provide the user with full control over the DRAM interface.                      tion [9, 28, 40, 54, 144, 145, 147, 150, 151], move data [148, 160],
+   Commercial Platforms (e.g., ZYNQ [166]). Some com-                            or implement security primitives [13, 14, 82, 83, 124, 126] in
+mercial platforms implement CPU-FPGA heterogeneous com-                          memory. SIMDRAM [54] develops a framework that provides
+puting systems. A memory controller and necessary hardware-                      a programming interface to perform in-DRAM computation
+software modules are provided to access DRAM as the main                         using the majority operation. DR-STRANGE [23] proposes an
+memory in such systems. However, in such systems, (i) there is                   end-to-end system design for DRAM-based true random num-
+no support for PuM mechanisms, and (ii) the entire hardware-                     ber generators. None of these works provide an end-to-end
+software stack is closed-source. PiDRAM can be integrated                        in-DRAM computation framework that is integrated into a real
+into these systems, using the closed-source computing sys-                       system using real DRAM chips.
+tem as the main processor. Our prototype utilizes an open-                          We conclude that existing platforms cannot substitute
+source system-on-chip (Rocket Chip [11]) as the main pro-                        PiDRAM in studying commodity DRAM based PuM techniques
+cessor, which enables developers to study architectural and                      end-to-end.
+
+
+                                                                            16
+
+
+
+===== Page 17 =====
+
+9. Conclusion                                                                                              O. Mutlu, and T. Hoefler, “SISA: Set-Centric Instruction Set Architecture for Graph
+                                                                                                           Mining on Processing-in-Memory Systems,” in MICRO, 2021.
+We develop PiDRAM, a flexible and open-source prototyping                                             [17] D. Bhattacharjee, R. Devadoss, and A. Chattopadhyay, “ReVAMP: ReRAM based
+framework for integrating and evaluating end-to-end com-                                                   VLIW Architecture for In-Memory Computing,” in DATE, 2017.
+                                                                                                      [18] N. Binkert, B. Beckman, A. Saidi, G. Black, and A. Basu, “The gem5 Simulator,” CAN,
+modity DRAM based processing-using-memory (PuM) tech-                                                      2011.
+                                                                                                      [19] J. Borghetti, G. Snider, P. Kuekes, J. J. Yang, D. Stewart, and S. Williams, “Memristive
+niques. PiDRAM comprises the necessary hardware and soft-                                                  Switches Enable Stateful Logic Operations via Material Implication,” in Nature, 2010.
+                                                                                                      [20] A. Boroumand, S. Ghose, Y. Kim, R. Ausavarungnirun, E. Shiu, R. Thakur, D. Kim,
+ware structures to facilitate end-to-end implementation of PuM                                             A. Kuusela, A. Knies, P. Ranganathan, and O. Mutlu, “Google Workloads for Con-
+techniques. We build an FPGA-based prototype of PiDRAM                                                     sumer Devices: Mitigating Data Movement Bottlenecks,” in ASPLOS, 2018.
+                                                                                                      [21] A. Boroumand, S. Ghose, M. Patel, H. Hassan, B. Lucia, R. Ausavarungnirun, K. Hsieh,
+along with an open-source RISC-V system and enable computa-                                                N. Hajinazar, K. T. Malladi, H. Zheng, and O. Mutlu, “CoNDA: Efficient Cache
+tion on real DRAM chips. Using PiDRAM, we implement and                                                    Coherence Support for near-Data Accelerators,” in ISCA, 2019.
+                                                                                                      [22] A. Boroumand, S. Ghose, M. Patel, H. Hassan, B. Lucia, K. Hsieh, K. T. Malladi,
+evaluate RowClone (in-DRAM data copy and initialization)                                                   H. Zheng, and O. Mutlu, “LazyPIM: An Efficient Cache Coherence Mechanism for
+and D-RaNGe (in-DRAM true random number generation)                                                        Processing-in-Memory,” in CAL, 2016.
+                                                                                                      [23] F. Bostanci, A. Olgun, L. Orosa, A. Yaglikci, J. S. Kim, H. Hassan, O. Ergin, and
+end-to-end in the entire real system. Our results show that                                                O. Mutlu, “DR-STRaNGe: End-to-End System Design for DRAM-based True Random
+                                                                                                           Number Generators,” in HPCA, 2022.
+RowClone significantly improves data copy and initialization                                          [24] G. W. Burr, R. M. Shelby, A. Sebastian, S. Kim, S. Kim, S. Sidler, K. Virwani, M. Ishii,
+throughput in a real system on real workloads, and efficient                                               P. Narayanan, A. Fumarola, L. L. Sanches, I. Boybat, M. L. Gallo, K. Moon, J. Woo,
+                                                                                                           H. Hwang, and Y. Leblebici, “Neuromorphic Computing Using Non-volatile Memory,”
+cache coherence mechanisms are needed to maximize Row-                                                     in Advances in Physics: X, 2017.
+                                                                                                      [25] D. S. Cali, G. S. Kalsi, Z. Bingöl, C. Firtina, L. Subramanian, J. S. Kim, R. Ausavarung-
+Clone’s potential benefits. Our implementation of D-RaNGe                                                  nirun, M. Alser, J. Gomez-Luna, A. Boroumand, A. Nori, A. Scibisz, S. Subramoney,
+requires small additions to PiDRAM’s codebase and provides                                                 C. Alkan, S. Ghose, and O. Mutlu, “GenASM: A High-Performance, Low-Power Ap-
+                                                                                                           proximate String Matching Acceleration Framework for Genome Sequence Analysis,”
+true random numbers at high throughput and with low latency.                                               in MICRO, 2020.
+We conclude that unlike existing prototyping and evaluation                                           [26] K. Chang, “Understanding and Improving the Latency of DRAM-Based Memory
+                                                                                                           Systems,” Ph.D. dissertation, Carnegie Mellon University, 2017.
+platforms, PiDRAM enables (i) easy integration of existing and                                        [27] K. K. Chang, A. Kashyap, H. Hassan, S. Ghose, K. Hsieh, D. Lee, T. Li, G. Pekhimenko,
+                                                                                                           S. Khan, and O. Mutlu, “Understanding Latency Variation in Modern DRAM Chips:
+new PuM techniques end-to-end in a real system and (ii) novel                                              Experimental Characterization, Analysis, and Optimization,” in SIGMETRICS, 2016.
+studies on end-to-end implementations of PuM techniques                                               [28] K. K. Chang, P. J. Nair, D. Lee, S. Ghose, M. K. Qureshi, and O. Mutlu, “Low-Cost
+                                                                                                           Inter-Linked Subarrays (LISA): Enabling Fast Inter-Subarray Data Movement in
+using real DRAM chips. PiDRAM is freely available as an open-                                              DRAM,” in HPCA, 2016.
+source tool for researchers and designers in both academia and                                        [29] K. K. Chang, A. G. Yağlıkçı, S. Ghose, A. Agrawal, N. Chatterjee, A. Kashyap,
+                                                                                                           D. Lee, M. O’Connor, H. Hassan, and O. Mutlu, “Understanding Reduced-Voltage
+industry to experiment with and build on.                                                                  Operation in Modern DRAM Devices: Experimental Characterization, Analysis, and
+                                                                                                           Mechanisms,” in SIGMETRICS, 2017.
+                                                                                                      [30] L. Cojocar, J. Kim, M. Patel, L. Tsai, S. Saroiu, A. Wolman, and O. Mutlu, “Are We
+Acknowledgements                                                                                           Susceptible to Rowhammer? An End-to-End Methodology for Cloud Providers,” in
+                                                                                                           S&P, 2020.
+This research was partially supported by ACCESS – AI Chip                                             [31] G. Dai, T. Huang, Y. Chi, J. Zhao, G. Sun, Y. Liu, Y. Wang, Y. Xie, and H. Yang,
+                                                                                                           “GraphH: A Processing-in-Memory Architecture for Large-scale Graph Processing,”
+Center for Emerging Smart Systems, sponsored by InnoHK                                                     in TCAD, 2018.
+funding, Hong Kong SAR.                                                                               [32] Q. Deng, L. Jiang, Y. Zhang, M. Zhang, and J. Yang, “DrAcc: a DRAM Based Acceler-
+                                                                                                           ator for Accurate CNN Inference,” in DAC, 2018.
+                                                                                                      [33] DFI Group, DFI 5.0 Specification, July 2018.
+References                                                                                            [34] M. P. Drumond Lages De Oliveira, A. Daglis, N. Mirzadeh, D. Ustiugov, J. Pi-
+ [1] S. Aga, S. Jeloka, A. Subramaniyan, S. Narayanasamy, D. Blaauw, and R. Das, “Com-                     corel Obando, B. Falsafi, B. Grot, and D. Pnevmatikatos, “The Mondrian Data Engine,”
+     pute Caches,” in HPCA, 2017.                                                                          in ISCA, 2017.
+ [2] J. Ahn, S. Hong, S. Yoo, O. Mutlu, and K. Choi, “A Scalable Processing-in-Memory                 [35] B. E. Forlin, P. C. Santos, A. E. Becker, M. A. Alves, and L. Carro, “Sim2PIM: A
+     Accelerator for Parallel Graph Processing,” in ISCA, 2015.                                            Complete Simulation Framework for Processing-in-Memory,” in JSA, 2022.
+                                                                                                      [36] C. Eckert, X. Wang, J. Wang, A. Subramaniyan, R. Iyer, D. Sylvester, D. Blaaauw, and
+ [3] J. Ahn, S. Yoo, O. Mutlu, and K. Choi, “PIM-Enabled Instructions: A Low-Overhead,
+     Locality-Aware Processing-in-Memory Architecture,” in ISCA, 2015.                                     R. Das, “Neural Cache: Bit-Serial In-Cache Acceleration of Deep Neural Networks,”
+ [4] B. Akin, F. Franchetti, and J. C. Hoe, “Data Reorganization in Memory Using 3D-                       in ISCA, 2018.
+                                                                                                      [37] A. Farmahini-Farahani, J. H. Ahn, K. Morrow, and N. S. Kim, “NDA: Near-DRAM
+     Stacked DRAM,” in ISCA, 2015.                                                                         Acceleration Architecture Leveraging Commodity DRAM Devices and Standard
+ [5] M. F. Ali, A. Jaiswal, and K. Roy, “In-Memory Low-Cost Bit-Serial Addition Using
+                                                                                                           Memory Modules,” in HPCA, 2015.
+     Commodity DRAM Technology,” in TCAS-I, 2019.
+                                                                                                      [38] M. Farmani, M. Tehranipoor, and F. Rahman, “RHAT: Efficient RowHammer-Aware
+ [6] S. Angizi, Z. He, and D. Fan, “PIMA-Logic: A Novel Processing-in-Memory Ar-
+                                                                                                           Test for Modern DRAM Modules,” in ETS, 2021.
+     chitecture for Highly Flexible and Energy-efficient Logic Computation,” in DAC,                  [39] I. Fernandez, R. Quislant, C. Giannoula, M. Alser, J. Gomez-Luna, E. Gutierrez,
+     2018.
+ [7] S. Angizi, A. S. Rakin, and D. Fan, “CMP-PIM: An Energy-efficient Comparator-based                    O. Plata, and O. Mutlu, “NATSA: A Near-Data Processing Accelerator for Time
+     Processing-in-Memory Neural Network Accelerator,” in DAC, 2018.                                       Series Analysis,” in ICCD, 2020.
+ [8] S. Angizi, J. Sun, W. Zhang, and D. Fan, “AlignS: A Processing-in-Memory Accelera-               [40] J. D. Ferreira, G. Falcao, J. Gómez-Luna, M. Alser, L. Orosa, M. Sadrosadati, J. S. Kim,
+     tor for DNA Short Read Alignment Leveraging SOT-MRAM,” in DAC, 2019.                                  G. F. Oliveira, T. Shahroodi, A. Nori et al., “pLUTo: In-DRAM Lookup Tables to
+ [9] S. Angizi and D. Fan, “Graphide: A Graph Processing Accelerator Leveraging In-                        Enable Massively Parallel General-Purpose Computation,” arXiv:2104.07699, 2021.
+     DRAM-Computing,” in GLSVLSI, 2019.                                                               [41] P. Frigo, E. Vannacci, H. Hassan, V. van der Veen, O. Mutlu, C. Giuffrida, H. Bos, and
+[10] ARM,       “Cache      Maintenance      Operations,”      2021.      [Online].     Avail-             K. Razavi, “TRRespass: Exploiting the Many Sides of Target Row Refresh,” in S&P,
+                                                                                                           2020.
+     able: https://developer.arm.com/documentation/ddi0246/h/programmers-model/                       [42] D. Fujiki, S. Mahlke, and R. Das, “Duality Cache for Data Parallel Acceleration,” in
+     register-descriptions/cache-maintenance-operations                                                    ISCA, 2019.
+[11] K. Asanović, R. Avizienis, J. Bachrach, S. Beamer, D. Biancolin, C. Celio, H. Cook,              [43] P.-E. Gaillardon, L. Amarú, A. Siemon, E. Linn, R. Waser, A. Chattopadhyay, and
+     P. Dabbelt, J. R. Hauser, A. M. Izraelevitz, S. Karandikar, B. Keller, D. Kim, J. Koenig,             G. De Micheli, “The Programmable Logic-in-Memory (PLiM) Computer,” in DATE,
+     Y. Lee, E. Love, M. Maas, A. Magyar, H. Mao, M. Moretó, A. Ou, D. A. Patterson,                       2016.
+     B. H. Richards, C. Schmidt, S. M. Twigg, H. Vo, and A. Waterman, “The rocket chip                [44] F. Gao, G. Tziantzioulis, and D. Wentzlaff, “ComputeDRAM: In-Memory Compute
+     generator,” ser. Technical Report No. UCB/EECS-2016-17, 2016.                                         Using Off-the-Shelf DRAMs,” in MICRO, 2019.
+[12] H. Asghari-Moghaddam, Y. H. Son, J. H. Ahn, and N. S. Kim, “Chameleon: Versatile                 [45] M. Gao, G. Ayers, and C. Kozyrakis, “Practical Near-Data Processing for In-Memory
+     and Practical Near-DRAM Acceleration Architecture for Large Memory Systems,”                          Analytics Frameworks,” in PACT, 2015.
+     in MICRO, 2016.                                                                                  [46] M. Gao and C. Kozyrakis, “HRL: Efficient and Flexible Reconfigurable Logic for
+[13] B. M. S. Bahar Talukder, J. Kerns, B. Ray, T. Morris, and M. T. Rahman, “Exploiting                   Near-Data Processing,” in HPCA, 2016.
+     DRAM Latency Variations for Generating True Random Numbers,” in ICCE, 2019.                      [47] M. Gao, J. Pu, X. Yang, M. Horowitz, and C. Kozyrakis, “Tetris: Scalable and Efficient
+[14] B. M. S. Bahar Talukder, B. Ray, D. Forte, and M. T. Rahman, “PreLatPUF: Exploiting                   Neural Network Acceleration with 3D Memory,” in ASPLOS, 2017.
+     DRAM Latency Variations for Generating Robust Device Signatures,” in IEEE Access,                [48] S. Ghose, A. Boroumand, J. S. Kim, J. Gómez-Luna, and O. Mutlu, “Processing-in-
+     2019.                                                                                                 Memory: A Workload-driven Perspective,” in IBM JRD, 2019.
+[15] A. Barenghi, L. Breveglieri, N. Izzo, and G. Pelosi, “Software-only Reverse Engineer-            [49] S. Ghose, T. Li, N. Hajinazar, D. S. Cali, and O. Mutlu, “Demystifying Complex
+     ing of Physical DRAM Mappings for Rowhammer Attacks,” in IVSW, 2018.                                  Workload-DRAM Interactions: An Experimental Study,” in SIGMETRICS, 2019.
+[16] M. Besta, R. Kanakagiri, G. Kwasniewski, R. Ausavarungnirun, J. Beránek, K. Kanel-
+     lopoulos, K. Janda, Z. Vonarburg-Shmaria, L. Gianinazzi, I. Stefan, J. G. Luna, J. Goli-
+     nowski, M. Copik, L. Kapp-Schwoerer, S. Di Girolamo, N. Blach, M. Konieczny,
+
+
+                                                                                                 17
+
+
+
+===== Page 18 =====
+
+[50] S. Ghose, A. G. Yaglikçi, R. Gupta, D. Lee, K. Kudrolli, W. X. Liu, H. Hassan, K. K.                 [86] J. H. Kim, S.-h. Kang, S. Lee, H. Kim, W. Song, Y. Ro, S. Lee, D. Wang, H. Shin,
+     Chang, N. Chatterjee, A. Agrawal, M. O’Connor, and O. Mutlu, “What Your DRAM                              B. Phuah et al., “Aquabolt-XL: Samsung HBM2-PIM with in-memory processing for
+     Power Models Are Not Telling You: Lessons from a Detailed Experimental Study,”                            ML accelerators and beyond,” in Hot Chips, 2021.
+     in SIGMETRICS, 2018.                                                                                 [87] Y. Kim, “Architectural Techniques to Enhance DRAM Scaling,” Ph.D. dissertation,
+[51] C. Giannoula, N. Vijaykumar, N. Papadopoulou, V. Karakostas, I. Fernandez,                                Carnegie Mellon University, 2015.
+     J. Gómez-Luna, L. Orosa, N. Koziris, G. Goumas, and O. Mutlu, “SynCron: Effi-                        [88] Y. Kim, R. Daly, J. Kim, C. Fallin, J. H. Lee, D. Lee, C. Wilkerson, K. Lai, and O. Mutlu,
+     cient Synchronization Support for Near-Data-Processing Architectures,” in HPCA,                           “Flipping Bits in Memory Without Accessing Them: An Experimental Study of
+     2021.
+[52] S. R. Group, “SoftMC v1.0 – GitHub Repository,” 2021. [Online]. Available:                                DRAM Disturbance Errors,” in ISCA, 2014.
+     https://github.com/CMU-SAFARI/SoftMC                                                                 [89] Y. Kim, V. Seshadri, D. Lee, J. Liu, and O. Mutlu, “A Case for Exploiting Subarray-
+[53] B. Gu, A. S. Yoon, D.-H. Bae, I. Jo, J. Lee, J. Yoon, J.-U. Kang, M. Kwon, C. Yoon,                       Level Parallelism (SALP) in DRAM,” in ISCA, 2012.
+     S. Cho, J. Jeong, and D. Chang, “Biscuit: A Framework for Near-Data Processing of                    [90] Y. Kim, W. Yang, and O. Mutlu, “Ramulator: A Fast and Extensible DRAM Simulator,”
+     Big Data Workloads,” in ISCA, 2016.                                                                       in CAL, 2015.
+                                                                                                          [91] S. Kvatinsky, D. Belousov, S. Liman, G. Satat, N. Wald, E. G. Friedman, A. Kolodny,
+[54] N. Hajinazar, G. F. Oliveira, S. Gregorio, J. D. Ferreira, N. M. Ghiasi, M. Patel, M. Alser,              and U. C. Weiser, “MAGIC—Memristor-Aided Logic,” in IEEE TCAS II: Express Briefs,
+     S. Ghose, J. Gómez-Luna, and O. Mutlu, “SIMDRAM: A Framework for Bit-Serial                               2014.
+     SIMD Processing Using DRAM,” in ASPLOS, 2021.                                                        [92] S. Kvatinsky, A. Kolodny, U. C. Weiser, and E. G. Friedman, “Memristor-Based IMPLY
+[55] S. Hamdioui, S. Kvatinsky, and e. a. G. Cauwenberghs, “Memristor for Computing:                           Logic Design Procedure,” in ICCD, 2011.
+     Myth or Reality?” in DATE, 2017.                                                                     [93] S. Kvatinsky, G. Satat, N. Wald, E. G. Friedman, A. Kolodny, and U. C. Weiser,
+[56] S. Hamdioui, L. Xie, H. A. Du Nguyen, M. Taouil, K. Bertels, H. Corporaal, H. Jiao,                       “Memristor-Based Material Implication (IMPLY) Logic: Design Principles and
+     F. Catthoor, D. Wouters, L. Eike, and J. van Lunteren, “Memristor Based Computation-                      Methodologies,” in TVLSI, 2014.
+     in-Memory Architecture for Data-intensive Applications,” in DATE, 2015.                              [94] Y.-C. Kwon, S. H. Lee, J. Lee, S.-H. Kwon, J. M. Ryu, J.-P. Son, O. Seongil, H.-S. Yu,
+[57] M. Hashemi, O. Mutlu, and Y. N. Patt, “Continuous Runahead: Transparent Hardware                          H. Lee, S. Y. Kim, Y. Cho, J. G. Kim, J. Choi, H.-S. Shin, J. Kim, B. Phuah, H. Kim,
+     Acceleration for Memory Intensive Workloads,” in MICRO, 2016.                                             M. J. Song, A. Choi, D. Kim, S. Kim, E.-B. Kim, D. Wang, S. Kang, Y. Ro, S. Seo,
+[58] M. Hashemi, Khubaib, E. Ebrahimi, O. Mutlu, and Y. N. Patt, “Accelerating Dependent                       J. Song, J. Youn, K. Sohn, and N. S. Kim, “25.4 A 20nm 6GB Function-In-Memory
+     Cache Misses with an Enhanced Memory Controller,” in ISCA, 2016.                                          DRAM, Based on HBM2 with a 1.2TFLOPS Programmable Computing Unit Using
+[59] H. Hassan, Y. C. Tugrul, J. S. Kim, V. van der Veen, K. Razavi, and O. Mutlu, “Un-                        Bank-Level Parallelism, for Machine Learning Applications,” in ISSCC, 2021.
+     covering In-DRAM RowHammer Protection Mechanisms: A New Methodology,                                 [95] D. Lee, “Reducing DRAM Latency at Low Cost by Exploiting Heterogeneity,” Ph.D.
+     Custom RowHammer Patterns, and Implications,” arXiv:2110.10603, 2021.                                     dissertation, Carnegie Mellon University, 2016.
+[60] H. Hassan, N. Vijaykumar, S. Khan, S. Ghose, K. Chang, G. Pekhimenko, D. Lee,                        [96] D. Lee, S. Khan, L. Subramanian, S. Ghose, R. Ausavarungnirun, G. Pekhimenko,
+     O. Ergin, and O. Mutlu, “SoftMC: A Flexible and Practical Open-Source Infrastructure                      V. Seshadri, and O. Mutlu, “Design-Induced Latency Variation in Modern DRAM
+     for Enabling Experimental DRAM Studies,” in HPCA, 2017.                                                   Chips: Characterization, Analysis, and Latency Reduction Mechanisms,” in SIGMET-
+[61] C. Helm, S. Akiyama, and K. Taura, “Reliable Reverse Engineering of Intel DRAM                            RICS, 2017.
+     Addressing Using Performance Counters,” in MASCOTS, 2020.                                            [97] D. Lee, J. So, M. AHN, J.-G. Lee, J. Kim, J. Cho, R. Oliver, V. C. Thummala, R. s. JV,
+[62] M. Hillenbrand, “Physical Address Decoding in Intel Xeon v3/v4 CPUs: A Supple-                            S. S. Upadhya et al., “Improving In-Memory Database Operations with Acceleration
+     mental Datasheet,” 2017.                                                                                  DIMM (AxDIMM),” in DaMoN, 2022.
+[63] M. Horiguchi, “Redundancy Techniques for High-Density DRAMs,” in ISIS, 1997.                         [98] D. Lee, Y. Kim, G. Pekhimenko, S. Khan, V. Seshadri, K. Chang, and O. Mutlu,
+[64] HPS Research Group, “Scarab – Github Repository,” 2022. [Online]. Available:                              “Adaptive-Latency DRAM: Optimizing DRAM Timing for the Common-Case,” in
+     https://github.com/hpsresearchgroup/scarab                                                                HPCA, 2015.
+[65] K. Hsieh, S. Khan, N. Vijaykumar, K. K. Chang, A. Boroumand, S. Ghose, and                           [99] D. Lee, Y. Kim, V. Seshadri, J. Liu, L. Subramanian, and O. Mutlu, “Tiered-Latency
+                                                                                                               DRAM: A Low Latency and Low Cost DRAM Architecture,” in HPCA, 2013.
+     O. Mutlu, “Accelerating Pointer Chasing in 3D-Stacked Memory: Challenges, Mech-
+     anisms, Evaluation,” in ICCD, 2016.                                                                 [100] D. Lee, L. Subramanian, R. Ausavarungnirun, J. Choi, and O. Mutlu, “Decoupled
+[66] K. Hsieh, E. Ebrahimi, G. Kim, N. Chatterjee, M. O’Conner, N. Vijaykumar, O. Mutlu,                       Direct Memory Access: Isolating CPU and IO Traffic by Leveraging a Dual-Data-Port
+     and S. Keckler, “Transparent Offloading and Mapping (TOM): Enabling Programmer-                           DRAM,” in PACT, 2015.
+                                                                                                         [101] S. Lee, K. Kim, S. Oh, J. Park, G. Hong, D. Ka, K. Hwang, J. Park, K. Kang, J. Kim,
+     Transparent Near-Data Processing in GPU Systems,” in ISCA, 2016.
+                                                                                                               J. Jeon, N. Kim, Y. Kwon, K. Vladimir, W. Shin, J. Won, M. Lee, H. Joo, H. Choi,
+[67] Y. Huang, L. Zheng, P. Yao, J. Zhao, X. Liao, H. Jin, and J. Xue, “A Heterogeneous PIM                    J. Lee, D. Ko, Y. Jun, K. Cho, I. Kim, C. Song, C. Jeong, D. Kwon, J. Jang, I. Park,
+     Hardware-Software Co-Design for Energy-Efficient Graph Processing,” in IPDPS,                             J. Chun, and J. Cho, “A 1ynm 1.25V 8Gb, 16Gb/s/pin GDDR6-based Accelerator-in-
+     2020.
+[68] Intel, “Intel 64 and IA-32 Architectures Software Developer Manuals,”                                     Memory supporting 1TFLOPS MAC Operation and Various Activation Functions
+     2011. [Online]. Available: http://www.intel.com/content/www/us/en/processors/                             for Deep-Learning Applications,” in ISSCC, 2022.
+     architectures-software-developer-manuals.html                                                       [102] Y. Levy, J. Bruck, Y. Cassuto, E. G. Friedman, A. Kolodny, E. Yaakobi, and S. Kvatinsky,
+[69] Intel, “Taking Neuromorphic Computing to the Next Level with Loihi 2,” Technology                         “Logic Operations in Memory Using a Memristive Akers Array,” in Microelectronics
+     Brief, 2022.                                                                                              Journal, 2014.
+[70] K. Itoh, VLSI Memory Chip Design. Springer, 2001.                                                   [103] S. Li, D. Niu, K. T. Malladi, H. Zheng, B. Brennan, and Y. Xie, “DRISA: A DRAM-Based
+[71] JEDEC, “DDR4,” JEDEC Standard JESD79–4, 2012.                                                             Reconfigurable In-Situ Accelerator,” in MICRO, 2017.
+[72] H. B. Kang and S. K. Hong, “One-Transistor Type DRAM,” US Patent 7701751, 2009.                     [104] S. Li, C. Xu, Q. Zou, J. Zhao, Y. Lu, and Y. Xie, “Pinatubo: A Processing-in-Memory
+[73] M. Kang, M.-S. Keel, N. R. Shanbhag, S. Eilert, and K. Curewitz, “An Energy-Efficient                     Architecture for Bulk Bitwise Operations in Emerging Non-Volatile Memories,” in
+     VLSI Architecture for Pattern Recognition via Deep Embedding of Computation in                            DAC, 2016.
+     SRAM,” in ICASSP, 2014.                                                                             [105] Linux man-pages Project, “calloc(3p) — Linux manual page,” https://man7.org/linux/
+[74] L. Ke, X. Zhang, J. So, J.-G. Lee, S.-H. Kang, S. Lee, S. Han, Y. Cho, J. H. Kim,                         man-pages/man3/calloc.3p.html, 2022.
+     Y. Kwon et al., “Near-Memory Processing in Action: Accelerating Personalized                        [106] Linux man-pages Project, “malloc(3) — Linux manual page,” https://man7.org/linux/
+     Recommendation with AxDIMM,” in IEEE Micro, 2021.                                                         man-pages/man3/malloc.3.html, 2022.
+[75] B. Keeth and R. Baker, DRAM Circuit Design: A Tutorial. Wiley, 2001.                                [107] Linux man-pages Project, “memcpy(3) — Linux manual page,” https://man7.org/
+[76] S. Khan, D. Lee, and O. Mutlu, “PARBOR: An Efficient System-Level Technique to                            linux/man-pages/man3/memcpy.3.html, 2022.
+     Detect Data Dependent Failures in DRAM,” in DSN, 2016.                                              [108] Linux man-pages Project, “posix_memalign(3) — Linux manual page,” https://man7.
+[77] S. Khan, C. Wilkerson, Z. Wang, A. Alameldeen, D. Lee, and O. Mutlu, “Detecting                           org/linux/man-pages/man3/posix_memalign.3.html, 2022.
+     and Mitigating Data-Dependent DRAM Failures by Exploiting Current Memory                            [109] Linux Wiki, “perf: Linux profiling with performance counters,” https://perf.wiki.
+     Content,” in MICRO, 2017.                                                                                 kernel.org/index.php/Main_Page, 2021.
+[78] C. H. Kim, W. J. Lee, Y. Paik, K. Kwon, S. Y. Kim, I. Park, and S. W. Kim, “Silent-PIM:             [110] J. Liu, B. Jaiyen, Y. Kim, C. Wilkerson, and O. Mutlu, “An Experimental Study of
+     Realizing the Processing-in-Memory Computing with Standard Memory Requests,”
+                                                                                                               Data Retention Behavior in Modern DRAM Devices: Implications for Retention
+     TPDS, 2021.
+[79] D. Kim, J. Kung, S. Chai, S. Yalamanchili, and S. Mukhopadhyay, “Neurocube: A                             Time Profiling Mechanisms,” in ISCA, 2013.
+     Programmable Digital Neuromorphic Architecture with High-Density 3D Memory,”                        [111] Z. Liu, I. Calciu, M. Herlihy, and O. Mutlu, “Concurrent Data Structures for Near-
+     in ISCA, 2016.                                                                                            Memory Computing,” in SPAA, 2017.
+[80] G. Kim, N. Chatterjee, M. O’Connor, and K. Hsieh, “Toward Standardized Near-Data                    [112] S.-L. Lu, Y.-C. Lin, and C.-L. Yang, “Improving DRAM Latency with Dynamic Asym-
+     Processing with Unrestricted Data Placement for GPUs,” in SC, 2017.                                       metric Subarray,” in MICRO, 2015.
+[81] J. Kim, M. Patel, H. Hassan, and O. Mutlu, “Solar-DRAM: Reducing DRAM Access                        [113] H. Luo, T. Shahroodi, H. Hassan, M. Patel, A. G. Yaglikci, L. Orosa, J. Park,
+     Latency by Exploiting the Variation in Local Bitlines,” in ICCD, 2018.                                    and O. Mutlu, “CLR-DRAM: A Low-Cost DRAM Architecture Enabling Dynamic
+[82] J. Kim, M. Patel, H. Hassan, and O. Mutlu, “The DRAM Latency PUF: Quickly                                 Capacity-Latency Trade-Off,” in ISCA, 2020.
+     Evaluating Physical Unclonable Functions by Exploiting the Latency–Reliability                      [114] J. A. Mandelman, R. H. Dennard, G. B. Bronner, J. K. DeBrosse, R. Divakaruni, Y. Li,
+     Tradeoff in Modern DRAM Devices,” in HPCA, 2018.                                                          and C. J. Radens, “Challenges and Future Directions for the Scaling of Dynamic
+[83] J. Kim, M. Patel, H. Hassan, L. Orosa, and O. Mutlu, “D-RaNGe: Using Commodity                            Random-Access Memory (DRAM),” in IBM JRD, 2002.
+     DRAM Devices to Generate True Random Numbers with Low Latency and High                              [115] Maxwell, “FT20X,” https://www.maxwell-fa.com/upload/files/base/8/m/311.pdf,
+     Throughput,” in HPCA, 2019.                                                                               2022.
+                                                                                                         [116] Micron, “DDR4 SDRAM Datasheet,” 2016.
+[84] J. S. Kim, D. Senol, H. Xin, D. Lee, S. Ghose, M. Alser, H. Hassan, O. Ergin, C. Alkan,             [117] Micron, “DDR3 SDRAM: MT41J128M8,” Data Sheet, 2018.
+     and O. Mutlu, “GRIM-Filter: Fast Seed Location Filtering in DNA Read Mapping                        [118] A. Morad, L. Yavits, and R. Ginosar, “GP-SIMD Processing-in-Memory,” in ACM
+     Using Processing-in-Memory Technologies,” in BMC Genomics, 2018.                                          TACO, 2015.
+[85] J. S. Kim, M. Patel, A. G. Yağlıkçı, H. Hassan, R. Azizi, L. Orosa, and O. Mutlu,                   [119] S. Mosanu, M. N. Sakib, T. II, E. Cukurtas, A. Ahmed, P. Ivanov, S. Khan, K. Skadron,
+     “Revisiting RowHammer: An Experimental Analysis of Modern DRAM Devices and                                and M. Stan, “PiMulator: a Fast and Flexible Processing-in-Memory Emulation
+     Mitigation Techniques,” in ISCA, 2020.                                                                    Platform,” in DATE, 2022.
+
+
+
+
+                                                                                                    18
+
+
+
+===== Page 19 =====
+
+[120] O. Mutlu, S. Ghose, J. Gómez-Luna, and R. Ausavarungnirun, “A Modern Primer on                  [147] V. Seshadri, K. Hsieh, A. Boroumand, D. Lee, M. A. Kozuch, O. Mutlu, P. B. Gibbons,
+      Processing in Memory,” in Emerging Computing: From Devices to Systems - Looking                       and T. C. Mowry, “Fast Bulk Bitwise AND and OR in DRAM,” in CAL, 2015.
+      Beyond Moore and Von Neumann, 2021.                                                             [148] V. Seshadri, Y. Kim, C. Fallin, D. Lee, R. Ausavarungnirun, G. Pekhimenko, Y. Luo,
+[121] L. Nai, R. Hadidi, J. Sim, H. Kim, P. Kumar, and H. Kim, “GraphPIM: Enabling                          O. Mutlu, M. A. Kozuch, P. B. Gibbons, and T. C. Mowry, “RowClone: Fast and
+      Instruction-Level PIM Offloading in Graph Computing Frameworks,” in HPCA, 2017.                       Energy-Efficient In-DRAM Bulk Data Copy and Initialization,” in MICRO, 2013.
+[122] D. Niu, S. Li, Y. Wang, W. Han, Z. Zhang, Y. Guan, T. Guan, F. Sun, F. Xue, L. Duan             [149] V. Seshadri and O. Mutlu, “The Processing Using Memory Paradigm: In-DRAM Bulk
+      et al., “184QPS/W 64Mb/mm 2 3D Logic-to-DRAM Hybrid Bonding with Process-                             Copy, Initialization, Bitwise AND and OR,” arXiv:1610.09603, 2016.
+      Near-Memory Engine for Recommendation System,” in ISSCC, 2022.                                  [150] V. Seshadri and O. Mutlu, “Simple Operations in Memory to Reduce Data Movement,”
+[123] A. Olgun, M. Patel, A. G. Yaglikci, H. Luo, J. S. Kim, N. Bostanci, N. Vijayku-                       in Advances in Computers, Volume 106, 2017.
+      mar, O. Ergin, and O. Mutlu, “QUAC-TRNG: High-Throughput True Random Num-                       [151] V. Seshadri and O. Mutlu, “In-DRAM Bulk Bitwise Execution Engine,”
+      ber Generation Using Quadruple Row Activation in Commodity DRAM Chips,”                               arXiv:1905.09822, 2020.
+      arXiv:2105.08955, 2021.                                                                         [152] A. Shafiee, A. Nag, N. Muralimanohar, R. Balasubramonian, J. P. Strachan, M. Hu, R. S.
+[124] A. Olgun, M. Patel, A. G. Yağlıkçı, H. Luo, J. S. Kim, F. Nisa Bostancı, N. Vijaykumar,               Williams, and V. Srikumar, “ISAAC: A Convolutional Neural Network Accelerator
+      O. Ergin, and O. Mutlu, “QUAC-TRNG: High-Throughput True Random Number                                with In-situ Analog Arithmetic in Crossbars,” in ISCA, 2016.
+      Generation Using Quadruple Row Activation in Commodity DRAM Chips,” in ISCA,                    [153] G. Singh, J. Gomez-Luna, G. Mariani, G. F. Oliveira, S. Corda, S. Stujik, O. Mutlu,
+      2021.                                                                                                 and H. Corporaal, “NAPEL: Near-memory Computing Application Performance
+[125] G. F. Oliveira, J. Gómez-Luna, L. Orosa, S. Ghose, N. Vijaykumar, I. Fernandez,                       Prediction via Ensemble Learning,” in DAC, 2019.
+      M. Sadrosadati, and O. Mutlu, “DAMOV: A New Methodology and Benchmark Suite                     [154] Standard Performance Evaluation Corp., “SPEC CPU 2006,” 2006. [Online]. Available:
+      for Evaluating Data Movement Bottlenecks,” in IEEE Access, 2021.                                      http://www.spec.org/cpu2006
+[126] L. Orosa, Y. Wang, M. Sadrosadati, J. S. Kim, M. Patel, I. Puddu, H. Luo, K. Razavi,            [155] B. S. B. Talukder, V. Menon, B. Ray, T. Neal, and M. Rahman, “Towards the Avoidance
+      J. Gómez-Luna, H. Hassan, N. Mansouri-Ghiasi, S. Ghose, and O. Mutlu, “CODIC: A                       of Counterfeit Memory: Identifying the DRAM Origin,” in HOST, 2020.
+      Low-Cost Substrate for Enabling Custom In-DRAM Functionalities and Optimiza-                    [156] E. Testa, M. Soeken, O. Zografos, L. Amaru, P. Raghavan, R. Lauwereins, P.-E.
+      tions,” in ISCA, 2021.                                                                                Gaillardon, and G. De Micheli, “Inversion Optimization in Majority-Inverter Graphs,”
+[127] L. Orosa, A. G. Yaglikci, H. Luo, A. Olgun, J. Park, H. Hassan, M. Patel, J. S. Kim, and              in NANOARCH, 2016.
+      O. Mutlu, “A Deeper Look into RowHammer’s Sensitivities: Experimental Analysis                  [157] TTi, “PL & PL-P Series DC Power Supplies Data Sheet - Issue 5,”
+      of Real DRAM Chipsand Implications on Future Attacks and Defenses,” in MICRO,                         https://resources.aimtti.com/datasheets/AIM-PL+PL-P_series_DC_power_
+      2021.                                                                                                 supplies_data_sheet-Iss5.pdf, 2022.
+[128] M. Patel, J. S. Kim, and O. Mutlu, “The Reach Profiler (REAPER): Enabling the
+      Mitigation of DRAM Retention Failures via Profiling at Aggressive Conditions,” in               [158] UPMEM, “Introduction to UPMEM PIM. Processing-in-memory (PIM) on DRAM
+      ISCA, 2017.                                                                                           Accelerator,” 2018.
+[129] M. Patel, J. S. Kim, T. Shahroodi, H. Hassan, and O. Mutlu, “Bit-Exact ECC Recovery             [159] A. van de Goor and I. Schanstra, “Address and data scrambling: Causes and impact
+      (BEER): Determining DRAM On-Die ECC Functions by Exploiting DRAM Data                                 on memory tests,” in IEEE International Workshop on Electronic Design, Test and
+      Retention Characteristics,” in MICRO, 2020.                                                           Applications, 2002.
+[130] M. Patel, T. Shahroodi, A. Manglik, A. G. Yaglikci, A. Olgun, H. Luo, and O. Mutlu,             [160] Y. Wang, L. Orosa, X. Peng, Y. Guo, S. Ghose, M. Patel, J. S. Kim, J. G. Luna, M. Sadrosa-
+      “A Case for Transparent Reliability in DRAM Systems,” arXiv:2204.10378, 2022.                         dati, N. M. Ghiasi, and O. Mutlu, “FIGARO: Improving System Performance via
+[131] A. Pattnaik, X. Tang, A. Jog, O. Kayiran, A. K. Mishra, M. T. Kandemir, O. Mutlu,                     Fine-Grained In-DRAM Data Relocation and Caching,” in MICRO, 2020.
+      and C. R. Das, “Scheduling Techniques for GPU Architectures with Processing-in-                 [161] A. Waterman and K. Asanovic, “The RISC-V Instruction Set Manual,” 2021. [Online].
+      Memory Capabilities,” in PACT, 2016.                                                                  Available: https://riscv.org/wp-content/uploads/2019/06/riscv-spec.pdf
+[132] J. Power, J. Hestness, M. S. Orr, M. D. Hill, and D. A. Wood, “gem5-gpu: A Heteroge-            [162] S. L. Xi, O. Babarinsa, M. Athanassoulis, and S. Idreos, “Beyond the Wall: Near-Data
+      neous CPU-GPU Simulator,” in CAL, Jan 2015.                                                           Processing for Databases,” in DaMoN, 2015.
+[133] S. H. Pugsley, J. Jestes, H. Zhang, R. Balasubramonian, V. Srinivasan, A. Buyuk-                [163] L. Xie, H. A. D. Nguyen, M. Taouil, S. Hamdioui, and K. Bertels, “Fast Boolean Logic
+      tosunoglu, A. Davis, and F. Li, “NDC: Analyzing the Impact of 3D-Stacked Mem-                         Mapped on Memristor Crossbar,” in ICCD, 2015.
+      ory+Logic Devices on MapReduce Workloads,” in ISPASS, 2014.                                     [164] Xilinx, 7 Series FPGAs Memory Interface Solutions, March 2011.
+[134] S. H. S. Rezaei, M. Modarressi, R. Ausavarungnirun, M. Sadrosadati, O. Mutlu,                   [165] Xilinx, Vivado Design Suite: Using Constraints, November 2021.
+      and M. Daneshtalab, “NoM: Network-on-Memory for Inter-Bank Data Transfer in                     [166] Xilinx, “Xilinx Ultrascale+ MPSoC,” 2021. [Online]. Available: https://www.xilinx.
+      Highly-Banked Memories,” in CAL, 2020.                                                                com/products/silicon-devices/soc/zynq-ultrascale-mpsoc.html
+[135] RISC-V, “RISC-V GNU Compiler Toolchain,” 2021. [Online]. Available: https:                      [167] Xilinx, “Xilinx Zynq-7000 SoC ZC706 Evaluation Kit,” 2021. [Online]. Available:
+      //github.com/riscv/riscv-gnu-toolchain                                                                https://www.xilinx.com/products/boards-and-kits/ek-z7-zc706-g.html
+[136] RISC-V, “RISC-V proxy kernel,” 2022. [Online]. Available: https://github.com/riscv/             [168] X. Xin, Y. Zhang, and J. Yang, “ELP2IM: Efficient and Low Power Bitwise Operation
+      riscv-pk                                                                                              Processing in DRAM,” in HPCA, 2020.
+[137] R. Ronen, A. Eliahu, O. Leitersdorf, N. Peled, K. Korgaonkar, A. Chattopadhyay,                 [169] S. Xu, X. Chen, Y. Wang, Y. Han, X. Qian, and X. Li, “PIMSim: A Flexible and Detailed
+      B. Perach, and S. Kvatinsky, “The Bitlet Model: A Parameterized Analytical Model                      Processing-in-Memory Simulator,” in IEEE CAL, 2019.
+      to Compare PIM and CPU Systems,” in J. Emerg. Technol. Comput. Syst., 2022.                     [170] C. Yu, S. Liu, and S. Khan, “MultiPIM: A Detailed and Configurable Multi-Stack
+[138] SAFARI Research Group, “Ramulator: A DRAM Simulator – GitHub Repository,”                             Processing-In-Memory Simulator,” in IEEE CAL, 2021.
+      https://github.com/CMU-SAFARI/ramulator/, 2015.                                                 [171] J. Yu, H. A. D. Nguyen, L. Xie, M. Taouil, and S. Hamdioui, “Memristive Devices for
+[139] SAFARI Research Group, “DAMOV – GitHub Repository,” https://github.com/                               Computation-in-Memory,” in DATE, 2018.
+      CMU-SAFARI/DAMOV, 2021.                                                                         [172] Y. Zha, E. Nowak, and J. Li, “Liquid Silicon: A Nonvolatile Fully Programmable
+[140] SAFARI Research Group, “Ramulator-PIM: A Processing-in-Memory Simulation                              Processing-In-Memory Processor with Monolithically Integrated ReRAM for Big
+      Framework – GitHub Repository,” 2021. [Online]. Available: https://github.com/                        Data/Machine Learning Applications,” in Symposium on VLSI Circuits, 2019.
+      CMU-SAFARI/ramulator-pim                                                                        [173] D. P. Zhang, N. Jayasena, A. Lyashevsky, J. L. Greathouse, L. Xu, and M. Ignatowski,
+[141] D. Sanchez and C. Kozyrakis, “ZSim: Fast and Accurate Microarchitectural Simula-                      “TOP-PIM: Throughput-Oriented Programmable Processing in Memory,” in HPDC,
+      tion of Thousand-Core Systems,” in ISCA, 2013.                                                        2014.
+[142] S. Saroiu, A. Wolman, and L. Cojocar, “The Price of Secrecy: How Hiding Internal                [174] J. Zhang, Y. Zha, N. Beckwith, B. Liu, and J. Li, “MEG: A RISCV-based System Emu-
+      DRAM Topologies Hurts Rowhammer Defenses,” in IRPS, 2022.                                             lation Infrastructure for Near-data Processing Using FPGAs and High-bandwidth
+[143] V. Seshadri, “Simple DRAM and Virtual Memory Abstractions to Enable Highly                            Memory,” in TRETS, 2020.
+      Efficient Memory Systems,” Ph.D. dissertation, Carnegie Mellon University, 2016.                [175] L. Zhang and L. Shen, “PIM-HBMSim: A Processing in Memory Simulator Based on
+[144] V. Seshadri, D. Lee, T. Mullins, H. Hassan, A. Boroumand, J. Kim, M. A. Kozuch,                       High Bandwidth Memory,” in CICA, 2022.
+      O. Mutlu, P. B. Gibbons, and T. C. Mowry, “Buddy-RAM: Improving the Performance                 [176] M. Zhang, Y. Zhuo, C. Wang, M. Gao, Y. Wu, K. Chen, C. Kozyrakis, and X. Qian,
+      and Efficiency of Bulk Bitwise Operations Using DRAM,” arXiv:1611.09988, 2016.                        “GraphP: Reducing Communication for PIM-based Graph Processing with Efficient
+[145] V. Seshadri, D. Lee, T. Mullins, H. Hassan, A. Boroumand, J. Kim, M. A. Kozuch,                       Data Partition,” in HPCA, 2018.
+      O. Mutlu, P. B. Gibbons, and T. C. Mowry, “Ambit: In-Memory Accelerator for Bulk                [177] Q. Zhu, T. Graf, H. E. Sumbul, L. Pileggi, and F. Franchetti, “Accelerating Sparse
+      Bitwise Operations Using Commodity DRAM Technology,” in MICRO, 2017.                                  Matrix-Matrix Multiplication with 3D-Stacked Logic-in-Memory Hardware,” in
+[146] V. Seshadri, A. Bhowmick, O. Mutlu, P. B. Gibbons, M. A. Kozuch, and T. C. Mowry,                     HPEC, 2013.
+                                                                                                      [178] Y. Zhuo, C. Wang, M. Zhang, R. Wang, D. Niu, Y. Wang, and X. Qian, “GraphQ:
+      “The Dirty-Block Index,” in ISCA, 2014.                                                               Scalable PIM-based Graph Processing,” in MICRO, 2019.
+
+
+
+
+                                                                                                 19
+

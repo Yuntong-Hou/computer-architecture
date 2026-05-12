@@ -1,0 +1,1236 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/lec4-paper-reading/sources/original-paper/ambit-bulk-bitwise-dram_micro17.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC4/original-paper/ambit-bulk-bitwise-dram_micro17.pdf
+Raw URL: https://raw.githubusercontent.com/Yuntong-Hou/computer-architecture/main/LEC4/original-paper/ambit-bulk-bitwise-dram_micro17.pdf
+Accessed: 2026-05-11 11:24:26 UTC
+
+
+
+===== Page 1 =====
+
+                 Ambit: In-Memory Accelerator for Bulk Bitwise Operations
+                           Using Commodity DRAM Technology
+     Vivek Seshadri1,5 Donghyuk Lee2,5 Thomas Mullins3,5 Hasan Hassan4 Amirali Boroumand5
+       Jeremie Kim4,5 Michael A. Kozuch3 Onur Mutlu4,5 Phillip B. Gibbons5 Todd C. Mowry5
+       1                                         2                                3           4                 5
+           Microsoft Research India                  NVIDIA Research                  Intel       ETH Zürich        Carnegie Mellon University
+
+
+                               Abstract                                                 bulk bitwise operations by 9.7X compared to processing in
+                                                                                        the logic layer of the HMC. Ambit improves the performance
+   Many important applications trigger bulk bitwise opera-                              of three real-world data-intensive applications, 1) database
+tions, i.e., bitwise operations on large bit vectors. In fact, re-                      bitmap indices, 2) BitWeaving, a technique to accelerate
+cent works design techniques that exploit fast bulk bitwise op-                         database scans, and 3) bit-vector-based implementation of
+erations to accelerate databases (bitmap indices, BitWeaving)                           sets, by 3X-7X compared to a state-of-the-art baseline using
+and web search (BitFunnel). Unfortunately, in existing archi-                           SIMD optimizations. We describe four other applications that
+tectures, the throughput of bulk bitwise operations is limited                          can benefit from Ambit, including a recent technique pro-
+by the memory bandwidth available to the processing unit                                posed to speed up web search. We believe that large per-
+(e.g., CPU, GPU, FPGA, processing-in-memory).                                           formance and energy improvements provided by Ambit can
+   To overcome this bottleneck, we propose Ambit, an                                    enable other applications to use bulk bitwise operations.
+Accelerator-in-Memory for bulk bitwise operations. Unlike
+prior works, Ambit exploits the analog operation of DRAM                                CCS CONCEPTS
+technology to perform bitwise operations completely inside                              • Computer systems organization → Single instruction,
+DRAM, thereby exploiting the full internal DRAM bandwidth.                              multiple data; • Hardware → Hardware accelerator;
+Ambit consists of two components. First, simultaneous acti-                             • Hardware → Dynamic memory;
+vation of three DRAM rows that share the same set of sense
+amplifiers enables the system to perform bitwise AND and OR
+                                                                                        KEYWORDS
+operations. Second, with modest changes to the sense ampli-
+fier, the system can use the inverters present inside the sense                         Bulk Bitwise Operations, Processing-in-memory, DRAM,
+amplifier to perform bitwise NOT operations. With these                                 Memory Bandwidth, Performance, Energy, Databases
+two components, Ambit can perform any bulk bitwise opera-
+tion efficiently inside DRAM. Ambit largely exploits existing                           ACM Reference Format:
+DRAM structure, and hence incurs low cost on top of com-                                Vivek Seshadri, Donghyuk Lee, Thomas Mullins, Hasan Has-
+modity DRAM designs (1% of DRAM chip area). Importantly,                                san, Amirali Boroumand, Jeremie Kim, Michael A. Kozuch,
+Ambit uses the modern DRAM interface without any changes,                               Onur Mutlu, Phillip B. Gibbons, and Todd C. Mowry. 2017.
+and therefore it can be directly plugged onto the memory bus.                           Ambit: In-Memory Accelerator for Bulk Bitwise Operations
+   Our extensive circuit simulations show that Ambit works                              Using Commodity DRAM Technology. In Proceedings of An-
+as expected even in the presence of significant process vari-                           nual IEEE/ACM International Symposium on Microarchitec-
+ation. Averaged across seven bulk bitwise operations, Am-                               ture, Cambridge, MA, USA, October 2017 (MICRO-50), 15
+bit improves performance by 32X and reduces energy con-                                 pages. http://dx.doi.org/10.1145/3123939.3124544
+sumption by 35X compared to state-of-the-art systems. When
+integrated with Hybrid Memory Cube (HMC), a 3D-stacked                                  1. Introduction
+DRAM with a logic layer, Ambit improves performance of                                     Many applications trigger bulk bitwise operations, i.e., bit-
+                                                                                        wise operations on large bit vectors [61, 108]. In databases,
+Permission to make digital or hard copies of all or part of this work for per-          bitmap indices [26, 85], which heavily use bulk bitwise oper-
+sonal or classroom use is granted without fee provided that copies are not
+made or distributed for profit or commercial advantage and that copies bear
+                                                                                        ations, are more efficient than B-trees for many queries [3,
+this notice and the full citation on the first page. Copyrights for components          26, 111]. In fact, many real-world databases [3, 8, 10, 11]
+of this work owned by others than ACM must be honored. Abstracting with                 support bitmap indices. A recent work, WideTable [76], de-
+credit is permitted. To copy otherwise, or republish, to post on servers or to          signs an entire database around a technique called BitWeav-
+redistribute to lists, requires prior specific permission and/or a fee. Request
+permissions from Permissions@acm.org.
+                                                                                        ing [75], which accelerates scans completely using bulk bit-
+                                                                                        wise operations. Microsoft recently open-sourced a technol-
+MICRO-50, October 14-18, 2017, Cambridge, MA, USA
+© 2017 Association for Computing Machinery.                                             ogy called BitFunnel [40] that accelerates the document fil-
+ACM. ISBN 978-1-4503-4034-2/15/12...$15.00.                                             tering portion of web search. BitFunnel relies on fast bulk
+DOI: http://dx.doi.org/10.1145/3123939.3124544                                          bitwise AND operations. Bulk bitwise operations are also
+
+
+                                                                                  1
+
+
+
+===== Page 2 =====
+
+MICRO-50, October 2017, Cambridge, MA, USA                                                                              V. Seshadri et al.
+
+
+prevalent in DNA sequence alignment [20, 21, 113], encryp-               activations to be performed only on a designated set of rows
+tion algorithms [44, 83, 107], graph processing [74], and net-           (chosen at design time). Before performing Ambit-AND-OR,
+working [108]. Thus, accelerating bulk bitwise operations can            our mechanism copies data from the source rows into the des-
+significantly boost the performance of various applications.             ignated rows. After the operation is completed, it copies the
+   In existing systems, a bulk bitwise operation requires a              result into the destination row. We exploit a recent work,
+large amount of data to be transferred on the memory chan-               RowClone [97] to perform the required copy operations ef-
+nel. Such large data transfers result in high latency, band-             ficiently inside the DRAM arrays (Section 3.4). Second, we
+width, and energy consumption. In fact, our experiments on               reserve a few DRAM row addresses and map each of them
+a multi-core Intel Skylake [7] and an NVIDIA GeForce GTX                 to triple-row activation on a predefined set of three desig-
+745 [4] show that the available memory bandwidth of these                nated rows. With this approach, the memory controller can
+systems limits the throughput of bulk bitwise operations. Re-            communicate a triple-row activation with a single address,
+cent works (e.g., [16, 17, 24, 37, 42, 47, 48, 115]) propose pro-        thereby eliminating the need for a wider address bus (Sec-
+cessing in the logic layer of 3D-stacked DRAM, which stacks              tion 5.1). Third, we split the row decoder into two parts: one
+DRAM layers on top of a logic layer (e.g., Hybrid Memory                 small part that handles all activations to the designated rows,
+Cube [6, 51]). While the logic layer in 3D-stacked memory                and another part to handle activations to regular data rows.
+has much higher bandwidth than traditional systems, it still             This split-row decoder significantly reduces the complexity of
+cannot exploit the maximum internal bandwidth available in-              changes required to the row decoder design (Section 5.3).
+side a DRAM chip (Section 7).                                               Our implementation of Ambit has three advantages. First,
+   To overcome this memory bandwidth bottleneck, we pro-                 unlike prior systems that are limited by the external DRAM
+pose a new Accelerator-in-Memory for bulk Bitwise opera-                 data bandwidth, the performance of Ambit scales linearly
+tions (Ambit). Unlike prior approaches, Ambit uses the ana-              with the maximum internal bandwidth of DRAM (i.e., row
+log operation of DRAM technology to perform bulk bitwise                 buffer size) and the memory-level parallelism available in-
+operations completely inside the memory array. With modest               side DRAM (i.e., number of banks or subarrays [59]). Second,
+changes to the DRAM design, Ambit can exploit 1) the max-                our implementation does not introduce any changes to the
+imum internal bandwidth available inside each DRAM array,                DRAM command and address interface. As a result, Ambit
+and 2) the memory-level parallelism across multiple DRAM                 can be directly plugged onto the system memory bus, allowing
+arrays to significantly improve the performance and efficiency           a design where applications can directly trigger Ambit oper-
+of bulk bitwise operations.                                              ations using processor instructions rather than going through
+   Ambit consists of two parts, Ambit-AND-OR and Ambit-                  a device interface like other accelerators (e.g., GPU). Third,
+NOT. We propose two new ideas that exploit the operation of              since almost all DRAM technologies (e.g., Hybrid Memory
+the sense amplifier, the circuitry that is used to extract data          Cube [6, 51], and High-Bandwidth Memory [5, 70]) use the
+from the DRAM cells. First, in modern DRAM, many rows of                 same underlying DRAM microarchitecture [60], Ambit can
+DRAM cells (typically 512 or 1024) share a single set of sense           be integrated with any of these DRAM technologies.
+amplifiers [27, 59, 68, 97]. Ambit-AND-OR exploits the fact                 We compare the raw throughput and energy of performing
+that simultaneously activating three rows (rather than one)              bulk bitwise operations using Ambit to 1) an Intel Skylake [7],
+results in a bitwise majority function across the cells in the           2) an NVIDIA GTX 745 [4], and 3) performing operations on
+three rows. We refer to this operation as triple-row activation.         the logic layer of a state-of-the-art 3D-stacked DRAM, HMC
+We show that by controlling the initial value of one of the              2.0 [6, 51]. Our evaluations show that the bulk bitwise op-
+three rows, we can use the triple-row activation to perform              eration throughput of these prior systems is limited by the
+a bitwise AND or OR of the other two rows. Second, each                  memory bandwidth. In contrast, averaged across seven bit-
+sense amplifier has two inverters. Ambit-NOT uses a row of               wise operations, Ambit with 8 DRAM banks improves bulk
+dual-contact cells (a 2-transistor 1-capacitor cell [53, 81]) that       bitwise operation throughput by 44X compared to Intel Sky-
+connects to both sides of the inverters to perform bitwise NOT           lake and 32X compared to the GTX 745. Compared to the
+of any row of DRAM cells. With the ability to perform AND,               DDR3 interface, Ambit reduces energy consumption of these
+OR, and NOT operations, Ambit can perform any bulk bit-                  operations by 35X on average. Compared to HMC 2.0, Ambit
+wise operation completely using DRAM technology. Our cir-                improves bulk bitwise operation throughput by 2.4X. When
+cuit simulation results show that Ambit-AND-OR and Ambit-                integrated directly into the HMC 2.0 device, Ambit improves
+NOT work reliably, even in the presence of significant process           throughput by 9.7X compared to processing in the logic layer
+variation. Sections 3 and 4 describe these two parts of Ambit.           of HMC 2.0. Section 7 discusses these results.
+   A naïve mechanism to support triple-row activation on                    Although the Ambit accelerator incurs low cost on top of
+three arbitrary rows would require a wider off-chip address              existing DRAM architectures, we do not advocate Ambit as a
+bus and multiple row decoders to simultaneously communi-                 replacement for all commodity DRAM devices. Rather, cer-
+cate and decode three arbitrary addresses. Such a mechanism              tain important applications that run in large data centers (e.g.,
+would incur high cost. We present a practical, low-cost mech-            databases, web search, genome analysis) can benefit signifi-
+anism that employs three ideas. First, we restrict triple-row            cantly from increased throughput for bulk bitwise operations.
+
+
+                                                                     2
+
+
+
+===== Page 3 =====
+
+Ambit: In-Memory Accelerator for Bulk Bitwise Operations                                                                 MICRO-50, October 2017, Cambridge, MA, USA
+
+
+For such applications, we believe Ambit can improve the scal-                                  A DRAM-based memory hierarchy consists of channels,
+ability and reduce the overall cost of the system (e.g., by re-                             modules, and ranks at the top level. Each rank consists of
+quiring fewer servers). We evaluate the performance of Ambit                                a set of chips that operate in unison. Each rank is fur-
+on three real-world data-intensive applications over a state-                               ther divided into many banks. All access-related commands
+of-the-art baseline that employs SIMD optimization. First,                                  are directed towards a specific bank. Each bank consists
+Ambit improves end-to-end performance of database queries                                   of several subarrays and peripheral logic to process com-
+that use bitmap indices [3] by 6.0X, averaged across a range                                mands [27, 29, 59, 60, 67, 68, 97, 116]. Each subarray consists
+of query parameters. Second, for BitWeaving [75], a recently-                               of many rows (typically 512 or 1024) of DRAM cells, a row of
+proposed technique to accelerate column scan operations in                                  sense amplifiers, and a row address decoder. Figure 1 shows
+databases, Ambit improves performance by 7.0X, averaged                                     the logical organization of a subarray.1
+across a range of scan parameters. Third, for the commonly-
+                                                                                                                                          ...
+used set data structure, Ambit improves performance of set                                                                                ...
+
+
+
+
+                                                                                                           Row Decoder
+intersection, union, and difference operations by 3.0X com-
+                                                                                                                                                          row of
+
+
+
+
+                                                                                                                         ...
+                                                                                                                         ...
+                                                                                                                         ...
+                                                                                                                         ...
+                                                                                                                         ...
+                                                                                                                         ...
+                                                                                                                         ...
+                                                                                                                         ...
+
+
+                                                                                                                                                ...
+                                                                                                                                                ...
+pared to existing implementations [41]. Section 8 describes                                                                               ...             DRAM cells
+our full-system simulation framework [22], workloads, re-                                                                                 ...
+                                                                                                                                          ...
+sults, and four other applications that can significantly benefit                                                                                         sense
+                                                                                                                                          ...
+from Ambit: BitFunnel [40], masked initialization, encryption                                                                                             amplifiers
+algorithms, and DNA read mapping.                                                                 Figure 1: Logical organization of a DRAM subarray
+   We make the following contributions in this work.
+• To our knowledge, this is the first work that integrates sup-                                At a high level, accessing data from a subarray involves
+  port for bulk bitwise operations directly into a DRAM mem-                                three steps. The first step, row activation, copies data from a
+  ory array. We introduce Ambit, an in-memory accelerator                                   specified row of DRAM cells to the row of sense amplifiers
+  that exploits the analog operation of DRAM to perform bulk                                in the subarray. This step is triggered by the ACTIVATE com-
+  bitwise operations with high throughput and efficiency.                                   mand. Then, data is accessed from the sense amplifiers using a
+                                                                                            READ or WRITE command. Each READ or WRITE accesses only
+• We present a low-cost implementation of Ambit, which re-
+                                                                                            a subset of the sense amplifiers. Once a row is activated, mul-
+  quires modest changes to the commodity DRAM architec-
+                                                                                            tiple READ and WRITE commands can be issued to that row.
+  ture (less than 1% DRAM chip area overhead). We verify
+                                                                                            An activated bank is prepared for an access to another row by
+  our implementation of Ambit with rigorous circuit simula-
+                                                                                            an operation called precharging. This step is triggered by the
+  tions. Ambit requires no changes to the DRAM command
+                                                                                            PRECHARGE command. We now explain these operations by
+  and address interface, and hence, can be directly plugged
+                                                                                            focusing on a single DRAM cell and a sense amplifier.
+  onto the system memory bus (Section 5).
+                                                                                               Figure 2 shows the connection between a DRAM cell and
+• Our evaluations show that Ambit significantly improves the
+                                                                                            a sense amplifier. Each DRAM cell consists of 1) a capacitor,
+  throughput and energy efficiency of bulk bitwise operations
+                                                                                            and 2) an access transistor that controls access to the cell. Each
+  compared to state-of-the-art CPUs, GPUs, and processing-
+                                                                                            sense amplifier consists of two inverters, and an enable signal.
+  in-memory systems using 3D-stacked DRAM. This directly
+                                                                                            The output of each inverter is connected to the input of the
+  translates to large performance improvements for three
+                                                                                            other inverter. The wire that connects the cell to the sense
+  real-world applications that use bulk bitwise operations.
+                                                                                            amplifier is called the bitline, and the wire that controls the
+2. Background on DRAM Operation                                                             1 Although the figure logically depicts a subarray as a single monolithic struc-
+
+   Our Ambit accelerator exploits the internal high-                                        ture, in practice, each subarray is divided into several MATs. The row de-
+                                                                                            coding functionality is also split between a bank-level global row decoder, a
+bandwidth operation of the modern DRAM chips and tightly                                    subarray-local row decoder, and wordline drivers [50, 59, 71]. While we de-
+integrates into the DRAM architecture. In this section, we                                  scribe our mechanisms on top of the logical organization, they can be easily
+provide the necessary background on DRAM operation.                                         engineered to work with the actual physical design.
+
+    DRAM cell      wordline                 precharged                   wordline                  charge sharing                   sense amplifier                     activated
+                                               state                      enable                       phase                            enable                            state
+     capacitor                                           1                          1                           1                                1
+                              bitline
+
+
+
+
+                                                         2 VDD                      2 VDD                       2 VDD + δ                        2 VDD + δ                          VDD
+                                            0                        1                              1                                1                              1
+       access
+     transistor                                          ACTIVATE
+       enable                           0                        0                                0                                1                            1
+     sense
+     amplifier                              1            1           1                  2             1                    3           1              4            0                5
+                  bitline                   2 VDD                    2 VDD                            2 VDD                            2 VDD
+                                                                                                                                                            PRECHARGE
+    Figure 2: DRAM cell
+    and sense amplifier                                      Figure 3: State transitions involved in DRAM cell activation
+
+
+                                                                                    3
+
+
+
+===== Page 4 =====
+
+MICRO-50, October 2017, Cambridge, MA, USA                                                                                               V. Seshadri et al.
+
+
+access transistor is called the wordline. We refer to the wire             3.1. Triple-Row Activation (TRA)
+on the other end of the sense amplifier as bitline (“bitline bar”).           A triple-row activation (TRA) simultaneously connects a
+    Figure 3 shows the state transitions involved in extracting            sense amplifier with three DRAM cells on the same bitline.
+the state of the DRAM cell. In this figure, we assume that the             For ease of conceptual understanding, let us assume that the
+cell capacitor is initially charged. The operation is similar if           three cells have the same capacitance, the transistors and bit-
+the capacitor is initially empty. In the initial precharged state          lines behave ideally (no resistance), and the cells start at a
+Ê, both the bitline and bitline are maintained at a voltage level          fully refreshed state. Then, based on charge sharing princi-
+of 12 VDD . The sense amplifier and the wordline are disabled.             ples [57], the bitline deviation at the end of the charge sharing
+    The ACTIVATE command triggers an access to the cell.                   phase of the TRA is:
+Upon receiving the ACTIVATE, the wordline of the cell is                                                   k.Cc .VDD + Cb . 12 VDD       1
+raised Ë, connecting the cell to the bitline. Since the capac-                              δ        =                               −     VDD
+                                                                                                                 3Cc + Cb                2
+itor is fully charged, and thus, at a higher voltage level than                                            (2k − 3)Cc
+the bitline, charge flows from the capacitor to the bitline un-                                      =                VDD                                   (1)
+                                                                                                           6Cc + 2Cb
+til both the capacitor and the bitline reach the same voltage
+level 21 VDD + δ. This phase is called charge sharing Ì. Af-               where, δ is the bitline deviation, Cc is the cell capacitance,
+ter charge sharing is complete, the sense amplifier is enabled             Cb is the bitline capacitance, and k is the number of cells in
+Í. The sense amplifier senses the difference in voltage level              the fully charged state. It is clear that δ > 0 if and only if
+between the bitline and bitline. The sense amplifier then am-              2k − 3 > 0. In other words, the bitline deviation is positive if
+plifies the deviation to the stable state where the bitline is at          k = 2, 3 and it is negative if k = 0, 1. Therefore, we expect
+the voltage level of VDD (and the bitline is at 0). Since the ca-          the final state of the bitline to be VDD if at least two of the
+pacitor is still connected to the bitline, the capacitor also gets         three cells are initially fully charged, and the final state to be
+fully charged (i.e., restored) Î. If the capacitor was initially           0, if at least two of the three cells are initially fully empty.
+empty, then the deviation on the bitline would be negative                    Figure 4 shows an example TRA where two of the three
+(towards 0), and the sense amplifier would drive the bitline               cells are initially in the charged state Ê. When the wordlines
+to 0. Each ACTIVATE command operates on an entire row of                   of all the three cells are raised simultaneously Ë, charge shar-
+cells (typically 8 KB of data across a rank).                              ing results in a positive deviation on the bitline. Therefore,
+    After the cell is activated, data can be accessed from the             after sense amplification Ì, the sense amplifier drives the bit-
+bitline by issuing a READ or WRITE to the column containing                line to VDD , and as a result, fully charges all the three cells.2
+the cell (not shown in Figure 3; see [28, 45, 59, 67, 68, 71] for           0                   1          1            1                1
+                                                                                                2 VDD                   2 VDD + δ                     VDD
+details). When data in a different row needs to be accessed,                    A                              A                             A
+the memory controller takes the subarray back to the initial                0                              1                             1
+                                                                                B                              B                             B
+precharged state Ê using the PRECHARGE command. Upon                        0                              1                             1
+receiving this command, DRAM first lowers the raised word-                      C                              C                             C
+line, thereby disconnecting the capacitor from the bitline. Af-
+ter this, the sense amplifier is disabled, and both the bitline            0                               0                             1
+and the bitline are driven to the voltage level of 12 VDD .
+                                                                                1                1             1         2                       0     3
+                                                                                2 VDD                          2 VDD
+3. Ambit-AND-OR
+                                                                                initial state            after charge sharing       after sense amplification
+  The first component of our mechanism, Ambit-AND-OR,                                                Figure 4: Triple-row activation
+uses the analog nature of the charge sharing phase to perform
+bulk bitwise AND and OR directly in DRAM. It specifically                     If A, B, and C represent the logical values of the three
+exploits two facts about DRAM operation:                                   cells, then the final state of the bitline is AB + BC + CA
+  1. In a subarray, each sense amplifier is shared by many                 (the bitwise majority function). Importantly, we can rewrite
+     (typically 512 or 1024) DRAM cells on the same bitline.               this expression as C(A + B) + C(AB). In other words, by
+  2. The final state of the bitline after sense amplification de-          controlling the value of the cell C, we can use TRA to execute
+     pends primarily on the voltage deviation on the bitline               a bitwise AND or bitwise OR of the cells A and B. Since
+     after the charge sharing phase.                                       activation is a row-level operation in DRAM, TRA operates
+Based on these facts, we observe that simultaneously activat-              on an entire row of DRAM cells and sense amplifiers, thereby
+ing three cells, rather than a single cell, results in a bitwise ma-       enabling a multi-kilobyte-wide bitwise AND/OR of two rows.
+jority function—i.e., at least two cells have to be fully charged
+                                                                           2 Modern DRAMs use an open-bitline architecture [29, 57, 71, 79], where cells
+for the final state to be a logical “1”. We refer to simultaneous
+                                                                           are also connected to bitline. The three cells in our example are connected to
+activation of three cells (or rows) as triple-row activation. We           the bitline. However, based on the duality principle of Boolean algebra [104],
+now conceptually describe triple-row activation and how we                 i.e., not (A and B) ≡ (not A) or (not B), TRA works seamlessly even if all
+use it to perform bulk bitwise AND and OR operations.                      the three cells are connected to bitline.
+
+
+                                                                       4
+
+
+
+===== Page 5 =====
+
+Ambit: In-Memory Accelerator for Bulk Bitwise Operations                                MICRO-50, October 2017, Cambridge, MA, USA
+
+
+3.2. Making TRA Work                                                   tency (100 ns—1 µs) than the refresh interval (64 ms). Since
+   There are five potential issues with TRA that we need to            these copy operations (Steps 1 and 2 above) are performed just
+resolve for it to be implementable in a real DRAM design.              before the TRA, the rows involved in the TRA are very close
+                                                                       to the fully-refreshed state just before the TRA operation (is-
+1. When simultaneously activating three cells, the deviation           sue 4). Finally, since the designated rows are chosen statically
+   on the bitline may be smaller than when activating only             at design time, the Ambit controller uses a reserved address to
+   one cell. This may lengthen sense amplification or worse,           communicate the TRA of a pre-defined set of three designated
+   the sense amplifier may detect the wrong value.                     rows. To this end, Ambit reserves a set of row addresses just
+2. Equation 1 assumes that all cells have the same capaci-             to trigger TRAs. For instance, in our implementation to per-
+   tance, and that the transistors and bitlines behave ideally.        form a TRA of designated rows T0, T1, and T2 (Step 4, above),
+   However, due to process variation, these assumptions are            the Ambit controller simply issues an ACTIVATE with the re-
+   not true in real designs [30, 67, 71]. This can affect the          served address B12 (see Section 5.1 for a full list of reserved
+   reliability of TRA, and thus the correctness of its results.        addresses). The row decoder maps B12 to all the three word-
+3. As shown in Figure 4 (state Ì), TRA overwrites the data             lines of the designated rows T0, T1, and T2. This mechanism
+   of all the three cells with the final result value. In other        requires no changes to the address bus and significantly re-
+   words, TRA overwrites all source cells, thereby destroying          duces the cost and complexity of the row decoder compared
+   their original values.                                              to performing TRA on three arbitrary rows (issue 5).
+4. Equation 1 assumes that the cells involved in a TRA are
+   either fully-charged or fully-empty. However, DRAM cells            3.4. Fast Row Copy and Initialization Using RowClone
+   leak charge over time [78]. If the cells involved have leaked           Our mechanism needs three row copy operations and one
+   significantly, TRA may not operate as expected.                     row initialization operation. These operations, if performed
+5. Simultaneously activating three arbitrary rows inside a             naïvely, can nullify the benefits of Ambit, as a row copy or
+   DRAM subarray requires the memory controller and the                row initialization performed using the memory controller in-
+   row decoder to simultaneously communicate and decode                curs high latency [29, 97]. Fortunately, a recent work, Row-
+   three row addresses. This introduces a large cost on the            Clone [97], proposes two techniques to efficiently copy data
+   address bus and the row decoder, potentially tripling these         between rows directly within DRAM. The first technique,
+   structures, if implemented naïvely.                                 RowClone-FPM (Fast Parallel Mode), copies data within a
+                                                                       subarray by issuing two back-to-back ACTIVATEs to the
+   We address the first two issues by performing rigorous cir-
+                                                                       source row and the destination row. This operation takes only
+cuit simulations of TRA. Our results confirm that TRA works
+                                                                       80 ns [97]. The second technique, RowClone-PSM (Pipelined
+as expected (Section 6). In Sections 3.3 and 3.4, we propose a
+                                                                       Serial Mode), copies data between two banks by using the
+simple implementation of Ambit-AND-OR that addresses all
+                                                                       internal DRAM bus. Although RowClone-PSM is faster and
+of the last three issues at low cost.
+                                                                       more efficient than copying data using the memory controller,
+3.3. Implementation of Ambit-AND-OR                                    it is significantly slower than RowClone-FPM.
+   To solve issues 3, 4, and 5 described in Section 3.2, our im-           Ambit relies on using RowClone-FPM for most of the copy
+plementation of Ambit reserves a set of designated rows in             operations.3 To enable this, we propose three ideas. First,
+each subarray that are used to perform TRAs. These desig-              to allow Ambit to perform the initialization operation using
+nated rows are chosen statically at design time. To perform            RowClone-FPM, we reserve two control rows in each subar-
+a bulk bitwise AND or OR operation on two arbitrary source             ray, C0 and C1. C0 is initialized to all zeros and C1 is ini-
+rows, our mechanism first copies the data of the source rows           tialized to all ones. Depending on the operation to be per-
+into the designated rows and performs the required TRA on              formed, bitwise AND or OR, Ambit copies the data from C0
+the designated rows. As an example, to perform a bitwise               or C1 to the appropriate designated row using RowClone-
+AND/OR of two rows A and B, and store the result in row R,             FPM. Second, we reserve separate designated rows in each
+our mechanism performs the following steps.                            subarray. This allows each subarray to perform bulk bitwise
+  1. Copy data of row A to designated row T0                           AND/OR operations on the rows that belong to that subarray
+  2. Copy data of row B to designated row T1                           by using RowClone-FPM for all the required copy operations.
+  3. Initialize designated row T2 to 0                                 Third, to ensure that bulk bitwise operations are predomi-
+  4. Activate designated rows T0, T1, and T2 simultaneously            nantly performed between rows inside the same subarray, we
+  5. Copy data of row T0 to row R                                      rely on 1) an accelerator API that allows applications to spec-
+   Let us understand how this implementation addresses the             3 A recent work, Low-cost Interlinked Subarrays (LISA) [29], proposes a mech-
+last three issues described in Section 3.2. First, by perform-         anism to efficiently copy data across subarrays in the same bank. LISA uses a
+ing the TRA on the designated rows, and not directly on the            row of isolation transistors next to the sense amplifier to control data trans-
+source data, our mechanism avoids overwriting the source               fer across two subarrays. LISA can potentially benefit Ambit by improving
+                                                                       the performance of bulk copy operations. However, as we will describe in
+data (issue 3). Second, each copy operation refreshes the cells        Section 4, Ambit-NOT also adds transistors near the sense amplifier, posing
+of the destination row by accessing the row [78]. Also, each           some challenges in integrating LISA and Ambit. Therefore, we leave the ex-
+copy operation takes five-six orders of magnitude lower la-            ploration of using LISA to speedup Ambit as part of future work.
+
+
+                                                                   5
+
+
+
+===== Page 6 =====
+
+MICRO-50, October 2017, Cambridge, MA, USA                                                                                                   V. Seshadri et al.
+
+
+ify bitvectors that are likely to be involved in bitwise oper-                          case and the bitline to the negated value, i.e., 0 Ì. In this acti-
+ations, and 2) a driver that maps such bitvectors to the same                           vated state, our mechanism activates the n-wordline. Doing so
+subarray (described in Section 5.4.2). With these changes, Am-                          enables the transistor that connects the DCC to the bitline Í.
+bit can use RowClone-FPM for a significant majority of the                              Since the bitline is already at a stable voltage level of 0, it over-
+bulk copy operations, thereby ensuring high performance for                             writes the value in the DCC capacitor with 0, thus copying the
+the bulk bitwise operations.                                                            negated value of the source cell into the DCC. After this, our
+                                                                                        mechanism precharges the bank, and then copies the negated
+4. Ambit-NOT                                                                            value from the DCC to the destination cell using RowClone.
+   Ambit-NOT exploits the fact that at the end of the sense                                Implementation of Ambit-NOT. Based on Lu et al.’s [81]
+amplification process, the voltage level of the bitline repre-                          layout, the cost of each row of DCC is the same as two regular
+sents the negated logical value of the cell. Our key idea to                            DRAM rows. Similar to the designated rows used for Ambit-
+perform bulk bitwise NOT in DRAM is to transfer the data                                AND-OR (Section 3.3), the Ambit controller uses reserved row
+on the bitline to a cell that can also be connected to the bit-                         addresses to control the d-wordlines and n-wordlines of the
+line. For this purpose, we introduce the dual-contact cell                              DCC rows—e.g., in our implementation, address B5 maps to
+(shown in Figure 5). A dual-contact cell (DCC) is a DRAM                                the n-wordline of the DCC row (Section 5.1). To perform a
+cell with two transistors (a 2T-1C cell similar to the one de-                          bitwise NOT of row A and store the result in row R, the Ambit
+scribed in [53, 81]). Figure 5 shows a DCC connected to a                               controller performs the following steps.
+sense amplifier. In a DCC, one transistor connects the cell                                1. Activate row A
+capacitor to the bitline and the other transistor connects the                             2. Activate n-wordline of DCC (address B5)
+cell capacitor to the bitline. We refer to the wordline that                               3. Precharge the bank.
+controls the capacitor-bitline connection as the d-wordline (or                            4. Copy data from d-wordline of DCC to row R (RowClone)
+data wordline) and the wordline that controls the capacitor-
+bitline connection as the n-wordline (or negation wordline).                            5. Ambit: Putting It All Together
+The layout of the dual-contact cell is similar to Lu et al.’s mi-                          In this section, we describe our implementation of Ambit
+gration cell [81].                                                                      by integrating Ambit-AND-OR and Ambit-NOT. First, both
+                                                                                        Ambit-AND-OR and Ambit-NOT reserve a set of rows in each
+                                                             bitline
+
+
+
+
+                           d-wordline                                                   subarray and a set of addresses that map to these rows. We
+               dual-contact cell                                                        present the full set of reserved addresses and their mapping
+                        (DCC)                                                           in detail (Section 5.1). Second, we introduce a new primitive
+                                                                                        called AAP (ACTIVATE-ACTIVATE-PRECHARGE) that the Am-
+                           n-wordline
+                                                                                        bit controller uses to execute various bulk bitwise operations
+                            sense                                                       (Section 5.2). Third, we describe an optimization that lowers
+                         amplifier                                                      the latency of the AAP primitive, further improving the per-
+                           enable                                                       formance of Ambit (Section 5.3). Fourth, we describe how we
+                                                                                        integrate Ambit with the system stack (Section 5.4). Finally,
+                                 bitline                                                we evaluate the hardware cost of Ambit (Section 5.5).
+Figure 5: A dual-contact cell connected to a sense amplifier                            5.1. Row Address Grouping
+  Figure 6 shows the steps involved in transferring the                                   Our implementation divides the space of row addresses in
+negated value of a source cell on to the DCC connected to                               each subarray into three distinct groups (Figure 7): 1) Bitwise
+the same bitline (i.e., sense amplifier) Ê. Our mechanism first                         group, 2) Control group, and 3) Data group.
+activates the source cell Ë. The activation drives the bitline to                         The B-group (or the bitwise group) corresponds to the des-
+the data value corresponding to the source cell, VDD in this                            ignated rows used to perform bulk bitwise AND/OR opera-
+                   0                     1               1                     1                1                                 0
+                                         2 VDD                                 2 VDD + δ                         VDD                               VDD
+                source                                 source                                 source                            source
+       (d-wordline) 0                                    0                                      0                                 0
+                  DCC                                   DCC                                    DCC                               DCC
+       (n-wordline) 0                     ACTIVATE       0                                      0                  ACTIVATE       1
+                                          source row                                                               n-wordline
+
+                   0                                     0                                      1                                 1
+
+
+                          1               1                            1        2                      0          3                      0           4
+                          2 VDD                                        2 VDD
+
+                         initial state                   after charge sharing                   activated source row             activated n-wordline
+                                                 Figure 6: Bitwise NOT using a dual-contact cell
+
+
+                                                                                    6
+
+
+
+===== Page 7 =====
+
+Ambit: In-Memory Accelerator for Bulk Bitwise Operations                                       MICRO-50, October 2017, Cambridge, MA, USA
+
+                                   D-group                C-group                   The D-group (or the data group) corresponds to the rows
+          regular
+                                                          (2 rows)
+     row decoder                   1006 rows                                     that store regular data. This group contains all the addresses
+
+
+
+
+                         ...
+
+
+
+
+                                                   ...
+                                                          C0,C1
+                                                                                 that are neither in the B-group nor in the C-group. Specifi-
+                                                          B-group                cally, if each subarray contains 1024 rows, then the D-group
+                                                          (8 rows)               contains 1006 addresses, labeled D0—D1005. Ambit exposes
+          B12
+                                                         T0,T1,T2,T3             only the D-group addresses to the software stack. To ensure
+     small B-group             Sense Amplifiers          DCC0,DCC0
+                                                         DCC1,DCC1               that the software stack has a contiguous view of memory, the
+      row decoder
+                                                                                 Ambit controller interleaves the row addresses such that the
+Figure 7: Row address grouping in a subarray. The figure shows                   D-group addresses across all subarrays are mapped contigu-
+how the B-group row decoder (Section 5.3) simultaneously                         ously to the processor’s physical address space.
+activates rows T0, T1, and T2 with a single address B12.
+                                                                                    With these groups, the Ambit controller can use the existing
+tions (Section 3.3) and the dual-contact rows used to perform                    DRAM interface to communicate all variants of ACTIVATE to
+bulk bitwise NOT operations (Section 4). Minimally, Ambit                        the Ambit chip without requiring new commands. Depend-
+requires three designated rows (to perform triple row acti-                      ing on the address group, the Ambit DRAM chip internally
+vations) and one row of dual-contact cells in each subarray.                     processes each ACTIVATE appropriately. For instance, by just
+However, to reduce the number of copy operations required                        issuing an ACTIVATE to address B12, the Ambit controller
+by certain bitwise operations (like xor and xnor), we de-                        triggers a triple-row activation of T0, T1, and T2. We now
+sign each subarray with four designated rows, namely T0—                         describe how the Ambit controller uses this row address map-
+T3, and two rows of dual-contact cells, one on each side of                      ping to perform bulk bitwise operations.
+the row of sense amplifiers.4 We refer to the d-wordlines of                     5.2. Executing Bitwise Ops: The AAP Primitive
+the two DCC rows as DCC0 and DCC1, and the correspond-
+                                                                                    Let us consider the operation, Dk = not Di. To perform
+ing n-wordlines as DCC0 and DCC1. The B-group contains 16
+                                                                                 this bitwise-NOT operation, the Ambit controller sends the
+reserved addresses: B0—B15. Table 1 lists the mapping be-
+                                                                                 following sequence of commands.
+tween the 16 addresses and the wordlines. The first eight ad-
+                                                                                    1. ACTIVATE Di; 2. ACTIVATE B5; 3. PRECHARGE;
+dresses individually activate each of the 8 wordlines in the                        4. ACTIVATE B4; 5. ACTIVATE Dk; 6. PRECHARGE;
+group. Addresses B12—B15 activate three wordlines simulta-                          The first three steps are the same as those described in Sec-
+neously. Ambit uses these addresses to trigger triple-row ac-                    tion 4. These three operations copy the negated value of row
+tivations. Finally, addresses B8—B11 activate two wordlines.                     Di into the DCC0 row (as described in Figure 6). Step 4 ac-
+Ambit uses these addresses to copy the result of an operation                    tivates DCC0, the d-wordline of the first DCC row, transfer-
+simultaneously to two rows. This is useful for xor/xnor op-                      ring the negated source data onto the bitlines. Step 5 activates
+erations to simultaneously negate a row of source data and                       the destination row, copying the data on the bitlines, i.e., the
+also copy the source row to a designated row. Note that this                     negated source data, to the destination row. Step 6 prepares
+is just an example implementation of Ambit and a real im-                        the array for the next access by issuing a PRECHARGE.
+plementation may use more designated rows in the B-group,                           The bitwise-NOT operation consists of two steps of
+thereby enabling more complex bulk bitwise operations with                       ACTIVATE-ACTIVATE-PRECHARGE operations. We refer to
+fewer copy operations.                                                           this sequence as the AAP primitive. Each AAP takes two
+         Addr.       Wordline(s)        Addr.       Wordline(s)                  addresses as input. AAP (addr1, addr2) corresponds to
+                                                                                 the following sequence of commands:
+             B0      T0                       B8    DCC0, T0
+             B1      T1                       B9    DCC1, T1                         ACTIVATE addr1; ACTIVATE addr2; PRECHARGE;
+             B2      T2                      B10    T2, T3                       Logically, an AAP operation copies the result of the row acti-
+             B3      T3                      B11    T0, T3                       vation of the first address (addr1) to the row(s) mapped to
+             B4      DCC0                    B12    T0, T1, T2                   the second address (addr2).
+             B5      DCC0                    B13    T1, T2, T3
+                                                                                    Most bulk bitwise operations mainly involve a sequence
+             B6      DCC1                    B14    DCC0, T1, T2
+             B7      DCC1                    B15    DCC1, T0, T3
+                                                                                 of AAP operations. In a few cases, they require a regular
+                                                                                 ACTIVATE followed by a PRECHARGE, which we refer to as
+Table 1: Mapping of B-group addresses to corresponding ac-                       AP. AP takes one address as input. AP (addr) maps to the
+tivated wordlines                                                                following two commands:
+   The C-group (or the control group) contains the two pre-                                      ACTIVATE addr; PRECHARGE;
+initialized rows for controlling the bitwise AND/OR opera-                       Figure 8 shows the steps taken by the Ambit controller to
+tions (Section 3.4). Specifically, this group contains two ad-                   execute three bulk bitwise operations: and, nand, and xor.
+dresses: C0 (row with all zeros) and C1 (row with all ones).                        Let us consider the and operation, Dk = Di and Dj, shown
+4 Each xor/xnor operation involves multiple and, or, and not operations.         in Figure 8a. The four AAP operations directly map to the steps
+We use the additional designated row and the DCC row to store intermediate       described in Section 3.3. The first AAP copies the first source
+results computed as part of the xor/xnor operation (see Figure 8c).              row (Di) into the designated row T0. Similarly, the second
+
+
+                                                                             7
+
+
+
+===== Page 8 =====
+
+MICRO-50, October 2017, Cambridge, MA, USA                                                                                 V. Seshadri et al.
+
+
+       a) Dk = Di and Dj                    c) Dk = Di xor Dj               taneously decode a C/D-group address along with a B-group
+                                        = (Di & !Dj) | (!Di & Dj)
+   AAP (Di, B0) ;T0 = Di                                                    address. When executing an AAP, the Ambit controller is-
+   AAP (Dj, B1) ;T1 = Dj            AAP (Di, B8) ;DCC0 = !Di, T0 = Di
+   AAP (C0, B2) ;T2 = 0             AAP (Dj, B9) ;DCC1 = !Dj, T1 = Dj
+                                                                            sues the second ACTIVATE of an AAP after the first activa-
+   AAP (B12, Dk) ;Dk = T0 & T1      AAP (C0, B10) ;T2 = T3 = 0              tion has sufficiently progressed. This forces the sense ampli-
+                                     AP (B14)     ;T1 = DCC0 & T1
+      b) Dk = Di nand Dj             AP (B15)     ;T0 = DCC1 & T0
+                                                                            fier to overwrite the data of the second row to the result of the
+ AAP (Di, B0) ;T0 = Di              AAP (C1, B2) ;T2 = 1                    first activation. This mechanism allows the Ambit controller
+ AAP (Dj, B1) ;T1 = Dj              AAP (B12, Dk) ;Dk = T0 | T1             to significantly overlap the latency of the two ACTIVATEs.
+ AAP (C0, B2) ;T2 = 0
+ AAP (B12, B5) ;DCC0 = !(T0 & T1)   or/nor/xnor can be implemented          This approach is similar to the inter-segment copy operation
+ AAP (B4, Dk) ;Dk = DCC0            by appropriately modifying the          used by Tiered-Latency DRAM [68]. Based on SPICE simu-
+                                    control rows of and/nand/xor.           lations, our estimate of the latency of executing the back-to-
+Figure 8: Command sequences for different bitwise operations                back ACTIVATEs is only 4 ns larger than tRAS . For DDR3-1600
+                                                                            (8-8-8) timing parameters [52], this optimization reduces the
+AAP copies the second source row Dj to row T1, and the third                latency of AAP from 80 ns to 49 ns.
+AAP copies the control row “0” to row T2 (to perform a bulk
+                                                                               Since only addresses in the B-group are involved in triple-
+bitwise AND). Finally, the last AAP 1) issues an ACTIVATE to
+                                                                            row activations, the complexity of simultaneously raising
+address B12, which simultaneously activates the rows T0, T1,
+                                                                            three wordlines is restricted to the small B-group decoder. As
+and T2, resulting in an and operation of the rows T0 and T1,
+                                                                            a result, the split row decoder also reduces the complexity of
+2) issues an ACTIVATE to Dk, which copies the result of the
+                                                                            the changes Ambit introduces to the row decoding logic.
+and operation to the destination row Dk, and 3) precharges
+the bank to prepare it for the next access.                                 5.4. Integrating Ambit with the System
+   While each bulk bitwise operation involves multiple copy                    Ambit can be plugged in as an I/O (e.g., PCIe) device and
+operations, this copy overhead can be reduced by applying                   interfaced with the CPU using a device model similar to other
+standard compilation techniques. For instance, accumulation-                accelerators (e.g., GPU). While this approach is simple, as de-
+like operations generate intermediate results that are imme-                scribed in previous sections, the address and command in-
+diately consumed. An optimization like dead-store elimina-                  terface of Ambit is exactly the same as that of commodity
+tion may prevent these values from being copied unnecessar-                 DRAM. This enables the opportunity to directly plug Ambit
+ily. Our evaluations (Section 8) take into account the overhead             onto the system memory bus and control it using the memory
+of the copy operations without such optimizations.                          controller. This approach has several benefits. First, appli-
+5.3. Accelerating AAP with a Split Row Decoder                              cations can directly trigger Ambit operations using CPU in-
+                                                                            structions rather than going through a device API, which in-
+   The latency of executing any bulk bitwise operation using                curs additional overhead. Second, since the CPU can directly
+Ambit depends on the latency of the AAP primitive. The la-                  access Ambit memory, there is no need to copy data between
+tency of the AAP in turn depends on the latency of ACTIVATE,                the CPU memory and the accelerator memory. Third, existing
+i.e., tRAS , and the latency of PRECHARGE, i.e., tRP . The naïve            cache coherence protocols can be used to keep Ambit memory
+approach to execute an AAP is to perform the three operations               and the on-chip cache coherent. To plug Ambit onto the sys-
+serially. Using this approach, the latency of AAP is 2tRAS + tRP            tem memory bus, we need additional support from the rest of
+(80 ns for DDR3-1600 [52]). While even this naïve approach                  the system stack, which we describe in this section.
+offers better throughput and energy efficiency than existing
+systems (not shown here), we propose a simple optimization                  5.4.1. ISA Support. To enable applications to communicate
+that significantly reduces the latency of AAP.                              occurrences of bulk bitwise operations to the processor, we
+   Our optimization is based on two observations. First, the                introduce new instructions of the form,
+second ACTIVATE of an AAP is issued to an already acti-                                  bbop dst, src1, [src2], size
+vated bank. As a result, this ACTIVATE does not require                        where bbop is the bulk bitwise operation, dst is the desti-
+full sense amplification, which is the dominant portion of                  nation address, src1 and src2 are the source addresses, and
+tRAS [45, 67, 71]. This enables the opportunity to reduce the               size denotes the length of operation in bytes. Note that size
+latency for the second ACTIVATE of each AAP. Second, when                   must be a multiple of DRAM row size. For bitvectors that are
+we examine all the bitwise operations in Figure 8, with the                 not a multiple of DRAM row size, we assume that the appli-
+exception of one AAP in nand, we find that exactly one of the               cation will appropriately pad them with dummy data, or per-
+two ACTIVATEs in each AAP is to a B-group address. This en-                 form the residual (sub-row-sized) operations using the CPU.
+ables the opportunity to use a separate decoder for B-group                 5.4.2. Ambit API/Driver Support. For Ambit to pro-
+addresses, thereby overlapping the latency of the two row ac-               vide significant performance benefit over existing systems,
+tivations in each AAP.                                                      it is critical to ensure that most of the required copy oper-
+   To exploit both of these observations, our mechanism splits              ations are performed using RowClone-FPM, i.e., the source
+the row decoder into two parts. The first part decodes all C/D-             rows and the destination rows involved in bulk bitwise opera-
+group addresses and the second smaller part decodes only B-                 tions are present in the same DRAM subarray. To this end, we
+group addresses. Such a split allows the subarray to simul-                 expect the manufacturer of Ambit to provide 1) an API that
+
+
+                                                                        8
+
+
+
+===== Page 9 =====
+
+Ambit: In-Memory Accelerator for Bulk Bitwise Operations                             MICRO-50, October 2017, Cambridge, MA, USA
+
+
+enables applications to specify bitvectors that are likely to be        5.5. Ambit Hardware Cost
+involved in bitwise operations, and 2) a driver that is aware of
+the internal mapping of DRAM rows to subarrays and maps                    As Ambit largely exploits the structure and operation of
+the bitvectors involved in bulk bitwise operations to the same          existing DRAM design, we estimate its hardware cost in terms
+DRAM subarray. Note that for a large bitvector, Ambit does              of the overhead it imposes on top of today’s DRAM chip and
+not require the entire bitvector to fit inside a single subarray.       memory controller.
+Rather, each bitvector can be interleaved across multiple sub-
+arrays such that the corresponding portions of each bitvector           5.5.1. Ambit Chip Cost. In addition to support for Row-
+are in the same subarray. Since each subarray contains over             Clone, Ambit has only two changes on top of the existing
+1000 rows to store application data, an application can map             DRAM chip design. First, it requires the row decoding logic to
+hundreds of large bitvectors to Ambit, such that the copy op-           distinguish between the B-group addresses and the remaining
+erations required by all the bitwise operations across all these        addresses. Within the B-group, it must implement the map-
+bitvectors can be performed efficiently using RowClone-FPM.             ping described in Table 1. As the B-group contains only 16
+                                                                        addresses, the complexity of the changes to the row decoding
+5.4.3. Implementing the bbop Instructions. Since all                    logic is low. The second source of cost is the implementation
+Ambit operations are row-wide, Ambit requires the source                of the dual-contact cells (DCCs). In our design, each sense
+and destination rows to be row-aligned and the size of the              amplifier has only one DCC on each side, and each DCC has
+operation to be a multiple of the size of a DRAM row. The mi-           two wordlines associated with it. In terms of area, each DCC
+croarchitecture implementation of a bbop instruction checks             row costs roughly two DRAM rows, based on estimates from
+if each instance of the instruction satisfies this constraint. If       Lu et al. [81]. We estimate the overall storage cost of Ambit
+so, the CPU sends the operation to the memory controller,               to be roughly 8 DRAM rows per subarray—for the four desig-
+which completes the operation using Ambit. Otherwise, the               nated rows and the DCC rows (< 1% of DRAM chip area).
+CPU executes the operation itself.
+5.4.4. Maintaining On-chip Cache Coherence. Since                       5.5.2. Ambit Controller Cost. On top of the existing
+both CPU and Ambit can access/modify data in memory, be-                memory controller, the Ambit controller must statically store
+fore performing any Ambit operation, the memory controller              1) information about different address groups, 2) the timing
+must 1) flush any dirty cache lines from the source rows, and           of different variants of the ACTIVATE, and 3) the sequence of
+2) invalidate any cache lines from destination rows. Such               commands required to complete different bitwise operations.
+a mechanism is already required by Direct Memory Access                 When Ambit is plugged onto the system memory bus, the
+(DMA) [31], which is supported by most modern processors,               controller can interleave the various AAP operations in the
+and also by recently proposed mechanisms [48, 97]. As Ambit             bitwise operations with other regular memory requests from
+operations are always row-wide, we can use structures like              different applications. For this purpose, the Ambit controller
+the Dirty-Block Index [98] to speed up flushing dirty data.             must also track the status of on-going bitwise operations. We
+Our mechanism invalidates the cache lines of the destination            expect the overhead of these additional pieces of information
+rows in parallel with the Ambit operation.                              to be small compared to the benefits enabled by Ambit.
+
+5.4.5. Error Correction and Data Scrambling. In DRAM                    5.5.3. Ambit Testing Cost. Testing Ambit chips is simi-
+modules that support Error Correction Code (ECC), the mem-              lar to testing regular DRAM chips. In addition to the regular
+ory controller must first read the data and ECC to verify data          DRAM rows, the manufacturer must test if the TRA opera-
+integrity. Since Ambit reads and modifies data directly in              tions and the DCC rows work as expected. In each subarray
+memory, it does not work with the existing ECC schemes                  with 1024 rows, these operations concern only 8 DRAM rows
+(e.g., SECDED [43]). To support ECC with Ambit, we need an              and 16 addresses of the B-group. In addition, all these opera-
+ECC scheme that is homomorphic [93] over all bitwise opera-             tions are triggered using the ACTIVATE command. Therefore,
+tions, i.e., ECC(A and B) = ECC(A) and ECC(B), and similarly            we expect the overhead of testing an Ambit chip on top of
+for other bitwise operations. The only scheme that we are               testing a regular DRAM chip to be low.
+aware of that has this property is triple modular redundancy
+(TMR) [82], wherein ECC(A) = AA. The design of lower-                      When a component is found to be faulty during testing,
+overhead ECC schemes that are homomorphic over all bitwise              DRAM manufacturers use a number of techniques to improve
+operations is an open problem. For the same reason, Ambit               the overall yield; The most prominent among them is using
+does not work with data scrambling mechanisms that pseudo-              spare rows to replace faulty DRAM rows. Similar to some
+randomly modify the data written to DRAM [36]. Note that                prior works [67, 68, 97], Ambit requires faulty rows to be
+these challenges are also present in any mechanism that in-             mapped to spare rows within the same subarray. Note that,
+terprets data directly in memory (e.g., the Automata Proces-            since Ambit preserves the existing DRAM command interface,
+sor [33, 106]). We leave the evaluation of Ambit with TMR               an Ambit chip that fails during testing can still be shipped as
+and exploration of other ECC and data scrambling schemes to             a regular DRAM chip. This significantly reduces the impact
+future work.                                                            of Ambit-specific failures on overall DRAM yield.
+
+
+                                                                    9
+
+
+
+===== Page 10 =====
+
+MICRO-50, October 2017, Cambridge, MA, USA                                                                                                             V. Seshadri et al.
+
+
+6. Circuit-level SPICE Simulations                                                     7. Analysis of Throughput & Energy
+   We use SPICE simulations to confirm that Ambit works re-                               We compare the raw throughput of bulk bitwise opera-
+liably. Of the two components of Ambit, our SPICE results                              tions using Ambit to a multi-core Intel Skylake CPU [7], an
+show that Ambit-NOT always works as expected and is not                                NVIDIA GeForce GTX 745 GPU [4], and processing in the
+affected by process variation. This is because, Ambit-NOT op-                          logic layer of an HMC 2.0 [6] device. The Intel CPU has
+eration is very similar to existing DRAM operation (Section 4).                        4 cores with Advanced Vector eXtensions [49], and two 64-
+On the other hand, Ambit-AND-OR requires triple-row acti-                              bit DDR3-2133 channels. The GTX 745 contains 3 streaming
+vation, which involves charge sharing between three cells on                           multi-processors, each with 128 CUDA cores [77], and one
+a bitline. As a result, it can be affected by process variation in                     128-bit DDR3-1800 channel. The HMC 2.0 device consists of
+various circuit components.                                                            32 vaults each with 10 GB/s bandwidth. We use two Ambit
+   To study the effect of process variation on TRA, our SPICE                          configurations: Ambit that integrates our mechanism into a
+simulations model variation in all the components in the                               regular DRAM module with 8 banks, and Ambit-3D that ex-
+subarray (cell capacitance, transistor length/width/resistance,                        tends a 3D-stacked DRAM similar to HMC with support for
+bitline/wordline capacitance and resistance, and voltage lev-                          Ambit. For each bitwise operation, we run a microbenchmark
+els). We implement the sense amplifier using 55nm DDR3                                 that performs the operation repeatedly for many iterations on
+model parameters [14], and PTM low-power transistor mod-                               large input vectors (32 MB), and measure the throughput of
+els [9, 117]. We use cell/transistor parameters from the Ram-                          the operation. Figure 9 plots the results of this experiment for
+bus power model [14] (cell capacitance = 22fF; transistor                              the five systems (the y-axis is in log scale).
+width/height = 55nm/85nm).5
+                                                                                                                    Skylake   GTX 745    HMC 2.0    Ambit     Ambit-3D
+   We first identify the worst case for TRA, wherein every
+component has process variation that works toward making                               Throughput (GOps/s)   2048
+                                                                                                             1024
+TRA fail. Our results show that even in this extremely adver-                               log scale         512
+                                                                                                              256
+sarial scenario, TRA works reliably for up to ±6% variation in                                                128
+                                                                                                               64
+each component.                                                                                                32
+                                                                                                               16
+   In practice, variations across components are not so highly                                                  8
+                                                                                                                4
+correlated. Therefore, we use Monte-Carlo simulations to un-                                                    2
+
+derstand the practical impact of process variation on TRA. We                                                       not       and/or    nand/nor   xor/xnor    mean
+increase the amount of process variation from ±5% to ±25%                                                    Figure 9: Throughput of bulk bitwise operations.
+and run 100,000 simulations for each level of process varia-
+tion. Table 2 shows the percentage of iterations in which TRA                             We draw three conclusions. First, the throughput of Sky-
+operates incorrectly for each level of variation.                                      lake, GTX 745, and HMC 2.0 are limited by the memory band-
+                                                                                       width available to the respective processors. With an order
+     Variation    ±0%       ±5%      ±10%      ±15%      ±20%       ±25%               of magnitude higher available memory bandwidth, HMC 2.0
+    % Failures    0.00%    0.00%     0.29%     6.01%     16.36%    26.19%              achieves 18.5X and 13.1X better throughput for bulk bitwise
+                                                                                       operations compared to Skylake and GTX 745, respectively.
+           Table 2: Effect of process variation on TRA                                 Second, Ambit, with its ability to exploit the maximum inter-
+                                                                                       nal DRAM bandwidth and memory-level parallelism, outper-
+   Two conclusions are in order. First, as expected, up to ±5%
+                                                                                       forms all three systems. On average, Ambit (with 8 DRAM
+variation, there are zero errors in TRA. Second, even with
+                                                                                       banks) outperforms Skylake by 44.9X, GTX 745 by 32.0X, and
+±10% and ±15% variation, the percentage of erroneous TRAs
+                                                                                       HMC 2.0 by 2.4X. Third, 3D-stacked DRAM architectures like
+across 100,000 iterations each is just 0.29% and 6.01%. These
+                                                                                       HMC contain a large number of banks (256 banks in 4GB
+results show that Ambit is reliable even in the presence of sig-
+                                                                                       HMC 2.0). By extending 3D-stacked DRAM with support for
+nificant process variation.
+                                                                                       Ambit, Ambit-3D improves the throughput of bulk bitwise op-
+   The effect of process variation is expected to get worse with                       erations by 9.7X compared to HMC 2.0.
+smaller technology nodes [55]. However, as Ambit largely
+                                                                                          We estimate energy for DDR3-1333 using the Rambus
+uses the existing DRAM structure and operation, many tech-
+                                                                                       power model [14]. Our energy numbers include only the
+niques used to combat process variation in existing chips can
+                                                                                       DRAM and channel energy, and not the energy consumed by
+be used for Ambit as well (e.g., spare rows or columns). In ad-
+                                                                                       the processor. For Ambit, some activations have to raise mul-
+dition, as described in Section 5.5.3, Ambit chips that fail test-
+                                                                                       tiple wordlines and hence, consume higher energy. Based on
+ing only for TRA can potentially be shipped as regular DRAM
+                                                                                       our analysis, the activation energy increases by 22% for each
+chips, thereby alleviating the impact of TRA failures on over-
+                                                                                       additional wordline raised. Table 3 shows the energy con-
+all DRAM yield, and thus cost.
+                                                                                       sumed per kilo-byte for different bitwise operations. Across
+5 In DRAM, temperature affects mainly cell leakage [30, 46, 67, 78, 79, 87, 92,        all bitwise operations, Ambit reduces energy consumption by
+114]. As TRA is performed on cells that are almost fully-refreshed, we do not          25.1X—59.5X compared to copying data with the memory con-
+expect temperature to affect TRA.                                                      troller using the DDR3 interface.
+
+
+                                                                                  10
+
+
+
+===== Page 11 =====
+
+Ambit: In-Memory Accelerator for Bulk Bitwise Operations                                               MICRO-50, October 2017, Cambridge, MA, USA
+
+
+
+
+                                                                             of the Query (ms)
+                  Design    not     and/or    nand/nor    xor/xnor                               110
+
+
+
+
+                                                                              Execution Time
+                                                                                                 100      Baseline     Ambit
+   DRAM &         DDR3      93.7     137.9       137.9       137.9                                90
+                                                                                                  80
+ Channel Energy   Ambit       1.6       3.2         4.0         5.5                               70
+    (nJ/KB)        (↓)     59.5X     43.9X       35.1X       25.1X                                60
+                                                                                                  50
+                                                                                                  40
+                                                                                                  30                                                         6.6X
+Table 3: Energy of bitwise operations. (↓) indicates energy                                       20      5.4X       6.1X      6.3X    5.7X      6.2X
+reduction of Ambit over the traditional DDR3-based design.                                        10
+                                                                                                 w = 2-weeks 3-weeks 4-weeks 2-weeks 3-weeks 4-weeks
+8. Effect on Real-World Applications                                                                     u = 8 million users          u = 16 million users
+
+   We evaluate the benefits of Ambit on real-world applica-                Figure 10: Bitmap index performance. The value above each
+                                                                           bar indicates the reduction in execution time due to Ambit.
+tions using the Gem5 full-system simulator [22]. Table 4 lists
+the main simulation parameters. Our simulations take into ac-              ing value uw. Second, Ambit significantly reduces the query
+count the cost of maintaining coherence, and the overhead of               execution time compared to the baseline, by 6X on average.
+RowClone to perform copy operations. We assume that appli-
+                                                                             While we demonstrate the benefits of Ambit using one
+cation data is mapped such that all bitwise operations happen
+                                                                           query, as all bitmap index queries involve several bulk bitwise
+across rows within a subarray. We quantitatively evaluate
+                                                                           operations, we expect Ambit to provide similar performance
+three applications: 1) a database bitmap index [3, 8, 10, 11],
+                                                                           benefits for any application using bitmap indices.
+2) BitWeaving [75], a mechanism to accelerate database col-
+umn scan operations, and 3) a bitvector-based implementation               8.2. BitWeaving: Fast Scans using Bitwise Operations
+of the widely-used set data structure. In Section 8.4, we dis-                Column scan operations are a common part of many
+cuss four other applications that can benefit from Ambit.                  database queries. They are typically performed as part of
+                                                                           evaluating a predicate. For a column with integer values, a
+                       x86, 8-wide, out-of-order, 4 Ghz
+ Processor                                                                 predicate is typically of the form, c1 <= val <= c2, for two
+                       64-entry instruction queue
+                                                                           integer constants c1 and c2. Recent works [75, 110] observe
+ L1 cache              32 KB D-cache, 32 KB I-cache, LRU policy
+ L2 cache              2 MB, LRU policy, 64 B cache line size
+                                                                           that existing data representations for storing columnar data
+ Memory Controller     8 KB row size, FR-FCFS [94, 118] scheduling         are inefficient for such predicate evaluation especially when
+ Main memory           DDR4-2400, 1-channel, 1-rank, 16 banks              the number of bits used to store each value of the column is
+                                                                           less than the processor word size (typically 32 or 64). This
+             Table 4: Major simulation parameters                          is because 1) the values do not align well with word bound-
+                                                                           aries, and 2) the processor typically does not have comparison
+8.1. Bitmap Indices                                                        instructions at granularities smaller than the word size. To
+   Bitmap indices [26] are an alternative to traditional B-                address this problem, BitWeaving [75] proposes two column
+tree indices for databases. Compared to B-trees, bitmap in-                representations, called BitWeaving-H and BitWeaving-V. As
+dices 1) consume less space, and 2) can perform better for                 BitWeaving-V is faster than BitWeaving-H, we focus our at-
+many queries (e.g., joins, scans). Several major databases sup-            tention on BitWeaving-V, and refer to it as just BitWeaving.
+port bitmap indices (e.g., Oracle [8], Redis [10], Fastbit [3],               BitWeaving stores the values of a column such that the first
+rlite [11]). Several real applications (e.g., [1, 2, 12, 32]) use          bit of all the values of the column are stored contiguously, the
+bitmap indices for fast analytics. As bitmap indices heavily               second bit of all the values of the column are stored contigu-
+rely on bulk bitwise operations, Ambit can accelerate bitmap               ously, and so on. Using this representation, the predicate c1
+indices, thereby improving overall application performance.                <= val <= c2, can be represented as a series of bitwise op-
+   To demonstrate this benefit, we use the following work-                 erations starting from the most significant bit all the way to
+load from a real application [32]. The application uses bitmap             the least significant bit (we refer the reader to the BitWeaving
+indices to track users’ characteristics (e.g., gender) and activ-          paper [75] for the detailed algorithm). As these bitwise oper-
+ities (e.g., did the user log in to the website on day ’X’?) for           ations can be performed in parallel across multiple values of
+u users. Our workload runs the following query: “How many                  the column, BitWeaving uses the hardware SIMD support to
+unique users were active every week for the past w weeks?                  accelerate these operations. With support for Ambit, these op-
+and How many male users were active each of the past w                     erations can be performed in parallel across a larger set of val-
+weeks?” Executing this query requires 6w bulk bitwise or,                  ues compared to 128/256-bit SIMD available in existing CPUs,
+2w-1 bulk bitwise and, and w+1 bulk bitcount operations. In                thereby enabling higher performance.
+our mechanism, the bitcount operations are performed by the                   We show this benefit by comparing the performance of
+CPU. Figure 10 shows the end-to-end query execution time of                BitWeaving using a baseline CPU with support for 128-bit
+the baseline and Ambit for the above experiment for various                SIMD to the performance of BitWeaving accelerated by Am-
+values of u and w.                                                         bit for the following commonly-used query on a table T:
+   We draw two conclusions. First, as each query has O(w)                          ‘select count(*) from T where c1 <= val <= c2’
+bulk bitwise operations and each bulk bitwise operation takes                Evaluating the predicate involves a series of bulk bitwise
+O(u) time, the query execution time increases with increas-                operations and the count(*) requires a bitcount operation.
+
+
+                                                                      11
+
+
+
+===== Page 12 =====
+
+MICRO-50, October 2017, Cambridge, MA, USA                                                                                                                     V. Seshadri et al.
+
+
+The execution time of the query depends on 1) the number of                                    number of elements (e) actually present in each input set. Fig-
+bits (b) used to represent each value val, and 2) the number of                                ure 12 shows the execution time of RB-tree, Bitset, and Ambit
+rows (r) in the table T. Figure 11 shows the speedup of Ambit                                  normalized to RB-tree for the three operations for m = 15,
+over the baseline for various values of b and r.                                               and N = 512k.
+                                                                                                                      16                   153 88 30 8         69 24
+  Speedup offered by Ambit
+
+
+
+
+                             13   Row count (r) =        1m    2m    4m   8m
+                             12
+                             11
+                             10                                                                                   6
+
+
+
+
+                                                                                                 Execution Time
+                              9
+                                                                                                                  5
+
+
+
+
+                                                                                                   Normalized
+                              8                                                                                                  RB-tree
+                              7
+                              6                                                                                   4              Bitset
+                              5
+                              4                                                                                   3              Ambit
+                              3
+                              2                                                                                   2
+                              1
+                                                                                                                  1
+                                  4        8        12        16    20    24    28   32
+                                                Number of Bits per Column (b)                              e=         4    16 64 256 1k    4 16 64 256 1k      4    16 64 256 1k
+                                                                                                                           Set Union        Set Intersection       Set Difference
+Figure 11: Speedup offered by Ambit for BitWeaving over our
+                                                                                                                            # Elements in Each Input Set (N = 512k)
+baseline CPU with SIMD support
+                                                                                                                      Figure 12: Performance of set operations
+   We draw three conclusions. First, Ambit improves the per-
+formance of the query by between 1.8X and 11.8X (7.0X on                                          We draw three conclusions. First, by enabling much higher
+average) compared to the baseline for various values of b and                                  throughput for bulk bitwise operations, Ambit outperforms
+r. Second, the performance improvement of Ambit increases                                      the baseline Bitset on all the experiments. Second, as ex-
+with increasing number of bits per column (b), because, as                                     pected, when the number of elements in each set is very small
+b increases, the fraction of time spent in performing the bit-                                 (16 out of 512k), RB-Tree performs better than Bitset and Am-
+count operation reduces. As a result, a larger fraction of the                                 bit (with the exception of union). Third, even when each set
+execution time can be accelerated using Ambit. Third, for                                      contains only 64 or more elements out of 512k, Ambit sig-
+b = 4, 8, 12, and 16, we observe large jumps in the speedup                                    nificantly outperforms RB-Tree, 3X on average. We conclude
+of Ambit as we increase the row count. These large jumps                                       that Ambit makes the bitvector-based implementation of a set
+occur at points where the working set stops fitting in the on-                                 more attractive than the commonly-used red-black-tree-based
+chip cache. By exploiting the high bank-level parallelism in                                   implementation.
+DRAM, Ambit can outperform the baseline (by up to 4.1X)
+                                                                                               8.4. Other Applications
+even when the working set fits in the cache.
+                                                                                               8.4.1. BitFunnel: Web Search. Microsoft recently open-
+8.3. Bitvectors vs. Red-Black Trees                                                            sourced BitFunnel [40], a technology that improves the effi-
+   Many algorithms heavily use the set data structure. Red-                                    ciency of document filtering in web search. BitFunnel rep-
+black trees [41] (RB-trees) are typically used to implement a                                  resents both documents and queries as a bag of words using
+set [13]. However, a set with a limited domain can be imple-                                   Bloom filters [23], and uses bitwise AND operations on spe-
+mented using a bitvector—a set that contains only elements                                     cific locations of the Bloom filters to efficiently identify doc-
+from 1 to N , can be represented using an N -bit bitvector (e.g.,                              uments that contain all the query words. With Ambit, this
+Bitset [13]). Each bit indicates whether the corresponding el-                                 operation can be significantly accelerated by simultaneously
+ement is present in the set. Bitvectors provide constant-time                                  performing the filtering for thousands of documents.
+insert and lookup operations compared to O(log n) time taken
+                                                                                               8.4.2. Masked Initialization. Masked initializations [90]
+by RB-trees. However, set operations like union, intersection,
+                                                                                               are very useful in applications like graphics (e.g., for clear-
+and difference have to scan the entire bitvector regardless of
+                                                                                               ing a specific color in an image). By expressing such masked
+the number of elements actually present in the set. As a result,
+                                                                                               operations using bitwise AND/OR operations, we can easily
+for these three operations, depending on the number of ele-
+                                                                                               accelerate such masked initializations using Ambit.
+ments in the set, bitvectors may outperform or perform worse
+than RB-trees. With support for fast bulk bitwise operations,                                  8.4.3. Encryption. Many encryption algorithms heavily use
+we show that Ambit significantly shifts the trade-off in favor                                 bitwise operations (e.g., XOR) [44, 83, 107]. The Ambit support
+of bitvectors for these three operations.                                                      for fast bulk bitwise operations can i) boost the performance of
+   To demonstrate this, we compare the performance of set                                      existing encryption algorithms, and ii) enable new encryption
+union, intersection, and difference using: RB-tree, bitvectors                                 algorithms with high throughput and efficiency.
+with 128-bit SIMD support (Bitset), and bitvectors with Am-                                    8.4.4. DNA Sequence Mapping. In DNA sequence map-
+bit. We run a benchmark that performs each operation on                                        ping, prior works [20, 21, 58, 69, 73, 91, 95, 109, 112, 113]
+m input sets and stores the result in an output set. We restrict                               propose algorithms to map sequenced reads to the reference
+the domain of the elements to be from 1 to N . Therefore, each                                 genome. Some works [20, 21, 58, 84, 91, 113] heavily use bulk
+set can be represented using an N -bit bitvector. For each of                                  bitwise operations. Ambit can significantly improve the per-
+the three operations, we run multiple experiments varying the                                  formance of such DNA sequence mapping algorithms [58].
+
+
+                                                                                          12
+
+
+
+===== Page 13 =====
+
+Ambit: In-Memory Accelerator for Bulk Bitwise Operations                               MICRO-50, October 2017, Cambridge, MA, USA
+
+
+9. Related Work                                                             Many works (e.g., [16, 17, 24, 25, 37, 42, 47, 48, 80, 89, 115])
+                                                                         propose mechanisms to perform computation in the logic
+   To our knowledge, this is the first work that proposes an ac-
+                                                                         layer of 3D-stacked memory architectures. Even though they
+celerator to perform bulk bitwise operations completely inside
+                                                                         provide higher bandwidth compared to off-chip memory, 3D-
+DRAM with high efficiency and low cost. We now compare
+                                                                         stacked architectures are still bandwidth limited compared to
+Ambit to prior related works that use different techniques to
+                                                                         the maximum internal bandwidth available inside a DRAM
+accelerate bitwise operations.
+                                                                         chip [70]. We have shown in Section 7 that, for bulk bitwise
+   Two patents [18, 19] from Mikamonu describe a DRAM                    operations, Ambit outperforms processing in the logic layer
+design with 3T-1C cells and additional logic (e.g., muxes) to            of HMC 2.0 [6]. However, processing in the logic layer can
+perform NAND/NOR operations on the data inside DRAM.                     still be used to synergistically perform other operations, while
+While this architecture can perform bitwise operations inside            Ambit can perform bulk bitwise operations inside DRAM.
+DRAM, the 3T-1C cells result in significant area overhead to
+the DRAM array, and hence greatly reduce overall memory                  10. Conclusion
+density/capacity. In contrast, Ambit builds on top of the ex-
+isting DRAM architecture, with very few modifications, and                  We introduce Ambit, a new accelerator that performs bulk
+therefore, incurs low cost.                                              bitwise operations within a DRAM chip by exploiting the
+                                                                         analog operation of DRAM. Ambit consists of two compo-
+   Compute Cache [15] proposes a mechanism to perform bit-
+                                                                         nents. The first component uses simultaneous activation of
+wise operations inside on-chip SRAM caches. While Compute
+                                                                         three DRAM rows to perform bulk bitwise AND/OR opera-
+Cache improves performance and reduces energy consump-
+                                                                         tions. The second component uses the inverters present in
+tion by reducing data movement between the cache and the
+                                                                         each sense amplifier to perform bulk bitwise NOT operations.
+CPU, the main drawback of Compute Cache is that it requires
+                                                                         With these two components, Ambit can perform any bulk bit-
+the data structures involved in bitwise operations to fit in the
+                                                                         wise operation efficiently in DRAM. Our evaluations show
+on-chip cache. However, this may not be the case for data-
+                                                                         that, on average, Ambit enables 32X/35X improvement in the
+intensive applications, such as databases, graph analytics, and
+                                                                         throughput/energy of bulk bitwise operations compared to a
+web search. For such applications, Ambit enables significant
+                                                                         state-of-the-art system. This improvement directly translates
+performance improvements as it can exploit the large capac-
+                                                                         to performance improvement in three data-intensive applica-
+ity and parallelism present inside the DRAM chip. In general,
+                                                                         tions. Ambit is generally applicable to any memory device
+since Compute Cache and Ambit benefit applications with dif-
+                                                                         that uses DRAM (e.g, 3D-stacked DRAM, embedded DRAM).
+ferent working set characteristics, they can be employed in
+                                                                         We believe that the Ambit’s support for fast and efficient bulk
+conjunction to achieve greater benefits.
+                                                                         bitwise operations can enable better design of other applica-
+   Pinatubo [74] proposes a mechanism to perform bulk bit-               tions to take advantage of such operations, which would result
+wise operations inside Phase Change Memory (PCM) [66].                   in large improvements in performance and efficiency.
+Similarly, recent works [63, 64, 65, 72] propose mechanisms
+to perform bitwise operations and other operations (3-bit full           Acknowledgments
+adder) completely inside a memristor array. As the underly-
+ing memory technology is different, the mechanisms proposed                 We thank the reviewers of ISCA 2016/2017, MICRO
+by these works is completely different from Ambit. Moreover,             2016/2017, and HPCA 2017 for their valuable comments. We
+given that DRAM is faster than PCM or memristors, Ambit                  thank the members of the SAFARI group and PDL for their
+can offer higher throughput compared to these mechanisms.                feedback. We acknowledge the generous support of our in-
+                                                                         dustrial partners, especially Google, Huawei, Intel, Microsoft,
+   Prior works [54, 97, 100, 102] exploit memory architectures           Nvidia, Samsung, Seagate, and VMWare. This work was sup-
+to accelerate specific operations. RowClone [97] efficiently             ported in part by NSF, SRC, and the Intel Science and Tech-
+performs bulk copy and initialization inside DRAM. Kang et               nology Center for Cloud Computing. A preliminary version
+al. [54] propose a mechanism to exploit SRAM to acceler-                 of this work was published in IEEE CAL [99], which intro-
+ate “sum of absolute differences” computation. ISAAC [102]               duced bulk bitwise AND/OR in DRAM, and in ADCOM [96],
+proposes a mechanism to accelerate dot-product computation               which introduced the idea of processing using memory. An
+using memristors. Gather-Scatter DRAM [100] accelerates                  earlier pre-print of this paper was posted on arxiv.org [101].
+strided access patterns via simple changes to a DRAM module.
+None of these mechanisms can perform bitwise operations.                 References
+   Prior works (e.g., [34, 35, 38, 39, 56, 62, 86, 88, 103, 105])
+                                                                          [1] Belly Card Engineering. https://tech.bellycard.com/.
+propose designs that integrate custom processing logic into               [2] bitmapist. https://github.com/Doist/bitmapist.
+the DRAM chip to perform bandwidth-intensive operations.                  [3] FastBit: An Efficient Compressed Bitmap Index Technology. https:
+These approaches have two drawbacks. First, the exten-                        //sdm.lbl.gov/fastbit/.
+                                                                          [4] GeForce GTX 745.          http://www.geforce.com/hardware/
+sive logic added to DRAM significantly increases the chip
+                                                                              desktop-gpus/geforce-gtx-745-oem/specifications.
+cost. Second, logic designed using DRAM process is gener-                 [5] High Bandwidth Memory DRAM.             http://www.jedec.org/
+ally slower than regular processors.                                          standards-documents/docs/jesd235.
+
+
+                                                                    13
+
+
+
+===== Page 14 =====
+
+MICRO-50, October 2017, Cambridge, MA, USA                                                                                                      V. Seshadri et al.
+
+
+ [6] Hybrid Memory Cube Specification 2.0.                              http://          [35] D. Elliott, M. Stumm, W. M. Snelgrove, C. Cojocaru, and R. McKenzie.
+     www.hybridmemorycube.org/files/SiteDownloads/                                            Computational RAM: Implementing Processors in Memory. IEEE DT,
+     HMC-30G-VSR_HMCC_Specification_Rev2.0_Public.pdf.                                        1999.
+ [7] 6th Generation Intel Core Processor Family Datasheet. http:                         [36] C. F. Falconer, C. P. Mozak, and A. J. Normal. Suppressing Power
+     //www.intel.com/content/www/us/en/processors/core/                                       Supply Noise Using Data Scrambling in Double Data Rate Memory
+     desktop-6th-gen-core-family-datasheet-vol-1.html.                                        Systems. US Patent 8503678, 2009.
+ [8] Using Bitmap Indexes in Data Warehouses. https://docs.oracle.                       [37] A. Farmahini-Farahani, J. H. Ahn, K. Morrow, and N. S. Kim.
+     com/cd/B28359_01/server.111/b28313/indexes.htm.                                          NDA: Near-DRAM Acceleration Architecture Leveraging Commodity
+ [9] Predictive Technology Model. http://ptm.asu.edu/.                                        DRAM Devices and Standard Memory Modules. In HPCA, 2015.
+[10] Redis - bitmaps. http://redis.io/topics/data-types-intro.                           [38] B. B. Fraguela, J. Renau, P. Feautrier, D. Padua, and J. Torrellas. Pro-
+[11] rlite. https://github.com/seppo0010/rlite.                                               gramming the FlexRAM Parallel Intelligent Memory System. In PPoPP,
+[12] Spool. http://www.getspool.com/.                                                         2003.
+[13] std::set, std::bitset. http://en.cppreference.com/w/cpp/.                           [39] M. Gokhale, B. Holmes, and K. Iobst. Processing in Memory: The
+[14] DRAM Power Model. https://www.rambus.com/energy/, 2010.                                  Terasys Massively Parallel PIM Array. Computer, 1995.
+[15] S. Aga, S. Jeloka, A. Subramaniyan, S. Narayanasamy, D. Blaauw, and                 [40] B. Goodwin, M. Hopcroft, D. Luu, A. Clemmer, M. Curmei, S. Elnikety,
+     R. Das. Compute Caches. In HPCA, 2017.                                                   and Y. He. BitFunnel: Revisiting Signatures for Search. In SIGIR, 2017.
+[16] J. Ahn, S. Hong, S. Yoo, O. Mutlu, and K. Choi. A Scalable Processing-              [41] L. J. Guibas and R. Sedgewick. A Dichromatic Framework for Balanced
+     in-memory Accelerator for Parallel Graph Processing. In ISCA, 2015.                      Trees. In SFCS, 1978.
+[17] J. Ahn, S. Yoo, O. Mutlu, and K. Choi. PIM-enabled Instructions: A                  [42] Q. Guo, N. Alachiotis, B. Akin, F. Sadi, G. Xu, T. M. Low, L. Pileggi,
+     Low-overhead, Locality-aware Processing-in-memory Architecture. In                       J. C. Hoe, and F. Franchetti. 3D-stacked Memory-side Acceleration:
+     ISCA, 2015.                                                                              Accelerator and System Design. In WoNDP, 2013.
+[18] A. Akerib, O. Agam, E. Ehrman, and M. Meyassed. Using Storage Cells                 [43] R. W. Hamming. Error Detecting and Error Correcting Codes. BSTJ,
+     to Perform Computation. US Patent 8908465, 2014.                                         1950.
+[19] A. Akerib and E. Ehrman. In-memory Computational Device. US                         [44] J.-W. Han, C.-S. Park, D.-H. Ryu, and E.-S. Kim. Optical Image Encryp-
+     Patent 9653166, 2015.                                                                    tion Based on XOR Operations. SPIE OE, 1999.
+[20] M. Alser, H. Hassan, H. Xin, O. Ergin, O. Mutlu, and C. Alkan.                      [45] H. Hassan, G. Pekhimenko, N. Vijaykumar, V. Seshadri, D. Lee, O. Er-
+     GateKeeper: A New Hardware Architecture for Accelerating Pre-                            gin, and O. Mutlu. ChargeCache: Reducing DRAM Latency by Ex-
+     Alignment in DNA Short Read Mapping. Bioinformatics, 2017.                               ploiting Row Access Locality. In HPCA, 2016.
+[21] G. Benson, Y. Hernandez, and J. Loving. A Bit-Parallel, General                     [46] H. Hassan, N. Vijaykumar, S. Khan, S. Ghose, K. Chang, G. Pekhi-
+     Integer-Scoring Sequence Alignment Algorithm. In CPM, 2013.                              menko, D. Lee, O. Ergin, and O. Mutlu. SoftMC: A Flexible and Prac-
+[22] N. Binkert, B. Beckmann, G. Black, S. K. Reinhardt, A. Saidi, A. Basu,                   tical Open-source Infrastructure for Enabling Experimental DRAM
+     J. Hestness, D. R. Hower, T. Krishna, S. Sardashti, R. Sen, K. Sewell,                   Studies. In HPCA, 2017.
+     M. Shoaib, N. Vaish, M. D. Hill, and D. A. Wood. The Gem5 Simulator.                [47] K. Hsieh, E. Ebrahimi, G. Kim, N. Chatterjee, M. O’Connor, N. Vijayku-
+     SIGARCH CAN, 2011.                                                                       mar, O. Mutlu, and S. W. Keckler. Transparent Offloading and Map-
+[23] B. H. Bloom. Space/time Trade-offs in Hash Coding with Allowable                         ping (TOM): Enabling Programmer-transparent Near-data Processing
+     Errors. ACM Communications, 13, July 1970.                                               in GPU Systems. In ISCA, 2016.
+[24] A. Boroumand, S. Ghose, B. Lucia, K. Hsieh, K. Malladi, H. Zheng,                   [48] K. Hsieh, S. Khan, N. Vijaykumar, K. K. Chang, A. Boroumand,
+     and O. Mutlu. LazyPIM: An Efficient Cache Coherence Mechanism for                        S. Ghose, and O. Mutlu. Accelerating Pointer Chasing in 3D-stacked
+     Processing-in-Memory. IEEE CAL, 2017.                                                    Memory: Challenges, Mechanisms, Evaluation. In ICCD, 2016.
+[25] A. Boroumand, S. Ghose, M. Patel, H. Hassan, B. Lucia, N. Hajinazar,                [49] Intel. Intel Instruction Set Architecture Extensions. https://
+     K. Hsieh, K. T. Malladi, H. Zheng, and O. Mutlu. LazyPIM: Efficient                      software.intel.com/en-us/intel-isa-extensions.
+     Support for Cache Coherence in Processing-in-Memory Architectures.                  [50] K. Itoh. VLSI Memory Chip Design, volume 5. Springer Science &
+     arXiv preprint arXiv:1706.03162, 2017.                                                   Business Media, 2013.
+[26] C.-Y. Chan and Y. E. Ioannidis. Bitmap Index Design and Evaluation.                 [51] J. Jeddeloh and B. Keeth. Hybrid Memory Cube: New DRAM Archi-
+     In SIGMOD, 1998.                                                                         tecture Increases Density and Performance. In VLSIT, 2012.
+[27] K. K. Chang, D. Lee, Z. Chisti, A. R. Alameldeen, C. Wilkerson, Y. Kim,             [52] JEDEC. DDR3 SDRAM Standard, JESD79-3D. http://www.jedec.
+     and O. Mutlu. Improving DRAM Performance by Parallelizing Re-                            org/sites/default/files/docs/JESD79-3D.pdf, 2009.
+     freshes with Accesses. In HPCA, 2014.                                               [53] H. Kang and S. Hong. One-Transistor Type DRAM. US Patent 7701751,
+[28] K. K. Chang, A. Kashyap, H. Hassan, S. Ghose, K. Hsieh, D. Lee, T. Li,                   2009.
+     G. Pekhimenko, S. Khan, and O. Mutlu. Understanding Latency Varia-                  [54] M. Kang, M.-S. Keel, N. R. Shanbhag, S. Eilert, and K. Curewitz. An
+     tion in Modern DRAM Chips: Experimental Characterization, Analy-                         Energy-efficient VLSI Architecture for Pattern Recognition via Deep
+     sis, and Optimization. In SIGMETRICS, 2016.                                              Embedding of Computation in SRAM. In ICASSP, 2014.
+[29] K. K. Chang, P. J. Nair, D. Lee, S. Ghose, M. K. Qureshi, and O. Mutlu.             [55] U. Kang, H.-s. Yu, C. Park, H. Zheng, J. Halbert, K. Bains, S. Jang, and
+     Low-cost Inter-linked Subarrays (LISA): Enabling Fast Inter-subarray                     J. S. Choi. Co-architecting Controllers and DRAM to Enhance DRAM
+     Data Movement in DRAM. In HPCA, 2016.                                                    Process Scaling. In The Memory Forum, 2014.
+[30] K. K. Chang, A. G. Yaălikçi, S. Ghose, A. Agrawal, N. Chatterjee,                   [56] Y. Kang, W. Huang, S.-M. Yoo, D. Keen, Z. Ge, V. Lam, P. Pattnaik,
+     A. Kashyap, D. Lee, M. O’Connor, H. Hassan, and O. Mutlu. Un-                            and J. Torrellas. FlexRAM: Toward an Advanced Intelligent Memory
+     derstanding Reduced-voltage Operation in Modern DRAM Devices:                            System. In ICCD, 1999.
+     Experimental Characterization, Analysis, and Mechanisms. SIGMET-                    [57] B. Keeth, R. J. Baker, B. Johnson, and F. Lin. DRAM Circuit Design:
+     RICS, 2017.                                                                              Fundamental and High-Speed Topics. Wiley-IEEE Press, 2007.
+[31] J. Corbet, A. Rubini, and G. Kroah-Hartman. Linux Device Drivers,                   [58] J. S. Kim, D. Senol, H. Xin, D. Lee, S. Ghose, M. Alser, H. Hassan,
+     page 445. O’Reilly Media, 2005.                                                          O. Ergin, C. Alkan, and O. Mutlu. GRIM-filter: Fast Seed Filtering in
+[32] D. Denir, I. AbdelRahman, L. He, and Y. Gao. Audience Insights                           Read Mapping Using Emerging Memory Technologies. arXiv preprint
+     Query Engine. https://www.facebook.com/business/news/                                    arXiv:1708.04329, 2017.
+     audience-insights.                                                                  [59] Y. Kim, V. Seshadri, D. Lee, J. Liu, and O. Mutlu. A Case for Exploiting
+[33] P. Dlugosch, D. Brown, P. Glendenning, M. Leventhal, and H. Noyes.                       Subarray-level Parallelism (SALP) in DRAM. In ISCA, 2012.
+     An Efficient and Scalable Semiconductor Architecture for Parallel Au-               [60] Y. Kim, W. Yang, and O. Mutlu. Ramulator: A Fast and Extensible
+     tomata Processing. IEEE TPDS, 2014.                                                      DRAM Simulator. IEEE CAL, 2016.
+[34] J. Draper, J. Chame, M. Hall, C. Steele, T. Barrett, J. LaCoss, J. Granacki,        [61] D. E. Knuth. The Art of Computer Programming. Fascicle 1: Bitwise
+     J. Shin, C. Chen, C. W. Kang, I. Kim, and G. Daglikoca. The Architec-                    Tricks & Techniques; Binary Decision Diagrams, 2009.
+     ture of the DIVA Processing-in-memory Chip. In ICS, 2002.
+
+
+                                                                                    14
+
+
+
+===== Page 15 =====
+
+Ambit: In-Memory Accelerator for Bulk Bitwise Operations                                               MICRO-50, October 2017, Cambridge, MA, USA
+
+
+[62] P. M. Kogge. EXECUBE: A New Architecture for Scaleable MPPs. In                   [91] K. R. Rasmussen, J. Stoye, and E. W. Myers. Efficient Q-gram Filters
+     ICPP, 1994.                                                                            for Finding All ε-matches Over a Given Length. JCB, 2006.
+[63] S. Kvatinsky, A. Kolodny, U. C. Weiser, and E. G. Friedman. Memristor-            [92] P. J. Restle, J. W. Park, and B. F. Lloyd. DRAM Variable Retention Time.
+     based IMPLY Logic Design Procedure. In ICCD, 2011.                                     In IEDM, 1992.
+[64] S. Kvatinsky, D. Belousov, S. Liman, G. Satat, N. Wald, E. G. Friedman,           [93] R. L. Rivest, L. Adleman, and M. L. Dertouzos. On Data Banks and
+     A. Kolodny, and U. C. Weiser. MAGIC —Memristor-Aided Logic. IEEE                       Privacy Homomorphisms. FSC, 1978.
+     TCAS II: Express Briefs, 2014.                                                    [94] S. Rixner, W. J. Dally, U. J. Kapasi, P. Mattson, and J. D. Owens. Mem-
+[65] S. Kvatinsky, G. Satat, N. Wald, E. G. Friedman, A. Kolodny, and U. C.                 ory Access Scheduling. In ISCA, 2000.
+     Weiser. Memristor-Based Material Implication (IMPLY) Logic: Design                [95] S. M. Rumble, P. Lacroute, A. V. Dalca, M. Fiume, A. Sidow, and
+     Principles and Methodologies. IEEE TVLSI, 2014.                                        M. Brudno. SHRiMP: Accurate Mapping of Short Color-space Reads.
+[66] B. C. Lee, E. Ipek, O. Mutlu, and D. Burger. Architecting Phase Change                 PLOS Computational Biology, 2009.
+     Memory As a Scalable DRAM Alternative. In ISCA, 2009.                             [96] V. Seshadri and O. Mutlu. Simple Operations in Memory to Reduce
+[67] D. Lee, Y. Kim, G. Pekhimenko, S. Khan, V. Seshadri, K. K. Chang, and                  Data Movement, ADCOM, Chapter 5. Elsevier, 2017.
+     O. Mutlu. Adaptive-Latency DRAM: Optimizing DRAM Timing for                       [97] V. Seshadri, Y. Kim, C. Fallin, D. Lee, R. Ausavarungnirun, G. Pekhi-
+     the Common-case. In HPCA, 2015.                                                        menko, Y. Luo, O. Mutlu, P. B. Gibbons, M. A. Kozuch, and T. C.
+[68] D. Lee, Y. Kim, V. Seshadri, J. Liu, L. Subramanian, and O. Mutlu.                     Mowry. RowClone: Fast and Energy-efficient In-DRAM Bulk Data
+     Tiered-Latency DRAM: A Low Latency and Low Cost DRAM Archi-                            Copy and Initialization. In MICRO, 2013.
+     tecture. In HPCA, 2013.                                                           [98] V. Seshadri, A. Bhowmick, O. Mutlu, P. B. Gibbons, M. A. Kozuch, and
+[69] D. Lee, F. Hormozdiari, H. Xin, F. Hach, O. Mutlu, and C. Alkan. Fast                  T. C. Mowry. The Dirty-block Index. In ISCA, 2014.
+     and Accurate Mapping of Complete Genomics Reads. Methods, 2015.                   [99] V. Seshadri, K. Hsieh, A. Boroumand, D. Lee, M. A. Kozuch, O. Mutlu,
+[70] D. Lee, S. Ghose, G. Pekhimenko, S. Khan, and O. Mutlu. Simultane-                     P. B. Gibbons, and T. C. Mowry. Fast Bulk Bitwise AND and OR in
+     ous Multi-Layer Access: Improving 3D-Stacked Memory Bandwidth at                       DRAM. IEEE CAL, 2015.
+     Low Cost. ACM TACO, 2016.                                                        [100] V. Seshadri, T. Mullins, A. Boroumand, O. Mutlu, P. B. Gibbons, M. A.
+[71] D. Lee, S. Khan, L. Subramanian, S. Ghose, R. Ausavarungnirun,                         Kozuch, and T. C. Mowry. Gather-scatter DRAM: In-DRAM Address
+     G. Pekhimenko, V. Seshadri, and O. Mutlu. Design-Induced Latency                       Translation to Improve the Spatial Locality of Non-unit Strided Ac-
+     Variation in Modern DRAM Chips: Characterization, Analysis, and                        cesses. In MICRO, 2015.
+     Latency Reduction Mechanisms. In SIGMETRICS, 2017.                               [101] V. Seshadri, D. Lee, T. Mullins, H. Hassan, A. Boroumand, J. Kim, M. A.
+[72] Y. Levy, J. Bruck, Y. Cassuto, E. G. Friedman, A. Kolodny, E. Yaakobi,                 Kozuch, O. Mutlu, P. B. Gibbons, and T. C. Mowry. Buddy-RAM: Im-
+     and S. Kvatinsky. Logic Operations in Memory Using a Memristive                        proving the Performance and Efficiency of Bulk Bitwise Operations
+     Akers Array. Microelectronics Journal, 2014.                                           Using DRAM. arXiv preprint arXiv:1611.09988, 2016.
+[73] H. Li and R. Durbin. Fast and Accurate Long-read Alignment with                  [102] A. Shafiee, A. Nag, N. Muralimanohar, R. Balasubramonian, J. P. Stra-
+     Burrows–Wheeler Transform. Bioinformatics, 2010.                                       chan, M. Hu, R. S. Williams, and V. Srikumar. ISAAC: A Convolutional
+[74] S. Li, C. Xu, Q. Zou, J. Zhao, Y. Lu, and Y. Xie. Pinatubo: A Processing-              Neural Network Accelerator with In-Situ Analog Arithmetic in Cross-
+     in-Memory Architecture for Bulk Bitwise Operations in Emerging                         bars. In ISCA, 2016.
+     Non-Volatile Memories. In DAC, 2016.                                             [103] D. E. Shaw, S. Stolfo, H. Ibrahim, B. K. Hillyer, J. Andrews, and
+[75] Y. Li and J. M. Patel. BitWeaving: Fast Scans for Main Memory Data                     G. Wiederhold. The NON-VON Database Machine: An Overview.
+     Processing. In SIGMOD, 2013.                                                           http://hdl.handle.net/10022/AC:P:11530, 1981.
+[76] Y. Li and J. M. Patel. WideTable: An Accelerator for Analytical Data             [104] R. Sikorski. Boolean Algebras, volume 2. Springer, 1969.
+     Processing. Proc. VLDB Endow., 2014.                                             [105] H. S. Stone. A Logic-in-Memory Computer. IEEE Trans. Comput., 1970.
+[77] E. Lindholm, J. Nickolls, S. Oberman, and J. Montrym. NVIDIA Tesla:              [106] A. Subramaniyan and R. Das. Parallel Automata Processor. In ISCA,
+     A Unified Graphics and Computing Architecture. IEEE Micro, 2008.                       2017.
+[78] J. Liu, B. Jaiyen, R. Veras, and O. Mutlu. RAIDR: Retention-Aware                [107] P. Tuyls, H. D. L. Hollmann, J. H. V. Lint, and L. Tolhuizen. XOR-based
+     Intelligent DRAM Refresh. In ISCA, 2012.                                               Visual Cryptography Schemes. Designs, Codes and Cryptography.
+[79] J. Liu, B. Jaiyen, Y. Kim, C. Wilkerson, and O. Mutlu. An Experimental           [108] H. S. Warren. Hacker’s Delight. Addison-Wesley Professional, 2nd
+     Study of Data Retention Behavior in Modern DRAM Devices: Impli-                        edition, 2012. ISBN 0321842685, 9780321842688.
+     cations for Retention Time Profiling Mechanisms. In ISCA, 2013.                  [109] D. Weese, A.-K. Emde, T. Rausch, A. Döring, and K. Reinert. RazerS –
+[80] Z. Liu, I. Calciu, M. Herlihy, and O. Mutlu. Concurrent Data Structures                fast Read Mapping with Sensitivity Control. Genome research, 2009.
+     for Near-Memory Computing. In SPAA, 2017.                                        [110] T. Willhalm, I. Oukid, I. Muller, and F. Faerber. Vectorizing Database
+[81] S.-L. Lu, Y.-C. Lin, and C.-L. Yang. Improving DRAM Latency with                       Column Scans with Complex Predicates. In ADMS, 2013.
+     Dynamic Asymmetric Subarray. In MICRO, 2015.                                     [111] K. Wu, E. J. Otoo, and A. Shoshani. Compressing Bitmap Indexes for
+[82] R. E. Lyons and W. Vanderkulk. The Use of Triple-Modular Redun-                        Faster Search Operations. In SSDBM, 2002.
+     dancy to Improve Computer Reliability. IBM JRD, 1962.                            [112] H. Xin, D. Lee, F. Hormozdiari, S. Yedkar, O. Mutlu, and C. Alkan.
+[83] S. A. Manavski. CUDA Compatible GPU as an Efficient Hardware                           Accelerating Read Mapping with FastHASH. BMC Genomics, 2013.
+     Accelerator for AES Cryptography. In ICSPC, 2007.                                [113] H. Xin, J. Greth, J. Emmons, G. Pekhimenko, C. Kingsford, C. Alkan,
+[84] G. Myers. A Fast Bit-vector Algorithm for Approximate String Match-                    and O. Mutlu. Shifted Hamming Distance: A Fast and Accurate SIMD-
+     ing Based on Dynamic Programming. JACM, 1999.                                          friendly Filter to Accelerate Alignment Verification in Read Mapping.
+[85] E. O’Neil, P. O’Neil, and K. Wu. Bitmap Index Design Choices and                       Bioinformatics, 2015.
+     Their Performance Implications. In IDEAS, 2007.                                  [114] D. S. Yaney, C. Y. Lu, R. A. Kohler, M. J. Kelly, and J. T. Nelson. A Meta-
+[86] M. Oskin, F. T. Chong, and T. Sherwood. Active Pages: A Computation                    stable Leakage Phenomenon in DRAM Charge Storage - Variable Hold
+     Model for Intelligent Memory. In ISCA, 1998.                                           Time. In IEDM, 1987.
+[87] M. Patel, J. S. Kim, and O. Mutlu. The Reach Profiler (REAPER): En-              [115] D. Zhang, N. Jayasena, A. Lyashevsky, J. L. Greathouse, L. Xu, and
+     abling the Mitigation of DRAM Retention Failures via Profiling at Ag-                  M. Ignatowski. TOP-PIM: Throughput-oriented Programmable Pro-
+     gressive Conditions. In ISCA, 2017.                                                    cessing in Memory. In HPDC, 2014.
+[88] D. Patterson, T. Anderson, N. Cardwell, R. Fromm, K. Keeton,                     [116] T. Zhang, K. Chen, C. Xu, G. Sun, T. Wang, and Y. Xie. Half-DRAM:
+     C. Kozyrakis, R. Thomas, and K. Yelick. A Case for Intelligent RAM.                    A High-bandwidth and Low-power DRAM Architecture from the Re-
+     IEEE Micro, 1997.                                                                      thinking of Fine-grained Activation. In ISCA, 2014.
+[89] A. Pattnaik, X. Tang, A. Jog, O. Kayiran, A. K. Mishra, M. T. Kandemir,          [117] W. Zhao and Y. Cao. New Generation of Predictive Technology Model
+     O. Mutlu, and C. R. Das. SchEduling Techniques for GPU Architectures                   for Sub-45 nm Early Design Exploration. IEEE TED, 2006.
+     with Processing-in-memory Capabilities. In PACT, 2016.                           [118] W. K. Zuravleff and T. Robinson. Controller for a Synchronous DRAM
+[90] A. Peleg and U. Weiser. MMX Technology Extension to the Intel Ar-                      that Maximizes Throughput by Allowing Memory Requests and Com-
+     chitecture. IEEE Micro, 1996.                                                          mands to be Issued Out of Order. US Patent 5630096, 1997.
+
+
+                                                                                 15
+

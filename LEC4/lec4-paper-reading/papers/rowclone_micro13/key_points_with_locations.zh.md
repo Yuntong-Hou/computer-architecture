@@ -1,0 +1,14 @@
+# Key Points with Source Locations
+
+| 编号 | 重点内容 | 原文位置 | 支持证据 | 重要性 | 我的理解 |
+|---|---|---|---|---|---|
+| 1 | 如何减少 bulk copy/initialization 经过 memory channel 带来的 latency、bandwidth 和 energy。 | Page 1-2 / Introduction | bulk data copy 和 initialization 常见于 fork/CoW、bulk zeroing、OS 和应用服务；传统系统即使没有计算也必须把数据经 memory channel 来回搬运，见 Page 1-2, Section 1。 | 高 | 先把问题理解为数据搬移、能耗或可编程性瓶颈，而不是单个算法优化。 |
+| 2 | 目标工作负载或平台中存在可被利用的 DRAM/PIM 内部并行性或数据并行性。 | Page 1-2 / Introduction | DRAM 每次 ACTIVATE 都会把整行 cells 复制到 row buffer，RowClone 的关键观察是可以复用这个内部高带宽路径来复制整行，见 Page 2-4, Sections 2-3。 | 高 | 这是判断论文适用范围的关键。 |
+| 3 | FPM 对同一 subarray 的 src/dst 先 ACTIVATE src 把数据装入 row buffer，再 ACTIVATE dst 让已稳定 bitlines 覆盖 dst cells，最后 PRECHARGE；这相当于一次整行 copy，见 Page 4, Figure 4。 | 方法章节 / Page 2 及后续对应 section | FPM 对同一 subarray 的 src/dst 先 ACTIVATE src 把数据装入 row buffer，再 ACTIVATE dst 让已稳定 bitlines 覆盖 dst cells，最后 PRECHARGE；这相当于一次整行 copy，见 Page 4, Figure 4。 | 高 | 论文最值得回到原文精读的部分。 |
+| 4 | 系统集成包括 memcopy/meminit instructions、RowClone-aware page allocation 以提高 FPM 命中、以及 cache coherence 处理 dirty source/destination lines，见 Page 5-7。 | 方法章节后半部分 | 系统集成包括 memcopy/meminit instructions、RowClone-aware page allocation 以提高 FPM 命中、以及 cache coherence 处理 dirty source/destination lines，见 Page 5-7。 | 高 | 很多 PIM/PuM 方案难点不在 primitive，而在系统栈接入。 |
+| 5 | 4KB copy 中，baseline latency/energy 为 1046ns/3.6µJ，FPM 为 90ns/0.04µJ，即 latency 降低 11.62x、energy 降低 74.4x；4KB zeroing 中 FPM latency/energy 降低 6.06x/41.5x，见 Page 9, Table 3。 | Evaluation / Results | 4KB copy 中，baseline latency/energy 为 1046ns/3.6µJ，FPM 为 90ns/0.04µJ，即 latency 降低 11.62x、energy 降低 74.4x；4KB zeroing 中 FPM latency/energy 降低 6.06x/41.5x，见 Page 9, Table 3。 | 高 | 这是作者主张有效性的第一证据。 |
+| 6 | inter-bank PSM 对 4KB copy latency/energy 降低 1.93x/3.2x；intra-bank PSM latency 几乎不降但 energy 降低 1.5x，见 Page 9, Table 3。 | Evaluation / Results | inter-bank PSM 对 4KB copy latency/energy 降低 1.93x/3.2x；intra-bank PSM latency 几乎不降但 energy 降低 1.5x，见 Page 9, Table 3。 | 中 | 用于判断收益是否只体现在单一指标。 |
+| 7 | 论文显式与传统 CPU/DRAM、已有平台、已有细粒度 DRAM 或 hand-tuned implementation 对比。 | Evaluation / Related Work | 主要对比见实验图表和 related work comparison。 | 高 | 要看 baseline 是否公平、是否覆盖端到端成本。 |
+| 8 | 提出 Fast Parallel Mode (FPM)，通过 source ACTIVATE 后紧接 destination ACTIVATE，在同 subarray 内复制整行，见 Page 4, Section 3.1。 | Introduction / Contributions | 提出 Fast Parallel Mode (FPM)，通过 source ACTIVATE 后紧接 destination ACTIVATE，在同 subarray 内复制整行，见 Page 4, Section 3.1。 | 高 | 贡献通常对应论文的 novelty claim。 |
+| 9 | FPM 要求 source/destination 在同一 subarray、操作整行对齐，不能部分复制，见 Page 4, Section 3.1。 | Limitations / Discussion / Future Work | FPM 要求 source/destination 在同一 subarray、操作整行对齐，不能部分复制，见 Page 4, Section 3.1。 | 高 | 后续研究或读论文时要警惕的边界。 |
+| 10 | 现代 DDR4/DDR5 是否允许 FPM 所需的背靠背 ACTIVATE，或需要 DRAM 标准新增 copy command？ | 由全文内容推断 | 该问题未被论文完全解决。 | 中 | 可作为后续阅读或讨论问题。 |

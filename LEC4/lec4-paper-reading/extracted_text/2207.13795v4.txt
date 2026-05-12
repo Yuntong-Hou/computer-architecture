@@ -1,0 +1,1652 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/lec4-paper-reading/sources/original-paper/2207.13795v4.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC4/original-paper/2207.13795v4.pdf
+Raw URL: https://raw.githubusercontent.com/Yuntong-Hou/computer-architecture/main/LEC4/original-paper/2207.13795v4.pdf
+Accessed: 2026-05-11 11:24:20 UTC
+
+
+
+===== Page 1 =====
+
+                                                      Sectored DRAM: A Practical Energy-Efficient and
+                                                     High-Performance Fine-Grained DRAM Architecture
+
+                                         Ataberk Olgun§     F. Nisa Bostancı§†   Geraldo F. Oliveira§   Yahya Can Tuğrul§†                                           Rahul Bera§
+                                                     A. Giray Yağlıkcı§    Hasan Hassan§      Oğuz Ergin†   Onur Mutlu§
+                                                                    §                      †
+                                                                        ETH Zürich             TOBB University of Economics and Technology
+                                           Modern computing systems access data in main memory at                 1. Introduction
+                                        coarse granularity (e.g., at 512-bit cache block granularity).
+                                                                                                                     DRAM [22] is hierarchically organized to improve scaling in
+                                        Coarse-grained access leads to wasted energy because the system
+                                                                                                                  density and performance. At the highest level of the hierarchy,
+                                        does not use all individually accessed small portions (e.g., words,
+                                                                                                                  a DRAM chip is partitioned into banks that can be accessed
+arXiv:2207.13795v4 [cs.AR] 9 Jun 2024
+
+
+
+
+                                        each of which typically is 64 bits) of a cache block. In modern
+                                                                                                                  simultaneously [87, 57, 58, 59, 63]. At the lowest level, a collec-
+                                        DRAM-based computing systems, two key coarse-grained access
+                                                                                                                  tion of DRAM rows (DRAM cells that are activated together)
+                                        mechanisms lead to wasted energy: large and fixed-size (i) data
+                                                                                                                  are typically divided into multiple DRAM mats that can oper-
+                                        transfers between DRAM and the memory controller and (ii)
+                                                                                                                  ate individually [52, 42, 125, 58]. Even though DRAM chips
+                                        DRAM row activations.
+                                                                                                                  are hierarchically organized, standard DRAM interfaces (e.g.,
+                                                                                                                  DDRx [43, 44, 45]) do not expose DRAM mats to the memory
+                                           We propose Sectored DRAM, a new, low-overhead DRAM
+                                                                                                                  controller. To access even a single DRAM cell, the memory
+                                        substrate that reduces wasted energy by enabling fine-grained
+                                                                                                                  controller needs to activate a large number of DRAM cells (e.g.,
+                                        DRAM data transfer and DRAM row activation. To retrieve only
+                                                                                                                  65,536 DRAM cells in a DRAM row in DDR4 [80]) and transfer
+                                        useful data from DRAM, Sectored DRAM exploits the observation
+                                                                                                                  many bits (e.g., a cache block, typically 512 bits [32]) over the
+                                        that many cache blocks are not fully utilized in many workloads
+                                                                                                                  memory channel. Thus, in current systems, both DRAM data
+                                        due to poor spatial locality. Sectored DRAM predicts the words in
+                                                                                                                  transfer and activation are coarse-grained. Coarse-grained data
+                                        a cache block that will likely be accessed during the cache block’s
+                                                                                                                  transfer and activation cause significant energy inefficiency
+                                        residency in cache and: (i) transfers only the predicted words on
+                                                                                                                  in systems that use DRAM as main memory for two major
+                                        the memory channel by dynamically tailoring the DRAM data
+                                                                                                                  reasons.
+                                        transfer size for the workload and (ii) activates a smaller set
+                                        of cells that contain the predicted words by carefully operating             First, coarse-grained DRAM data transfer causes unneces-
+                                        physically isolated portions of DRAM rows (i.e., mats). Activating        sary data movement. Standard DRAM interfaces transfer data
+                                        a smaller set of cells on each access relaxes DRAM power delivery         at cache block granularity over fixed-size data transfer bursts
+                                        constraints and allows the memory controller to schedule DRAM             (e.g., 8-cycle bursts in DDR4 [44, 80]), but a large fraction of
+                                        accesses faster.                                                          data (e.g., more than 75% [98]) in a cache block is not used (i.e.,
+                                                                                                                  referenced by CPU load/store instructions) during the cache
+                                           We evaluate Sectored DRAM using 41 workloads from widely-              block’s residency in the cache hierarchy (i.e., from the moment
+                                        used benchmark suites. Compared to a system with coarse-                  the cache block is brought to the on-chip caches until it gets
+                                        grained DRAM, Sectored DRAM reduces the DRAM energy con-                  evicted) [61, 62, 97, 98, 131, 132]. Thus, transferring unused
+                                        sumption of highly-memory-intensive workloads by up to (on                words of a cache block over the power-hungry memory chan-
+                                        average) 33% (20%) while improving their performance by up to             nel wastes energy [68, 135, 3, 116, 92, 15, 30, 124, 96, 127, 69].
+                                        (on average) 36% (17%). Sectored DRAM’s DRAM energy sav-                     Second, coarse-grained DRAM activation causes an un-
+                                        ings, combined with its system performance improvement, allows            necessarily large number of DRAM cells in a DRAM row
+                                        system-wide energy savings of up to 23%. Sectored DRAM’s                  to be activated. Subsequent DRAM accesses to the acti-
+                                        DRAM chip area overhead is 1.7% of the area of a modern DDR4              vated row can be served faster. However, many modern
+                                        chip. Compared to state-of-the-art fine-grained DRAM architec-            memory-intensive workloads with irregular access patterns
+                                        tures, Sectored DRAM greatly reduces DRAM energy consump-                 cannot benefit from these faster row accesses as the spatial
+                                        tion, does not reduce DRAM bandwidth, and can be implemented              locality in these workloads is lower than the DRAM row
+                                        with low hardware cost. Sectored DRAM provides 89% of the                 size [68, 29, 85, 82, 86, 121, 133, 88, 120]. Thus, the energy
+                                        performance benefits of, consumes 12% less DRAM energy than,              cost of activating all cells in a DRAM row is not amortized
+                                        and takes up 34% less DRAM chip area than a high-performance              over many accesses to the same row, leading to energy waste
+                                        state-of-the-art fine-grained DRAM architecture (Half-DRAM).              from activating a disproportionately large number of cells.
+                                        We hope and believe that Sectored DRAM’s ideas and results                   Prior works [68, 136, 135, 3, 116, 92, 15, 18, 30, 124] de-
+                                        will help to enable more efficient and high-performance mem-              velop DRAM substrates that enable fine-grained DRAM data
+                                        ory systems. To this end, we open source Sectored DRAM at                 transfer and activation, allowing words of a cache block
+                                        https://github.com/CMU-SAFARI/Sectored-DRAM.                              to be individually retrieved from DRAM and a small num-
+
+
+                                                                                                              1
+
+
+
+===== Page 2 =====
+
+ber of DRAM cells to be activated with each DRAM ac-                                       increasing memory-level parallelism for memory-intensive
+cess. However, these prior works (i) cannot provide high                                   workloads.
+DRAM throughput [18, 124], (ii) incur high DRAM area over-                                    V BL and SA provide two key primitives for power-efficient,
+heads [136, 30, 135, 3, 116, 92, 15], and (iii) do not fully enable1                       sub-cache-block-sized (e.g., 8-byte or one-word) data trans-
+fine-grained DRAM [18, 124, 136, 30, 68] (§3.1).                                           fers between main memory and the rest of the system. How-
+   Our goal is to develop a new, low-cost, and high-throughput                             ever, because modern systems are typically designed to have
+DRAM substrate that can mitigate the excessive energy con-                                 cache-block-sized (e.g., 64-byte) data transfers between system
+sumption from both (i) transmitting unused data on the mem-                                components, making performance- and energy–efficient use
+ory channel and (ii) activating a disproportionately large num-                            of two Sectored DRAM primitives (V BL and SA) requires
+ber of DRAM cells. To this end, we develop Sectored DRAM.                                  system-wide modifications in hardware. We develop two hard-
+Sectored DRAM leverages two key ideas to enable fine-grained                               ware techniques (§5.2), (i) Load/Store Queue (LSQ) Lookahead
+data transfer and row activation at low chip area cost. First,                             and (ii) Sector Predictor (SP) to effectively integrate Sectored
+a cache block transfer between main memory and the mem-                                    DRAM into a system. At a high level, LSQ Lookahead and SP
+ory controller happens in a fixed number of DRAM interface                                 determine and predict, respectively, which words of a cache
+clock cycles where only a word of the cache line is transferred                            block should be retrieved from a lower-level component of
+in each cycle. Sectored DRAM augments the memory con-                                      the memory hierarchy. Accurately determining the words of a
+troller and the DRAM chip to perform cache block transfers                                 cache block that are used during the cache block’s residency
+in a variable number of clock cycles based on the workload                                 in system caches enables high system performance and low
+access pattern. Second, a large DRAM row, by design, is al-                                system energy consumption by improving data reuse in system
+ready partitioned into smaller independent physically isolated                             caches as opposed to repeating a high-latency main memory
+regions. Sectored DRAM provides the memory controller with                                 access for each used word of a cache block.
+the ability to activate each such region based on the workload
+                                                                                              LSQ Lookahead accumulates the individual words in a cache
+access pattern.
+                                                                                           block accessed by younger load/store instructions in older load-
+   Sectored DRAM implements (i) Variable Burst Length                                      /store instructions’ memory requests. Thus, the execution of a
+(V BL) to enable fine-grained DRAM data transfer, and Sec-                                 load/store instruction prefetches the portions of cache blocks
+tored Activation (SA) to enable fine-grained DRAM activa-                                  that will be accessed by the in-flight (i.e., not yet executed)
+tion. V BL dynamically adjusts the number of cycles in a                                   load/store instructions. SP predicts which portions of a cache
+burst to transfer a different word of a cache block with each                              block will be accessed by a load/store instruction based on that
+DRAM interface cycle, thus enabling fine-granularity DRAM                                  instruction’s past cache block usage patterns. This allows SP
+data transfer. To do so at low cost, V BL builds on existing                               to accurately predict the portions of a cache block that will be
+DRAM I/O circuitry that already selects one word of a cache                                used by the processor during the cache block’s residency in
+block to transfer in one cycle of a burst.                                                 the cache hierarchy.
+   To enable SA with low hardware cost, we leverage the fact
+                                                                                              We evaluate the performance and energy of Sectored DRAM
+that DRAM rows are already partitioned into independent
+                                                                                           using 41 workloads from SPEC2006 [118] and 2017 [119] and
+physically isolated regions (mats) that can be individually ac-
+                                                                                           DAMOV [91, 106] benchmarks using Ramulator [104, 105, 59,
+tivated with small modifications to the DRAM chip. We refer
+                                                                                           74], DRAMPower [12], and Rambus Power Model [99]. Sec-
+to a mat that incorporates these modifications as a sector.2 Ac-
+                                                                                           tored DRAM significantly reduces system energy consumption
+tivating a sector consumes considerably smaller energy than
+                                                                                           and improves system performance for memory-intensive work-
+activating a DRAM row as a sector typically contains almost an
+                                                                                           loads with irregular access patterns (which amounts to 10 of
+order of magnitude fewer cells (e.g., 1024 in a DDR4 chip) than
+                                                                                           our workloads). For such workloads, compared to a system
+a DRAM row (e.g., typically 8192 in a DDR4 chip). SA (i) imple-
+                                                                                           with conventional coarse-grained DRAM, Sectored DRAM re-
+ments sector transistors that are each turned on to activate one
+                                                                                           duces DRAM energy consumption by 20%, improves system
+of the independent mats, and (ii) sector latches that control the
+                                                                                           performance by 17%, and reduces system energy consumption
+sector transistors. SA exposes the sector latches to the mem-
+                                                                                           by 14%, on average. Sectored DRAM does so as it 1) improves
+ory controller by using an existing DRAM command (§4.1),
+                                                                                           workload execution time by issuing activate commands at a
+therefore, SA can be implemented without any changes to the
+                                                                                           higher rate and thereby reducing average memory latency and
+physical DRAM interface. As the power required to activate a
+                                                                                           2) activates fewer DRAM cells and retrieves fewer sectors from
+mat in a DRAM row is only a fraction of the power required
+                                                                                           DRAM at lower power. We estimate the DRAM area overheads
+to activate the whole row, Sectored DRAM also relaxes the
+                                                                                           of Sectored DRAM using CACTI [84] and find that it can be
+power delivery constraints in DRAM chips [68, 136, 92]. Doing
+                                                                                           implemented with low hardware cost. Sectored DRAM incurs
+so allows for the activation of DRAM rows at a higher rate,
+                                                                                           0.39 mm2 DRAM area overhead (1.7% of a DRAM chip) and
+     1 This class of prior works either do not enable fine-grained data transfer
+                                                                                           does not require modifications to the physical DRAM inter-
+(i.e., they perform data transfers at cache block granularity) [136, 18, 124, 30] or
+do not enable fine-grained data transfer for both read and write operations [68].
+                                                                                           face. Compared to the evaluated state-of-the-art fine-grained
+     2 We use the word sector to distinguish between what exists today in DRAM             DRAM architectures [18, 136, 68, 132], Sectored DRAM greatly
+chips (mats) and what we propose in Sectored DRAM (sectors).                               reduces DRAM energy consumption, does not reduce DRAM
+
+
+                                                                                       2
+
+
+
+===== Page 3 =====
+
+                                                                                           (a) DRAM Module
+bandwidth, and can be implemented with low hardware cost.                                                                                      global wordline                                                         (e) DRAM Cell
+
+
+
+
+                                                                                                                                                                                     subarrayN-1
+                                                                                                                                                                                                     cell                        access
+Sectored DRAM provides 89% of the performance benefits                                      chip chip             chip
+
+
+
+
+                                                                                                           ...
+                                                                                                                                                                                                   capacitor                       transistor
+
+
+
+
+                                                                                                                          global row decoder
+                                                                                                                                                   mat           mat        mat
+                                                                                                                                                                 M-2          0
+of, consumes 12% DRAM energy than, and takes up 34% less
+                                                                                                                                                   M-1
+
+
+
+
+                                                                                                                                                                       …
+
+
+
+
+                                                                                                                                                                                                                                 wordline
+                                                                                                                                                                                                   local row decoder
+                                                                                                           bank
+                                                                                             bank
+                                                                                                    bank
+
+
+                                                                                                                   bank
+DRAM chip area than a high-performance state-of-the-art fine-
+
+
+
+
+                                                                                                                                                                                                                                 local
+                                                                                                                                                                                     subarray0
+grained DRAM architecture [136]. Sectored DRAM provides                                             I/O logic
+                                                                                                                                                   mat           mat        mat                                                          local
+                                                                                                                                                                                                                                   cell bitline
+
+
+
+
+                                                                                                                                                                                                                       ...
+                                                                                                                                                                                                                       ...
+                                                                                                                                                                                                                       ...
+                                                                                                                                                   M-1           M-2          0
+10% larger performance and 13% larger DRAM energy benefits
+
+
+
+
+                                                                                                                                                                       …
+                                                                                                                                                                                                                                    ...
+
+
+
+
+                                                                                                           bank
+                                                                                             bank
+                                                                                                    bank
+
+
+                                                                                                                   bank
+compared to a low-cost state-of-the-art fine-grained DRAM                                                                                         CSL            CSL        CSL                                                       ...
+
+
+
+
+                                                                                                                                                                                                                       SA
+                                                                                                                                                                                                                            SA
+                                                                                                                                                                                                                            SA
+
+
+
+                                                                                                                                                                                                                                            SA
+                                                                                                                                                                                                                                                 SA
+                                                                                                                                                                                                                                 SA
+                                                                                                                               I/O                                         global
+architecture [68]. We open source our simulation infrastruc-                                cmd/addr              data         bus
+                                                                                                                                                  global row buffer
+                                                                                                                                                                           bitline
+                                                                                                                                                                                                   HFF                  local row buffer
+                                                                                            (b) DRAM Chip                                            (c) DRAM Bank                                                     (d) DRAM MAT
+ture and all datasets to enable reproducibility and help future
+research [107].                                                                            Figure 1: DRAM module, chip, and bank organization, as de-
+                                                                                           picted in [90]
+   We make the following contributions:
+• We introduce Sectored DRAM and its two key mechanisms:                                   DRAM cell (e) is comprised of an access transistor and a cell ca-
+  Variable Burst Length and Sectored Activation. Sectored                                  pacitor. DRAM cells that lie on the same local wordline across
+  DRAM improves system performance and alleviates system                                   different mats form a DRAM row (not shown in the figure).
+  energy consumption by enabling fine-grained DRAM data                                    2.2. Accessing DRAM
+  transfer and activation.                                                                    The memory controller accesses DRAM in two steps. First,
+• We develop two techniques (Load Store Queue Lookahead                                    the memory controller sends an ACT IV AT E (ACT ) com-
+  and Sector Predictor) to effectively integrate Sectored DRAM                             mand with a row address to open (i.e., make accessible) a DRAM
+  into a system. Our techniques reduce the number of high-                                 row. The global row decoder drives the global wordline (master
+  latency memory accesses by accurately identifying the words                              wordline) corresponding to the higher-order bits of the row
+  of a cache block that will be used by the processor.                                     address. The master wordline enables a single local wordline,
+• We evaluate Sectored DRAM with a wide range of workloads                                 addressed by the lower-order bits of the row address, in every
+  and observe that it provides higher system performance                                   mat in a subarray. A driven local wordline enables the access
+  and energy efficiency than coarse-grained DRAM as well as                                transistors of all cells in the DRAM row, causing the cells to
+  multiple prior fine-grained DRAM proposals.                                              share their charge with their bitlines and the sense amplifiers
+• We open source Sectored DRAM at https://github.com/                                      to read the values in the cells. Second, the memory controller
+  CMU-SAFARI/Sectored-DRAM.                                                                sends a READ command with a column address to retrieve
+2. DRAM Background                                                                         multiple bytes of data (e.g., 8 B for an x8 DDR4 chip [44]) from
+  We provide the most relevant background on DRAM orga-                                    the open DRAM row. The READ command moves the data
+nization for our work.3                                                                    in the local row buffer, over the helper flip-flops (HFFs), to the
+                                                                                           global row buffer (the prefetch buffer). Thus, the throughput
+2.1. DRAM Organization
+                                                                                           of internal DRAM data transfers (i.e., between the global and
+   A typical computing system implements a memory controller                               local row buffer) is constrained by the number of HFFs per
+in the processor chip. The memory controller connects to mul-                              mat.
+tiple DRAM modules over multiple memory channels. Fig. 1                                   Row buffer. Once a row is opened (i.e., the row is buffered
+illustrates the hierarchical DRAM organization inside a DRAM                               in the local row buffer), subsequent READ and W RIT E
+module (a). Multiple DRAM chips (b) constitute a DRAM mod-                                 commands targeting the row can be served at a fast rate. An
+ule. All DRAM chips in a module operate in lockstep where                                  access that targets an open row is a row buffer hit and an access
+they receive the same DRAM commands from the memory                                        that targets a row other than the open row in a bank is a row
+controller at the same time and respond to commands in uni-                                buffer conflict.
+son [54, 14]. A DRAM chip has multiple DRAM banks (c) that                                 Accessing another row. When a bank already has an open
+can be accessed in parallel. All banks in a chip share an in-                              row, and the memory controller wants to access another row,
+put/output logic.                                                                          the memory controller first issues a P RECHARGE (P RE)
+   A DRAM bank consists of a global row buffer (or prefetch                                command to close the open DRAM row.
+buffer), a global row decoder (or a global wordline driver), and
+                                                                                           2.3. Data Transfer Bursts
+multiple subarrays. The global row decoder drives a global
+wordline signal in every subarray. Global bitlines connect the                                DRAM modules transfer data on the memory channel over
+DRAM cells in each subarray to the global row buffer via col-                              multiple interface clock cycles. For example, a READ com-
+umn select logic (CSL). Each subarray contains a set of local row                          mand transfers a cache block (e.g., 512 bits) over eight interface
+decoders (or local wordline drivers), a local row buffer, which                            cycles in DDR4 [80]. Each such transfer is referred to as a burst,
+is an array of sense amplifiers (SAs), helper flip-flops (HFFs),                           and the burst length defines the number of double-data-rate
+and mats (d). Inside every mat, DRAM cells are placed in a                                 (DDR) interface cycles it takes to transfer the data. A cache
+two-dimensional array of local wordlines and local bitlines. A                             block is divided into equally-sized pieces and placed in differ-
+    3We refer the reader to various prior works [29, 110, 58, 136, 109, 65, 108,           ent chips (e.g., if there are eight chips, each chip receives 18 of
+22, 52, 128, 75, 92, 134, 10, 13, 14, 34, 35, 53, 54, 55, 64, 66, 67, 89] for a more       the cache block). These equally sized blocks are further split
+detailed description of the DRAM architecture.                                             into multiple mats inside a bank in the chip. We depict how a
+
+
+                                                                                       3
+
+
+
+===== Page 4 =====
+
+cache block is scattered across multiple chips and mats for a           accesses, the increase in energy consumption in the coarse-
+DDR4 module in Fig. 2 (left). Fig. 2 (right) shows the timing           grained DRAM activation system is caused by activating a
+diagram of the command and data buses during a W RIT E                  large, fixed-size DRAM row that the processor does not en-
+transfer.                                                               tirely use. As prior works [68, 29, 85, 82, 86, 121, 133, 88, 120]
+   A DRAM data transfer happens in three steps (we use a                show, such an increase in energy consumption when executing
+W RIT E transfer as an example; a READ data transfer hap-               coarse-grained DRAM activation is because modern memory-
+pens analogously). First, the memory controller drives 64 DQ            intensive workloads with irregular access patterns suffer from
+(data) signals to transfer a 64-bit portion of the cache block in       low spatial locality, which reduces the benefit of a large DRAM
+each beat (i.e., data transmitted in one DDR interface cycle) of        row buffer. We conclude that systems that employ coarse-
+the data transfer burst ❶. Second, each chip receives 8 bits in         grained DRAM activation suffer from energy inefficiency.
+a beat ❷. A chip accumulates 64 bits during the burst in its            3.1. Enabling Fine-Grained DRAM: Challenges and
+prefetch buffer. Third, these 64 bits are copied into the mats               Limitations
+inside the chip ❸. In our example, only 8 bits are transferred
+in a burst to (from) a mat with a W RIT E (READ) command.                  Efficiently enabling fine-grained DRAM data transfer and
+Thus, the maximum DRAM throughput can only be obtained if               activation can significantly improve system energy. However,
+every mat contributes 8 bits to the data transfer burst.                to do so, we must overcome three main challenges.
+                                                                           (1) Maintaining high DRAM throughput. Current
+2.4. The tF AW Timing Parameter
+                                                                        DRAM systems leverage coarse-grained data transfers to max-
+   DDRx specifications (e.g., DDR4 [44] and DDR5 [45]) define           imize DRAM’s throughput. Enabling fine-grained DRAM in a
+the tF AW timing parameter, which specifies the time window             straightforward way, e.g., by placing a piece of the cache block
+where no more than four ACT commands are allowed (i.e., the             stored by a DRAM chip in the same mat instead of distributing
+memory controller can only schedule four ACT commands                   the piece across multiple mats, reduces DRAM throughput as
+in any tF AW -wide time window). tF AW allows a DRAM chip               one mat contributes only a fraction of the total DRAM internal
+to correctly provide the chip’s various components with the             throughput (§2.3). This issue can be alleviated by increasing
+power required to activate large DRAM rows. tF AW typically             the number of the HFFs. However, this approach is costly since
+limits row activation frequency and diminishes memory-level             it severely complicates DRAM array routing [136, 68, 125].
+parallelism, degrading the performance of memory-intensive                 (2) Incurring low DRAM area overhead. DRAM manu-
+workloads [51].                                                         facturing is highly optimized for density and cost [70, 85, 76].
+3. Motivation                                                           While enabling fine-grained DRAM, one must avoid applying
+   We study the impact of coarse-grained DRAM data transfer             intrusive modifications to the DRAM array since such modifi-
+(Coarse-DRAM-Transfer) and activation (Coarse-DRAM-Act) in              cations are difficult to integrate into real designs.
+41 single-core workloads from a variety of domains (see §6 for             (3) Fully exploiting Fine-Grained DRAM. The energy
+our methodology). We compare their energy consumption to                waste of coarse-grained DRAM systems stems from rigid
+a system that performs (i) fine-grained DRAM data transfer              DRAM data transfer and activation granularities. Thus, a
+(Fine-DRAM-Transfer) at word granularity, and (ii) fine-grained         fine-grained DRAM system must enable flexible DRAM data
+DRAM activation (Fine-DRAM-Act) at mat granularity.                     transfer and activation granularities for both read and write
+   Fig. 3 (left) shows the DRAM access energy across workloads          operations to eliminate such energy waste. However, integrat-
+from our three benchmark suites for the Coarse-DRAM-Transfer            ing fine-grained DRAM into current systems is challenging as
+system, normalized to the Fine-DRAM-Transfer system. We                 systems are typically designed to access DRAM at cache block
+observe that the DRAM access energy of the Coarse-DRAM-                 granularity.
+Access system is 1.27× that of the Fine-DRAM-Access. The large             Prior works [68, 136, 135, 3, 116, 92, 15, 18, 30, 124] propose
+increase in energy consumption in the Coarse-DRAM-Access                different mechanisms to enable fine-grained DRAM substrates,
+system is caused by retrieving words in a cache block that the          aiming to alleviate the energy waste caused by coarse-grained
+processor does not entirely use. This leads to a 45% increase           DRAM. Such works can be divided into two broader groups:
+in the data movement between DRAM and the CPU in the                    (1) works that propose intrusive modifications to the DRAM
+Coarse-DRAM-Access system, on average. We conclude that                 array circuit and organization (e.g., new DRAM interconnects,
+current systems that perform coarse-grained DRAM accesses               considerably more HFFs) [135, 3, 116, 92, 15] and (2) works that
+and activation significantly waste energy by transferring and           aim to enable coarse-grained DRAM without intrusive modifi-
+activating a fixed number of words from DRAM to the proces-             cations to DRAM [18, 124, 136, 30, 68]. The intrusive DRAM
+sor, which are not entirely used by the processor.                      modifications proposed by the first group lead to significant
+   Fig. 3 (right) shows the DRAM activation energy across               DRAM area overheads, which makes it difficult to integrate
+workloads from our three benchmark suites for the Coarse-               the first group of works into real DRAM designs.
+DRAM-Act system, normalized to the Fine-DRAM-Act system.                   Table 1 qualitatively compares how prior works from the sec-
+We observe that the DRAM activation energy of the Coarse-               ond group address the three challenges of enabling fine-grained
+DRAM-Act system is 1.04× that of the Fine-DRAM-Act sys-                 DRAM. We observe that no prior work can simultaneously
+tem. Like the system that performs coarse-grained DRAM                  provide (i) high DRAM throughput (FGA [18] and SBA [124]
+
+
+                                                                    4
+
+
+
+===== Page 5 =====
+
+                            3 Chip 0                    Chip 1                                       Chip 7                                    write data transfer burst to Chip 0
+                            MAT0          MAT7       MAT0 MAT7                                    MAT0 MAT7
+                             B0           B56         B1     B57                                   B7     B63
+                                 8            8          8            8                                   8            8
+                              Prefetch Buffer         Prefetch Buffer                                  Prefetch Buffer
+                                                                                     DQ Signals
+                               2      8                         8
+                                                                               64    1
+                                                                                                                8
+
+
+                            Byte 0                        Memory Controller                                                                                   8-beat data transfer burst
+                              B0      B1            B7       Cache Block                  B56 B57                   B63                             Byte 0                                 Byte 56
+
+Figure 2: Example cache block placement in DRAM mats (left) and diagram depicting an 8-cycle data transfer burst to Chip 0
+(right). “B” means “byte”.
+
+                                                                                                                                   only the portions of a cache block that correspond to the acti-
+                Fine−DRAM−Access      Coarse−DRAM−Access                               Fine−DRAM−Act       Coarse−DRAM−Act
+
+
+
+                                                             DRAM Activation
+              1.5                                                              1.2
+DRAM Access
+
+
+
+
+                                                                                                                                   vated sectors in the DRAM chip.
+ Normalized
+
+
+
+
+                                                               Normalized
+                                                                               0.9
+   Energy
+
+
+
+
+                                                                 Energy
+              1.0
+
+
+              0.5
+                                                                               0.6
+                                                                                                                                     We expose the two mechanisms to the memory controller
+                                                                                                                                   such that the system can benefit from Sectored DRAM, with
+                                                                               0.3
+
+              0.0                                                              0.0
+
+                                                                                                                                   no changes to the physical DRAM interface and only small
+                    DAMOV   SPEC2006 SPEC2017     GMean                               DAMOV   SPEC2006 SPEC2017        GMean
+
+Figure 3: Normalized DRAM access (left) and DRAM activation
+(right) energy consumption.                                                                                                        changes to DRAM interface specification.
+change the cache block mapping such that DRAM transfers                                                                            4.1. Sectored Activation
+can be served from only one mat, but reduce the throughput                                                                            Fig. 4-A depicts the architecture of a DRAM array with 8
+of data transfers by doing so); (ii) low area overhead (Half-                                                                      mats in one subarray [60, 30, 52, 136, 92]. We make a key
+DRAM [136] and HalfPage [30] require changes to the number                                                                         observation: DRAM mats split DRAM rows into fixed-size
+and organization of DRAM’s HFFs, leading to non-negligible                                                                         portions. SA augments these portions by allowing them to be
+area overheads); and (iii) mechanisms that fully exploit fine-                                                                     activated individually. We refer to these augmented portions
+grained DRAM (PRA [68] only enables fine-grained DRAM                                                                              as sectors.
+data transfer and activation for write operations; HalfDRAM,                                                                       SA Design. To implement SA, we propose minor modifica-
+HalfPage, FGA, and SBA still impose a rigid DRAM data trans-                                                                       tions to the existing architecture. Fig. 4-B depicts our modifica-
+fer granularity). We conclude that no prior work efficiently                                                                       tions to the DRAM subarray with 8 mats (the modifications are
+enables fine-grained DRAM access (i.e., both data transfer and                                                                     highlighted in blue color).4 First, we insert new local wordline
+activation).                                                                                                                       drivers (LWDs) (❶) such that each LWD drives only one local
+                       Table 1: Sectored DRAM vs. prior works                                                                      wordline (LWL). Thus, when a single LWD is enabled, only
+                               High (100%)             Low (<2%)                              Fully Exploit
+                                                                                                                                   the cells in a single sector are activated as opposed to cells
+                               Throughput            Area Overhead                        Fine-Grained DRAM
+                                                                                         Activation Data Transfer
+                                                                                                                                   from all mats in a subarray getting activated in the existing
+ FGA [18]                             %                        !                              !                      %
+                                                                                                                                   architecture (e.g., LWDs between mat 0 and mat 1 in Fig. 4-A
+ SBA [124]                            %                        !                              !                      %             drive two LWLs that extend onto both of the mats). Second,
+ HalfDRAM [136]                       !                        %                              !                      %             to select which sectors are opened with an ACT command,
+ HalfPage [30]                        !                        %                              !                      %
+ PRA [68]                             !                        !                              !                      %             we place one sector latch (❷) for every sector in the horizontal
+ This Work                            "                        "                              "                      "             direction. Third, we isolate the master wordline (MWL) from
+                                                                                                                                   the LWDs using sector transistors (❸), such that a driven MWL
+   Our goal is to address prior works’ limitations while effi-                                                                     does not enable all LWDs in all sectors, but only enables LWDs
+ciently mitigating the energy consumed by transferring unused                                                                      in the open sector(s). With these three modifications, a sec-
+data on the memory channel and activating unused DRAM                                                                              tor with a set (i.e., logic-1) sector latch is activated when the
+cells. To this end, we develop Sectored DRAM, a new, practical,                                                                    MWL is driven (with an ACT command) because two sector
+and high-performance fine-grained DRAM substrate.                                                                                  transistors connect the MWL to the LWDs.
+4. Sectored DRAM                                                                                                                   Exposing SA to the memory controller. To make use of
+   We leverage two key observations regarding DRAM chip                                                                            SA, the memory controller needs to control sector latches.
+design to implement Sectored DRAM at low cost. First, we                                                                           To implement SA with no modifications to the DRAM inter-
+observe that DRAM mats naturally split DRAM rows into fixed-                                                                       face signals, we use the unused bits in the P RE command’s
+size portions. Second, the DRAM I/O circuitry already imple-                                                                       encoding [44] to encode the sector bits. Each sector bit iden-
+ments a mechanism to select one portion of a cache block                                                                           tifies/encodes if a sector latch is set or reset. The memory
+to transfer it in one beat (i.e., data transmitted in one DDR                                                                      controller sends a bitvector of sector bits with every P RE
+interface cycle) of a burst.                                                                                                       command to the Sectored DRAM chip. These sector bits are
+   Sectored DRAM consists of two new mechanisms imple-                                                                             used for the ACT command that follows the P RE command.
+mented in a DRAM chip: Sectored Activation (SA) and Vari-                                                                          When the bank is closed (i.e., there are no open rows in the
+able Burst Length (V BL). SA enables fine-grained control                                                                          bank), the memory controller schedules a P RE command be-
+over the activation of sectors in DRAM by making minimal                                                                           fore the first ACT command to convey the sector bits to the
+modifications to how local wordlines are driven. V BL enables                                                                         4 We consider DRAM subarrays with 8 sectors. See §8.4 for a discussion of
+
+fine-grained control over data transfer bursts by transferring                                                                     a finer-granularity activation mechanism.
+
+
+                                                                                                                               5
+
+
+
+===== Page 6 =====
+
+DRAM chip. The minimum timing delay between successive                                                                                              8 entries
+P RE and ACT commands targeting the same bank (dictated                                         DRAM Chip
+                                                                                                                                            8-bit
+by tRP , ∼ 13ns [44, 80]) is sufficiently long5 such that the                                      DRAM Bank                     1
+                                                                                                                                               8
+sector bits can propagate from the DRAM chip’s inputs to the                                           Sector    Sector
+                                                                                                         0         7
+sector latches before the ACT command following a P RE                                                                           Read   2      8        Encoder 
+                                                                                                                                                                        3
+                                                                                                64         8          8
+command is issued to the same DRAM bank. To issue reg-                                                                           MUX                      8x3
+ular, row-level DRAM commands (e.g., a periodic refresh or
+                                                                                                64               64
+                                                                                                                                            DQ                      3
+                                                                                       Write FIFO          Read FIFO                                            8
+an activate command), the memory controller simply sets all                                                                                            Sector Bits
+sector bits (to enable all sectors) before issuing the row-level                    Figure 5: I/O circuitry of a DRAM chip and Variable Burst
+command.                                                                            Length
+   Because activating one sector requires considerably less
+                                                                                    idea is to slightly modify the DRAM chip’s Read FIFO entry
+power consumption (§7.1) than activating all sectors, the tF AW
+                                                                                    selection criteria. We replace the burst counter with an 8×3
+timing constraint can be relaxed to allow for, within a tF AW , a
+                                                                                    encoder (❸) that takes sector bits as input, and outputs only
+larger number of ACT commands that activate fewer than all
+                                                                                    the indices for the Read FIFO entries that contain data from
+eight sectors in a DRAM row [136, 68, 92, 78, 79]. Section 6.3
+                                                                                    one of the closed sectors. Using the encoder, the Read MUX
+describes how exactly we relax tF AW based on how many
+                                                                                    skips the entries in the Read FIFO that correspond to the closed
+sectors an ACT command activates.
+                                                                                    sectors, driving the DQ pins only with the data that comes
+4.2. Variable Burst Length                                                          from the open sectors (❹ in Fig. 5, right). Since the Write FIFO
+   V BL’s goal is to allow a DRAM chip to transmit (i.e.,                           is organized in the same way as the Read FIFO, V BL reuses
+READ) and receive (i.e., W RIT E) data in variable length                           the same encoder for W RIT E transfers to correctly fill the
+bursts6 such that each beat of the burst transfers only the data                    entries in the Write FIFO.
+corresponding to one of the enabled sectors.                                        Exposing VBL to the memory controller. To use V BL, the
+VBL design. Fig. 5 depicts the I/O read/write circuitry of a                        memory controller and the DRAM chip need to agree on the
+modern DRAM chip [80]. In such a chip, data is first moved                          burst length before the data transfer starts. This is important for
+from the DRAM array to the Read FIFO (❶) with every READ                            both parties to calibrate their I/O drivers correctly and capture
+command. The Read FIFO comprises eight entries, and each                            the signals on the high-frequency DRAM interface [44, 45, 43].
+entry stores the data that will be transmitted over the DQ                          We use the sector bits that are already communicated to the
+pins in one beat of the data transfer burst. The Read MUX                           DRAM chip by fine-grained DRAM activation operations to
+(❷) selects one entry in the Read FIFO based on the value of                        determine the burst length (§4.1) of data transfers, before the
+the burst counter (not shown in the figure), which counts the                       transfers start.
+number of beats in the transfer.                                                       We make two modifications. First, we implement a low over-
+   By studying the I/O read/write circuitry of modern DRAM                          head 8-bit popcount circuit [27, 19] in both the DRAM chip
+chips, we observe that a DRAM chip selects (using the burst                         and the memory controller to count the number of set sector
+counter) individual entries in the Read FIFO to drive the DQ                        bits in the DRAM bank targeted by a READ or a W RIT E.
+pins within a beat [80]. Based on this observation, V BL’s key                      The popcount circuitry requires only 34 logic gates to be im-
+    5 We determine t
+                     RP to be sufficiently long based on the overall latency        plemented [19], introducing almost negligible area overhead.
+of a READ command in a conventional DRAM chip. A READ command 1)                    Second, we extend the bank state table of the memory con-
+propagates from the memory controller to the DRAM chip, 2) accesses data            troller with sector bits. The bank state table already contains
+in a portion of the row buffer in the corresponding bank, and 3) sends the
+data back to the memory controller. In the DDR4 standard [44], the latency          metadata, such as the address of the enabled row, for every
+between issuing a READ and the first data beat appearing on the data bus is         bank. The additional storage requirement for sector bits in the
+defined as tAA (12.5 ns). Because sector bits need only to propagate from the       bank state table is small, only 128 bits (8 bits for each of the 16
+memory controller to a DRAM bank (and not back to the memory controller
+                                                                                    banks [80, 44]).
+from a bank), the tRP timing parameter is likely longer than what is needed
+(which we estimate as half tAA or 6.25 ns) for sector bits to propagate from        5. System Integration
+the memory controller to a DRAM bank.
+    6 Commodity DDR4 chips already implement a relatively constrained ver-             We describe the challenges in integrating Sectored DRAM
+sion of V BL called burst-chop. Burst-chop enables 256-bit (in 4-beat bursts)       into a typical system and propose solutions. We assume that
+data transfers [44].                                                                the system uses a DDR4 module with eight chips as main mem-
+                A                                                                         2     Sector Latch                                        Sector Latch
+                Master Wordline (MWL)               Local Wordline (LWL)
+                                                                                      B                           Sector Transistor 3
+                     DRAM Row
+                                                                                                                             1
+         Local                                                                                                            New LWDs
+        Wordline      MAT 0          MAT 1                       MAT 7               Local 
+                                                                                    Wordline         Sector 0                                        Sector 7
+         Driver
+                                                                                     Driver 
+                                                                                     (LWD)
+          Figure 4: Wordline organization in a conventional DRAM subarray (left), in a Sectored DRAM subarray (right)
+
+
+                                                                                6
+
+
+
+===== Page 7 =====
+
+ory and that each chip has eight sectors to explain the chal-                 addressed cache set. Third, the L1 cache uses the cache block
+lenges and our solutions clearly.7 Since there are eight sectors              tag component of the memory address and the sector bits to
+in every chip, one sector from each DRAM chip collectively                    access the words requested by the processor. The third step
+stores one word (64 bits) of the cache block.                                 can result in three different scenarios: 1) if both the tag and
+Integration challenges. We identify two challenges in inte-                   the sector bits match one of the cache blocks in the cache set
+grating Sectored DRAM into a system. First (§5.1), to benefit                 (i.e., there is both a tag and a sector bit match), the cache has
+from Sectored DRAM’s potential energy savings, the system                     the word that the processor core demands and this is a sector
+and main memory (DRAM) must conduct data transfers at sub-                    hit, 2) if there is a tag match but no sector bit match, the cache
+cache-block granularity (e.g., transfer one or multiple words).               has to request the missing sectors from a lower-level cache or
+Therefore, a cache block may have both valid (up-to-date) and                 main memory and this is a sector miss, and 3) if there is no tag
+invalid (stale or evicted) words present in system caches. How-               match, this is a cache miss.
+ever, caches keep track of the valid on-chip data at cache block              Sector misses. On a sector miss, the cache controller creates a
+granularity. This granularity is too coarse to keep track of valid            memory request to retrieve the missing sector(s) from a lower-
+words in a cache block. Second (§5.2), because some words in                  level cache or main memory. The cache controller determines
+a cache block can be invalid, references to these words (e.g.,                the missing sector(s) by bitwise AND’ing the memory request’s
+made by load/store instructions) would result in a cache miss.                (the request that triggers the sector miss) sector bits and the
+This can induce performance overheads.                                        sector bits that are not set in the cache block. When the created
+   We propose the following minor system modifications to                     memory request returns from a lower-level cache, the cache
+overcome Sectored DRAM’s integration challenges. First, to                    controller sets the cache block’s missing sector bits.
+track which words in a cache block are valid, we extend cache                 Sector cache compatibility. Sector caches do not require any
+blocks with additional bits each of which indicates if a 64-bit               modifications to existing cache coherence protocols (we explain
+word in the cache block is valid. Second, to accurately retrieve              how in the next paragraph). Sector caches are compatible
+all useful words in a cache block, i.e., words that will be used              with existing SRAM ECC schemes [77, 122, 81], as the invalid
+until the cache block is evicted, we develop two techniques: (i)              words (i.e., missing sectors) in a cache block can still be used
+Load-Store Queue (LSQ) Lookahead, and (ii) Sector Predictor.                  to correctly produce a codeword.
+5.1. Tracking Valid Words in the Processor                                    Cache Coherence. Sectored DRAM requires no modifica-
+                                                                              tions to existing cache coherence protocols that operate at the
+   Since a Sectored DRAM-based system can retrieve individ-
+                                                                              granularity of a cache block since cache coherence in Sectored
+ual words of a cache block from DRAM, system caches must
+                                                                              DRAM is still maintained at cache block granularity. A proces-
+store data at a granularity that is finer than the typical 512-
+                                                                              sor core can only modify a sector in a cache block if the core
+bit granularity. One straightforward approach to allow finer-
+                                                                              owns the entire cache block (e.g., the cache block is in the M
+granularity storage in caches is to reduce the cache block size
+                                                                              state in a MESI protocol). A cache block shared across multi-
+from 512 bits to the size of a word (e.g., 64 bits). However,
+                                                                              ple cores may have different valid sectors among its copies in
+for the same cache size, doing so requires implementing 8 ×
+                                                                              different private caches. However, this does not violate cache
+as much storage for cache block tags, which introduces sig-
+                                                                              coherence protocols.
+nificant area overhead. Instead, we extend cache blocks with
+                                                                              Other cache architectures. There are numerous other multi-
+just eight additional bits each of which indicates whether a
+                                                                              granularity cache architectures [98, 97, 102, 111, 62, 38] that
+word in the cache block is valid or invalid, using sectored
+                                                                              could be used instead of sectored caches in Sectored DRAM
+caches [72, 112, 4, 36, 101, 50, 7, 103, 73].
+                                                                              to improve cache utilization (e.g., by reducing the number of
+Sector cache organization. We add storage for eight sector
+                                                                              invalid words stored in a cache block) at the cost of increased
+bits to all system caches. We store sector bits in a CAM array
+                                                                              storage for tags and hardware complexity [62]. We use sec-
+(similar to how cache block tags are stored). This allows a
+                                                                              tored caches to minimize the storage and hardware complexity
+cache to find out if a sector is missing (i.e., a word is invalid)
+                                                                              overheads in Sectored DRAM and leave the exploration of
+in a cache block in parallel with the tag lookup. We divide a
+                                                                              other cache architectures in Sectored DRAM to future work.
+cache block into eight sectors, each corresponding to a word.
+Thus, we only add eight sector bits to a cache block, which                   5.2. Accurate Word Retrieval from Main Memory
+incurs low storage overhead (§7.5).                                              With sector caches, a Sectored DRAM-based system can
+Sector cache operation. We describe the three-step process                    transfer data at word granularity between components in the
+performed by a memory request to access a word in the highest-                memory hierarchy (e.g., between the L1 and the L2 cache) in-
+level sector cache (i.e., the L1 cache). First, the processor sends           stead of transferring data at cache block granularity. However,
+a memory request with a memory address and a vector of eight                  retrieving cache blocks word-by-word from DRAM can reduce
+sector bits to the highest-level cache. The sector bits identify              system performance compared to bringing cache blocks as a
+the words in the cache block that the processor core demands.                 whole because the processor needs to complete multiple high
+Second, the L1 cache uses the memory address to identify the                  latency DRAM accesses to retrieve a word (on a sector miss) as
+   7 In §8, we discuss how Sectored DRAM can be integrated into systems       opposed to completing a single memory access to retrieve the
+with different parameters (e.g., more sectors per chip).                      whole cache block. To minimize the performance overheads
+
+
+                                                                          7
+
+
+
+===== Page 8 =====
+
+induced by the additional DRAM accesses and to better bene-                         cache blocks. For example, a static load/store instruction in
+fit from the energy savings provided by Sectored DRAM, we                           a loop may perform strided accesses to the same word offset
+propose two mechanisms that greatly reduce the number of                            in different cache blocks. SP builds on a class of predictors
+sector misses.                                                                      referred to as spatial pattern predictors (e.g., [61, 16]). We tailor
+Load/Store Queue (LSQ) Lookahead. The key idea behind                               SP for predicting a cache block’s useful words (those that are
+LSQ Lookahead is to exploit the spatial locality in subsequent                      referenced by the processor during the cache block’s residency
+load/store instructions that target the same cache block. A                         in system caches), similar to what is done by [132].
+load or a store instruction typically references one word in                           Fig. 6b depicts the organization of the SP. The Sector History
+main memory. LSQ Lookahead, at a high level, looks ahead                            Table (SHT) stores the previously used sectors that identify the
+in the processor’s load/store queues8 and finds load and store                      sectors (words) that were touched by the processor in a now
+instructions that reference different words/sectors in the same                     evicted cache block in the L1 cache (❶). SHT is accessed with a
+cache block. LSQ Lookahead then collects the word/sector ref-                       table index that is computed by XOR-ing parts of the load/store
+erences, made by younger load/store instructions to the same                        instruction’s address with the word offset of the load/store
+cache block as the oldest load/store instruction, and stores the                    instruction’s memory address upon an L1 cache miss (❷). We
+collected sector references in the oldest load/store instruction’s                  extend the L1 cache to store the table index and the currently
+sector bits. This way, a load/store instruction, when executed,                     used sectors (❸). The currently used sectors in the cache track
+retrieves all words in a cache block that will be referenced in                     which sectors are used during a cache block’s residency. The
+the near future (by younger load/store instructions) to the L1                      table index is used to update the previously used sectors in an
+cache with only one cache access.                                                   entry in the SHT with the currently used sectors stored in the
+    Fig. 6a depicts how LSQ Lookahead is implemented over an                        cache block upon the cache block’s eviction (❹).
+example using load instructions. We extend each load address                                    Load Address             Load Address Sector Bits
+queue (LAQ, stores metadata for load instructions) entry with
+
+
+
+
+                                                                                                                                                                          old SB
+                                                                                                   Queue
+
+
+
+
+                                                                                                                                                            new 
+                                                                                      Head
+
+
+
+
+                                                                                                                                                            SB
+sector bits (SB). LSQ Lookahead works in two steps. First, when                                 V LA     SB          CB Address | Word Offset               1   0
+a new entry is allocated at LAQ’s tail (❶), the LSU compares                                    1                    2                                              3
+the new entry’s cache block address (CB address) with each of                           1                            CB Address | Word Offset
+
+
+                                                                                                     ...
+the existing entries’ cache block addresses (❷). Second, when                         Tail
+it finds a matching cache block address, it updates the existing                                0
+                                                                                                                                   New Load Instruction
+entry’s sector bits by setting the bit that corresponds to the                                            (a) LSQ Lookahead mechanism
+word referenced by the new entry (❸).                                                                                                               Sector
+                                                                                                          L1 Cache                           1
+Sector Predictor (SP). Although LSQ Lookahead prevents                                                                                           History Table
+some of the sector misses, it alone cannot significantly reduce
+
+
+
+
+                                                                                                                                                                        M entries
+                                                                                        Tag   Sector  Data    Currently Used        Table        Previously Used
+the number of sector misses. This is because load/store queues                                 Bits              Sectors
+                                                                                                                               3
+                                                                                                                                    Index            Sectors
+are typically not large enough to store many load/store in-                                                                                       4
+                                                                                         ...
+
+                                                                                                    ...
+
+
+
+                                                                                                                  ...
+
+
+
+
+                                                                                                                                                      ...
+structions, and dependencies (e.g., data dependencies) prevent
+                                                                                              Data Address
+the processor core from computing the memory addresses of
+                                                                                                Word Offset
+future load/store instructions. Thus, we require a more power-
+                                                                                                                                   Table Index
+ful mechanism to complement LSQ Lookahead and minimize                                                               M bits
+                                                                                                                                   2
+sector misses. To this end, we develop the Sector Predictor                                logM bits logM bits
+(SP).                                                                                    Instruction Address
+    SP, at a high level, records which words are used while a                                        (b) Sector Predictor table and indexing
+cache block is in the cache. The next time the same cache block                     Figure 6: Two system components of Sectored DRAM: a) LSQ
+misses, SP uses that signature to predict that the load would                       Lookahead and b) Sector Predictor
+need the same words. SP leverages two key observations to
+                                                                                       We describe how SP operates (not shown in the figure) in five
+accurately predict which words a load needs to access. First, the
+                                                                                    steps based on an example where a memory request accesses
+processor will “touch” (access or update) one or multiple words
+                                                                                    the L1 cache. First, when the memory request causes a cache
+in a cache block from the moment a cache block is fetched
+                                                                                    miss or a sector miss, the SHT is queried with the table index
+to system caches (from main memory) until it is evicted to
+                                                                                    to retrieve the previously used sectors. Second, the previously
+main memory. The touched words in a cache block will likely
+                                                                                    used sectors are added to the sector bits of the memory request
+be touched again when the cache block is next fetched from
+                                                                                    and forwarded to the next level in the memory hierarchy. Third,
+main memory. Second, dynamic instances of the same static
+                                                                                    the L1 miss allocates a new cache block in the L1 cache. Fourth,
+load/store instruction likely touch the same words in different
+                                                                                    the table index of the newly allocated cache block is updated
+    8 The LSQ stores the necessary metadata (e.g., register destination iden-
+                                                                                    with the table index used to access the SHT, and the cache
+tifiers, operands, and virtual and physical addresses of memory operands)
+to correctly execute and commit load and store instructions. We refer the
+                                                                                    block’s currently used sectors are set to logic-0. Fifth, once the
+readers to [113, 129, 114] for implementation details of the LSQ in modern          missing cache block is placed in the L1 cache, the cache block’s
+microprocessors.                                                                    currently used sectors start tracking the words that are touched
+
+
+                                                                                8
+
+
+
+===== Page 9 =====
+
+by future load/store instructions. When the same cache block                             6.2. Power Model
+is evicted from the L1 cache, the SHT entry corresponding                                DRAM power model. We use the Rambus Power Model [125,
+to the cache block’s table index is updated with the currently                           99] to model a DDR4 chip (Table 2) that supports Sectored
+used sectors.9                                                                           DRAM. We modify the model to (i) activate a smaller number
+6. Evaluation Methodology                                                                of sectors (SA) and (ii) reduce the burst size of data transfers for
+   We describe the workloads (§6.1), power model (§6.2), and                             partially activated DRAM rows (V BL). Our model considers
+simulation infrastructure used to evaluate Sectored DRAM                                 the power overheads introduced by the sector transistors and
+(§6.3). Table 2 shows our system configuration that we simu-                             latches. Rambus Power Model computes and reports the cur-
+late using Ramulator [59, 104, 74, 105]. Ramulator implements                            rent consumed by a sequence of DRAM commands (e.g., ACT ,
+all standard DDR4 timing parameters. Our simulation infras-                              RD, W R, and N OP ). We use three command sequences de-
+tructure is open source [107].                                                           scribed in one major DRAM manufacturer’s power calculation
+6.1. Workloads                                                                           guide [100] to calculate three important current values: IDD0
+   We use 41 workloads from the SPEC2006 [118] (23 work-                                 (ACT ), IDD4R (READ), and IDD4W (W RIT E).
+loads), SPEC2017 [119] (12 workloads)10 , and DAMOV [91]                                 Processor power model. We use an IPC-based model [132, 1]
+(6 DRAM-bandwidth-bottlenecked representative application                                to estimate the power consumed by the entire processor.
+functions) to evaluate Sectored DRAM. For every workload,                                The total power our 8-core processor consumes is equal to:
+                                                                                           4 × Dynamic P ower + Static P ower. We comprehen-
+                                                                                          IP C
+we generate memory traces corresponding to 100 million in-
+structions from representative regions in each workload using                            sively account for all Sectored DRAM power overheads. Our
+SimPoint [31]. We classify the workloads into three memory                               model includes the dynamic and static power consumed by the
+intensity categories (as also done by prior work [91, 33]), which                        sector predictor and the additional cache storage (modeled by
+Table 3 describes, using their observed last-level-cache (LLC)                           CACTI [84]). Our system energy results represent the energy
+misses-per-kilo-instruction (MPKI).                                                      consumed by main memory and the entire processor during
+                   Table 2: System configuration                                         the execution of an evaluated workload.
+                     1–16 cores, 3.6 GHz clock frequency, 4-wide issue                   6.3. Performance and Energy
+                     8 MSHRs per core, 128-entry issue window
+  Processor          32 KiB L1, 256 KiB L2, 8 MiB L3 caches                                 We evaluate Sectored DRAM’s performance and energy us-
+                     Dynamic Power: 101.7 W [71], Static Power: 32.0 W [71]
+                     64 entry read/write request queue, FR-FCFS-Cap [86]
+                                                                                         ing a modified version of Ramulator [59, 74], a cycle-accurate,
+  Mem. Ctrl.
+                     scheduling policy, Open-page row buffer policy,                     trace-based DRAM simulator, and a modified version of DRAM-
+                     Auto-precharge on last read/write to a row
+                     Row-Bank-Rank-Column-Channel address mapping [59]                   Power [12], a DRAM power and energy estimation tool. We
+                     DDR4 [44], 3200 MT/s data transfer rate, 1, 2, and 4 channels       extend Ramulator by implementing Sectored DRAM’s LSQ
+                     4 ranks, 16 banks/rank, 32K rows/bank
+  DRAM               64 subarrays/bank, 8 sectors/subarray                               Lookahead and Sector Predictor as described in §5. We mod-
+                     tRCD/tRAS/tRC/tF AW 13.75/35.00/48.75/25 ns
+                     tRRD_L/tRRD_S 5.00/2.50 ns                                          ify how Ramulator enforces the tF AW timing constraint. Our
+                     128-entry LSQ Lookahead (default)                                   modification allows for 32 sectors (i.e., the number of sectors
+  Sectored DRAM      512-entry Sector Predictor (default)
+                                                                                         in four rows) to be activated within a tF AW (e.g., the memory
+  Table 3: Evaluated workloads. -2006/-2017 indicates SPEC                               controller can activate 4 sectors from 8 different rows and 8
+  LLC MPKI                                Workloads                                      sectors from 4 different rows). The rate of ACT commands
+  ≥ 10
+                  ligraPageRank, mcf-2006, libquantum-2006, gobmk-2006,                  is still constrained by the tRRD_L and tRRD_S parameters
+                  ligraMIS, GemsFDTD-2006, bwaves-2006, lbm-2006,                        in our modified Ramulator model. Therefore, our memory
+  (High)
+                  lbm -2017, hashjoinPR                                                  controller issues up to 10 activate commands (calculated as
+                  omnetpp-2006, gcc-2017, mcf-2017, cactusADM-2006,
+  1..10
+                  zeusmp-2006, xalancbmk-2006, ligraKCore,
+                                                                                         25.0 ns/2.5 ns) in a tF AW window. To verify that the peak
+  (Medium)
+                  astar-2006, cactus-2017, parest-2017, ligraComponents                  power draw imposed by the higher rate of finer-granularity
+                  splash2Ocean, tonto-2006, xz-2017, wrf-2006, bzip2-2006,               ACT commands (e.g., an ACT command that activates only
+                  xalancbmk-2017, h264ref-2006, hmmer-2006, namd-2017,                   one sector from a row) does not increase the power require-
+  ≤1
+  (Low)
+                  blender-2017, sjeng-2006, perlbench-2006, x264-2017,                   ments of a DRAM chip, we compare the power draw of 1) four
+                  deepsjeng-2017, gromacs-2006, gcc-2006, imagick-2017,                  activate commands each of which activates all eight sectors
+                  leela-2017, povray-2006, calculix-2006
+                                                                                         in a row (the rate of activate commands are constrained by
+Multi-core workloads. We create 2-, 4-, 8-, and 16-core work-                            tF AW ) to 2) 10 activate commands each of which activates
+loads by replicating the same single-core workload over mul-                             one sector in a row (the rate of activate commands are con-
+tiple cores. We create 16 eight-core workload mixes for each                             strained by tRRD_S), in a default tF AW long time window
+memory intensity category by randomly picking eight single-                              (25 ns in our configuration) using Rambus Power Model [99].
+core workloads from every category.                                                      We find that 10 activate commands each of which activates
+   9 Due to aliasing in SHT index computation, multiple cache blocks can                 one sector from a row consume 20.34% less power than four
+point to the same SHT entry. SHT receives conflicting updates if two or more             activate commands each of which activates all eight sectors
+such cache blocks are evicted from L1 in the same clock cycle. SHT selects
+and applies only one update among conflicting updates.
+                                                                                         in a row (and as such Sectored DRAM operates within the
+  10 Due to our trace generation infrastructure limitations, we evaluate only            region that conventional DRAM is designed to operate). We
+those workloads that we could successfully generate traces for.                          modify DRAMPower by integrating Sectored DRAM’s current
+
+
+                                                                                     9
+
+
+
+===== Page 10 =====
+
+values (e.g., IDD0, IDD4R, and IDD4W) that we obtain from               MT/s), respectively (this observation is in line with that of a
+the modified Rambus Power Model.                                        prior work’s [21]).
+Performance metrics. We measure single-workload per-                       We conclude that 1) Sectored DRAM’s fine-grained DRAM
+formance using parallel speedup (i.e., the baseline single-core         data transfer and activation provide a significant reduction in
+execution time divided by the multi-core Sectored DRAM ex-              DRAM read and write power and energy and 2) the bus fre-
+ecution time), which allows us to evaluate Sectored DRAM’s              quency does not significantly affect DRAM read power relative
+scalability for a single workload. We measure workload mix              to DRAM activate power.
+performance using weighted speedup [115], which allows us               7.2. Number of Sector Misses
+to evaluate Sectored DRAM’s system throughput [26] in a                    To quantify the number of sector misses (see §5.1), we look
+heterogeneous computing environment.                                    at the LLC MPKI of workloads run with different Sectored
+7. Evaluation Results                                                   DRAM configurations. Fig. 8 plots the LLC MPKI for different
+                                                                        LSQ Lookahead (LA<number> where number is the num-
+ We evaluate Sectored DRAM’s impact on DRAM power, LLC
+                                                                        ber of entries looked ahead in the LSQ) and Sector Predictor
+MPKI, performance, energy, and DRAM area.
+                                                                        (SP<number> where number is the number of entries in the
+7.1. Impact on DRAM Power                                               SHT) configurations along with the Basic Sectored DRAM con-
+   Fig. 7 shows Sectored DRAM’s impact on DRAM power                    figuration which does not use LSQ Lookahead nor SP. Each
+consumption. We analyze the DRAM array power, DRAM pe-                  bar shows the average LLC MPKI across all evaluated work-
+ripheral circuitry power, and DRAM energy consumed by Sec-              loads in each benchmark suite (x-axis, see Table 3 for a list
+tored DRAM to perform ACT , READ, and W RIT E DRAM                      of all workloads classified according to their LLC MPKI) for a
+operations for 8, 4, 2, and 1 sectors. Our results show that            Sectored DRAM configuration.
+READ and W RIT E power and energy greatly reduces as                       We make three major observations. First, Sectored DRAM
+fewer sectors are read or written to.                                   without LSQ Lookahead and SP (Basic) greatly increases the
+   We make three observations from Fig. 7. First, SA and                LLC MPKI of a workload, on average by 3.1×, compared to
+V BL significantly improve READ and W RIT E power con-                  the baseline, due to sector misses. Second, LSQ Lookahead
+sumption. We find that the power consumed by DRAM while                 reduces the number of LLC misses of Basic by 25%, 41%, and
+reading from and writing to a sector is 70.0% and 70.6% smaller         51% by looking ahead 16, 128, and a currently very costly
+than reading from and writing to all sectors, respectively. This        2048 younger entries in the LSQ, respectively. This is because
+improvement is due to the (i) reduced sense amplifier activity          LSQ Lookahead can identify the words that will be used in
+in the DRAM array, (ii) reduced switching on the DRAM pe-               a cache block and retrieve these from DRAM with a single
+ripheral circuitry that transfers data between the DRAM array           memory request. Third, LSQ Lookahead together with SP
+and the DRAM I/O, and (iii) smaller number of beats in a burst          (LA128-SP512) reduces the number of LLC misses of Basic by
+to transfer data between the DRAM module and the memory                 52% and of LA128 by 18%. LA128-SP512 performs as well as the
+controller.                                                             currently very costly implementation of LSQ Lookahead which
+   Second, activating only one sector greatly reduces the power         looks ahead 2048 entries in the LSQ. LA128-SP512 does so as
+consumed by the DRAM array compared to activating all eight             SP greatly reduces the number of additional LLC misses by
+sectors. Because SA enables activating a small set of DRAM              recognizing intra-cache-block access patterns from previously
+sense amplifiers in a DRAM row, activating a single sector              performed memory requests and correctly predicts the words
+consumes 66.5% less DRAM array power compared to activat-               that will be used in a cache block.
+ing eight sectors. However, we find that activating one sector             We conclude that LSQ Lookahead with a 128 lookahead
+reduces the overall power consumption of an ACT operation               size together with SP minimizes the LLC misses caused by
+by only 12.7% compared to the baseline DDR4 module. This                sector misses. We use the LA128-SP512 configuration in the
+effect is small since the power consumed by the peripheral              remainder of our evaluation.
+circuitry makes up a large proportion of the activation power           7.3. Single-Workload Performance and Energy
+and is not affected by the number of sectors activated. Third,             We evaluate Sectored DRAM’s performance and energy us-
+the circuitry required to implement SA incurs little activation         ing (i) single-core workloads, and (ii) 2-, 4-, 8-, and 16-core
+power overhead. Compared to the baseline DDR4 module, SA                multi-programmed workloads made up of identical single-core
+increases activation power by only 0.26% due to additional              workloads. We compare Sectored DRAM’s performance and
+switching activity in master wordline drivers (§4.1).                   system energy to a baseline coarse-grained DRAM system.
+Effects of DRAM Bus Frequency. We investigate how                       Microbenchmark performance. Fig. 9 shows the normal-
+DRAM bus frequency affects the read power (IDD4R) relative              ized parallel speedup of a random access (Random, left) and a
+to the activate power (IDD0). We repeat our experiments using           strided streaming access (Stride, right) workload for the base-
+2× the frequency of the baseline bus frequency (i.e., 3200 MHz          line system and Sectored DRAM (LA128-SP512). The Ran-
+or 6400 MT/s). The read power (IDD4R) is 12.39× and 12.42×              dom workload accesses i) one randomly determined word in
+higher than the activate power (IDD0) at the baseline bus fre-          main memory (8 bytes) by executing a load instruction every
+quency (3200 MT/s) and twice the baseline bus frequency (6400           five instructions and ii) has a very high LLC MPKI of 178.29.
+
+
+                                                                   10
+
+
+
+===== Page 11 =====
+
+                                                           DRAM Array Power         DRAM Periphery Power                  DRAM Energy
+                                            ACT                                         READ                                                  WRITE
+                          160                                      800                                              800
+ Energy (nJ) Power (mW)
+
+                          120                                      600                                              600
+                           80                                      400                                              400
+                           40                                      200                                              200
+                            0                                        0                                                0
+                          8.0                                      2.0                                              2.0
+                          6.0                                      1.6                                              1.6
+                          4.0                                      1.2                                              1.2
+                          2.0                                      0.8                                              0.8
+                                                                   0.4                                              0.4
+                          0.0                                      0.0                                              0.0
+                                8       4         2         1                 8     4          2          1                    8          4           2         1
+                                             Figure 7: DRAM command power and energy for varying number of sectors
+
+                     100                                                                  25
+                      80                                                                  20                                       Baseline           LA2048
+LLC MPKI
+
+
+
+
+                      60                                                                  15                                       Basic              SP512
+                      40                                                                  10                                       LA16               LA16-SP512
+                      20                                                                   5                                       LA128              LA128-SP512
+                       0                                                                   0
+                                    DAMOV             SPEC2006           SPEC2017                    GeoMean
+                                                      Figure 8: LLC MPKI for different Sectored DRAM configurations
+
+ These two properties of Random make it a good fit for Sectored                          and low MPKI (bottom row) workloads for the baseline system
+ DRAM as Random accesses only one sector in every cache line.                            (solid lines) and Sectored DRAM (dashed lines). Fig. 10b (top
+ The Stride workload accesses i) every word address in a con-                            row) shows the distribution of normalized parallel speedups
+ tiguous, 16 MiB large memory address range with a stride of                             of all high, medium, and low MPKI workloads.11
+ 64 bytes, i.e., Stride accesses the following addresses [0, 64, 128,                       We make three observations from the two figures. First,
+ ..., 8, 72, 132, ..., 16, ...] and ii) has a very high LLC MPKI of                      Sectored DRAM provides higher parallel speedup over the
+ 78.57. Stride is a poor fit for Sectored DRAM because every                             baseline for high MPKI workloads when the number of cores
+ access to a word in a cache line results in a sector miss (none                         is larger than two. For example, Sectored DRAM provides 26%
+ of the accessed 8-byte words are cached and these words have                            higher parallel speedup than the baseline for all 16-core high
+ to be fetched from main memory), where the large cache block                            MPKI workloads on average.12 As the average row buffer hit
+ reuse distance prevents LSQ Lookahead from prefetching all                              rate for 16-core high MPKI workloads is only 18%, the memory
+ useful words in a cache block.                                                          controller needs to issue many ACT (activate) commands to
+     We make two major observations from Fig. 9. First, Sectored                         serve the memory requests. Sectored DRAM’s tF AW reduction
+ DRAM provides significant performance benefits for work-                                (§4.1) allows the memory controller to issue the large number
+ loads that randomly access words (e.g., Random). Sectored                               of ACT commands required by these workloads (i.e., 82% of all
+ DRAM’s performance benefits increase with the number of                                 main memory requests) at a higher rate, reducing the average
+ cores (i.e., with increasing LLC MPKI) for Random because a                             memory access latency for these workloads (by 25% on average
+ larger fraction of all memory requests (random word accesses)                           for 16-core high MPKI workloads). Second, Sectored DRAM,
+ benefit from Sectored DRAM’s reduction in tF AW (§4.1). Sec-                            on average, provides a smaller parallel speedup compared to
+ tored DRAM provides 1.11×, 1.69×, 1.87×, 1.87×, and 1.87×                               the baseline for low and medium MPKI workloads. Although
+ normalized parallel speedup for 1, 2, 4, 8, and 16 cores, respec-                       Sectored DRAM’s tF AW reduction reduces the proportion of
+ tively for Random. Second, Sectored DRAM reduces system                                 processor cycles where the memory controller has to stall to
+ performance for workloads that frequently cause sector misses                           satisfy the tF AW timing parameter from 14.4% in the baseline
+ (e.g., Stride). Sectored DRAM provides 0.67×, 0.95×, 1.00×,                             to 6.5% in Sectored DRAM for 16-core low and medium MPKI
+ 1.00×, and 1.00× the normalized parallel speedup of Baseline                            workloads, the average memory latency for these workloads
+ for 1, 2, 4, 8, and 16 cores, respectively for Stride. Sectored                            11 Each box is lower-bounded by the first quartile and upper-bounded by the
+
+ DRAM’s performance becomes closer to Baseline as the num-                               third quartile. The median falls within the box. The inter-quartile range (IQR)
+ ber of cores increases. This is because the LLC is not large                            is the distance between the first and third quartiles (i.e., box size). Whiskers
+                                                                                         extend to the minimum and maximum data point values on either side of the
+ enough to store all cache lines accessed by four or more cores                          box, while a bubble depicts average values.
+ for Stride (i.e., Baseline accesses main memory to retrieve each                           12 We observe a decrease in normalized parallel speedup for hmmer-2006
+
+ word, similarly to Sectored DRAM).                                                      and mcf-2017 as the number of cores increase from 8 to 16. This is because
+                                                                                         the two workloads, when ran on 16 cores, contend for memory at a higher
+ Performance. The two lines in Fig. 10a show the normalized                              degree than when ran on 8 cores in the simulated system. For example, 16-core
+ parallel speedup (on the primary/left y-axis) of three repre-                           hmmer-2006 has 24.41% higher average latency for memory requests than
+ sentative high MPKI (top row), medium MPKI (middle row),                                8-core hmmer2006.
+
+
+                                                                                    11
+
+
+
+===== Page 12 =====
+
+                                        2
+Parallel Speedup                                Random                                                                                                                  Stride                                    Baseline              SectoredDRAM
+  Normalized
+
+                                        1
+                                        0
+                                                   1                2          4         8                                                       16                              1                     2         4         8                        16
+                                                                         Number of Cores                                                                                                                   Number of Cores
+                                  Figure 9: Normalized parallel speedup of random and strided streaming microbenchmarks for varying number of cores
+                                                Baseline                SectoredDRAM
+                                        ligraMIS               hashjoinPR      libquantum−2006
+                                                                                                                                                                                                   Baseline                 SectoredDRAM
+
+
+
+
+                                                                                                                                                          Parallel Speedup
+                              8                                                                   1.5                                                                                        High MPKI             Medium MPKI                  Low MPKI
+
+
+
+
+                                                                                                                                   High MPKI
+Normalized Parallel Speedup
+
+
+
+
+                              6                                                                   1.0
+
+
+
+
+                                                                                                                                                            Normalized
+                                                                                                                                                                                                                                       16
+
+
+
+
+                                                                                                        Normalized System Energy
+                              4                                                                   0.5                                                                                                       13
+                              2                                                                                                                                              4                                                         13
+                              0                                                                   0.0                                                                                                       10                         10
+                                   1    2 4 8 16           1   2 4 8 16        1 2 4 8 16                                                                                                                    7                          7
+                                                                                                                                                                             1                               4                          4
+                                        gcc−2017               mcf−2017        xalancbmk−2006                                                                                                                1                          1
+                              8                                                                   1.5
+
+
+
+
+                                                                                                                                   Medium MPKI
+                              6                                                                   1.0
+                                                                                                                                                                                     1       2 4 8 16             1    2 4 8 16             1    2 4 8 16
+                              4                                                                   0.5                                                                                        High MPKI                Medium MPKI               Low MPKI
+
+
+
+
+                                                                                                                                                          System Energy
+                              2                                                                   0.0
+                              0                                                                                                                                              13                                                        5
+
+
+
+
+                                                                                                                                                           Normalized
+                                   1    2 4 8 16           1    2 4 8 16       1    2 4 8 16                                                                                 11                               5
+                                                                                                                                                                              9
+                                       hmmer−2006              bzip2−2006          tonto−2006                                                                                 7                               3                        3
+                              8                                                                   1.5                              Low MPKI                                   5
+                              6                                                                   1.0                                                                         3                               1                        1
+                              4                                                                   0.5                                                                         1
+                              2                                                                   0.0
+                              0                                                                                                                                                          1     2   4   8 16        1    2   4   8 16        1   2   4    8 16
+                                   1    2   4    8 16      1    2   4   8 16   1   2   4   8 16
+                                                                                                                                                                                                                  Number of Cores
+                                                        Number of Cores
+                                                                                                                                                          (b) Normalized parallel speedup (top) and system energy (bottom)
+(a) Normalized parallel speedup (primary/left y-axis) and system                                                                                          distribution of all high, medium, and low LLC MPKI workloads
+energy (secondary/right x-axis) of representative high, medium,                                                                                           for varying number of cores11
+and low LLC MPKI workloads for 1–16 cores
+                                                                            Figure 10: Sectored DRAM system performance and energy
+
+increases by 0.5% in Sectored DRAM compared to the base-                                                                                               sumption by 12% for 16-core medium/low MPKI workloads.
+line. Moreover, for these workloads, sector misses increase the                                                                                        The increase in DRAM energy consumption together with the
+number of memory requests on average by 69%. Because a                                                                                                 increase in background power consumption by the 1computing
+larger number of memory requests experience higher latencies                                                                                           system (as workloads execute slower, Fig. 10a) increases the
+in Sectored DRAM compared to the baseline, Sectored DRAM                                                                                               system energy consumption for these workloads.
+provides a smaller parallel speedup for these workloads. Third,                                                                                          We conclude that Sectored DRAM improves system perfor-
+Sectored DRAM incurs 5.41% performance overhead on aver-                                                                                               mance and reduces system energy consumption in high MPKI
+age across all single-core workloads. We attribute this to sector                                                                                      workloads where: (i) a high number of ACT s targets different
+misses that increase the number of memory requests and the                                                                                             DRAM banks (i.e., the workload is bound by tF AW ), and (ii)
+average memory latency.                                                                                                                                the sector predictor can accurately predict the used words.
+System energy consumption. The bars in Fig. 10a show the                                                                                               7.4. Multiprogrammed Workload Performance and
+system energy consumption (on the secondary/right y-axis) of                                                                                                Energy
+Sectored DRAM normalized to the system energy consumption                                                                                                 We evaluate Sectored DRAM’s performance and energy
+of the baseline. Fig. 10b (bottom) shows the distribution of                                                                                           using multi-programmed workload mixes. To stress DRAM
+normalized system energy consumption for workloads from                                                                                                and cache hierarchy, we use high MPKI workload mixes. We
+three categories (low, medium, and high MPKI). We make two                                                                                             compare Sectored DRAM’s performance and main memory
+observations. First, Sectored DRAM reduces system energy                                                                                               access energy to a baseline coarse-grained DRAM system
+consumption for high MPKI workloads when the number of                                                                                                 and three state-of-the-art fine-grained DRAM mechanisms:
+cores is larger than two. On average at 16 cores, high MPKI                                                                                            (i) Fine-Grained Activation (FGA) [18, 124], (ii) Partial Row
+workloads’ system energy consumption reduces by 20%. Sec-                                                                                              Activation (PRA) [68], and (iii) HalfDRAM [136] and HalfPage-
+tored DRAM achieves this by a combination of (i) reduced                                                                                               DRAM [30]13 . Unless otherwise stated, HalfDRAM depicts the
+DRAM energy consumption due to SA and V BL (we present                                                                                                 evaluated performance and energy of both HalfDRAM and
+a detailed breakdown of SA and V BL’s effects on DRAM en-                                                                                              HalfPageDRAM in the remainder of the paper.
+ergy consumption in §7.4), and (ii) reduced background power                                                                                           Performance. Fig. 11 (top) shows the weighted speedup [20,
+consumption by the computing system as workloads execute                                                                                               26, 56] of 16 workload mixes for Sectored DRAM and the
+faster. Second, for medium and low MPKI workloads, Sectored                                                                                               13 We estimate HalfPageDRAM’s [30] performance and energy benefits using
+DRAM increases system energy consumption. We observe                                                                                                   HalfDRAM [136] as both techniques enable half-size DRAM row activations
+that Sectored DRAM increases the average DRAM energy con-                                                                                              at high DRAM throughput.
+
+
+                                                                                                                                                  12
+
+
+
+===== Page 13 =====
+
+three state-of-the-art fine-grained DRAM mechanisms, nor-                     consumption, normalized to the baseline system DRAM energy
+malized to the baseline system. We make four observations.                    consumption, averaged across all workload mixes. We make
+First, Sectored DRAM’s weighted speedup is 1.17× (1.36×)                      two observations.
+that of the baseline, on average (maximum), across all work-                                1.2   ACT           RD/WR                      1.2
+
+
+
+
+                                                                                                                           System Energy
+                                                                              DRAM Energy
+                                                                                                  Background
+                                                                                            1.0                                            1.0
+load mixes. This is due to Sectored DRAM’s tF AW reduc-                                     0.8                                            0.8
+                                                                                            0.6                                            0.6
+tion. Sectored DRAM serves READ requests faster (Sectored                                   0.4                                            0.4
+
+
+DRAM’s average DRAM read latency is approximately 25%
+                                                                                            0.2                                            0.2
+                                                                                            0.0                                            0.0
+                                                                                                  Baseline Sectored DRAM                         H0   H1   H2   H3   H4   H5   H6   H7   H8   H9   H10 H11 H12 H13 H14 H15GMean
+
+smaller compared to the baseline) and thus improves the perfor-               Figure 12: DRAM energy breakdown normalized to total DRAM
+mance of the memory-intensive workloads. Second, Sectored                     energy consumed by the baseline (left). System energy normal-
+DRAM greatly outperforms naive fine-grained DRAM mecha-                       ized to the baseline (right) for different workload mixes.
+nisms (i.e., FGA [18, 124]). We observe that Sectored DRAM’s
+                                                                                  First, Variable Burst Length (V BL) greatly reduces the
+weighted speedup is 2.05× that of FGA, on average across
+                                                                              RD/W R energy by 51%, on average. Using V BL, the sys-
+all workloads. FGA mechanisms greatly reduce the through-
+                                                                              tem retrieves only the required (and predicted to be required)
+put of DRAM data transfers as they are limited to fetching a
+                                                                              words of a cache block from the DRAM module. On average,
+cache block from a single mat (§3.1). Third, Sectored DRAM’s
+                                                                              the number of bytes transferred between the memory con-
+weighted speedup is 1.10× that of PRA, on average across
+                                                                              troller and the DRAM module is reduced by 55% (not shown)
+all workloads. Sectored DRAM outperforms PRA by enabling
+                                                                              with Sectored DRAM compared to the baseline. In this way, the
+fine-grained DRAM access and activation for both READ
+                                                                              system uses the power-hungry memory channel more energy-
+and W RIT E operations, while PRA is limited to W RIT E
+                                                                              efficiently, eliminating unnecessary data movement. Second,
+operations.
+                                                                              Sectored Activation (SA) can reduce the energy spent on acti-
+                        Sectored DRAM     PRA      FGA       HalfDRAM         vating DRAM rows by 6% on average. The reduction in ACT
+Improvement
+
+
+
+
+              2.0
+                                                                              energy is relatively small. This is because the memory con-
+  Speedup
+  Weighted
+
+
+
+
+              1.5
+              1.0                                                             troller issues more ACT commands compared to the baseline
+              0.5
+              0.0                                                             in Sectored DRAM. The new ACT commands (i) respond to
+                                                    0 1 2 3 4 5 an
+                    H0 H1 H2 H3 H4 H5 H6 H7 H8 H9 H1 H1 H1 H1 H1 H1 Me        the additional memory requests caused by sector misses, and
+                                                                   G
+Normalized
+
+
+
+
+              2.0                                                             (ii) resolve the row conflicts that occur due to interference
+  Energy
+  DRAM
+
+
+
+
+              1.5
+              1.0                                                             created by the sector misses.
+              0.5
+              0.0                                                             System energy consumption. Fig. 12 (right) shows the en-
+                                                    0 1 2 3 4 5 an
+                    H0 H1 H2 H3 H4 H5 H6 H7 H8 H9 H1 H1 H1 H1 H1 H1 Me        ergy consumed by the Sectored DRAM system (processor and
+                                                                   G
+                                      Workload Mix                            DRAM) normalized to the energy consumed by the baseline
+Figure 11: Weighted speedup improvement over the baseline                     system for all workloads. We observe that Sectored DRAM re-
+(higher is better) on top. DRAM energy normalized to the                      duces system energy consumption, on average (at maximum),
+baseline (lower is better) on the bottom.
+                                                                              by 14% (23%). Sectored DRAM does so by (i) reducing DRAM
+    Fourth, Sectored DRAM’s weighted speedup is 0.89× that of                 energy consumption, and (ii) reducing background power con-
+HalfDRAM, on average across all workloads. Sectored DRAM                      sumption by the processor as workloads execute faster.
+cannot improve performance as much as HalfDRAM since,
+                                                                              7.5. Area Overhead
+in Sectored DRAM, the memory controller needs to service
+additional memory requests caused by sector misses. However,                  Modeled DRAM chip. We use CACTI [84] to model the area
+as we show next, HalfDRAM’s higher performance benefits                       of a DRAM chip (Table 2) using 22nm technology. Our model is
+come at the cost of higher area overheads (§7.5) and lower                    open source [107]. Our modeled DRAM chip takes up, in each
+energy savings than Sectored DRAM.                                            bank: (i) 8.3 mm2 for DRAM cells, (ii) 3.2 mm2 for wordline
+DRAM energy consumption. Fig. 11 (bottom) shows the                           drivers, (iii) 4.6 mm2 for sense amplifiers, (iv) 0.1 mm2 for row
+DRAM energy consumption of each workload mix for Sec-                         decoder, (v) <0.1 mm2 for column decoder, and (vi) <0.4 mm2
+tored DRAM and the state-of-the-art mechanisms. Values are                    for data and address bus.
+normalized to the DRAM energy in the baseline system. We                      Sectored DRAM. We model the overhead of (i) 8 additional
+observe that (i) Sectored DRAM significantly reduces DRAM                     LWD stripes, (ii) sector transistors, (iii) sector latches, and (iv)
+energy consumption compared to the baseline, leading to up                    wires that propagate sector bits from sector latches to sector
+to (average) 33% (20%) lower DRAM energy consumption, and                     transistors to implement Sectored Activation (§4.1). Sectored
+(ii) Sectored DRAM enables larger DRAM energy savings com-                    DRAM introduces 2.26% area overhead (0.39 mm2 ) over the
+pared to prior works. On average, across all workload mixes,                  baseline DRAM bank. Overall, Sectored DRAM increases the
+Sectored DRAM reduces DRAM energy consumption by 84%,                         area of the chip (16 banks and I/O circuitry) by only 1.72%.
+13%, and 12% compared to FPA, PRA, and HalfDRAM.                              FGA [18, 124] and PRA [68]. We estimate the area overhead
+    We analyze the impact of Sectored DRAM on the energy                      of these architectures to be the same as Sectored DRAM be-
+consumed by DRAM operations. Fig. 12 (left) shows the DRAM                    cause they require the same set of modifications to the DRAM
+energy broken down into ACT , background, and RD/W R                          array to enable Fine-DRAM-Act.
+
+
+                                                                         13
+
+
+
+===== Page 14 =====
+
+HalfDRAM [136] and HalfPage [30]. We estimate the chip                  baseline for memory-intensive workloads. Dynamic provides
+area overheads of HalfDRAM and HalfPage as 2.6% and 5.2%, re-           higher speedups than Always ON, on average across all work-
+spectively. Both HalfDRAM and HalfPage require 8 additional             load mixes and classes, even though Dynamic provides slightly
+LWD stripes like Sectored DRAM does. HalfDRAM further                   lower speedups than Always ON for high memory-intensive
+requires implementing double the number of CSL signals [136]            workloads.
+to enable mirrored connection, and HalfPage requires doubling           Better sector prediction. Improving the SP’s accuracy
+the number of HFFs per mat [30].                                        would reduce the additional LLC misses. A more sophis-
+Processor. We use CACTI to model the storage overhead                   ticated SP could be developed by tracking the access pat-
+of sector bits in caches (1 byte/cache block) and the sector            terns of instructions with deeper history, or other techniques
+predictor (1088 bytes/core). The sector bits (200 KiB additional        (e.g., reinforcement learning [9, 41], perceptron-based predic-
+storage for a system with 12.5 MiB cumulative L1, L2, and L3            tion [47, 48, 46, 123, 49, 28, 8]) could be used to predict the
+cache capacity) and the predictor storage increase the area of          useful words.
+the 8-core processor by 1.22%.                                          8.3. Sectored DRAM with Prefetching
+8. Discussion                                                              We implement Sectored DRAM support in a simple region-
+8.1. Sectored DRAM with More Memory Channels                            based single-stride prefetcher (based on [37, 117]) to demon-
+   We evaluate 2- and 4-channel systems to study Sectored               strate Sectored DRAM’s performance in a system with
+DRAM’s impact on memory performance in systems equipped                 prefetching enabled. We model two new system configura-
+with more than one memory channel. Fig. 13 shows the nor-               tions Baseline-Prefetch and Sectored DRAM-Prefetch. Baseline-
+malized parallel speedup of all high, medium, and low LLC               Prefetch incorporates the simple prefetcher that partitions
+MPKI homogeneous workloads for varying numbers of cores                 physical memory address space into 4-KiB (i.e., page-sized)
+on the x-axis. Different boxes show Baseline and Sectored               regions and assigns a stream to each region. A region is trained
+DRAM configurations with 1, 2, and 4 memory channels.                   after four consecutive memory accesses with the same stride,
+   We observe that more memory channels increase system                 and the prefetcher starts issuing prefetch requests for subse-
+performance on average across all workloads for Baseline and            quent last-level cache (LLC) accesses (hits and misses) that
+Sectored DRAM. For example, for HIGH MPKI 16-core work-                 target the memory region. We configure the prefetcher to
+loads Sectored DRAM provides 2.74×, 5.09×, and 8.94× aver-              have a degree of four, and the first prefetch request targets
+age normalized parallel speedup for 1-channel, 2-channel, and           four cache blocks ahead of the memory request that accesses
+4-channel systems, respectively.                                        the LLC. Sectored DRAM-Prefetcher augments this prefetcher
+8.2. Non-Memory-Intensive Workloads                                     with support for sector bits. Sectored DRAM-Prefetcher sets
+   Sectored DRAM’s current system integration can lead to               the sector bits of a prefetch request based on the sector bits of
+varying performance benefits depending on the workload’s                the memory request that resulted in the prefetch request (i.e.,
+memory intensity. We propose two approaches to overcome                 hit or missed in the LLC). For example, if a memory request
+the performance degradation in non-memory-intensive work-               asks for the first three sectors of a cache line, the prefetch
+loads.                                                                  request also asks for the first three sectors of their respective
+Dynamically turning Sectored DRAM off. Sectored DRAM                    cache lines.
+can be turned off while the system executes non-memory-                    Fig. 15 shows the normalized speedup (x-axis) for Baseline
+intensive (i.e., low and medium MPKI workloads) workloads.              and Sectored DRAM (with and without prefetching) across all
+To do so, we leverage the performance counters already present          evaluated single-core workloads.
+in modern processors [39, 6, 40] to periodically compute the               We observe that Sectored DRAM-Prefetch improves system
+average occupancy of the memory controller’s read request               performance by 1.07% (37.56%) on average (at maximum) com-
+queue (i.e., the average number of requests in the read request         pared to Sectored DRAM without prefetching.14 We conclude
+queue) and turn Sectored DRAM on/off when the computed                  that the simple stride prefetcher design improves Sectored
+value exceeds an empirically determined threshold. We (i) pe-           DRAM’s performance. We leave the design and analysis of a
+riodically (every 1000 cycles) compute the average occupancy            more sophisticated Sectored DRAM prefetcher for future work.
+of the memory controller’s read request queue, and (ii) turn            8.4. Finer-Granularity Sector Support
+Sectored DRAM on for the next 1000 cycles if the average occu-             We design and evaluate Sectored DRAM with 8 sectors. Ex-
+pancy exceeds 30 or turn Sectored DRAM off otherwise. Fig. 14           tending Sectored DRAM to support more sectors could enable
+shows the weighted speedup for 16 workload mixes from each              higher energy and performance benefits but would require (i)
+memory intensity category, normalized to the coarse-grained             transferring additional sector bits to DRAM from the memory
+DRAM baseline. We show results for two configurations: Al-              controller and (ii) more DRAM circuit area to place additional
+ways ON never turns Sectored DRAM off and Dynamic turns                 sector latches.
+Sectored DRAM on and off as described above.                               Our implementation allows us to transfer up to 14 sector
+   We observe that the Dynamic configuration allows Sectored            bits with each P RE command to DRAM (§4.1). To transfer
+DRAM to perform as well as the baseline for non-memory-                   14 Performance drop induced by the prefetcher can be curbed using prefetch
+
+intensity workloads and maintain better performance than the            throttling techniques [24, 25, 23], e.g., Feedback Directed Prefetching [117].
+
+
+                                                                   14
+
+
+
+===== Page 15 =====
+
+                                         Baseline−1Ch                Baseline−2Ch              Baseline−4Ch           SectoredDRAM−1Ch          SectoredDRAM−2Ch           SectoredDRAM−4Ch
+Normalized Parallel Speedup
+
+
+                                                               High MPKI                                           Medium MPKI                                  Low MPKI
+                              16
+
+                              13
+
+                              10
+
+                               7
+
+                               4
+
+                               1
+
+                                           1          2              4         8          16          1        2           4      8      16         1       2       4        8      16
+                                                                                                               Number of Cores
+Figure 13: Normalized parallel speedup of all low, medium, and high LLC MPKI homogeneous workloads for varying number of
+cores11
+
+                                   1.5
+                                                                           Low MPKI
+                                                                                                                              Recent DRAM chips implement on-die ECC which allows
+                                   1.0                                                                                     the DRAM chip to correct errors transparently from the mem-
+                                   0.5
+                                                                                                                           ory controller [93, 94, 95]. Sectored DRAM is compatible with
+Weighted Speedup
+
+
+
+
+                                   0.0
+                                           L0   L1   L2   L3    L4   L5   L6   L7   L8   L9 L10 L11 L12 L13 L14 L15
+                                                                                                                           on-die ECC schemes that operate at the granularity of a single
+   Normalized
+
+
+
+
+                                                                          Medium MPKI
+                                   1.5                                                                                     sector (e.g., 8 bits). To develop an on-die ECC scheme for Sec-
+                                   1.0
+                                   0.5                                                                                     tored DRAM, existing on-die ECC schemes could be modified
+                                   0.0
+                                          M0 M1 M2 M3 M4 M5 M6 M7 M8 M9 M10 M11 M12 M13 M14 M15
+                                                                                                                           to operate at the granularity of a single sector or new ECC
+                                                                           High MPKI                                       schemes could be developed. We leave such exploration for
+                                   1.5
+                                   1.0
+                                                                                                                           future work.
+                                   0.5
+                                   0.0
+                                                                                                                           8.6. Sector Cache Benefits
+                                          H0    H1   H2   H3    H4   H5   H6   H7   H8   H9 H10 H11 H12 H13 H14 H15
+                                                                                                                              We use sector caches to integrate Sectored DRAM into a
+                                                           Always ON                      Dynamic
+                                                                                                                           full system. A comprehensive design space exploration for
+                     Figure 14: Weighted speedup for Always ON and Dynamic                                                 sector caches is out of the scope of this work (we refer the
+more than 14 sector bits, (i) DRAM command encoding could                                                                  reader to [72, 112, 4, 36, 101, 50, 7, 103, 73, 62, 97]). Sector
+be extended with new signals to carry the sector bits (e.g.,                                                               caches incur chip area costs but offer power and performance
+another signal/pin for every additional sector bit), (ii) a new                                                            benefits beyond those that we demonstrate in our work (using
+DRAM command with enough space allocated in its encoding                                                                   Sectored DRAM). For example, powering off SRAM subarrays
+for sector bits could be implemented, or (iii) sector bits for                                                             that contain invalid words in a cache block could save power
+a single SA operation could be transferred to DRAM over                                                                    (e.g., [97]), or filling up these invalid words with valid words
+multiple P RE commands.                                                                                                    from other cache blocks could increase effective cache capacity
+   We evaluate the area required by additional sector latches                                                              and improve system performance (e.g., [62]).
+and find it to be very small. Implementing 8 more sector latches                                                           9. Related Work
+brings Sectored DRAM’s DRAM chip area overhead from 1.72%
+to 1.78%.                                                                                                                     Sectored DRAM is the first low-cost and high-performance
+                                                                                                                           DRAM substrate that alleviates the energy waste on the DRAM
+8.5. DRAM Error Correcting Codes (ECC)                                                                                     bus, by enabling (i) Fine-grained DRAM data transfer (Fine-
+   SECDED-ECC [83] used in today’s systems is naturally com-                                                               DRAM-Transfer) and (ii) Fine-grained DRAM row activation
+patible with Sectored DRAM. Some systems make use of more                                                                  (Fine-DRAM-Act). We extensively compare Sectored DRAM
+specialized, Chipkill-like ECC (e.g., single symbol error cor-                                                             qualitatively and quantitatively with the most relevant, low-
+rection [5, 130, 17]). Sectored DRAM can easily support the                                                                cost, state-of-the-art fine-grained DRAM architectures [18, 136,
+single symbol error correction (SSC [5, 130, 17]) scheme. In                                                               68, 30, 124] in §3.1 and §7.4. In this section, we discuss other
+this scheme, the ECC codeword consists of 32 4-bit data sym-                                                               related works.
+bols and four 4-bit ECC symbols with a total size of 144 bits.                                                             Other Fine-Grained activation mechanisms. Prior
+128 data bits are encoded to form ECC symbols. The DRAM                                                                    works [135, 3, 116, 92, 15] propose other fine-grained DRAM
+module consists of 16 x4 chips to store data symbols and 2 x4                                                              architectures. These architectures require intrusive reorgani-
+chips to store ECC symbols. The module transmits 72 bits with                                                              zation of the DRAM array and/or modifications to the DRAM
+each beat of the data burst and an ECC codeword is transmitted                                                             on-chip interconnect. Some works [15, 92, 116] target higher-
+over two beats of a data burst. To support the SSC scheme,                                                                 bandwidth DRAM standards and offer significant performance
+Sectored DRAM can use burst lengths that are multiples of                                                                  and activation energy improvements. [135] develops a new in-
+two, which allows the DRAM module to transmit whole ECC                                                                    terconnect that serializes data from multiple partially activated
+codewords with every DRAM access.                                                                                          banks. [3] divides DRAM mats into submats by adding more
+
+
+                                                                                                                      15
+
+
+
+===== Page 16 =====
+
+                                           Baseline
+
+                                Baseline w/ Prefetch
+
+                                    SectoredDRAM
+
+                          SectoredDRAM w/ Prefetch
+
+
+                                                       0.7    0.8               0.9              1.0              1.1
+                                                                     Normalized Speedup
+             Figure 15: Normalized speedup (x-axis) of all single-core workloads for Baseline and Sectored DRAM11
+
+helper flip-flops to mitigate the throughput loss of fine-grained        10. Conclusion
+activation. These works do not reduce the energy wasted on                  We designed a new, high-throughput, energy-efficient, and
+the memory channel by avoiding the transfer of unused words,             practical fine-grained DRAM architecture, Sectored DRAM.
+which Sectored DRAM does at low chip area cost.                          Compared to prior fine-grained DRAM architectures, our de-
+                                                                         sign significantly improves both system energy and perfor-
+DRAM-module-level Fine-DRAM-Transfer. A class of                         mance. It does so by eliminating (i) the energy waste caused by
+prior work [131, 132, 2, 137, 11, 126] proposes new DRAM                 transferring unused words between the processor and DRAM,
+module designs (e.g., subranked DIMMs [2, 131, 132, 126]) that           and (ii) the energy spent on activating DRAM cells that are not
+allow independent operation of each DRAM chip in a DRAM                  accessed by memory requests. Activating a smaller number of
+module (§2.1) in order to implement Fine-DRAM-Transfer.                  cells allows the memory controller to serve memory requests
+From a system standpoint, Sectored DRAM is a more practical              with lower memory access latency. While effective at improv-
+mechanism to implement compared to module-level mecha-                   ing both system energy and performance, Sectored DRAM is
+nisms because Sectored DRAM requires no modifications to                 also practical and can be implemented at low hardware cost.
+the physical DRAM interface. Similar to Sectored DRAM, these             Acknowledgements
+mechanisms (e.g., DGMS [132]) require modifications to DRAM
+                                                                           We thank the anonymous reviewers of MICRO 2022, HPCA
+(i.e., modifications to the DRAM module in DGMS and to the
+                                                                         2023, and TACO for their feedback. We thank the SAFARI Re-
+DRAM chip in Sectored DRAM) and the processor. However,
+                                                                         search Group members for providing a stimulating intellectual
+on top of these modifications, module-level mechanisms also re-
+                                                                         environment. We acknowledge the generous gifts from our
+quire modifications to the physical DRAM interface (e.g., three
+                                                                         industrial partners; including Google, Huawei, Intel, and Mi-
+additional pins to select one of the eight chips in a rank [2]),
+                                                                         crosoft. This work is supported in part by the Semiconductor
+thus making module-level mechanisms incompatible with cur-
+                                                                         Research Corporation, the ETH Future Computing Laboratory,
+rent industry standards (i.e., JEDEC specifications [44]). In
+                                                                         and the AI Chip Center for Emerging Smart Systems (ACCESS).
+contrast, Sectored DRAM does not require modifications to
+the physical DRAM interface, and thus, Sectored DRAM chips               References
+                                                                          [1] J. H. Ahn et al., “Future Scaling of Processor-Memory Interfaces,” in SC, 2009.
+comply with existing DRAM industry standards and specifica-               [2] J. H. Ahn et al., “Multicore DIMM: An Energy Efficient Memory Module with
+tions.                                                                        Independently Controlled DRAMs,” CAL, 2009.
+                                                                          [3] T. Alawneh et al., “Dynamic Row Activation Mechanism for Multi-Core Systems,”
+                                                                              in CF, 2021.
+                                                                          [4] D. B. Alpert and M. J. Flynn, “Performance Trade-Offs for Microprocessor Cache
+   We quantitatively evaluate a subranked DIMM design                         Memories,” IEEE Micro, 1988.
+(DGMS [132]) that can be implemented with minimal mod-                    [5] AMD, “BIOS and Kernel Developer’s Guide (BKDG) for AMD Family 15h Models
+                                                                              00h-0Fh Processors,” Developer’s Guide, 2013.
+ifications to the physical DRAM interface. This design can                [6] AMD, “uProf User Guide,” https://www.amd.com/content/dam/amd/en/documents/
+                                                                              developer/version-4-1-documents/uprof/uprof-ug-rev-4.1.pdf, 2022.
+operate subranks independently and each subrank can receive               [7] C. Anderson and J.-L. Baer, “Two Techniques for Improving Performance on Bus-
+one DRAM command per DRAM command bus cycle (i.e., 1x                         Based Multiprocessors,” in HPCA, 1995.
+                                                                          [8] R. Bera et al., “Hermes: Accelerating Long-Latency Load Requests via Perceptron-
+ABUS scheme [131]). We find that this design reduces system                   Based Off-Chip Load Prediction,” in MICRO, 2022.
+performance for the high MPKI workload mixes, causing a                   [9] R. Bera et al., “Pythia: A Customizable Hardware Prefetching Framework Using
+                                                                              Online Reinforcement Learning,” in MICRO, 2021.
+23% reduction in weighted speedup on average. Even though                [10] I. Bhati et al., “Flexible Auto-Refresh: Enabling Scalable and Energy-Efficient DRAM
+the subranked DIMM allows requests to be served from differ-                  Refresh Reductions,” in ISCA, 2015.
+                                                                         [11] T. M. Brewer, “Instruction Set Innovations for the Convey HC-1 Computer,” IEEE
+ent subranks in parallel, the DRAM command bus bandwidth                      Micro, 2010.
+                                                                         [12] K. Chandrasekar et al., “DRAMPower: Open-Source DRAM Power & Energy Esti-
+is insufficient to allow timely scheduling of these requests                  mation Tool,” http://www.drampower.info, 2012.
+to different subranks [132] (i.e., the command bus becomes               [13] K. K. Chang et al., “Understanding Latency Variation in Modern DRAM Chips:
+                                                                              Experimental Characterization, Analysis, and Optimization,” in SIGMETRICS, 2016.
+the bottleneck). The DRAM command bus bandwidth can be                   [14] K. K. Chang et al., “Understanding Reduced-Voltage Operation in Modern DRAM De-
+                                                                              vices: Experimental Characterization, Analysis, and Mechanisms,” in SIGMETRICS,
+increased to enable higher-performance subranked DIMM de-                     2017.
+                                                                         [15] N. Chatterjee et al., “Architecting an Energy-Efficient DRAM System for GPUs,” in
+signs. However, this comes at additional hardware cost and                    HPCA, 2017.
+modifications to the physical DRAM interface [132]. In con-              [16] C. F. Chen et al., “Accurate and Complexity-Effective Spatial Pattern Prediction,” in
+                                                                              HPCA, 2004.
+trast, Sectored DRAM improves the weighted speedup for the               [17] C. L. Chen, “Symbol Error Correcting Codes for Memory Applications,” in Annual
+same set of workloads by 17% on average and requires no                       Symposium on Fault Tolerant Computing, 1996.
+                                                                         [18] E. Cooper-Balis and B. Jacob, “Fine-Grained Activation for Power Reduction in
+modifications to the physical DRAM interface.                                 DRAM,” IEEE Micro, 2010.
+
+
+
+                                                                    16
+
+
+
+===== Page 17 =====
+
+[19] A. Dalalah et al., “New Hardware Architecture for Bit-Counting,” in WSEAS, 2006.                 [69] C. Lefurgy et al., “Energy Management for Commercial Servers,” Computer, 2003.
+[20] R. Das et al., “Application-Aware Prioritization Mechanisms for On-Chip Networks,”               [70] S. Li et al., “DRISA: A DRAM-Based Reconfigurable In-Situ Accelerator,” in MICRO,
+     in MICRO, 2009.                                                                                       2017.
+[21] H. David et al., “Memory Power Management via Dynamic Voltage/Frequency                          [71] S. Li et al., “The McPAT Framework for Multicore and Manycore Architectures
+     Scaling,” in ICAC, 2011.                                                                              Simultaneously Modeling Power, Area, and Timing,” TACO, 2013.
+[22] R. H. Dennard, “Field-Effect Transistor Memory,” US Patent No. 3,387,286, 1968.                  [72] J. S. Liptay, “Structural Aspects of the System/360 Model 85, II: The Cache,” IBM
+[23] E. Ebrahimi et al., “Prefetch-Aware Shared Resource Management for Multi-Core                         Systems Journal, 1968.
+     Systems,” in ISCA, 2011.                                                                         [73] K.-C. Liu and C.-T. King, “On the Effectiveness of Sectored Caches in Reducing False
+[24] E. Ebrahimi et al., “Coordinated Control of Multiple Prefetchers in Multi-Core                        Sharing Misses,” in ICPADS, 1997.
+     Systems,” in MICRO, 2009.                                                                        [74] H. Luo et al., “Ramulator 2.0: A Modern, Modular, and Extensible DRAM Simulator,”
+[25] E. Ebrahimi et al., “Techniques for Bandwidth-Efficient Prefetching of Linked Data                    arXiv:2308.11030 [cs.AR], 2023.
+     Structures in Hybrid Prefetching Systems,” in HPCA, 2009.                                        [75] H. Luo et al., “RowPress: Amplifying Read Disturbance in Modern DRAM Chips,” in
+[26] S. Eyerman and L. Eeckhout, “System-Level Performance Metrics for Multiprogram                        ISCA, 2023.
+                                                                                                      [76] J. A. Mandelman et al., “Challenges and Future Directions for the Scaling of Dynamic
+     Workloads,” IEEE Micro, 2008.
+[27] L. Frontini et al., “A Very Compact Population Count Circuit for Associative Memo-                    Random-Access Memory (DRAM),” IBM JRD, 2002.
+     ries,” in MOCAST, 2018.                                                                          [77] T. Mano et al., “Submicron VLSI Memory Circuits,” in ISSCC, 1983.
+[28] E. Garza et al., “Bit-level Perceptron Prediction for Indirect Branches,” in ISCA, 2019.         [78] D. M. Mathew et al., “Using Run-Time Reverse-Engineering to Optimize DRAM
+[29] S. Ghose et al., “Demystifying Complex Workload-DRAM Interactions: An Experi-                         Refresh,” in MEMSYS, 2017.
+     mental Study,” in SIGMETRICS, 2019.                                                              [79] D. M. Mathew et al., “Using Runtime Reverse Engineering to Optimize DRAM
+[30] H. Ha et al., “Improving Energy Efficiency of DRAM by Exploiting Half Page Row                        Refresh,” 2020, uS Patent No. 10,622,054.
+                                                                                                      [80] Micron Technology, SDRAM, 4Gb: x4, x8, x16 DDR4 SDRAM Features, 2014.
+     Access,” in MICRO, 2016.                                                                         [81] W. Moore, “A Review of Fault-Tolerant Techniques for the Enhancement of Inte-
+[31] G. Hamerly et al., “Simpoint 3.0: Faster and More Flexible Program Phase Analysis,”
+                                                                                                           grated Circuit Yield,” Proceedings of the IEEE, 1986.
+     Journal of Instruction Level Parallelism, 2005.
+                                                                                                      [82] T. Moscibroda and O. Mutlu, “Memory Performance Attacks: Denial of Memory
+[32] P. Hammarlund et al., “Haswell: The Fourth-Generation Intel Core Processor,” IEEE                     Service in Multi-Core Systems,” in USENIX Security, 2007.
+     Micro, 2014.
+[33] M. Hashemi et al., “Accelerating Dependent Cache Misses with an Enhanced Mem-                    [83] S. Mukherjee, Architecture Design for Soft Errors. Morgan Kaufmann Publishers
+     ory Controller,” in ISCA, 2016.                                                                       Inc., 2008.
+[34] H. Hassan et al., “CROW: A Low-Cost Substrate for Improving DRAM Performance,                    [84] N. Muralimanohar et al., “CACTI 6.0: A Tool to Model Large Caches,” HP Laborato-
+     Energy Efficiency, and Reliability,” in ISCA, 2019.                                                   ries, Tech. Rep. HPL-2009-85, 2009.
+[35] H. Hassan et al., “ChargeCache: Reducing DRAM Latency by Exploiting Row Access                   [85] O. Mutlu, “Memory Scaling: A Systems Architecture Perspective,” in IMW, 2013.
+     Locality,” in HPCA, 2016.                                                                        [86] O. Mutlu and T. Moscibroda, “Stall-Time Fair Memory Access Scheduling for Chip
+[36] M. D. Hill and A. J. Smith, “Experimental Evaluation of On-Chip Microprocessor                        Multiprocessors,” in MICRO, 2007.
+     Cache Memories,” in ISCA, 1984.                                                                  [87] O. Mutlu and T. Moscibroda, “Parallelism-Aware Batch Scheduling: Enhancing Both
+[37] S. Iacobovici et al., “Effective Stream-Based and Execution-Based Data Prefetching,”                  Performance and Fairness of Shared DRAM Systems,” in ISCA, 2008.
+     in ICS, 2004.                                                                                    [88] K. J. Nesbit et al., “Fair Queuing Memory Systems,” in MICRO, 2006.
+[38] K. Inoue et al., “Dynamically Variable Line-Size Cache Exploiting High On-chip                   [89] A. Olgun et al., “QUAC-TRNG: High-Throughput True Random Number Generation
+     Memory Bandwidth of Merged DRAM/Logic LSIs,” in HPCA, 1999.                                           Using Quadruple Row Activation in Commodity DRAMs,” in ISCA, 2021.
+[39] Intel, “Intel Alder Lake Events,” https://perfmon-events.intel.com/, 2022.                       [90] G. F. Oliveira et al., “MIMDRAM: An End-to-End Processing-Using-DRAM System
+[40] Intel, “Intel Performance Counter Monitor - A Better Way to Measure CPU Utiliza-                      for High-Throughput, Energy-Efficient and Programmer-Transparent Multiple-
+     tion,” https://intel.ly/3xLo80Y, 2022.                                                                Instruction Multiple-Data Computing,” in HPCA, 2024.
+[41] E. Ipek et al., “Self-Optimizing Memory Controllers: A Reinforcement Learning                    [91] G. F. Oliveira et al., “DAMOV: A New Methodology and Benchmark Suite for
+     Approach,” in ISCA, 2008.                                                                             Evaluating Data Movement Bottlenecks,” IEEE Access, 2021.
+[42] K. Itoh, VLSI Memory Chip Design. Springer Science & Business Media, 2013.                       [92] M. O’Connor et al., “Fine-Grained DRAM: Energy-Efficient DRAM for Extreme
+[43] JEDEC, JESD79-3: DDR3 SDRAM Standard, 2007.                                                           Bandwidth Systems,” in MICRO, 2017.
+[44] JEDEC, JESD79-4C: DDR4 SDRAM Standard, 2020.                                                     [93] M. Patel, “Enabling Effective Error Mitigation In Memory Chips That Use On-Die
+[45] JEDEC, JESD79-5: DDR5 SDRAM Standard, 2020.                                                           Error-Correcting Codes,” Ph.D. dissertation, ETH Zürich, 2022.
+[46] D. A. Jiménez, “Fast Path-Based Neural Branch Prediction,” in MICRO, 2003.                       [94] M. Patel et al., “Understanding and Modeling On-Die Error Correction in Modern
+[47] D. A. Jiménez and C. Lin, “Dynamic Branch Prediction with Perceptrons,” in HPCA,                      DRAM: An Experimental Study Using Real Devices,” in DSN, 2019.
+     2001.                                                                                            [95] M. Patel et al., “Bit-Exact ECC Recovery (BEER): Determining DRAM On-Die ECC
+[48] D. A. Jiménez and C. Lin, “Neural Methods for Dynamic Branch Prediction,” TOCS,                       Functions by Exploiting DRAM Data Retention Characteristics,” in MICRO, 2020.
+     2002.
+[49] D. A. Jiménez and E. Teran, “Multiperspective Reuse Prediction,” in MICRO, 2017.                 [96] I. Paul et al., “Harmonia: Balancing Compute and Memory Power in High-
+[50] M. Kadiyala and L. Bhuyan, “A dynamic cache sub-block design to reduce false                          Performance GPUs,” in ISCA, 2015.
+     sharing,” in ICCD, 1995.                                                                         [97] P. Pujara and A. Aggarwal, “Increasing the Cache Efficiency by Eliminating Noise,”
+[51] D. Kaseridis et al., “Minimalist Open-Page: A DRAM Page-Mode Scheduling Policy                        in HPCA, 2006.
+     for the Many-Core Era,” in MICRO, 2011.                                                          [98] M. K. Qureshi et al., “Line Distillation: Increasing Cache Capacity by Filtering
+[52] B. Keeth et al., DRAM Circuit Design: Fundamental and High-Speed Topics. Wiley-                       Unused Words in Cache Lines,” in HPCA, 2007.
+     IEEE Press, 2008.                                                                                [99] Rambus, “DRAM Power Model,” https://www.rambus.com/energy/, 2014.
+[53] J. S. Kim et al., “The DRAM Latency PUF: Quickly Evaluating Physical Unclonable                 [100] Rambus, “TN-40-07:           Calculating Memory Power for DDR4 SDRAM,”
+     Functions by Exploiting the Latency-Reliability Tradeoff in Modern Commodity                          https://www.micron.com/-/media/client/global/documents/products/
+     DRAM Devices,” in HPCA, 2018.                                                                         technical-note/dram/tn4007_ddr4_power_calculation.pdf, 2017.
+[54] J. S. Kim et al., “D-RaNGe: Using Commodity DRAM Devices to Generate True                       [101] J. B. Rothman and A. Smith, “Sector Cache Design and Performance,” in MASCOTS,
+     Random Numbers With Low Latency and High Throughput,” in HPCA, 2019.                                  2000.
+                                                                                                     [102] J. B. Rothman and A. J. Smith, “The Pool of Subsectors Cache Design,” in ICS, 1999.
+[55] J. S. Kim et al., “Revisiting RowHammer: An Experimental Analysis of Modern                     [103] J. B. Rothman and A. J. Smith, “Minerva: An Adaptive Subblock Coherence Protocol
+     DRAM Devices and Mitigation Techniques,” in ISCA, 2020.                                               for Improved SMP Performance,” in ISHPC, 2002.
+[56] Y. Kim et al., “ATLAS: A Scalable and High-Performance Scheduling Algorithm for                 [104] SAFARI Research Group, “Ramulator – GitHub Page,” https://github.com/
+     Multiple Memory Controllers,” in HPCA, 2010.                                                          CMU-SAFARI/ramulator, 2023.
+[57] Y. Kim et al., “Thread Cluster Memory Scheduling: Exploiting Differences in Memory              [105] SAFARI Research Group, “Ramulator 2.0 — GitHub Repository,” https://github.com/
+     Access Behavior,” in MICRO, 2010.                                                                     CMU-SAFARI/ramulator2, 2023.
+[58] Y. Kim et al., “A Case for Exploiting Subarray-Level Parallelism (SALP) in DRAM,”               [106] SAFARI Research Group, “DAMOV Benchmark Suite and Simulation Framework,”
+     in ISCA, 2012.                                                                                        https://github.com/CMU-SAFARI/DAMOV, 2024.
+[59] Y. Kim et al., “Ramulator: A Fast and Extensible DRAM Simulator,” CAL, 2016.                    [107] SAFARI Research Group, “Sectored dram – github page,” https://github.com/
+[60] K. Koo et al., “A 1.2V 38nm 2.4Gb/s/pin 2Gb DDR4 SDRAM with Bank Group and                            CMU-SAFARI/Sectored-DRAM, 2024.
+     ×4 Half-Page Architecture,” in ISSCC, 2012.                                                     [108] V. Seshadri et al., “RowClone: Fast and Energy-Efficient In-DRAM Bulk Data Copy
+[61] S. Kumar and C. Wilkerson, “Exploiting Spatial Locality in Data Caches Using                          and Initialization,” in MICRO, 2013.
+     Spatial Footprints,” in ISCA, 1998.                                                             [109] V. Seshadri et al., “Ambit: In-Memory Accelerator for Bulk Bitwise Operations Using
+[62] S. Kumar et al., “Amoeba-Cache: Adaptive Blocks for Eliminating Waste in the                          Commodity DRAM Technology,” in MICRO, 2017.
+     Memory Hierarchy,” in MICRO, 2012.                                                              [110] V. Seshadri and O. Mutlu, “In-DRAM Bulk Bitwise Execution Engine,”
+[63] C. J. Lee et al., “Improving Memory Bank-Level Parallelism in the Presence of                         arXiv:1905.09822 [cs.AR], 2019.
+     Prefetching,” in MICRO, 2009.                                                                   [111] A. Seznec, “Decoupled Sectored Caches: Conciliating Low Tag Implementation
+[64] D. Lee et al., “Design-Induced Latency Variation in Modern DRAM Chips: Charac-                        Cost,” in ISCA, 1994.
+     terization, Analysis, and Latency Reduction Mechanisms,” in SIGMETRICS, 2017.                   [112] A. J. Smith, “Line (Block) Size Choice for CPU Cache Memories,” TC, 1987.
+[65] D. Lee et al., “Adaptive-Latency DRAM: Optimizing DRAM Timing for the Common-                   [113] J. E. Smith et al., “The ZS-1 Central Processor,” in ASPLOS, 1987.
+     Case,” in HPCA, 2015.                                                                           [114] J. E. Smith and G. Sohi, “The microarchitecture of superscalar processors,” Proceed-
+[66] D. Lee et al., “Tiered-Latency DRAM: A Low Latency and Low Cost DRAM Archi-                           ings of the IEEE, 1995.
+     tecture,” in HPCA, 2013.                                                                        [115] A. Snavely and D. M. Tullsen, “Symbiotic Jobscheduling for a Simultaneous Multi-
+[67] D. Lee et al., “Decoupled Direct Memory Access: Isolating CPU and IO Traffic by                       threaded Processor,” in ASPLOS, 2000.
+     Leveraging a Dual-Data-Port DRAM,” in PACT, 2015.                                               [116] Y. H. Son et al., “Microbank: Architecting Through-Silicon Interposer-Based Main
+[68] Y. Lee et al., “Partial Row Activation for Low-Power DRAM System,” in HPCA, 2017.                     Memory Systems,” in SC, 2014.
+
+
+
+                                                                                                17
+
+
+
+===== Page 18 =====
+
+[117] S. Srinath et al., “Feedback Directed Prefetching: Improving the Performance and        [127] M. Ware et al., “Architecting for Power Management: The IBM® POWER7™ Ap-
+      Bandwidth-Efficiency of Hardware Prefetchers,” in HPCA, 2007.                                 proach,” in HPCA, 2010.
+[118] Standard Performance Evaluation Corp., “SPEC CPU® 2006,” http://www.spec.org/           [128] A. G. Yaglikci et al., “HiRA: Hidden Row Activation for Reducing Refresh Latency
+      cpu2006, 2006.                                                                                of Off-the-Shelf DRAM Chips,” in MICRO, 2022.
+[119] Standard Performance Evaluation Corp., “SPEC CPU® 2017,” http://www.spec.org/           [129] K. Yeager, “The Mips R10000 Superscalar Microprocessor,” IEEE Micro, 1996.
+      cpu2017, 2017.                                                                          [130] R. Yeleswarapu and A. K. Somani, “Addressing Multiple Bit/Symbol Errors in DRAM
+[120] L. Subramanian et al., “BLISS: Balancing Performance, Fairness and Complexity in              Subsystem,” arXiv:1908.01806, 2020.
+      Memory Access Scheduling,” TPDS, 2016.                                                  [131] D. H. Yoon et al., “Adaptive Granularity Memory Systems: A Tradeoff Between
+[121] K. Sudan et al., “Micro-Pages: Increasing DRAM Efficiency with Locality-Aware                 Storage Efficiency and Throughput,” in ISCA, 2011.
+      Data Placement,” in ISCA, 2010.                                                         [132] D. H. Yoon et al., “The Dynamic Granularity Memory System,” in ISCA, 2012.
+[122] J. M. Tendler et al., “POWER4 system microarchitecture,” IBM Journal of Research
+                                                                                              [133] G. L. Yuan et al., “Complexity Effective Memory Access Scheduling for Many-Core
+      and Development, 2002.
+                                                                                                    Accelerator Architectures,” in MICRO, 2009.
+[123] E. Teran et al., “Perceptron Learning for Reuse Prediction,” in MICRO, 2016.            [134] I. E. Yuksel et al., “Functionally-Complete Boolean Logic in Real DRAM Chips:
+[124] A. N. Udipi et al., “Rethinking DRAM Design and Organization for Energy-                      Experimental Characterization and Analysis,” in HPCA, 2024.
+      Constrained Multi-Cores,” in ISCA, 2010.                                                [135] C. Zhang and X. Guo, “Enabling Efficient Fine-Grained DRAM Activations with
+[125] T. Vogelsang, “Understanding the Energy Consumption of Dynamic Random Access
+                                                                                                    Interleaved I/O,” in ISLPED, 2017.
+      Memories,” in ISCA, 2010.                                                               [136] T. Zhang et al., “Half-DRAM: A High-Bandwidth and Low-Power DRAM Architec-
+[126] F. A. Ware and C. Hampel, “Improving Power and Data Efficiency with Threaded
+                                                                                                    ture from the Rethinking of Fine-Grained Activation,” in ISCA, 2014.
+      Memory Modules,” in ICCD, 2006.
+                                                                                              [137] H. Zheng et al., “Mini-Rank: Adaptive DRAM Architecture for Improving Memory
+                                                                                                    Power Efficiency,” in MICRO, 2008.
+
+
+
+
+                                                                                         18
+

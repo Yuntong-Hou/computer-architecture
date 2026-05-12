@@ -1,0 +1,994 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/lec4-paper-reading/sources/original-paper/SimplePIM_pact23.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC4/original-paper/SimplePIM_pact23.pdf
+Raw URL: https://raw.githubusercontent.com/Yuntong-Hou/computer-architecture/main/LEC4/original-paper/SimplePIM_pact23.pdf
+Accessed: 2026-05-11 11:24:25 UTC
+
+
+
+===== Page 1 =====
+
+                      SimplePIM: A Software Framework for
+                  Productive and Efficient Processing-in-Memory
+              Jinfan Chen1        Juan Gómez-Luna1              Izzat El Hajj2        Yuxin Guo1         Onur Mutlu1
+                                         1
+                                             ETH Zürich    2
+                                                               American University of Beirut
+
+   Data movement between memory and processors is a major               crucial for adopting PIM in real-world systems, as previously
+bottleneck in modern computing systems. The processing-in-              discussed in the literature [1, 4].
+memory (PIM) paradigm aims to alleviate this bottleneck by per-            To facilitate the adoption of PIM in real-world systems,
+forming computation inside memory chips. Real PIM hardware              we propose a high-level programming framework called Sim-
+(e.g., the UPMEM system) is now available and has demonstrated          plePIM. SimplePIM abstracts the complexities of PIM hardware,
+potential in many applications. However, programming such real          supports multiple important applications such as histogram
+PIM hardware remains a challenge for many programmers.                  and K-means, and delivers high performance.
+   This paper presents a new software framework, SimplePIM, to             The PIM systems targeted by our framework resemble dis-
+aid programming real PIM systems. The framework processes               tributed systems, where each PIM core has exclusive access to
+arrays of arbitrary elements on a PIM device by calling iter-           a memory region. However, a distributed system typically in-
+ator functions from the host and provides primitives for com-           volves individual machines connected via a network and needs
+munication among PIM cores and between PIM and the host                 to handle node crash failures [60–65] or even Byzantine fail-
+system. We implement SimplePIM for the UPMEM PIM system                 ures [66–69]. Many distributed systems use voting protocols to
+and evaluate it on six major applications. Our results show             elect coordinator nodes for system management [62–65]. How-
+that SimplePIM enables 66.5% to 83.1% reduction in lines of code        ever, failure handling should not be a concern for PIM since the
+in PIM programs. The resulting code leads to higher perfor-             PIM cores are not constantly failing and re-joining the system.
+mance (between 10% and 37% speedup) than hand-optimized                 In PIM systems, the host CPU is responsible for coordinating
+code in three applications and provides comparable performance          the PIM cores and handling communication between them.
+in three others. SimplePIM is fully and freely available at             SimplePIM leverages the power of the central host to manage
+https://github.com/CMU-SAFARI/SimplePIM.                                the entire system, including bookkeeping of the framework
+1. Introduction                                                         metadata and merging of intermediate results from PIM cores.
+                                                                        Additionally, the host CPU facilitates communication with the
+Processing-in-memory (PIM) [1–4] is a computing paradigm
+                                                                        outside world, such as network or I/O operations.
+that places compute units in the memory chip to avoid moving
+data between the memory and the CPU cores. This paradigm                   To support PIM systems, SimplePIM provides iterators such
+has been shown to offer significantly higher memory band-               as map, reduce, and zip. These iterators are commonly found
+width and lower memory access latency for a wide variety                in programming languages (e.g., Python, Haskell) and dis-
+of applications, including graph processing [5–9], machine              tributed frameworks (e.g., MapReduce [61], Spark [70]). Their
+learning [10–24], database operations [25–30], sparse linear            purpose is to separate the application logic from the parallel
+algebra [9, 31], stochastic computing [32], climate model-              decomposition of work across cores and threads.
+ing [33,34], stencil computations [35], mobile applications [15],          To facilitate communication of data between the host CPU
+and bioinformatics [36–42]. The UPMEM PIM system [43, 44]               and the PIM cores, SimplePIM also provides broadcast,
+is the first commercially available PIM hardware with general-          scatter, and gather collective communication techniques
+purpose cores embedded in the DRAM chip. Prior works                    that involve the host CPU as the root node. Communica-
+show that the UPMEM PIM system can benefit numerous                     tion primitives among the PIM cores, such as allreduce and
+applications [10–12, 26, 29, 31, 40, 45–54]. Several other sim-         allgather, are also available. The communication interface
+ilar PIM architectures have also been presented and proto-              is similar to the message-passing paradigm used in MPI [71].
+typed [13, 25, 55–58].                                                  However, unlike MPI, which is homogenous and fully dis-
+   Programming a real PIM system is a challenging task due              tributed, in SimplePIM, the host CPU always plays the unique
+to the complexities involved. For example, the UPMEM PIM                role of the root node in managing the entire system and merg-
+system requires programmers to distribute data across the               ing the intermediate results from different PIM cores.
+DRAM banks, launch PIM kernels on the PIM cores, manage                    We implement and evaluate SimplePIM on a real PIM sys-
+the transfer of data between the DRAM banks and the PIM                 tem, UPMEM [43], with six different applications: reduction,
+cores, and orchestrate the execution of multiple PIM threads            vector addition, histogram, linear regression, logistic regres-
+on each PIM core [59]. This task requires deep knowledge of             sion, and K-means. These applications have previously been
+PIM hardware and system architecture as well as proficiency in          implemented on UPMEM [10–12, 26], providing a baseline
+low-level APIs, which presents a steep learning curve. Suitable         for comparing performance, correctness, and code complex-
+library, programming model, compiler, and tool support is               ity. SimplePIM offers a programmer-friendly interface and
+
+
+                                                                    1
+
+
+
+===== Page 2 =====
+
+requires 4.4× fewer lines of code, on average, compared to the          view of the first-generation UPMEM architecture from a pro-
+best existing open-source hand-optimized implementations. In            grammer’s perspective. The UPMEM hardware is connected
+addition, we apply several code optimizations to tailor our Sim-        to the host system via DRAM DIMM connections. A state-of-
+plePIM implementation to the underlying hardware, making                the-art UPMEM server contains up to 20 PIM-enabled DIMMs,
+it suitable for UPMEM. Our evaluation results show that Sim-            each with 2 ranks of 8 PIM chips. Each PIM chip has eight
+plePIM performs similarly to hand-optimized implementations             64MB DRAM banks, with a programmable PIM core, a 64KB
+in three applications, and outperforms them in the remain-              scratchpad memory, and 24KB instruction memory coupled
+ing three, despite its general-purpose design. Specifically, for        to each bank. In total, there are up to 2,560 PIM cores. Data
+vector addition, logistic regression, and K-means, SimplePIM            transfers between the scratchpad memory and the DRAM bank
+performs 1.10×, 1.17×, and 1.37× faster than the best prior             occur through explicit data transfer commands, with a maxi-
+hand-optimized implementations in weak scaling tests and                mum bandwidth of 800MB/s per bank. The entire PIM system
+1.15×, 1.22×, and 1.43× faster in strong scaling tests.                 provides a maximum bandwidth of 2TB/s for all PIM cores.
+   Our main contributions are:                                                        Host DRAM
+• We design and introduce SimplePIM, the first high-level                           DRAM    DRAM    DRAM    DRAM    DRAM    DRAM    DRAM    DRAM
+
+
+   programming framework tailored to improve programming
+                                                                                     Chip    Chip    Chip    Chip    Chip    Chip    Chip    Chip
+
+                                                                                    DRAM
+                                                                                     Chip
+                                                                                            DRAM
+                                                                                             Chip
+                                                                                                    DRAM
+                                                                                                     Chip
+                                                                                                            DRAM
+                                                                                                             Chip
+                                                                                                                    DRAM
+                                                                                                                     Chip
+                                                                                                                            DRAM
+                                                                                                                             Chip
+                                                                                                                                    DRAM
+                                                                                                                                     Chip
+                                                                                                                                            DRAM
+                                                                                                                                             Chip
+                                                                                                                                                                        PIM DRAM
+   productivity in general-purpose PIM architectures. We open-                                                                                         xM
+                                                                                                                                                                       Bank (64MB)
+                                                                         Host
+   source SimplePIM at https://github.com/CMU-SAFARI/                    CPU                                                                                         Instruction    Scratchpad
+   SimplePIM to enhance programming accessibility and aid
+                                                                                       PIM DRAM             PIM DRAM           PIM DRAM             PIM DRAM                          (64KB)
+                                                                                                                                                                    Memory (24KB)
+                                                                                         Bank                 Bank               Bank                 Bank
+
+   the adoption of PIM systems.                                                         PIM Core            PIM Core            PIM Core            PIM Core
+                                                                                                                                                                           PIM Core
+• We implement SimplePIM on the UPMEM PIM architec-                                 PIM DRAM
+                                                                                                                                                               xN
+
+
+   ture and develop six PIM workloads (reduction, vector ad-
+                                                                                   Figure 1: The UPMEM PIM Architecture
+   dition, histogram, linear regression, logistic regression, and
+   K-means) using it. SimplePIM provides a significant reduc-              The PIM cores operate at 450 MHz and feature an 11-stage
+   tion in the number of lines of code ranging from 66.5% to            pipeline. They can perform one integer addition/subtraction
+   83.1%, i.e., productivity improvements of 2.98× to 5.93×             per cycle and 32-bit integer multiplication/division in, at most,
+   compared to the best prior hand-optimized open-source im-            32 cycles when the pipeline is fully utilized. However, floating-
+   plementations written using the UPMEM SDK.                           point operations may take tens to 2000 cycles to complete, as
+• We explore and implement performance optimization tech-               explained in [26]. The 2,560 independent PIM cores operate
+   niques both in general and specific to SimplePIM. The Sim-           in parallel, providing a peak compute throughput exceeding 1
+   plePIM implementation of the evaluated workloads performs            TOPS (Tera operations per second). There is no direct commu-
+   similarly to hand-optimized implementations in three appli-          nication mechanism among different PIM cores in hardware.
+   cations and achieves a speedup of 1.10×-1.43× in the other           All communication occurs through memory transfers between
+   three applications.                                                  the host DRAM and the PIM DRAM.
+                                                                           Writing a functionally correct PIM program for a system like
+2. Background                                                           the UPMEM PIM architecture is challenging, and optimizing
+Numerous real PIM architectures have been introduced that               code for performance requires programmers to have a deep
+aim to bring compute units closer to memory [13, 25, 43, 44, 55–        understanding of the PIM hardware. To program PIM cores,
+58]. For example, AxDIMM [13] places an FPGA near DRAM                  programmers must manually manage the scratchpad mem-
+ranks to accelerate recommendation systems [13] and database            ory to ensure good performance. Data transfers between the
+operators [25]. FIMDRAM [55] features vector processing units           scratchpad memory and the corresponding PIM DRAM bank
+near the banks of High Bandwidth Memory (HBM). FIMDRAM                  must be 8-byte aligned and not exceed a 2,048-byte limit. For
+is specifically designed for deep learning applications. SK             multithreading, the UPMEM SDK [59] provides barrier syn-
+Hynix AiM [57] is also designed for deep learning applications.         chronization, handshakes, and mutexes. At least 11 software
+AiM places vector processing units near the banks of GDDR6              threads are required to fully utilize the pipeline [26, 53]. On
+memory. Alibaba HB-PNM [58] glues together one layer of                 the host CPU side, programmers allocate/reallocate the num-
+DRAM and one logic layer with processing elements designed              ber of PIM cores, load the PIM binary, and explicitly launch
+to accelerate recommendation systems.                                   the PIM program using commands provided in the UPMEM
+   Our programming framework implementation in this work                SDK [59]. Communication between the PIM cores and the host
+uses the commercially available UPMEM PIM system [43]. Two              CPU is enabled by gather/scatter, broadcast, parallel and serial
+major characteristics distinguish UPMEM from other real PIM             transfer commands, all of which have different performance
+systems: (1) it integrates general-purpose processing cores in          implications and data alignment constraints.
+DRAM chips, and (2) it is the only commercially available PIM              Our goal in this work is to design a high-level program-
+architecture (as of September 2023).                                    ming framework for PIM architectures that abstracts these
+   Previous studies extensively investigate the UPMEM sys-              hardware-specific complexities and provides a clean yet pow-
+tem [10–12, 26, 29, 31, 40, 45–54]. Fig. 1 provides a simplified        erful interface for ease of use and high program performance.
+
+
+                                                                    2
+
+
+
+===== Page 3 =====
+
+    3. The SimplePIM Programming Framework                                SimplePIM determines other relevant metadata and registers
+    A software framework is a universal and reusable software             the output array properly.
+    environment that provides a standard abstraction to build and     1   void simple_pim_array_register(array_meta_data_t* meta_data,
+    deploy applications. Our software framework, SimplePIM,                    simple_pim_management_t* management);
+
+    leverages the massive memory bandwidth and parallelism of-
+    fered by PIM hardware to operate on arrays of arbitrary size          Free The ID is removed from the management unit, indi-
+    and dimensions. Similar abstractions are widely used in dis-          cating that the array with that ID is no longer available for
+    tributed system frameworks (e.g., Spark [70], MapReduce [61]).        processing or communication.
+       SimplePIM offers three key interfaces to support PIM sys-      1   void simple_pim_array_free(const char* id,
+                                                                               simple_pim_management_t* management);
+    tems like UPMEM. The management interface (Section 3.1)
+    stores metadata for the PIM-resident arrays, which can be ac-
+    cessed by the programmer and other parts of SimplePIM as              3.2. Communication Interface
+    needed. The communication interface (Section 3.2) provides            The SimplePIM Communication Interface serves as a compre-
+    abstractions for both Host-PIM and PIM-PIM communication              hensive solution for handling communication between the
+    patterns. These patterns are similar to communication pat-            host CPU and PIM cores, and among PIM cores. This interface
+    terns in other distributed frameworks such as MPI [71], which         effectively manages the complexities of data transfer align-
+    makes it easier for SimplePIM to be adopted. The processing           ment, address calculation, and different PIM communication
+    interface (Section 3.3) leverages PIM’s high memory bandwidth         commands so that programmers need not worry about them.
+    and parallelism to execute map, reduce, and zip iterators on             To support host-PIM communication, SimplePIM provides
+    PIM arrays. Programmers can combine these iterators to imple-         three functions. The broadcast function sends the same array
+    ment many widely-used workloads ranging from simple vector            to all PIM cores. The scatter function divides a host array in
+    addition to complex machine learning model training. Similar          equal-sized chunks and distributes them across the PIM DRAM
+    to SimplePIM, systems like Spark [70] provide programmers             banks. The gather function reassembles the scattered chunks
+    with some data transformation operations and iterators for            into a host array.
+    processing data.                                                         To support communication among PIM cores, SimplePIM
+                                                                          includes allreduce and allgather functions used in a variety
+    3.1. Management Interface                                             of applications (e.g., machine learning).
+    The SimplePIM Management Interface provides three main
+                                                                          Host-to-PIM Communication: SimplePIM Broadcast
+    functions: lookup, register and free. These APIs enable
+                                                                          The broadcast function in SimplePIM transfers a host array
+    tracking of PIM-resident data, data allocation and data deallo-
+                                                                          to all PIM cores in the system, ensuring that all PIM cores have
+    cation in the form of continuous arrays. This management is
+                                                                          a local copy of the data, as shown in Fig. 2. It then registers the
+    centralized and takes place on the host CPU.
+                                                                          ID of the array with the management interface so that it can be
+        The management interface defines and uses two data
+                                                                          referred to by other functions in the SimplePIM interface. This
+    structures. First, the array_meta_data_t struct contains
+                                                                          function can be useful for initializing data or for distributing
+    several fields that describe the PIM-resident array. These
+                                                                          data that needs to be accessed by all PIM cores.
+    fields are the ID of the array, its length, data type, and the
+                                                                             In the broadcast function, the arr variable is the source ar-
+    physical address of its data in the PIM DRAM. Second, the
+                                                                          ray of the communication on the host side and the type_size
+    simple_pim_management_t struct is responsible for manag-
+                                                                          variable represents the size of a single element for the array.
+    ing all the PIM-resident arrays registered by the programmer.
+                                                                          void simple_pim_array_broadcast(char* const id, void* arr,
+    It contains an array of array_meta_data_t structs, along with     1
+                                                                               uint64_t len, uint32_t type_size, simple_pim_management_t
+    other hardware information such as the number of PIM cores.                * management);
+    Lookup The lookup function retrieves the struct of
+    array_meta_data_t containing all relevant information of               1 2 3 4                                                        1 2 3
+                                                                                                                         1 2 3
+    an array from the management unit, based on its unique ID.             5 6 …
+                                                                                                                         4 5 6
+                                                                                                                                      …   4 5 6
+                                                                                                                                          …PIM DRAM
+    This function is used by both the communication and process-           Host DRAM
+                                                                                            SimplePIM Broadcast          …PIM DRAM
+                                                                                                                               Bank
+                                                                                                                                                Bank
+
+    ing interfaces to seamlessly access and manipulate the array            Host CPU                                     PIM Core 0
+                                                                                                                                          PIM Core n
+
+    with a single ID provided by the programmer.
+                                                                          Figure 2: SimplePIM Broadcast function (example with two
+1   array_meta_data_t* simple_pim_array_lookup(const char* id,            PIM cores)
+         simple_pim_management_t* management);
+                                                                          Host-to-PIM Communication: SimplePIM Scatter The
+    Register The purpose of the register function is to register          scatter function is designed to take an array located on the
+    the metadata of an array in the management unit. Typically,           host DRAM and divide it into chunks that are distributed to
+    the function is called by the processing and communication            each PIM core’s DRAM bank (refer to Fig. 3). This division is
+    interfaces when a new output array is created. The program-           performed almost evenly, while taking into account the PIM
+    mer provides a unique ID when calling the interfaces, and             system’s alignment constraints. For example, in the UPMEM
+
+
+                                                                      3
+
+
+
+===== Page 4 =====
+
+    system, data transfers must be aligned to eight bytes. Once                                    complete array to all PIM cores, as shown in Fig. 5. This results
+    this division is complete, the scatter function registers the ID                               in a new array with a unique identifier new id.
+    of the destination array in the PIM DRAM banks (id) with the                               1   void simple_pim_array_allgather(char* const id, char* new_id,
+    management interface. As in the broadcast function, arr and                                         simple_pim_management_t* management);
+    type_size are, respectively, the source array and the array
+    element size.                                                                                  Before PIM-PIM communication                         After PIM-PIM communication
+
+                                                                                                                     4 5 6                                               1 2 3
+                                                                                                   1 2 3             …                                  1 2 3
+1   void simple_pim_array_scatter(char* const id, void* arr,                                                                                                             4 5 6
+                                                                                                   …             …                                      4 5 6
+                                                                                                                                                                     …
+         uint64_t len, uint32_t type_size, simple_pim_management_t                                                    PIM DRAM                                           …PIM DRAM
+                                                                                                    PIM DRAM               Bank                         …PIM DRAM              Bank
+         * management);                                                                                  Bank
+                                                                                                                     PIM Core n
+                                                                                                                                  SimplePIM AllGather         Bank
+                                                                                                                                                                         PIM Core n
+                                                                                                    PIM Core 0                                          PIM Core 0
+
+    PIM-to-Host Communication: SimplePIM Gather The                                                Figure 5: SimplePIM AllGather function (example with two
+    gather function is the counterpart of the scatter function, serv-                              PIM cores)
+    ing to reassemble a scattered array, as shown in Fig. 3. It works
+    by taking an identifier that corresponds to the scattered array                                3.3. Processing Interface
+    and retrieving the relevant information through the memory                                     The SimplePIM Processing Interface provides iterators that
+    management interface. Using this information, the gather                                       enable the creation of a new array of data after performing
+    function retrieves the split portions of the array from each                                   operations on an existing array within the PIM system. These
+    PIM core’s DRAM bank, collects them, and reassembles the                                       iterators can be called from the host and are parallelized auto-
+    original array on the host. Finally, the gather function returns                               matically by the framework to execute across the PIM cores
+    a pointer to the gathered array.                                                               and threads. Once executed, the resulting output of the iterator
+1   void* simple_pim_array_gather(char* const id,                                                  is registered via the management interface for future reference.
+         simple_pim_management_t* management);
+                                                                                                   Creation of a Function Handle In some PIM systems (such
+                                                                                                   as UPMEM), PIM functions are loaded as independent binaries
+     1 2 3 …                                                                        3              from the main program, compiled using a different compiler
+                                    SimplePIM Scatter            2
+     4    5 6 …
+                                                                 5
+                                                                            …       6
+                                                                                 PIM DRAM
+                                                                                                   that targets the underlying PIM instruction set architecture.
+     Host DRAM
+                                                             …PIM DRAM                Bank         This separation ensures that CPU code does not reference PIM
+                                                                     Bank
+         Host CPU                   SimplePIM Gather         PIM Core 0
+                                                                                PIM Core n         functions directly, although the CPU code must be able to pass
+                                                                                                   PIM functions as inputs to SimplePIM’s iterators. To facili-
+    Figure 3: SimplePIM Scatter and Gather function (example                                       tate this, the create_handle function reads a file containing
+    with two PIM cores)
+                                                                                                   a PIM function, compiles the function, and provides a handle
+    PIM-PIM Communication: SimplePIM AllReduce The                                                 to the CPU that can be passed as an input to the iterators.
+    allreduce function accepts arrays equal length across all PIM                                  The transformation_type argument specifies which itera-
+    cores. To execute the allreduce operation, the programmer                                      tor the handle is for. The programmer-defined functions can
+    specifies an accumulative function (i.e., the reduction opera-                                 execute with a context: the data of size data_size is broad-
+    tion) and registers it as a function handle. SimplePIM then                                    cast to all PIM cores, and the programmer-defined functions
+    combines the arrays in place based on the programmer-defined                                   receive this data to aid their executions. For example, for the
+    function. Fig. 4 shows an example where the accumulative                                       linear regression workload, the programmer-defined function
+    function is an addition. allreduce is often used for algo-                                     requires model weight data to compute gradients, and this data
+    rithm synchronization, for example in machine learning ap-                                     is provided as context via the data argument.
+    plications. Section 3.3 details how a programmer creates a                                 1   handle_t* simple_pim_create_handle(const char* func_filepath,
+    function handle.                                                                                    uint32_t transformation_type, void* data, uint32_t
+                                                                                                        data_size);
+1   void simple_pim_array_allreduce(char* const id, handle_t*
+         handle, simple_pim_management_t* management);
+                                                                                                   Array Map The simple_pim_array_map iterator takes a
+                                                                                                   registered input array and a function handle, applies the
+    Before PIM-PIM communication                             After PIM-PIM communication
+                                                     +                                             map_func function to every element in the data array, and
+                       0 2 1                                                    1 4 2
+     1 2 1
+                       3 0 2                             +   1 4 2
+                                                                                3 1 3              generates a new output array with dest_id, as Fig. 6 shows.
+    0 1 1
+                   …
+                       …PIM DRAM                 +           3 1 3
+                                                                            …
+                                                                                …PIM DRAM      1   void simple_pim_array_map(const char* src_id, const char*
+    …PIM DRAM                Bank                            …PIM DRAM                  Bank
+            Bank
+                       PIM Core n     SimplePIM AllReduce            Bank
+                                                                                PIM Core n
+                                                                                                        dest_id, uint32_t output_type, handle_t* handle,
+     PIM Core 0                                              PIM Core 0                                 simple_pim_management_t* management);
+
+    Figure 4: SimplePIM AllReduce function (example with two
+    PIM cores)                                                                                     Array Reduction The simple_pim_array_red iterator
+                                                                                                   processes each element in an input array src_id, calculates
+    PIM-PIM Communication: SimplePIM AllGather The                                                 an index to an output array dest_id and performs a reduc-
+    SimplePIM allgather function retrieves sections of an array                                    tion onto the indexed output array element. This operation
+    from various PIM cores, combines them, and distributes the                                     is similar to the general reduction method proposed in the
+
+
+                                                                                               4
+
+
+
+===== Page 5 =====
+
+            Input Array                                     …               4. UPMEM Implementation and Optimizations
+             (src_id)
+                                         map_func                              for SimplePIM
+           Output Array
+           (dest_id)                                        …               PIM cores access memory with higher bandwidth and lower
+               Figure 6: SimplePIM Array Map function                       latency (than CPUs or GPUs), making this architecture more
+                                                                            compute-bound, and highlighting the importance of code opti-
+    FREERIDE middleware [72]. Later, MATE [73] implemented                  mization for optimal performance. In this section, we provide
+    general reduction and demonstrated its superior performance             detailed information on how we develop and optimize the
+    compared to MapReduce in a multi-core system. SimplePIM’s               SimplePIM interface for the UPMEM system.
+    PIM reduction iterator is versatile enough to support various
+    essential applications such as linear regression, K-means, and          4.1. Communication Interface
+    histogram calculation.                                                  UPMEM provides basic serial commands for transferring data
+       To perform the PIM array reduction, the programmer                   between a PIM core and the host, as well as parallel commands
+    needs to define three functions. The init_func initializes              for transferring same-sized continuous data between the host
+    all entries in the output array. The map_to_val_func func-              and different PIM cores. The parallel transfer bandwidth in-
+    tion transforms an input element to an output element and               creases with the number of PIM cores and can be orders of
+    determines the corresponding entry in the output array to               magnitude higher than the serial transfer bandwidth.
+    accumulate the current output element. Finally, the com-                   In order to use the parallel transfer commands, memory
+    mutative function acc_func accumulates the output element               transfers must be aligned and equal-sized for all PIM cores.
+    that results of the map_to_val_func function onto the corre-            SimplePIM automatically pads the communicated arrays and
+    sponding entry in the output array. Fig. 7 shows the usage of           determines the transfer size for the parallel commands based on
+    map_to_val_func and acc_func functions. In the histogram                the array size, data type, and alignment requirements, ensuring
+    calculation of an image, for example, the init_func initializes         that no array element is split across PIM cores and all alignment
+    all histogram bins to 0. The map_to_val_func computes for               requirements are met. This provides a clean interface to the
+    each image pixel which bin (i.e., an index in the histogram)            programmer, as described in Section 3.2.
+    it belongs to and returns 1. Finally, the acc_func is a simple             SimplePIM leverages parallel data transfers between the
+    addition that increments the bin count by 1.                            UPMEM PIM cores and the host to implement both PIM-PIM
+                                                                            and PIM-Host communication primitives. Although previous
+1   void simple_pim_array_red(const char* src_id, const char*
+         dest_id, uint32_t output_type, uint32_t output_len,                works such as ABC-DIMM [74] and DIMM-Link [75] demon-
+         handle_t* handle, simple_pim_management_t* management)             strate the potential benefits of hardware mechanisms for im-
+                                                                            proving PIM-to-PIM communication, programmers currently
+            Input Array                                     …               do not have access to a physical direct communication chan-
+             (src_id)                 map_to_val_func                       nel among UPMEM PIM cores. In future PIM systems with
+                                                            …               more efficient communication among PIM cores enabled by
+                          1       0           2         0
+                                                                            hardware, SimplePIM could take advantage of these features
+                                         acc_func
+                                                                            to implement PIM-PIM communication more effectively.
+           Output Array (dest_id) 0       1       2
+                                                                            4.2. Processing Interface
+           Figure 7: SimplePIM Array Reduction function
+                                                                            4.2.1. Array Map. An input array on the host system can be
+    Array Zip The simple_pim_array_zip iterator takes as in-                evenly split among the PIM cores using communication primi-
+    put the IDs of two registered arrays that are of the same length.       tives. When the map iterator is called from the host, all relevant
+    It then generates an output array that combines the elements            PIM cores are simultaneously invoked to process their respec-
+    of the two input arrays, as Fig. 8 shows. By allowing program-          tive local arrays. On each of these PIM cores, 12 PIM threads
+    mers to work with multiple arrays as inputs to the iterators,           are launched by default, as at least 11 threads are required
+    this function enables greater flexibility in data processing.           to fully utilize the pipelined in-order cores of the UPMEM
+                                                                            architecture [26, 53]. While we have chosen 12 threads as a
+1   void simple_pim_array_zip(const char* src1_id, const char*
+         src2_id, const char* dest_id, simple_pim_management_t*
+                                                                            convenient even number, the programmers have the flexibility
+         management)                                                        to configure SimplePIM to run any desired number of threads.
+                                                                            In SimplePIM, each PIM thread loads its assigned section of the
+            Input Array                                     …               input array from the PIM DRAM bank to the 64KB scratchpad
+            (src1_id)
+            Input Array                                     …               in batches, maximizing the scratchpad-to-DRAM bandwidth.
+            (src2_id)
+                                         zip_func
+                                                                            The thread then applies the map_func to all elements of the
+                                                                            input data and stores the results in the corresponding output
+           Output Array                                     …               address in batches as well.
+           (dest_id)
+               Figure 8: SimplePIM Array Zip function
+                                                                            4.2.2. Array Reduction. To perform array reduction, Sim-
+                                                                            plePIM activates all PIM cores containing segments of the
+
+
+                                                                        5
+
+
+
+===== Page 6 =====
+
+input and launches 12 PIM threads on each core. These threads          some of these optimizations, making them potentially slower
+operate on the input data in batches, and each PIM core gen-           than SimplePIM implementations. We list some of the opti-
+erates its intermediate reduction result in parallel using the         mizations SimplePIM employs:
+programmer-defined acc_func PIM function. These interme-
+diate results are then gathered to the host and combined using
+                                                                       1. Strength Reduction: The UPMEM chip lacks native support
+a host version of acc_func with the help of OpenMP [76].
+                                                                          for 32/64-bit integer multiplication, which must be emu-
+   Since an entry in the output array is accessed once per input
+                                                                          lated by runtime software and can take tens of cycles to
+element, a straightforward optimization is to keep the output
+                                                                          complete. To overcome this challenge, SimplePIM strives to
+array in the 64KB scratchpad memory, if it fits. SimplePIM
+                                                                          minimize the use of multiplications in the main loop. This is
+offers two variants of in-scratchpad PIM array reduction:
+                                                                          especially important for a general-purpose framework like
+shared and thread-private accumulators.
+                                                                          SimplePIM, where the compiler may not always perform
+Shared Accumulator Reduction In this variant, only one                    strength reduction automatically. Although the array data
+reduction output array is present in the scratchpad memory,               type is not known at compile time, the sizes of array ele-
+and one lock is preserved per array entry. One thread ini-                ments are often powers of two. SimplePIM takes advantage
+tializes this array at the beginning with init_func. Then,                of this fact by replacing multiplications with shift opera-
+every thread works on its part of the input array and updates             tions in array offset calculations when the array size is a
+the global output array entries after having acquired the lock            power of two.
+associated with each entry.                                            2. Loop Unrolling: We have found that loop unrolling can
+Thread-Private Accumulator Reduction In this vari-                        improve the performance of vector addition by up to 20%
+ant, every thread initializes its own local output array with             on UPMEM. We attribute this performance gain to fewer
+init_func and reduces its input segment to that local output              loop counter increments and loop branches. However, loop
+array with the map_to_val and acc_func functions. Once                    unrolling can also increase the binary size, which may even-
+all threads finish the reduction, local outputs are merged in             tually not fit into the instruction memory of PIM cores.
+parallel in a ring-reduce manner with acc_func and barriers.              Our SimplePIM implementation for UPMEM uses limited
+   These two implementations have a tradeoff between syn-                 unrolling depth.
+chronization overhead and scratchpad capacity utilization. The         3. Avoiding Boundary Checks: Many open-sourced UPMEM
+framework automatically chooses an appropriate in-scratchpad              applications check array boundaries inside the main loop
+reduction variant based on the array sizes and data types. We             for convenience. In SimplePIM, we evenly pre-partition the
+evaluate the tradeoff between these two variants in Section 5.4.          work among threads and then process the trailing part of the
+                                                                          array separately to avoid boundary checks. For example, we
+4.2.3. Array Zip. The zip iterator is implemented with a lazy
+                                                                          have experienced more than 10% performance degradation
+approach to minimize data copying. When the zip iterator is
+                                                                          due to boundary checks for the vector addition application.
+called, the management interface stores the starting addresses,
+                                                                       4. Function Inlining: SimplePIM inlines programmer-defined
+data type sizes, and a common length for the two arrays to be
+                                                                          functions in the iterator code to avoid the function invo-
+zipped, but does not physically combine them. When a subse-
+                                                                          cation overhead in the iterator loops. That is, at handle
+quent iterator is passed a lazily zipped array, the management
+                                                                          creation time, the functions are not compiled independently,
+interface extracts the addresses of the two contained arrays
+                                                                          but rather, the iterators that use the functions are also com-
+and copies the arrays in batches to the scratchpad. Then, the
+                                                                          piled. Compared to compiling iterators and functions sep-
+batches are zipped in the scratchpad, and the iterator operation
+                                                                          arately, we have found that inlining improves the perfor-
+is performed. This approach ensures that data is copied only
+                                                                          mance of vector addition by more than 2×.
+once in the same loop, reducing both copying and looping over-
+                                                                       5. Previous studies have shown that the performance of data
+heads. The management interface keeps track of lazily zipped
+                                                                          transfers between the PIM core’s scratchpad memory and
+arrays and determines the behavior of the iterators. Currently,
+                                                                          the corresponding DRAM bank in UPMEM is highly depen-
+the laziness in our implementation is one level deep, which
+                                                                          dent on the data transfer size [26]. We observe that, in previ-
+is sufficient for targeting the common case (i.e., multi-input
+                                                                          ously open-sourced implementations, programmers fix the
+map and reduce functions). If the zip iterator is called with
+                                                                          scratchpad-to-DRAM transfer sizes for convenience, which
+an already lazily zipped array as an argument, the arrays are
+                                                                          results in suboptimal performance. An example is a linear
+streamed in batches, combined physically, and stored back to
+                                                                          regression implementation where the input dimensions are
+memory in batches. Our experiments (not plotted in the paper)
+                                                                          different for different datasets, which would require manual
+show that lazy zipping improves the performance of vector
+                                                                          adjustment of transfer sizes. In contrast, SimplePIM auto-
+addition, for example, by more than 2×.
+                                                                          matically and dynamically adapts the scratchpad-to-DRAM
+4.3. General Code Optimizations                                           transfer size to the input data size and type, achieving bet-
+We implement several code optimization techniques in Sim-                 ter performance while freeing programmers from applying
+plePIM that are essential for achieving high performance on               low-level optimizations and allowing them to focus on the
+UPMEM. Some open-sourced UPMEM applications use only                      application logic.
+
+
+                                                                   6
+
+
+
+===== Page 7 =====
+
+5. Evaluation                                                            experiments, we use the implementation that employs 32-bit
+                                                                         integer operations with bit shifts to prevent integer overflow
+5.1. Benchmarks
+                                                                         and underflow. To ensure a fair comparison, we verify that
+We evaluate SimplePIM using six commonly-used PIM-friendly               our SimplePIM implementation produces identical results to
+applications: reduction, vector addition, histogram, linear re-          the baseline approach. We use a feature dimension of ten and
+gression, logistic regression, and K-means clustering. As a              generate 10,000 data points per PIM core for weak scaling tests,
+baseline for comparison, we use hand-tuned implementations               while for strong scaling tests, we generate a total of 6,080,000
+from prior works [10–12, 26, 53]. The baselines for reduction,           data points, similar to those used in the work that provides the
+vector addition, and histogram are from the PrIM benchmark               baseline implementation [10–12].
+suite [26,53,77], while the baselines for the three machine learn-
+ing algorithms, i.e., linear regression, logistic regression, and        Logistic Regression To enable a fair comparison with
+K-means, are from [10–12,78]. These prior works develop clean            the baseline approach [10–12], we apply the same quanti-
+and high-performance open-source codes for benchmarking                  zation technique used in linear regression to logistic
+against CPU and GPU implementations. As such, these codes                regression. To minimize computational overhead, we adopt
+serve as solid baselines for comparison with our SimplePIM               the Taylor series approximation of the sigmoid activation func-
+implementations.                                                         tion [79] that the baseline [10–12] uses. However, since the
+                                                                         runtime of the approximation depends on the input, we ensure
+Vector Addition We implement vector addition in Sim-                     a fair comparison by using the same inputs and initial model
+plePIM by zipping the input arrays and performing element-               weights for both the baseline code [10–12] and the SimplePIM
+wise addition using the map iterator. SimplePIM automatically            implementation. We also verify that the exact same output is
+optimizes this operation by performing lazy zipping on the               produced. The weak and strong scaling datasets have the same
+UPMEM device, which results in a high-performance imple-                 sizes as for linear regression.
+mentation. We evaluate the runtime of vector addition for
+one million 32-bit integer elements per PIM core for weak                5.2. Productivity Improvement
+scaling and 608,000,000 32-bit integer elements for strong scal-
+ing, similar to the reference work that provides the baseline            Efficiently implementing PIM kernels for these applications
+implementation [26, 53].                                                 requires a significant amount of engineering effort. We mea-
+                                                                         sure the programming complexity by counting the lines of
+Reduction The reduction operation computes the sum of                    effective PIM-related code for each application. This excludes
+all elements in an input array. In SimplePIM, we implement               the common code for data loading from a file to the host main
+reduction using PIM array reduction with an output ar-                   memory, host memory allocation, variable definition, and time
+ray of a single element (an accumulator). We select the same             measurements. We only take into account PIM-related data
+number of input elements for weak scaling and strong scaling             transfers and PIM kernel execution. Table 1 summarizes the
+as for the vector addition workload.                                     lines of effective code saved by using SimplePIM for the six
+Histogram The histogram operation is implemented us-                     benchmarks. The amount of coding is reduced by a factor of
+ing PIM array reduction. We define a programmer-specific                 2.98× to 5.93× with SimplePIM.
+map_to_val function to compute the corresponding bin for                                        SimplePIM   Hand-optimized   LoC Reduction
+each input element, and a simple addition is used to combine              Reduction                14            83             5.93×
+the element counts for each bin. We conducted experiments                 Vector Addition          14            82             5.86×
+with 1,572,864 elements per PIM core for weak scaling and                 Histogram                21            114            5.43×
+956,301,312 for strong scaling, with the number of histogram              Linear Regression        48            157            3.27×
+bins set to 256 to ensure consistency with the reference baseline         Logistic Regression      59            176            2.98×
+                                                                          K-Means                  68            206            3.03×
+implementation [26, 53].
+                                                                         Table 1: Lines of effective PIM-related code for each benchmark.
+K-Means The UPMEM PIM device currently emulates float-                   "LoC Reduction" stands for SimplePIM’s reduction in lines of
+ing point operations in software, resulting in significantly             code over hand-optimized baselines.
+slower performance than integer operations. To mitigate this
+                                                                            Productivity improvement is not only achieved by reducing
+issue, our k-means benchmark employs input data quantiza-
+                                                                         the lines of code, but also by allowing programmers to write
+tion to integers, following the approach outlined in [10–12].
+                                                                         plain and easily understandable C code for an uncommon (PIM)
+We conduct experiments with 10 centroids and 10 feature di-
+                                                                         architecture. Listing 1 shows the code required to implement
+mensions, using 10,000 elements per PIM core for weak scaling
+                                                                         a hand-optimized histogram operation on the UPMEM PIM
+experiments and 6,080,000 elements for strong scaling experi-
+                                                                         architecture. In this code, variable declarations, initialization,
+ments.
+                                                                         as well as code for initializing and computing the histogram
+Linear Regression To address the issue of slow floating                  are omitted. To program the PIM system, the programmer is
+point operations, we rely on the baseline approach pro-                  responsible for addressing the data structures (based on thread
+posed in [10–12], which includes several versions of linear              ID or tasklet_id) and must be familiar with architecture-
+regression using various quantization techniques. For our                specific instructions, such as mem_reset (line 5), mram_read
+
+
+                                                                     7
+
+
+
+===== Page 8 =====
+
+     (line 14), and mram_write (lines 26 & 29). The programmer 1 // Programmer-defined functions in the file "histo_filepath"
+     needs to read the documentation carefully and understand 2 void init_func_(uint32          _t size, void* ptr) {
+                                                                        3   char* casted value_ptr = (char*) ptr;
+     the instructions and their low-level properties in detail. For 4 for (int i = 0; i < size; i++)
+     example, the mram_read and mram_write instructions, used 5               casted_value_ptr[i] = 0;
+                                                                        6 }
+     for DRAM-scratchpad transfers, have an 8-byte alignment re- 7 void acc_func (void* dest, void* src) {
+     quirement and a 2,048-byte transfer limit, and the programmer 8 *(uint32_t*)dest += *(uint32_t*)src;
+                                                                        9 }
+     needs to handle larger transfers manually, as shown in lines 10 void map_to_val_func (void* input, void* output, uint32_t* key) {
+     28-30 of Listing 1. Additionally, the code allocates a 2,048-byte 11 uint32_t_d = *((uint32_t*)input);
+                                                                       12   *(uint32 t*)output = 1;
+     buffer for input data transfers (line 7). For more complex ap- 13 *key = d * bins >> 12;
+     plications with variable input element size, such as linear 14 }
+                                                                       15
+     regression, the programmer needs to handle data transfers 16 // Host side handle creation and iterator call
+     with greater care and effort.                                     17 handle_t* handle = simple_pim_create_handle("histo_filepath", REDUCE,
+                                                                                                           NULL, 0);
+                                                                               18
+ 1 ... // Initialize global variables and functions for histogram
+                                                                               19 // Transfer (scatter) data to PIM, register as "t1"
+ 2 int main_kernel() {
+                                                                               20 simple_pim_array_scatter("t1", src, bins, sizeof(T), management);
+ 3     ... // Initialize variables and the histogram                           21
+ 4     if (tasklet_id == 0)                                                    22 // Run histogram on "t1" and produce "t2"
+ 5       mem_reset(); // Reset the heap                                        23 simple_pim_array_red("t1", "t2", sizeof(T), bins, handle, management);
+ 6     // Allocate buffer in scratchpad memory
+ 7     T *input_buff_A = (T*)mem_alloc(2048);                                                                       Listing 2: SimplePIM histogram code
+ 8
+ 9     for (unsigned int byte_index = base_tasklet; byte_index < input_size;
+            byte_index += stride) {
+10       // Boundary checking                                                       required for an application and abstracts away the underlying
+11       uint32_t l_size_bytes = (byte_index + 2048 >= input_size) ? (
+           input_size - byte_index) : 2048;
+                                                                                    architectural complexities, such as managing a scratchpad or
+12                                                                                  software-managed cache, synchronizing PIM threads/cores, de-
+13
+14
+        // Load scratchpad with a DRAM block
+        mram_read((const __mram_ptr void*)(mram_base_addr_A + byte_index),
+                                                                                    termining data transfer sizes and alignments, and allocating/de-
+          input_buff_A, l_size_bytes);                                              allocating PIM cores. By doing so, SimplePIM makes PIM pro-
+15
+16      // Histogram calculation
+                                                                                    gramming more programmer-friendly and accessible to a wider
+17      histogram(hist, bins, input_buff_A, l_size_bytes/sizeof(uint32_t));         range of developers.
+18     }
+19     ...
+20     barrier_wait(&my_barrier); // Barrier to synchronize PIM threads             5.3. Performance Evaluation
+21     ... // Merging histograms from different tasklets into one histo_dpu
+22                                                                                  To compare the performance of our SimplePIM code to the
+23
+24
+       // Write result from scratchpad to DRAM
+       if (tasklet_id == 0) {
+                                                                                    baseline code, we conduct experiments on an UPMEM system
+25       if (bins * sizeof(uint32_t) <= 2048)                                       with 2,432 PIM cores, and measure weak and strong scaling
+26         mram_write(histo_dpu, (__mram_ptr void*)mram_base_addr_histo,
+           bins * sizeof(uint32_t));
+                                                                                    results for each workload on 608, 1,216, and 2,432 PIM cores,
+27       else                                                                       as shown in Fig. 9 and Fig. 10, respectively. The number of
+28         for (unsigned int offset = 0; offset < ((bins * sizeof(uint32_t))
+            >> 11); offset++) {
+                                                                                    elements for each workload is similar to the baseline papers.
+29           mram_write(histo_dpu + (offset << 9), (__mram_ptr void*)(              The number of elements for strong scaling tests is set to be
+30
+           mram_base_addr_histo + (offset << 11)), 2048);
+           }
+                                                                                    equal to the number of elements used for 608 cores in our weak
+31     }                                                                            scaling tests.
+32     return 0;
+                                                                                                             Vector Addition                 Reduction                Histogram
+33 }                                                                                                      30
+                                                                                                                                    20                      50
+                                                                                                          20
+                                                                                    Execution Time (ms)
+
+
+
+
+     Listing 1: Hand-optimized histogram code using the UPMEM
+     SDK                                                                                                  10                        10                      25
+                                                                                                           0 608 1216 2432           0 608 1216 2432         0 608 1216 2432
+                                                                                                                K-Means               Linear Regression Logistic Regression
+        Listing 2 illustrates how SimplePIM makes it possible for                                         150                       50                     100
+     programmers to implement histogram without resorting to                                              100                       25
+                                                                                                           50                                               50
+     any hardware-specific instruction or function calls. The code                                          0 608 1216 2432          0 608 1216 2432         0 608 1216 2432
+     is straightforward and can be easily understood and imple-                                                                        Number of PIM Cores
+                                                                                                               SimplePIM (CPU Time)               Hand-optimized Impl. (CPU Time)
+     mented by any C programmer. The process involves defining                                                 SimplePIM (PIM Kernel Time)        Hand-optimized Impl. (PIM Kernel Time)
+     application logic functions (lines 2-14) for the iterator in a sep-
+                                                                                                             Figure 9: Weak Scaling results for six workloads.
+     arate file (called histo_filepath in this example), creating a
+     handle (line 17), and running the iterator with only two ad-                     Overall, the experimental results shown in Fig. 9 and Fig. 10
+     ditional lines of code on the host side (lines 20 & 23). Similar               demonstrate that SimplePIM achieves comparable perfor-
+     to Listing 1, the code example in Listing 2 does not show the                  mance to the baseline approach for reduction, histogram,
+     host-side allocation and data transfers.                                       and linear regression, while consistently outperform-
+                                                                                    ing the baseline approach for vector addition, logistic
+        In summary, SimplePIM improves programming productiv-                       regression, and k-means in both weak and strong scaling
+     ity for PIM systems. It reduces the number of lines of code                    experiments. We attribute these performance gains to the vari-
+
+
+                                                                               8
+
+
+
+===== Page 9 =====
+
+                          Vector Addition                       Reduction                        Histogram                histogram sizes.
+                       30 1.0 1.0                     20
+                                                           1.0 1.0
+                                                                                          50
+                                                                                             1.0 1.0
+
+                       20                                                                        1.8 1.6                     Fig. 11 shows the effect of the two versions on the end-to-
+Execution Time (ms)
+                                                                 1.7 1.7
+                                   2.0 1.9
+                       10                  3.6 3.4
+                                                      10                 2.6 2.3          25             3.0 2.5
+
+                        0 608 1216 2432                0 608 1216 2432                     0 608 1216 2432
+                                                                                                                          end performance of the histogram benchmark as we vary the
+                                 K-Means               Linear Regression                  Logistic Regression             number of bins in the histogram. We make several observa-
+                      150 1.0 1.0                     50 1.0 1.0                              1.0
+                                                                                         100 1.0                          tions.
+                      100              1.8
+                                                      25             1.9 2.0                     1.9 2.0
+                                                                                          50                                                 300                                                                         12
+
+
+
+
+                                                                                                                       Execution Time (ms)
+                                   1.9                                         3.0 2.3
+                       50                  3.2
+                                               3.0
+                                                                                                         3.6 3.3
+
+
+
+
+                                                                                                                                                                                                                           #Threads
+                        0 608 1216 2432                0 608 1216 2432                     0 608 1216 2432                                   200                                                                         8
+                                                     Number of PIM Cores                                                                     100                                                                         4
+                            SimplePIM (CPU Time)                      Hand-optimized Impl. (CPU Time)                                          0                                                                         0
+                            SimplePIM (PIM Kernel Time)               Hand-optimized Impl. (PIM Kernel Time)                                          256            512         1024          2048            4096
+                                                                                                                                                                      Histogram Size in Number of Bins
+                                                                                                                                                   Shared Accumulator (CPU Time)            Thread Private (PIM Kernel Time)
+Figure 10: Strong Scaling results for six workloads. The num-                                                                                      Shared Accumulator (PIM Kernel Time)     #Threads: Thread Private
+bers on each bar represent the speedup over 608 PIM cores.                                                                                         Thread Private (CPU Time)                #Threads: Shared Accumulator
+
+ous optimization techniques implemented in our framework,                                                                 Figure 11: Execution time of SimplePIM’s shared accumulator
+                                                                                                                          version and thread-private version for the histogram bench-
+as discussed in Section 4.                                                                                                mark. Red and blue lines represent the numbers of active PIM
+   In the weak scaling evaluation results shown in Fig. 9, in-                                                            threads.
+creasing the number of PIM cores linearly with the input
+size does not significantly impact the performance of both                                                                  First, the thread-private version is faster than the shared
+SimplePIM and hand-optimized code for all six applications.                                                              accumulator version for histograms of 256, 512, and 1024 bins.
+Furthermore, on average, SimplePIM outperforms the hand-                                                                 Since each thread owns a private output array, there is no
+optimized implementation in vector addition, logistic                                                                    need for locks, which avoids the synchronization overhead
+regression, and k-means by 1.10×, 1.17×, and 1.37×.
+                                                                                                                         of the shared memory version. When 12 threads are active
+   In the strong scaling evaluation results shown in Fig. 10,                                                            (for 256-, and 512-bin histograms), the thread-private version
+achieving linear speedup with additional PIM cores is not guar-                                                          outperforms the shared accumulator version by 1.70×.
+anteed, as communication overheads can become dominant.                                                                     Second, the shared accumulator version outperforms the
+For the reduction workload, which has less kernel execution                                                              thread-private version for histograms of 2048 and 4096 bins.
+and comparatively more communication costs, we observe                                                                   The cause is a reduction in the number of active PIM threads
+only 1.6× and 2.6× speedup for 2× and 4× more PIM cores.                                                                 of the thread-private version (blue line) after 1024 bins. This
+However, for the other five workloads, SimplePIM achieves                                                                reduction relates to the occupancy of the scratchpad mem-
+more than 1.8× speedup with a 2× increase in PIM cores and                                                               ory. For t threads with private histograms of n bins (each of d
+3× speedup with a 4× increase in PIM cores. SimplePIM con-                                                               bytes), t × n × d bytes of the scratchpad memory are occupied.
+sistently outperforms the hand-optimized implementations of                                                              When the scratchpad size (e.g., 64KB in current UPMEM chips)
+all benchmarks, except for reduction with a slight increase                                                              is not enough for the private histograms (plus buffers for the
+in communication cost. SimplePIM outperforms the hand-                                                                   input array), we should reduce the number of active threads,
+optimized implementations of vector addition, logistic                                                                   as we observe for 1024-, 2048-, and 4096-bin histograms. The
+regression, and k-means by 1.15×, 1.22×, and 1.43× on av-                                                                reduction in the number of active threads causes a linear in-
+erage across different numbers of PIM cores. These results                                                               crease of the execution time, because the pipeline of the PIM
+demonstrate the effectiveness of our framework for program-                                                              cores is not fully busy [26, 53]. As a result, we observe that the
+ming PIM systems in terms of performance.                                                                                execution time of the 2048-bin histogram (with 4 threads) is
+   We note that, while SimplePIM provides speedup over base-                                                             roughly twice as high as that of the 1024-bin histogram (with
+line implementations of some benchmarks, the performance                                                                 8 threads). Ditto for the 4096-bin histogram (with 2 threads)
+of hand-optimized code can potentially be equal to or even                                                               versus the 2048-bin histogram.
+better than that generated by SimplePIM. This requires the
+programmer to take similar steps as SimplePIM to optimize                                                                 6. Discussion
+the code, as Section 4 describes. Achieving such performance                                                             While SimplePIM is currently implemented for the UPMEM
+requires careful consideration and use of various optimization                                                           PIM architecture [43], it is devised for a broader set of real
+techniques. SimplePIM frees the programmer from this burden,                                                             PIM architectures (e.g., [13, 25, 43, 55–58]), which have one
+thereby making them more productive.                                                                                     or more common characteristics [12, 52]: (1) there is a host
+                                                                                                                         processor with access to standard main memory and PIM-
+5.4. Evaluation of SimplePIM Variants of Array Re-                                                                       enabled memory, (2) PIM processing elements (PEs) may need
+     duction                                                                                                             to communicate via the host processor, and (3) the number of
+SimplePIM provides two variants of PIM array reduction                                                                   PIM PEs scales with memory capacity.
+(Section 4.2.2). One variant uses shared accumulators (i.e., one                                                            With these characteristics in mind, SimplePIM supports
+shared output array for all threads and one lock per array                                                               host-PIM communication primitives and its management inter-
+entry) and the other one thread-private accumulators (i.e., one                                                          face runs on the host. SimplePIM’s PIM-PIM communication
+output array per thread). We compare these two versions                                                                  primitives emulate the communication between PIM cores by
+of SimplePIM on the histogram benchmark with different                                                                   transparently handling the communication via the host. Given
+
+
+                                                                                                                   9
+
+
+
+===== Page 10 =====
+
+that PIM-PIM communications play a pivotal role in simplify-              existing general-purpose sequential execution model. This
+ing and enhancing PIM programming for high performance,                   approach is especially suitable for PIM architectures where
+we recommend the research and development of more efficient               communication across PIM processing elements is not possi-
+PIM-PIM communication mechanisms in hardware, e.g., as                    ble or easy. When the host processor finds a specialized PIM
+proposed in [74, 75, 80–83].                                              instruction in the program, it offloads the execution to the PIM
+  SimplePIM can accommodate a wide range of computation                   processing elements. Another approach is to use remote func-
+patterns beyond the current map, reduce, and zip operations.              tion calls via message passing between different PIM cores (e.g.,
+Other parallel patterns, such as prefix sum and filter [26,53,77],        as in [5]). This approach is suitable for coarse-grained PIM
+can be easily incorporated. However, extending support to                 accelerators with multiple PIM cores that can communicate
+more complex patterns such as stencil and convolution would               over an interconnection network.
+necessitate a more fine-grained scatter-gather mechanism to                  For processing-using-memory architectures (i.e., PIM archi-
+handle halo cells between tiles mapped onto different PIM                 tectures that compute by leveraging the analog operational
+cores. Similarly, applications with irregular memory access               properties of memory components [1]), there are several works
+patterns, such as tree data structures [84], are also hard to             that facilitate programming. SIMDRAM [94] provides a frame-
+support due to random access patterns. Future work can extend             work to generate user-defined operations that are executed
+SimplePIM’s capabilities by supporting, implementing, and                 via the simultaneous activation of rows inside DRAM subar-
+benchmarking additional communication primitives, iterator                rays [27, 95]. pLUTo [96] proposes a LUT-based processing-
+functions, and workloads on a variety of PIM systems.                     using-DRAM substrate with a compiler that maps complex
+                                                                          operations onto LUT queries.
+7. Related Work
+                                                                          Compilers for PIM Several works propose compilers for
+To our knowledge, SimplePIM is the first high-level program-              simulated PIM architectures. Duality Cache [97] proposes a
+ming framework specifically designed for real PIM systems.                compiler that accepts existing CUDA programs and maps the
+We first review recent studies of real PIM systems. We then dis-          computation onto a processing-using-SRAM substrate. Infin-
+cuss several PIM works that propose programming interfaces                ity Stream [98] proposes an intermediate representation and a
+and compilers for PIM architectures.                                      just-in-time compiler for processing-near-memory, processing-
+Studies of Real PIM Systems The UPMEM PIM architec-                       using-memory, and host execution. CHOPPER [99] presents
+ture [43] is the first commercially available PIM hardware.               a bit-serial compiler for processing-using-DRAM substrates.
+Several recent works study this architecture and its suitability          CINM [100] is a compiler flow for simulated processing-using-
+to different modern applications. Gómez-Luna et al. [26, 53, 85]          memory architectures and processing-near-memory architec-
+present a microbenchmark-based analysis of the UPMEM PIM                  tures such as UPMEM. It is based on MLIR [101, 102] and it
+architecture and a workload suitability study with the PrIM               supports linear algebra PIM kernels. SimplePIM is the first pro-
+benchmark suite [77], which contains workloads from dense                 gramming framework for real PIM architectures that supports
+and sparse linear algebra, machine learning, bioinformatics,              a wide variety of PIM kernels.
+image processing, graph processing, etc. Nider et al. [48]
+analyze the UPMEM PIM system for encryption/decryption,                   8. Conclusion
+compression/decompression, hyper-dimensional computing,                   We introduce SimplePIM, which is a new high-level program-
+and text processing. Other works focus on specific applica-               ming framework for real PIM systems. SimplePIM is specifi-
+tions or application domains, such as sparse matrix vector                cally designed to enable efficient and productive programming.
+multiplication [31, 86], bioinformatics [40, 46, 47, 50, 51, 87],         SimplePIM efficiently leverages the host CPU for data manage-
+machine learning [10–12, 88], transcendental functions [52],              ment, and incorporates primitives for PIM-host communica-
+databases [29, 84, 89–91], homomorphic encryption [54], and               tion (e.g, scatter, gather, broadcast) and primitives for com-
+skyline computation [45].                                                 munication among PIM cores (e.g., allreduce, allgather).
+   There are also application studies on other real PIM sys-              SimplePIM’s easy-to-use interface provides iterators (e.g., map,
+tems [13, 25, 55–57]. Ke et al. [13] evaluate sparse embed-               reduce, zip) that allow programmers to largely avoid the
+ding operators of deep-learning-based recommendation in-                  complexity of the underlying PIM architecture. Our imple-
+ference [92] on AxDIMM. Lee et al. [25] implement database                mentation of SimplePIM for the UPMEM system enables pro-
+scan operations on AxDIMM. Ibrahim and Aga [93] implement                 grammers to develop PIM programs with 2.98× to 5.93× less
+FFT for commercial PIM architectures, such as Samsung HBM-                code than hand-optimized programs, while providing equal or
+PIM [55,56] and SK Hynix AiM [57] (but the evaluation is done             higher performance. SimplePIM frees programmers from deal-
+with a performance model).                                                ing with the complexities and idiosyncracies of the low-level
+Programming Interfaces for PIM Several works propose                      PIM hardware, while also enabling programmer-transparent
+programming interfaces for processing-near-memory archi-                  code optimizations. We believe that SimplePIM is a mile-
+tectures (i.e., PIM architectures with processing elements near           stone to ease the programmability and adoption of current
+the memory arrays [1]). One approach is to use specialized                and future real PIM systems. We hope that more future work
+PIM instructions (e.g., as in [7, 8]) and integrate them into the         ensues in programming memory-centric systems, and to fa-
+
+
+                                                                     10
+
+
+
+===== Page 11 =====
+
+cilitate that we open-source our SimplePIM framework at                                         [31] C. Giannoula et al., “SparseP: Towards Efficient Sparse Matrix Vector Multiplication
+                                                                                                     on Real Processing-In-Memory Systems,” arXiv, vol. abs/2204.00900, 2022.
+https://github.com/CMU-SAFARI/SimplePIM.                                                        [32] S. Gupta et al., “SCRIMP: A General Stochastic Computing Architecture using
+                                                                                                     ReRAM in-Memory Processing,” DATE, 2020.
+Acknowledgments                                                                                 [33] G. Singh et al., “NERO: A Near High-Bandwidth Memory Stencil Accelerator for
+                                                                                                     Weather Prediction Modeling,” in FPL, 2020.
+We acknowledge support from the SAFARI Research Group’s                                         [34] G. Singh et al., “Accelerating Weather Prediction using Near-Memory Reconfig-
+industrial partners, especially Google, Huawei, Intel, Microsoft,                                    urable Fabric,” ACM TRETS, 2021.
+                                                                                                [35] A. Denzler et al., “Casper: Accelerating Stencil Computations Using Near-Cache
+VMware, and the Semiconductor Research Corporation. This                                             Processing,” IEEE Access, 2023.
+research was partially supported by the ETH Future Computing                                    [36] M. R. de Castro et al., “SparkBLAST: Scalable BLAST Processing using In-memory
+                                                                                                     Operations,” BMC Bioinformatics, 2017.
+Laboratory and the European Union’s Horizon programme for                                       [37] F. Zhang et al., “PIM-Quantifier: A Processing-in-Memory Platform for mRNA
+research and innovation under grant agreement No. 101047160,                                         Quantification,” DAC, 2021.
+                                                                                                [38] S. Angizi et al., “PIM-Assembler: A Processing-in-Memory Platform for Genome
+project BioPIM (Processing-in-memory architectures and pro-                                          Assembly,” DAC, 2020.
+gramming libraries for bioinformatics algorithms). This re-                                     [39] S. Angizi et al., “PIM-Aligner: A Processing-in-MRAM Platform for Biological
+                                                                                                     Sequence Alignment,” DATE, 2020.
+search was also partially supported by ACCESS – AI Chip                                         [40] S. Diab et al., “High-throughput Pairwise Alignment with the Wavefront Algorithm
+Center for Emerging Smart Systems, sponsored by InnoHK                                               using Processing-in-Memory,” in HICOMB, 2022.
+                                                                                                [41] J. S. Kim et al., “GRIM-Filter: Fast Seed Location Filtering in DNA Read Mapping
+funding, Hong Kong SAR.                                                                              using Processing-in-memory Technologies,” BMC Genomics, 2018.
+                                                                                                [42] G. Singh et al., “FPGA-based Near-memory Acceleration of Modern Data-intensive
+References                                                                                           Applications,” IEEE Micro, 2021.
+                                                                                                [43] F. Devaux, “The True Processing In Memory Accelerator,” HCS, 2019.
+ [1] O. Mutlu et al., “A Modern Primer on Processing in Memory,” arXiv, vol.                    [44] UPMEM, “Introduction to UPMEM PIM. Processing-in-memory (PIM) on DRAM
+     abs/2012.03112, 2020.                                                                           Accelerator (White Paper),” 2018.
+ [2] O. Mutlu et al., “Processing Data Where It Makes Sense: Enabling In-Memory                 [45] V. Zois et al., “Massively Parallel Skyline Computation for Processing-in-memory
+     Computation,” MicPro, 2019.                                                                     Architectures,” PACT, 2018.
+ [3] S. Ghose et al., “Processing-in-Memory: A Workload-driven Perspective,” IBM JRD,           [46] D. Lavenier et al., “DNA Mapping using Processor-in-Memory Architecture,” BIBM,
+     2019.                                                                                           2016.
+ [4] O. Mutlu et al., “Enabling Practical Processing in and near Memory for Data-               [47] S. Diab et al., “A Framework for High-throughput Sequence Alignment using Real
+     Intensive Computing,” DAC, 2019.                                                                Processing-in-memory Systems,” Bioinformatics, 2023.
+ [5] J. Ahn et al., “A Scalable Processing-in-Memory Accelerator for Parallel Graph             [48] J. Nider et al., “A Case Study of Processing-in-Memory in off-the-Shelf Systems,” in
+     Processing,” ISCA, 2015.                                                                        USENIX Annual Technical Conference, 2021.
+ [6] S. Angizi and D. Fan, “Graphide: A Graph Processing Accelerator Leveraging                 [49] J. Nider et al., “Processing in Storage Class Memory,” in HotStorage, 2020.
+     In-DRAM-computing,” in GLSVLSI, 2019.                                                      [50] D. Lavenier et al., “Variant Calling Parallelization on Processor-in-Memory Archi-
+ [7] L. Nai et al., “GraphPIM: Enabling Instruction-Level PIM Offloading in Graph                    tecture,” in BIBM, 2020.
+     Computing Frameworks,” in HPCA, 2017.                                                      [51] N. Abecassis et al., “GAPiM: Discovering Genetic Variations on a Real Processing-
+ [8] J. Ahn et al., “PIM-Enabled Instructions: A Low-Overhead, Locality-Aware                        in-Memory System,” bioRxiv, 2023.
+     Processing-in-Memory Architecture,” in ISCA, 2015.                                         [52] M. Item et al., “TransPimLib: Efficient Transcendental Functions for Processing-in-
+ [9] M. Gokhale et al., “Near Memory Data Structure Rearrangement,” in MEMSYS, 2015.                 Memory Systems,” in ISPASS, 2023.
+[10] J. Gómez-Luria et al., “Machine Learning Training on a Real Processing-in-Memory           [53] J. Gómez-Luna et al., “Benchmarking a New Paradigm: Experimental Analysis and
+     System,” in ISVLSI, 2022.                                                                       Characterization of a Real Processing-in-Memory System,” IEEE Access, 2022.
+[11] J. Gómez-Luna et al., “Evaluating Machine Learning Workloads on Memory-Centric             [54] H. Gupta et al., “Evaluating Homomorphic Operations on a Real-World Processing-
+     Computing Systems,” in ISPASS, 2023.                                                            In-Memory System,” in IISWC, 2023.
+[12] J. Gómez-Luna et al., “An Experimental Evaluation of Machine Learning Training             [55] Y.-C. Kwon et al., “25.4 A 20nm 6GB Function-In-Memory DRAM, Based on HBM2
+     on a Real Processing-in-Memory System,” arXiv preprint arXiv:2207.07886, 2022.                  with a 1.2TFLOPS Programmable Computing Unit Using Bank-Level Parallelism,
+[13] L. Ke et al., “Near-Memory Processing in Action: Accelerating Personalized Recom-               for Machine Learning Applications,” ISSCC, 2021.
+     mendation with AxDIMM,” IEEE Micro, 2021.                                                  [56] S. Lee et al., “Hardware Architecture and Software Stack for PIM Based on Com-
+[14] F. Liu et al., “PIM-DH: ReRAM-based Processing-in-Memory Architecture for Deep                  mercial DRAM Technology: Industrial Product,” in ISCA, 2021.
+     Hashing Acceleration,” DAC, 2022.                                                          [57] S. Lee et al., “A 1ynm 1.25V 8Gb, 16Gb/s/pin GDDR6-based Accelerator-in-Memory
+[15] A. Boroumand et al., “Google Workloads for Consumer Devices: Mitigating Data                    supporting 1TFLOPS MAC Operation and Various Activation Functions for Deep-
+     Movement Bottlenecks,” in ASPLOS, 2018.                                                         Learning Applications,” in ISSCC, 2022.
+[16] A. Boroumand et al., “Google Neural Network Models for Edge Devices: Analyzing             [58] D. Niu et al., “184QPS/W 64Mb/mm2 3D Logic-to-DRAM Hybrid Bonding with
+     and Mitigating Machine Learning Inference Bottlenecks,” in PACT, 2021.                          Process-Near-Memory Engine for Recommendation System,” in ISSCC, 2022.
+[17] L. Ke et al., “RecNMP: Accelerating Personalized Recommendation with Near-                 [59] UPMEM, “UPMEM Software Development Kit (SDK),” https://sdk.upmem.com,
+     Memory Processing,” in ISCA, 2020.                                                              2023.
+[18] N. Park et al., “High-Throughput Near-Memory Processing on CNNs with 3D                    [60] J. C. Corbett et al., “Spanner: Google’s Globally-Distributed Database,” ACM TOCS,
+     HBM-Like Memory,” TODAES, 2021.                                                                 2012.
+[19] B. Kim et al., “MViD: Sparse Matrix-Vector Multiplication in Mobile DRAM for               [61] J. Dean and S. Ghemawat, “MapReduce: Simplified Data Processing on Large
+     Accelerating Recurrent Neural Networks,” IEEE TC, 2020.                                         Clusters,” Comm. ACM, 2008.
+[20] H. Sun et al., “An Energy-Efficient Quantized and Regularized Training Framework           [62] L. Lamport, “The Part-time Parliament,” ACM Trans. Comput. Syst., 1998.
+     for Processing-in-Memory Accelerators,” in ASP-DAC, 2020.                                  [63] D. Ongaro and J. K. Ousterhout, “In Search of an Understandable Consensus Algo-
+[21] E. Azarkhish et al., “Neurostream: Scalable and Energy Efficient Deep Learning                  rithm,” in USENIX ATC, 2014.
+     with Smart Memory Cubes,” IEEE TPDS, 2017.                                                 [64] P. Hunt et al., “ZooKeeper: Wait-free Coordination for Internet-scale Systems,” in
+[22] J. Park et al., “TRiM: Enhancing Processor-Memory Interfaces with Scalable Tensor               USENIX ATC, 2010.
+     Reduction in Memory,” in MICRO, 2021.                                                      [65] H. Garcia-Molina, “Elections in a Distributed Computing System,” IEEE TC, 1982.
+[23] J. H. Lee et al., “BSSync: Processing Near Memory for Machine Learning Workloads           [66] M. Castro, “Practical Byzantine fault tolerance,” in OSDI, 1999.
+     with Bounded Staleness Consistency Models,” in PACT, 2015.                                 [67] K. R. Driscoll et al., “Byzantine Fault Tolerance, from Theory to Reality,” in SafeComp,
+[24] M. He et al., “Newton: A DRAM-maker’s Accelerator-in-Memory (AiM) Architec-                     2003.
+     ture for Machine Learning,” MICRO, 2020.                                                   [68] D. Dolev and H. R. Strong, “Authenticated Algorithms for Byzantine Agreement,”
+[25] D. Lee et al., “Improving In-Memory Database Operations with Acceleration DIMM                  SIAM J. Comput., 1983.
+     (AxDIMM),” DAMON, 2022.                                                                    [69] L. Lamport et al., “The Byzantine Generals Problem,” ACM TOPLAS, 1982.
+[26] J. Gómez-Luna et al., “Benchmarking a New Paradigm: An Experimental Analysis               [70] M. A. Zaharia et al., “Resilient Distributed Datasets: A Fault-Tolerant Abstraction
+     of a Real Processing-in-Memory Architecture,” arXiv, vol. abs/2105.03814, 2021.                 for In-Memory Cluster Computing,” in NSDI, 2012.
+[27] V. Seshadri et al., “Ambit: In-Memory Accelerator for Bulk Bitwise Operations              [71] M. P. I. Forum, “MPI: A Message-Passing Interface Standard,” 1994.
+     Using Commodity DRAM Technology,” MICRO, 2017.                                             [72] L. Glimcher et al., “Scaling and Parallelizing a Scientific Feature Mining Application
+[28] A. Boroumand et al., “Polynesia: Enabling Effective Hybrid Transactional Analytical             using a Cluster Middleware,” IPDPS, 2004.
+     Databases with Specialized Hardware Software Co-Design,” in ICDE, 2022.                    [73] W. Jiang et al., “A Map-Reduce System with an Alternate API for Multi-core Envi-
+[29] C. Lim et al., “Design and Analysis of a Processing-in-DIMM Join Algorithm: A                   ronments,” CCGrid, 2010.
+     Case Study with UPMEM DIMMs,” SIGMOD, 2023.                                                [74] W. Sun et al., “ABC-DIMM: Alleviating the Bottleneck of Communication in DIMM-
+[30] S. Lloyd and M. Gokhale, “Near Memory Key/Value Lookup Acceleration,” in                        based Near-Memory Processing with Inter-DIMM Broadcast,” ISCA, 2021.
+     MEMSYS, 2017.
+
+
+                                                                                           11
+
+
+
+===== Page 12 =====
+
+[75] Z. Zhou et al., “DIMM-Link: Enabling Efficient Inter-DIMM Communication for                 [89] A. Bernhardt et al., “pimDB: From Main-Memory DBMS to Processing-In-Memory
+     Near-Memory Processing,” HPCA, 2023.                                                             DBMS-Engines on Intelligent Memories,” in DaMoN, 2023.
+[76] L. Dagum and R. Menon, “OpenMP: an Industry Standard API for Shared-memory                  [90] A. Baumstark et al., “Adaptive Query Compilation with Processing-in-Memory,” in
+     Programming,” 1998.                                                                              ICDEW, 2023.
+[77] SAFARI Research Group, “PrIM Benchmark Suite,” https://github.com/CMU-                      [91] A. Baumstark et al., “Accelerating Large Table Scan using Processing-In-Memory
+     SAFARI/prim-benchmarks.                                                                          Technology,” BTW, 2023.
+[78] SAFARI Research Group, “PIM Machine Learning Training Benchmarks,”                          [92] M. Naumov et al., “Deep Learning Recommendation Model for Personalization and
+     https://github.com/CMU-SAFARI/pim-ml.                                                            Recommendation Systems,” arXiv preprint arXiv:1906.00091, 2019.
+[79] Z. Qin et al., “A Novel Approximation Methodology and Its Efficient VLSI Imple-             [93] M. A. Ibrahim and S. Aga, “Collaborative Acceleration for FFT on Commercial
+     mentation for the Sigmoid Function,” IEEE Transactions on Circuits and Systems II:               Processing-In-Memory Architectures,” arXiv preprint arXiv:2308.03973, 2023.
+     Express Briefs, 2020.                                                                       [94] N. Hajinazar et al., “SIMDRAM: A Framework for Bit-Serial SIMD Processing Using
+[80] V. Seshadri et al., “RowClone: Fast and Energy-efficient In-DRAM Bulk Data Copy                  DRAM,” in ASPLOS, 2021.
+     and Initialization,” MICRO, 2013.                                                           [95] V. Seshadri et al., “Fast Bulk Bitwise AND and OR in DRAM,” CAL, 2015.
+[81] K. K. Chang et al., “Low-cost Inter-linked Subarrays (LISA): Enabling Fast Inter-           [96] J. D. Ferreira et al., “pLUTo: Enabling Massively Parallel Computation in DRAM
+     subarray Data Movement in DRAM,” in HPCA, 2016.                                                  via Lookup Tables,” in MICRO, 2022.
+[82] Y. Wang et al., “FIGARO: Improving System Performance via Fine-Grained In-                  [97] D. Fujiki et al., “Duality Cache for Data Parallel Acceleration,” in ISCA, 2019.
+     DRAM Data Relocation and Caching,” in MICRO, 2020.                                          [98] Z. Wang et al., “Infinity Stream: Portable and Programmer-friendly In-/Near-
+[83] S. H. S. Rezaei et al., “NoM: Network-on-Memory for Inter-Bank Data Transfer in                  memory Fusion,” in ASPLOS, 2023.
+     Highly-Banked Memories,” CAL, 2020.                                                         [99] X. Peng et al., “CHOPPER: A Compiler Infrastructure for Programmable Bit-serial
+[84] H. K. Kang et al., “PIM-tree: A Skew-resistant Index for Processing-in-Memory,”                  SIMD Processing using Memory in DRAM,” in HPCA, 2023.
+     Proc. VLDB Endow., 2022.                                                                   [100] A. A. Khan et al., “CINM (Cinnamon): A Compilation Infrastructure for Heteroge-
+[85] J. Gómez-Luna et al., “Benchmarking Memory-Centric Computing Systems: Analy-                     neous Compute In-memory and Compute Near-memory Paradigms,” arXiv preprint
+     sis of Real Processing-In-Memory Hardware,” IGSC, 2021.                                          arXiv:2301.07486, 2022.
+[86] C. Giannoula et al., “Towards Efficient Sparse Matrix Vector Multiplication on Real        [101] C. Lattner et al., “MLIR: A Compiler Infrastructure for the End of Moore’s Law,”
+     Processing-in-Memory Architectures,” in SIGMETRICS, 2022.                                        arXiv preprint arXiv:2002.11054, 2020.
+[87] L.-C. Chen et al., “UpPipe: A Novel Pipeline Management on In-Memory Processors            [102] C. Lattner et al., “MLIR: Scaling Compiler Infrastructure for Domain Specific Com-
+     for RNA-seq Quantification,” in DAC, 2023.                                                       putation,” in CGO, 2021.
+[88] P. Das et al., “Implementation and Evaluation of Deep Neural Networks in Com-
+     mercially Available Processing in Memory Hardware,” in SOCC, 2022.
+
+
+
+
+                                                                                           12
+

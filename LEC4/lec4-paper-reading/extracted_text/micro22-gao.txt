@@ -1,0 +1,1033 @@
+Source PDF: /home/yuntongh/codex/agent-sandbox/lec4-paper-reading/sources/original-paper/micro22-gao.pdf
+GitHub URL: https://github.com/Yuntong-Hou/computer-architecture/blob/main/LEC4/original-paper/micro22-gao.pdf
+Raw URL: https://raw.githubusercontent.com/Yuntong-Hou/computer-architecture/main/LEC4/original-paper/micro22-gao.pdf
+Accessed: 2026-05-11 11:24:28 UTC
+
+
+
+===== Page 1 =====
+
+                          2022 55th IEEE/ACM International Symposium on Microarchitecture (MICRO)
+
+
+
+
+                           FracDRAM: Fractional Values in Off-the-Shelf DRAM
+
+
+                                       Fei Gao, Georgios Tziantzioulis, and David Wentzlaff
+                                       Department of Electrical and Computer Engineering
+                                                       Princeton University
+                                                        Princeton, NJ, USA
+                             feig@princeton.edu, georgios.tziantzioulis@pm.me, wentzlaf@princeton.edu
+
+
+                                                                                                                  
+       Abstract—As one of the cornerstones of computing, dynamic
+                                                                            
+    random-access memory (DRAM) is prevalent across digital
+                                                                                      
+    systems. Over the years, researchers have proposed modiﬁca-                                                
+    tions to DRAM macros or explored alternative uses of existing          Figure 1: Utilizing a specially timed command sequence to
+    DRAM chips to extend the functionality of this ubiquitous
+    media. This work expands on the latter, providing new in-              store fractional values in off-the-shelf DRAM cells.
+    sights and demonstrating new functionalities in unmodiﬁed,
+    commodity DRAM. FracDRAM is the ﬁrst work to show
+    how fractional values can be stored in off-the-shelf DRAM.             the operation of unmodiﬁed, commodity, DRAM by exploring
+    We propose two primitive operations built with specially
+                                                                           how DRAM functions outside of the JEDEC speciﬁcation.
+    timed DRAM command sequences, to either store fractional
+    values to the entire DRAM row or to masked bits in a row.              This reexamination has lead to discoveries such as Compute-
+    Utilizing fractional values, this work enables more modules            DRAM [14] which has shown that with-memory computation
+    to perform the in-memory majority operation, increases the             can be realized in unmodiﬁed commodity DRAM modules
+    stability of the existing in-memory majority operation, and            by using out-of-speciﬁcation timed command sequences.
+    builds a state-of-the-art DRAM-based PUF with unmodiﬁed
+    DRAM. In total, 582 DDR3 chips from seven major vendors are
+                                                                              FracDRAM extends the later efforts and provides new
+    evaluated and characterized under different environments in            insights and showcases new functionalities in unmodiﬁed,
+    this work. FracDRAM breaks through the conventional binary             commodity, DRAM. Our work dissects the binary abstraction
+    abstraction of DRAM logic, and brings new functions to the             that data stored in DRAM cells can only be one or zero.
+    existing DRAM macro.                                                   In reality, this is not the case. Unlike SRAM, whose stable
+      Keywords-DRAM; PIM; Processing-with-Memory; Memory                   states are only two, the voltage level of a DRAM cell, which
+    Controller; PUF                                                        at its heart is a capacitor, can occupy any level between
+                                                                           ground and Vdd . In fact, the DRAM cell is not always “full”
+                         I. I NTRODUCTION                                  due to leakage. Previous works have also shown DRAM
+       The stalling of Moore’s Law and end of Dennard scal-                working with a voltage lower than Vdd [15], [16], [17], [18]
+    ing have motivated computer architects to investigate non-                The main requirement for exploiting this spectrum of
+    traditional media for computing. A prime example of this               voltages is the capability to set the voltage level with ﬁne
+    is research that investigates using and modifying DRAM, a              control. Achieving this seems to require a custom DRAM
+    ubiquitous tool for storing short term values, as a medium             chip as there is no built-in functionality to set fractional
+    for computing. To the external user, a DRAM is a matrix of             values in commodity DRAM. However, closer examination
+    storage elements where information is stored in one of two             of a DRAM module and its operation shows that in addition
+    states, zero or one. However, things in the world are not just         to the circuitry to drive voltage to Vdd or ground, there
+    black and white, and that holds for DRAM too. This paper               is also circuitry to drive voltage to Vdd /2. This circuitry
+    demonstrates how to leverage that “grey part” of DRAM.                 is used during the PRECHARGE command (Section II).
+       Near-memory [1], [2], [3], in-memory [4], [5], [6], [7],            FracDRAM leverages this key insight and is the ﬁrst
+    [8], and with-memory-computing [9], [10], [11], [12] are               work to store fractional values in unmodiﬁed, commodity
+    growing ﬁelds driven by the potential to reduce the energy             DRAM. FracDRAM demonstrates the ability to generate
+    consumption of data transfer between storage and processing            three distinguishable states without any modiﬁcation to
+    units, as well as the search for an alternative and ubiquitous         DRAM and that the data-path to store these different voltage
+    media that can be used for computation and related needs.              levels already exists in commodity DRAM. FracDRAM is
+    This has fueled a reexamination of the operation and design            capable of doing this by using novel timing of DRAM
+    of DRAM modules at all levels. One direction explored                  command sequences.
+    by prior work, such as Ambit [12] and RowClone [13],                      Building on this key insight, we create primitive operations
+    has investigated modifying DRAM macros to enable charge                that store fractional values to an entire row and to masked
+    sharing between rows. A different approach has reexamined              bits within a row. We also propose methods to verify the
+
+
+978-1-6654-6272-3/22/$31.00 ©2022 IEEE                               885
+DOI 10.1109/MICRO56248.2022.00066
+
+
+
+===== Page 2 =====
+
+                                                                         the voltage level in the cell capacitor. DRAM memory is
+                                            
+                                                                         hierarchically structured and organized in levels of: ranks,
+                                                                banks, and sub-arrays. For the purpose of this work we
+                                                                         only focus on the DRAM structure within a sub-array; for
+                                             
+                                                                         a detailed description of DRAM organization and operation
+                                                        
+                                                                       see: Jacob et al. [19] and Keeth et al. [20].
+                                                               At the sub-array level, word-lines control the connection
+                                                                    between the cells in a row and the bit-lines; bit-lines can
+                                                                   be connected to all cells in the same column. At the end
+                                                               of each bit-line, there is a sense-ampliﬁer which can drive
+Figure 2: Basic DRAM structure within a sub-array. Shade                 the voltage to Vdd or 0 when enabled, and pass the sensed
+amount in the cell represents the charge stored in it.                   voltage to the row buffer for read/write. Figure 2 provides a
+                                                                         graphical representation of the DRAM organization and the
+                                                                         core components of a sub-array.
+effectiveness of the primitives, which can be regarded as a
+                                                                         B. DRAM Commands
+destructive readout of the fractional value, and demonstrate
+those operations with unmodiﬁed, commercial, DRAM                           The operation of the DRAM module is controlled by
+modules. We explore two use cases in detail: 1 leveraging                the memory controller (MC). The MC translates high-
+fractional values to expand the number of DRAM modules                   level memory access instructions and their addresses to
+that can support ComputeDRAM-style majority operations                   DRAM commands with detailed row and column addresses.
+with increased stability, and 2 , using fractional values to             FracDRAM uses two of the DRAM commands to construct
+implement a DRAM-based Physically Unclonable Function                    fractional value storage in commercial DRAMs:
+(PUF) in unmodiﬁed DRAM with state-of-the-art throughput.                   I. PRECHARGE: takes the bank address as an argument
+In addition to these examples, the primitives provided in                      and has two steps. First, all opened rows are closed
+FracDRAM can be leveraged to characterize DRAM data                            by zeroing all word-lines in the target bank, which
+retention time, help people understand and reverse-engineer                    disconnects the cells from the bit-lines. Second, all
+the “blackbox” design of the DRAM array, potentially                           bit-lines are driven to Vdd /2 as an initial value.
+increase the storage density of DRAM, and potentially                      II. ACTIVATE: takes the bank and row addresses as
+support with-memory ternary computation.                                       arguments, and has three steps. First, the target row’s
+   The contributions of this work are the following:                           word-line is raised to high, connecting the cells of the
+   • Demonstration of the ﬁrst successful storage of frac-                     row directly to the bit-lines. This enables charge sharing
+      tional values in unmodiﬁed, commercial, DRAM.                            between a cell and its corresponding bit-line, which
+   • Utilization of fractional DRAM storage to expand Com-                     inﬂuences the voltage of the bit-line to slightly higher
+      puteDRAM-style, in-memory, majority operation to a                       or lower than Vdd /2, depending on the value stored in
+      larger set of DRAM module types.                                         the cell initially. At a second step, the sense ampliﬁer
+   • Utilization of fractional DRAM storage to enhance the                     is enabled, which ampliﬁes the value held in the bit-
+      reliability of existing ComputeDRAM-style majority                       line and drives the voltage to Vdd or 0. As the cell is
+      operation, reducing the error rate from 9.1% to 2.2%.                    still connected to the bit-line, its original voltage is
+   • Demonstration of using fractional DRAM storage to                         recovered. Finally, the output of the activated local row
+      implement a Physically Unclonable Function (PUF) in                      buffer is transferred to the global row buffer.
+      unmodiﬁed DRAM with state-of-the-art throughput.                      Different DRAM commands perform different tasks and
+   • A careful evaluation and characterization of storing
+                                                                         require different timing constraints (i.e., memory cycles)
+      fractional values in DRAM and it’s applications.
+                                                                         to complete. It is the MC’s responsibility to issue DRAM
+                    II. BACKGROUND                                       commands with enough idle cycles in between, following
+                                                                         the timing constraints set by the JEDEC standard [21].
+   FracDRAM is constructed using specially timed DRAM
+command sequences. In this section, we brieﬂy introduce                  C. Cell Polarity: True-Cells vs Anti-Cells
+essential concepts for understanding FracDRAM : the DRAM
+structure and cell polarity, basic DRAM commands, and the                   DRAM design has been extensively optimized to improve
+multiple-row-activation.                                                 its area efﬁciency. Modern DRAMs reuse another bit-line
+                                                                         as the reference wire to the sense ampliﬁer, as depicted
+A. DRAM Structure                                                        in Figure 2. Since only one side of the sense ampliﬁer is
+                                                                         connected to the row buffer, the bit-line on the other side
+   Dynamic random-access memory (DRAM) consists of
+                                                                         always holds an opposite state as the row buffer which
+arrays of cells, each of which stores single-bit data using
+
+
+
+
+                                                                   886
+
+
+
+===== Page 3 =====
+
+contains the read out value. The cells connected to the bit-              
+lines on the “row buffer” side are called true-cells, while the                                                                     
+cells connected to the “opposite” bit-lines are called anti-                                                                          
+cells [22]. In true-cells, Vdd is read as a logic one, while             
+in anti-cells Vdd represents a logic zero. We can identify                                             
+                                                                                                                  
+anti-cells by pausing the refresh and checking if logic zero
+leaks to logic one (true-cells only leak from one to zero).             Figure 3: Voltage level of the cell capacitor and the bit-line
+In section V, we store opposite logic values to anti-cells              during a Frac operation. In order to put all the commands
+by default, so that they physically hold the same voltage               together, the time scale in the horizontal axis is not even:
+as true-cells. Since they are symmetric, for simplicity, we             step 2 and 3 are in two consecutive cycles, while the time
+assume all cells are true-cells in the remainder of this work.          between step 1 and 2 , step 3 and 4 , is at least 5 cycles.
+                                                                        We assume each memory cycle is 2.5ns.
+D. Multiple-Row-Activation
+   Under nominal operation, at most one row in a bank can
+be activated at a given time [21]. However, Gao et al. [14]             ACTIVATE to the target row, which raises up the word-line
+demonstrated that multiple rows can be opened in unmodiﬁed              and connects the cell capacitor to the bit-line. After the charge
+DRAMs using a DRAM command sequence that violates                       sharing, both the cell and the bit-line reach the same voltage
+the JEDEC timing constraints. The command sequence that                 level which is slightly higher than Vdd /2. The equilibrium
+was used is: ACTIVATE(R1 )-PRECHARGE-ACTIVATE(R2 ),                     voltage is closer to the initial bit-line voltage because the
+with 2.5ns per memory cycle and no idle cycles in between.              bit-line capacitance is much larger than the cell’s [13].
+R1 and R2 are two different row addresses within the same               In the following cycle, step 3 , we issue a PRECHARGE
+sub-array. Using the above command sequence, one or more                command to interrupt the process of row activation before
+other rows can be opened together with R1 and R2 . The charge           the sense ampliﬁer is enabled. After that, the cell capacitor
+sharing among the cells in three opened rows is utilized to             is disconnected from the bit-line while holding a fractional
+build a majority-of-three (MAJ3) operation. Olgun et al. [23]           value; neither Vdd nor 0, but a voltage slightly higher than
+also found that the same command sequence can open four                 Vdd /2. Since we need to wait for the PRECHARGE to ﬁnish,
+rows in DDR4 modules.                                                   the total latency of a Frac operation is 7 memory cycles
+                                                                        (two command cycles plus ﬁve idle cycles).
+               III. P RIMITIVE O PERATIONS
+                                                                           With a single Frac operation, we manage to store fractional
+   FracDRAM introduces Frac and Half-m, two novel primi-                values in DRAM cells in the same row. However, this
+tive operations that utilize specially timed DRAM command               fractional value depends on the initial state in the cell. For
+sequences to store fractional values in off-the-shelf DRAM              another column where the initial voltage is 0, the resultant
+modules. Following, we elaborate on how each primitive                  voltage will be something between Vdd /2 and 0. If we want
+operation is constructed and how it works at a low level. We            to make the stored voltage more accurate, closer to Vdd /2,
+explain how we validated that a fractional value is indeed              and independent from the initial value, we can simply issue
+generated and stored in the DRAM cell in Section IV-B.                  multiple Frac operations. At step 4 , when the PRECHARGE
+                                                                        command from the previous Frac is completed, we are ready
+A. The Frac Operation
+                                                                        to issue another Frac operation. We found that the more
+  The Frac operation allows us to store fractional values               Frac operations we issue, the closer the resulted voltage is to
+in an entire row. To construct Frac, we utilize two basic               Vdd /2, and the cell voltage will be more consistent across the
+DRAM commands: ACTIVATE and PRECHARGE. The two                          row regardless of the initial value. We evaluate how the initial
+commands need to be issued back-to-back without any                     cell voltage and the number of Frac operations inﬂuence the
+extra cycles in between. At a high level, our goal is to                ﬁnal voltage that we generate in section V.
+use the PRECHARGE command to interrupt the process of
+row activation, and prevent the sense ampliﬁer from being               B. The Half-m Operation
+enabled.                                                                   Our second technique, Half-m, stores Half values to
+  Fig. 3 shows the voltage level of both the bit-line and the           masked bits; i.e., it stores a mixture of normal values
+DRAM cell during Frac: First 1 , we issue a PRECHARGE                   and Half values in the same row. In Half-m, instead of
+command to initialize the bit-line voltage to Vdd /2. The               interrupting a single row activation, as we do in Frac, we
+PRECHARGE command will close the activated row ﬁrst.                    use a PRECHARGE command to interrupt the process of a
+Thus, the bit-line voltage won’t change until at least a                four-row-activation.
+memory cycle later. The initial voltage in the cell capacitor
+                                                                           As mentioned in Section II, the sequence ACTIVATE(R1 )-
+can be either Vdd or 0; we assume it is Vdd for this example.
+                                                                        PRECHARGE-ACTIVATE(R2 ) triggers a multiple-row-
+Following 2 , we initiate the Frac operation by issuing an
+                                                                        activation. We tested multiple groups of DDR3 modules
+
+
+
+
+                                                                  887
+
+
+
+===== Page 4 =====
+
+                                                                                  Table I: Evaluated DRAM chips and their capability of per-
+                                                                                    forming Frac, three-row-activation, and four-row-activation.
+                                                                  
+                                                                  
+                                                                                                                                        Three-row-    Four-row-
+                                                                    
+                                                                  "             Group   Vendor     Freq(MHz)   # Chips   Frac
+                                                                                                                                         activation   activation
+                                                                                          A     SK Hynix     1066        16       
+                                                                  "                B     SK Hynix     1333        80                            
+      '                                                                                   C     SK Hynix     1333       160                             
+                   %                  &                            D     SK Hynix     1600        16                             
+               (          )       *     +         ,                                       E     Samsung      1066        32       
+                                                                                          F     Samsung      1333        48       
+             (    (     '                                  (       '                   G     Samsung      1600        32       
+                                                                                          H      TimeTec     1333        32       
+             (    '     '                             (       '                   I      Corsair     1333        32       
+                                                                                          J      Micron      1333       16
+             (    (     '      %&$    $               (       '                   K       Elpida     1333        32
+                                 %&$                                               L       Nanya      1333        32
+             (    '     '                                  (       '
+
+Figure 4: Voltage level of cell capacitors in three different
+columns during a Half-m operation. Lower half of the ﬁgure                             and zero are not fully recovered to Vdd and 0 as we show in
+shows the data layout in the four opened rows. The curves                              Fig. 4, thus we call them “weak” ones and zeros. The Half
+in the voltage chart correspond to the cell whose outline has                          value is not exactly Vdd /2 either, due to the asymmetry of
+the same color or dotted line.                                                         those opened rows. But as long as we can distinguish these
+                                                                                       three generated values from each other and show that “weak”
+                                                                                       ones/zeros behave the same as normal ones/zeros, we could
+from SK Hynix, and found that besides opening three rows                               say that Half-m successfully stores a mixture of zero, one,
+at the same time, we can open four rows as well using                                  and Half value in the same row.
+speciﬁc combinations of R1 and R2 . For example, rows 0,
+1, 8, 9 can be opened simultaneously by activating row 8                               C. Refresh
+and row 1 back-to-back. QUAC-TRNG [23] also showed                                        The fractional value stored in a DRAM cell can be
+that four-row-activation can be achieved in commodity                                  destroyed by any row activation. Thus, whenever we have a
+DDR4 modules. We construct Half-m by combining                                         fractional value stored in the DRAM array, we need to prevent
+the command sequence of the four-row-activation, and                                   the issuing of the REFRESH command to rows holding that
+a trailing PRECHARGE: ACTIVATE(R1 )-PRECHARGE-                                         fractional value. At the same time, if we also stored normal
+ACTIVATE(R2 )-PRECHARGE.                                                               Vdd in other columns in the same row, we need to REFRESH
+   Fig. 4 shows the cell voltage in three different columns                            that row to preserve the logical ones. Fortunately, the typical
+during a Half-m operation. As we store different initial values                        refresh cycle for a row – 64ms – is long enough for us to
+to the four opened rows (R1 to R4 ), different results (logical 0,                     implement applications with fractional values. We only need
+1, and Half value) are generated respectively. Half-m begins                           to be cautious that REFRESH is not sent in the middle of
+with 1 a PRECHARGE command which closes all the rows                                   the application.
+and resets the bit-line voltage. Steps 2 - 4 are essentially
+a four-row-activation. As explained in previous works [14],                                                 IV. M ETHODOLOGY
+[23]: The PRECHARGE in step 3 doesn’t have enough time                                    In this section, we detail our experimental setup and our
+to close the row, thus R1 remains open. The glitch of the row                          methodology for verifying the fractional values in off-the-
+decoder further implicitly opens extra rows, R3 and R4 , after                         shelf DRAMs. In our evaluation, we examine a total of
+we issue ACTIVATE(R2 ) at 4 . We choose the address of R1                              528 DDR3 chips from seven major DRAM vendors. Table I
+and R2 carefully to make sure that four rows are activated by                          presents the full list of tested DRAM chips, as well as their
+the time of step 5 . Consider the cells in the same column of                          nominal working frequency (speed level), and their capability
+these four rows, if they all have the same initial value (0 or                         of performing different in-memory operations. Among the
+1), they will change the bit-line voltage to the same direction                        in-memory operations, three-row-activation is the prerequisite
+together, and the voltage at step 5 will be close to 0 or                              of performing ComputeDRAM-style majority operation in
+Vdd , as shown with the green and yellow line. If we store                             the absence of Frac, and four-row-activation is necessary for
+two ones and two zeros in these cells in the beginning, the                            Half-m. We divide the evaluated DRAM chips into 12 groups,
+ﬁnal voltage will be close to Vdd /2, similar to the blue lines.                       from A to L, based on the vendor and DRAM conﬁguration.
+Finally, 5 we issue the last PRECHARGE to prevent the
+sense ampliﬁer from being enabled. Since the bit-lines are                             A. Platform
+disconnected from the cells, the cell voltage stays unchanged.                           For our evaluation we used two setups with similar
+   Without the help from the sense ampliﬁer, both logical one                          conﬁgurations as the one described in ComputeDRAM [14].
+
+
+
+
+                                                                                 888
+
+
+
+===== Page 5 =====
+
+                                                                          1) Choose three rows that can be opened at the same time
+                                                                          2) Store fractional value into row R1 , R2 , and one in R3
+                                                                          3) Perform MAJ3 on R1 , R2 , R3 . Record the result as X1
+                                                                          4) Store fractional value into row R1 , R2 , and zero in R3
+                                                                          5) Perform MAJ3 on R1 , R2 , R3 . Record the result as X2
+                                                                         The two different MAJ3 results (X1 and X2 ) can be used to
+Figure 5: Evaluation platform including FPGA boards which                verify the existence of the fractional value.
+the customized memory controller is programmed on.                          The assumption we make is that, if we can store a fractional
+                                                                         value, then we can produce the same fractional value on
+                                                                         different rows in the same DRAM module using identical
+We used a modiﬁed version of the SoftMC [24] software-                   operations, and we can reproduce the same fractional value
+controlled memory controller to generate the appropriate                 on the same row multiple times. This assumption can be
+DRAM command sequences with special timing intervals.                    proven using the “retention time” method, and we need it
+Each host computer sends DRAM command sequences to                       here to simplify the reasoning process. In the procedure
+a Xilinx ML605 FPGA board through the PCIe bus, as                       above, we store a fractional value into row R1 and R2 twice,
+shown in Figure 5. The hardware part of SoftMC, which is                 and we assume they all hold the same voltage V f rac after step
+programmed in the FPGA, receives the command sequence                    2 and 4. If we failed to produce the fractional value, in other
+and subsequently issues it to the real DRAM chip with                    words, if V f rac were still either 0 or Vdd , the MAJ3 result
+speciﬁed timing. The working frequency of SoftMC is ﬁxed                 would be the same as the value we stored in R1 and R2 , no
+to 400MHz, which means that the memory cycle is always                   matter what we set in R3 . Therefore, if we can ever get the
+2.5ns no matter what speed level the DRAM chip has. Thus,                result of X1 = Vdd and X2 = 0 at the same time, it will prove
+whenever we mention “memory cycle”, we assume 2.5ns per                  that V f rac is neither Vdd nor 0, but rather a fractional value
+cycle.                                                                   close to Vdd /2.
+B. Veriﬁcation Methodology
+                                                                                                V. E VALUATION
+   Our goal is to demonstrate that a fractional value can
+                                                                            In this section, we present an evaluation and demonstration
+indeed be generated and stored in commodity DRAM cells.
+                                                                         of proof-of-concept for the two primitive operations: Frac
+However, the fractional value can not be simply read out
+                                                                         and Half-m. Speciﬁcally, we utilize the methods described in
+of the DRAM module, as the sense ampliﬁer will destroy
+                                                                         Section IV-B (retention time and MAJ3) to demonstrate the
+the fractional value during row activation. Thus, we need a
+                                                                         effectiveness of the proposed operations and the existence
+method to verify that the fractional value is there without
+                                                                         of fractional values in an entire DRAM row.
+actually probing into the cell. We propose two methods to
+achieve this: measuring the data retention time and checking             A. Evaluation of Frac: Retention Time Proﬁle
+the results of the majority-of-three (MAJ3) operation with
+                                                                             The retention time collection is composed of two parts:
+fractional values.
+                                                                         ﬁrst, we store ones in the entire target row, then we stop
+   1) Data Retention Time: The charge stored in a DRAM
+                                                                         sending any memory commands in order to let the charge
+cell will gradually leak out of the cell capacitor if it’s not
+                                                                         leak out of the cell. The second step is completed when after
+activated for a while. In addition, there is a threshold voltage
+                                                                         time t, we read out the data and record which bits have lost
+for the sense ampliﬁer, below which the voltage level is
+                                                                         their data. If a bit holds one after time t1 but loses its data
+regarded as a logical zero. When the voltage drops below
+                                                                         after time t2 , the cell’s retention time is narrowed down to the
+that threshold such that the sense ampliﬁer fails to recognize
+                                                                         (t1 ,t2 ) range. Thus, by varying t and repeating the procedure
+the logical one during activation, the data will be lost. The
+                                                                         multiple times, we can construct a proﬁle of the retention
+amount of time that a DRAM cell can hold the data is called
+                                                                         time range of the cells in the target row. This proﬁle shows
+the cell’s retention time. Since the voltage is monotonically
+                                                                         how long the data can be preserved in each cell when full
+decreasing during the charge leakage, for the same cell, the
+                                                                         Vdd is stored, serving as a baseline. To evaluate Frac, the
+higher the initial voltage is, the longer the “retention time”
+                                                                         only difference in the procedure is that we issue one to ﬁve
+will be. Based on that, we can measure the retention time,
+                                                                         Frac operations right after all ones are stored in the target
+and use it as an indicator for the starting voltage level in the
+                                                                         row, so that the retention time proﬁle after Frac is collected.
+cell.
+                                                                             To demonstrate our proof-of-concept, we performed a
+   2) MAJ3 operation with fractional value: Another method
+                                                                         retention time experiment that included 16 chips from each
+to verify the fractional value is to perform MAJ3 operations
+                                                                         of the 12 DRAM groups in Table I. For each DRAM chip, we
+with it. Speciﬁcally, we perform MAJ3 twice, in both cases
+                                                                         randomly sample ﬁve rows from each bank to evaluate. The
+we store the same fractional value in the ﬁrst two operands,
+                                                                         heatmap in Figure 6 presents the retention time proﬁles for
+and then we store different value of ones and zeros in the
+                                                                         the different DRAM groups. Columns present a Probability
+third operand. The detailed procedure is as follows:
+
+
+
+
+                                                                   889
+
+
+
+===== Page 6 =====
+
+Figure 6: Change in the retention time as we issue 0-5 Frac operations to different DRAM groups. Each column of the
+heatmap represents a Probability Density Function (PDF) of the retention time. According to the change pattern, each
+individual cell is divided into three categories. The proportion of each category is shown by the numbers in brackets, as
+[long retention time, monotonic decrease, others] respectively. The second category demonstrates our proof-of-concept.
+
+
+Density Function (PDF) of retention time, whereas rows                   is the initial bit-line level, in a DRAM cell. Therefore, the
+represents retention time ranges. Darker shade in the box                reduced voltage value must be between Vdd and Vdd /2. The
+means that a larger portion of cells have a retention time               above leads us to draw two conclusions (for initial value of
+in the corresponding range. DRAM retention time can be                   all ones): 1 Frac operation can store fractional voltages
+as short as several seconds, but those cells only make up                in DRAM cells, and 2 consecutive Frac operations lower
+a tiny portion; less than 10−4 [22]. Therefore, we choose a              the fractional voltage towards Vdd /2. Although the ﬁrst
+relatively large and coarse timescale, classifying the retention         category does not contribute to our point, it is not a counter
+time into six ranges: 0, 0 to 10 minutes, 10 to 30 minutes,              example either. Those cells just have a retention time longer
+30 to 60 minutes, 1 to 12 hours, and longer than 12 hours.               than we can proﬁle. The third category exhibits irregular
+A zero retention time means that the voltage in that cell                change patterns in the retention time, however, it only
+is reduced below the threshold that the circuits regard as               contains less than 1% of the cells, and we speculate that
+zero in the beginning; i.e., right after we issue the last Frac.         the affected cells have intrinsic variable retention time
+This deﬁnition of zero retention time also complies with the             (VRT) [25], [26].
+monotonic relationship between the retention time and the                   Despite the insights we extracted from, the retention time
+cell voltage.                                                            method in itself has several limitations. First, we only proved
+   For groups J, K, and L, sending Frac operations has no                our claim on a portion of cells (55% in average). The
+effect in the retention time proﬁle, thus we omit them from              main reason for that is the existence of cells that have long
+the plot. We speculate that those DRAM chips implement                   retention times that fall into the “> 12h” range. Extending the
+time checking circuits to prevent different DRAM commands                experiment beyond the 12 hour range signiﬁcantly increases
+being executed too close to each other.                                  experimentation time, which makes it impractical to narrow
+   For groups A to I, we analyse the change of the retention             down the retention time for all the cells. Second, the retention
+time on individual cells as more Frac operations are issued.             time of a cell is determined by multiple factors, such as the
+According to the change pattern, we divide the cells into                process variation, environmental changes, and a small portion
+three categories. The cells in the ﬁrst category have a long             of cells even exhibits variable retention times [25], [26]. If
+retention time. They are in the bucket of “> 12h” all the                a fractional value is stored in one cell, it might still have a
+time, even after ﬁve Frac operations are sent. The cells in the          longer retention time than another cell which stores a full
+second category exhibit a monotonic decrease of retention                Vdd . Third, as charge only leaks from high voltage to ground,
+time ranges as we issue more Frac operations. This is the                we can only test retention time with an initial value of one.
+group of cells we are most interested in; the proportion of bits            Based on the above and given the results of our retention
+in this category is shown in bold numbers in Figure 6. The               time proﬁling, we can conﬁdently say that Frac can produce
+last category includes the remaining bits, they may exhibit              a fractional value in DRAM chips for most DRAM vendors
+an increased retention time as we issue Frac, or the retention           and for different positions in a DRAM chip. However, we
+time range can not be ﬁxed in the experiment.                            still do not know if all of the bits in a row can reliable
+   The cells in the second category - 55% on average - illus-            reproduce the fractional value, and if Frac works with an
+trate that Frac operations can reduce the cell’s retention time          initial value of zero. We need the MAJ3 method to complete
+incrementally. Given the monotonic relationship between the              the characterization.
+retention time and the voltage (discussed in Section IV-B1),
+we can further conclude that the Frac operation can reduce the           B. Evaluation of Frac: MAJ3 Results
+cell voltage incrementally. According to our understanding                 In our second set of experiments, we follow the procedure
+of low-level DRAM circuits, with an initial voltage of Vdd ,             described in Section IV-B2. We use the ﬁrst three rows
+Frac can not generate a voltage lower than Vdd /2, which                 in each sub-array and execute the command sequence
+
+
+
+
+                                                                   890
+
+
+
+===== Page 7 =====
+
+                                                                          groups that we were unable to thoroughly study Frac due
+                                                                          to their lack of capability to perform a three-row-activation,
+                                                                          we make the hypothesis that Frac has similar characteristics
+                                                                          and can work on all bits. Our evaluation of the use case of
+                                                                          Frac in Section VI-B2 provides supports for this hypothesis.
+                                                                          C. Evaluation of Half-m
+                                                                             Half-m, our second primitive, can store half values on
+                                                                          masked bits in a row. It utilizes charge sharing among four
+                                                                          simultaneously opened rows. If the initial values stored in
+Figure 7: MAJ3 results as we change the number of Frac                    these four rows are two ones and two zeros, it will hold a
+operations we send. (a) and (b) use R1 and R2 to store                    fractional value close to Vdd /2 after Half-m.
+fractional values; (c) and (d) use R1 and R3 to store fractional             Similar to the evaluation method we used for Frac, we
+values. (a) and (c) use all ones as the initial value thus the            conduct both a retention time test and a MAJ3 test on the
+fractional values should be between Vdd /2 and Vdd ; (b) and              value generated from Half-m. We only evaluate the modules
+(d) use all zeros as the initial value thus the fractional values         in group B during this experiment due to the limited support
+should be between 0 and Vdd /2.                                           for the MAJ3 operation in groups C and D; However, groups
+                                                                          C and D are also capable of performing four-row-activation
+                                                                          and Half-m. For four-row-activation, we choose the rows 0,
+ACTIVATE(R1 )-PRECHARGE-ACTIVATE(R2 ), where R1 =                         1, 8, 9 in every sub-array and make R1 = 8, R2 = 1. After we
+1, and R2 = 2; this leads to R3 = 0 [14]. Before we issue                 issue the command sequence in Half-m, R3 = 0 and R4 = 9
+the MAJ3 operation, we store fractional values to R1 and                  will also be activated. We store one to R1 and R3 , and zero
+R2 using various numbers of Frac. As this test relies on the              to R2 and R4 as the initial value to generate a Half value
+MAJ3 result, which requires three-row-activation, we can                  with Half-m in that column. In contrast, the initial value
+only conduct the experiment on group B. Thus, for every chip              of all ones/zeros in four rows would generate a result of
+in group B, we scan every sub-array and record the result of              “weak” ones/zeros after Half-m, as we show in Figure 4.
+X1 and X2 . Figure 7 presents the results: each bar represents            After Half-m is performed, we plot the retention time PDF
+the proportion of columns that generate the corresponding                 with the same six ranges as in Figure 6, for both the Half
+result of X1 and X2 .                                                     value and “weak” ones. Since the result of Half-m is stored
+   For Fig. 7a, we store all ones as the initial value in R1 and          in row 0 and 1 already, we can store ones/zeros to row 2 to
+R2 before we send any Frac operations. The conﬁguration                   perform the MAJ3 operation among the ﬁrst three rows and
+without any Frac, our baseline, is equivalent to a normal                 get results of X1 and X2 respectively. The retention time and
+MAJ3 operation with operands in R1 and R2 being all ones.                 MAJ3 results are shown in Figure 8.
+The observed baseline result meets our expectation: both X1                  As a reference point, we also plot the retention time PDF
+and X2 are one. Similarly, for Fig. 7b, the initial value in R1           of the fractional values generated by ﬁve Frac operations
+and R2 is zero, and the MAJ3 result without any Frac is all               from the same row. Compared with that, the retention time
+zeros. However, as we issue Frac operations, the combination              of Half values present a similar distribution. That proves a
+of X1 = 1 and X2 = 0 begins to dominate and it becomes the                fractional value close to Vdd /2 is indeed stored in some cells
+only result after two or more Frac operations are sent. This              after Half-m. However, the fractional value is not consistent
+is because Frac operations make R1 and R2 hold fractional                 across the row. The MAJ3 result shows that only 16% of
+values and generate the different MAJ3 results of X1 and X2 .             bits can generate the distinguishable Half value, i.e. having
+   For Fig. 7c and Fig. 7d, we change the rows that hold                  a MAJ3 result of X1 = 1 and X2 = 0. The “weak” ones and
+fractional values to R1 and R3 , and store all ones and all zeros         zeros do have decent quality, as the retention time of “weak”
+to R2 . The result pattern with one Frac is a little different            ones is same as normal ones, so does the MAJ3 result of
+from the ﬁrst two subplots, but the overall conclusion is                 “weak” ones/zeros.
+the same: it proves that fractional values can be stored in                  Although not applicable to all the columns, this result
+almost every bit in the DRAM chip, and the initial value                  is a proof-of-concept showing that Half-m can be used to
+stored in the row doesn’t affect the quality of the fractional            store three distinguishable states in cells from the same row.
+value after multiple Frac operations are executed.                        Moreover, since it is built upon a four-row-activation, it has
+                                                                          the potential to be extended to DDR4 modules [23] as well.
+   We want to highlight that while Frac is based on
+unspeciﬁed behaviour of DRAM chips, it does not mean                                            VI. U SE C ASES
+it is an unreliable operation. Our above evaluation showed
+                                                                            In this section, we describe use cases that utilize the
+that Frac exhibited a stable, predictable, behaviour wherever
+                                                                          proposed operations: extending in-memory majority-of-three
+we were able to study it (DRAM group B). For the DRAM
+
+
+
+
+                                                                    891
+
+
+
+===== Page 8 =====
+
+                                                                             construct a MAJ3 operation using the charge sharing
+                                                                             among four rows; a major contribution of this work.
+                                                                                The key to transform a four-row-activation into MAJ3 is
+                                                                             storing fractional values in one of the four operands. This is
+                                                                             because the row that holds fractional values, which is close
+                                                                             to Vdd /2, will have the least inﬂuence on the bit-line voltage
+Figure 8: Both the retention time proﬁle and the MAJ3 results                during the charge sharing, and thus the ﬁnal result will
+for the “weak one”, “weak zero” (no retention time proﬁle),                  depend on the majority voltage among the other three rows.
+and Half value generated in Half-m.                                          We call this operation, that utilizes the Four-row-activation to
+                                                                             perform MAJ3, F-MAJ. The detailed procedure to perform
+                                                                             F-MAJ is as follows:
+operation to more modules and increasing the reliability of the               1) Choose four rows that can be opened at the same time
+existing in-memory majority operation, generating Physical                    2) Store a fractional value into one row with one or multiple
+Unclonable Function (PUF), and potentially expanding the                         Frac operations. An initialization to all zeros/ones before
+storage capabilities of DRAM modules. We also characterize                       Frac is preferred to make the fractional value more even
+two applications in detail with real DRAM chips using the                        across the row
+platform described in Section IV-A.                                           3) Store three operands of MAJ3 to the other three rows
+                                                                              4) Issue      ACTIVATE(R1 )-PRECHARGE-ACTIVATE(R2 ),
+A. Extending in-memory majority operation in more modules                        and the result of MAJ3 will be stored on all four rows
+   1) Proposal of F-MAJ: As mentioned in Section II, in-                        Compared to the original MAJ3 operation, the overhead
+memory MAJ3 can be performed in off-the-shelf DRAM                           of F-MAJ is the cost of storing a fractional value in an entire
+modules. However, according to Gao et al. [14], only a                       row. The initialization before Frac can be implemented with
+limited number of modules from SK Hynix are able to                          a single row copy proposed in ComputeDARM [14]. The
+perform MAJ3. While more modules1 are capable of opening                     subsequent Frac operation only consists of two memory
+multiple rows at the same time, the resultant value does not                 commands (7 memory cycles), which is more light-weight
+conform to the MAJ3 logic.                                                   than a row copy (18 memory cycles). Assuming the same
+   Our experiments revealed that on these special DRAM                       strategy as ComputeDRAM, which exclusively uses reserved
+groups the root cause of the failure is that the command                     rows for computation, we need to copy the operands to
+sequence that performs MAJ3 actually activates four rows                     the reserved locations and copy the result back as well.
+instead of three. Speciﬁcally, we performed a thorough ex-                   In that case, F-MAJ takes only 29% more memory cycles
+ploration using the sequence ACTIVATE(R1 )-PRECHARGE-                        than the original MAJ3. However, with F-MAJ, we are
+ACTIVATE(R2 ), with all possible combinations of row                         capable of performing the majority-of-three operation and
+addresses R1 and R2 . We found that within these modules                     support ComputeDRAM-style computation in more DRAM
+(group C and D in Table I), only N rows can be opened                        modules, even DDR4 modules potentially [23], which cannot
+simultaneously, where N is a power of two; i.e. 2, 4, 8,                     open three rows at the same time, but can open four rows.
+16, etc. Moreover, all combinations of R1 and R2 that can                    Moreover, we found that F-MAJ can even generate a more
+open 2k rows have k bits in difference. However, not all                     stable result compared to the original MAJ3 operation.
+combinations of R1 and R2 that have k different bits can                        2) Evaluation of F-MAJ: In this section, we evaluate
+open 2k rows. This result partially veriﬁes the hypothetical                 the coverage and stability of the F-MAJ operation which
+row decoder circuit that Olgun et al. [23] used to explain the               leverages the four-row-activation to perform logical majority-
+behavior of four-row-activation. As a detailed study of the                  of-three. We use the word “coverage” when referring to how
+row decoder structure is beyond the scope of this paper, we                  many bits in a row and how many chips in a DRAM group
+only want to brieﬂy highlight that for some modules, both                    can perform F-MAJ, and the word “stability” when referring
+DDR3 and DDR4, opening four rows is feasible, but not                        to the successful rate at which operation is performed on the
+three.                                                                       same cell over multiple iterations.
+   Having a method to concurrently open four rows in a                          Since F-MAJ requires storing a fractional value in one of
+sub-array raises the question: what more can this enable? An                 the four rows, there are multiple variables to experiment
+issue is that it is difﬁcult to build logic that utilizes “majority-         with, such as the row to store the fractional value and
+of-four”. The challenge lies in deﬁning the result when two                  the voltage level of the fractional value. We ﬁrst explore
+operands are zeros and two others are ones. In contrast,                     the optimal conﬁgurations that generate the best coverage
+charge sharing among three rows naturally generates the                      of F-MAJ. In this test, we examine all DRAM chips
+MAJ3 result. Following, we explain how we successfully                       which are capable of performing four-row-activation. We
+                                                                             ﬁx {R1 , R2 , R3 , R4 } to {1, 2, 0, 3} for chips in group C and
+  1 SK Hynix DDR3 SDRAM with part number HMT351S6CFR8C-H9
+                                                                             D, and to {8, 1, 0, 9} for chips in group B. Group B supports
+and HMT451S6AFR8A-PB, group C and D in Table I
+
+
+
+
+                                                                       892
+
+
+
+===== Page 9 =====
+
+                                                                                   (a) Group B          (b) Group B          (c) Group C
+                                                                               Figure 10: Subﬁgure (a) presents a detailed break down of
+                                                                               F-MAJ coverage with different input combinations on group
+                                                                               C. Green lines stand for input combinations with two ones
+       (a) Group B             (b) Group C           (c) Group D               and one zero; blue lines for two zeros and one one; red line
+                                                                               shows the overall F-MAJ coverage. Focus on the condition
+                                                                               of using R1 to store fractional value with initial value of all
+                                                                               ones. Subﬁgures (b) and (c) present the CDF of the reliability
+                                                                               of F-MAJ operation across different modules in group B and
+                                                                               C. The black dashed line in subﬁgure (b) presents the CDF
+                                                                               for the MAJ3 baseline.
+
+                       (d) Zoom in Group B
+Figure 9: Coverage of the F-MAJ operation as a function of                        F-MAJ can be performed on all DRAM chips that are
+the number of Frac operations under different conﬁgurations                    capable of opening four rows. A non-zero result for all the
+for DRAM chips in groups B, C, and D; subﬁgures (a), (b),                      chips proves this point.
+and (c), respectively. Subﬁgure (d) presents a more detailed                      Different groups favor different conﬁgurations. For
+version of the results for group B. The black dashed lines in                  example, having a fractional value larger than Vdd /2 (meaning
+subﬁgures (a) and (d) are the baseline MAJ3 operation.                         the initial value is all ones) in R1 generates the best result
+                                                                               for group C, while a fractional value smaller than Vdd /2 in
+                                                                               R4 is the favorite conﬁguration for group D. Because of the
+the ComputeDRAM operations, thus if we activate row                            “black box” nature of DRAM circuits, it is challenging for
+1 and 2, three rows 0, 1, and 2 will be opened. We use                         us to surmise the real cause behind the phenomenon. Going
+the original MAJ3 operation built upon three-row-activation                    forward, we use the experimental results for choosing the
+among the ﬁrst three rows as the baseline design in group                      best conﬁguration for each group.
+B to compare with. During this exploration, we vary the                           F-MAJ improves the coverage of the original MAJ3
+row that stores the fractional value from R1 to R4 , and the                   operation. The best conﬁguration of group B is storing
+voltage level of the “fractional value” all the way from 0                     a fractional value with two Frac operations starting with
+to Vdd . We can ﬁnely control the voltage level by adjusting                   all ones in R2 , which has a 99.8% coverage of F-MAJ
+the number of Frac operations we issue and the initial value                   operation, while the original MAJ3 works on 98.0% of
+in that critical row before we send Frac. All sub-arrays                       columns. This is because the original MAJ3 does not open
+in every chip in group B, C, and D are tested. To verify                       the three rows at the exact same time, and they are not
+the success of F-MAJ, we set the three operands six times                      perfectly symmetric. Among the three opened rows, there is
+as {1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {0, 1, 1}, {1, 0, 1}, {1, 1, 0}. A         always a “primary” row which has more inﬂuence on the
+column is considered capable of performing F-MAJ only                          bit-line voltage compared with the other two. Thus, it has a
+when it generates the correct majority result for all six sets                 larger error rate when the majority result is the opposite of
+of inputs.                                                                     the initial value of that primary row. However, for F-MAJ,
+   Fig. 9 demonstrates the coverage of the F-MAJ operation                     we can put the fractional value in this primary row and
+in these three DRAM groups. Each line represents the                           adjust the voltage level of the fractional value. The insight
+percentage of bits that successfully performed F-MAJ when                      is that F-MAJ provides a chance for us to enhance the
+we use a different number of Frac operations to generate the                   symmetry among the operands, therefore providing a
+fractional value. Different colors stand for using different                   wider coverage on the DRAM chip.
+rows to store fractional values. We plot the average value                        To study how the number of Frac operations inﬂuences the
+among the modules in that group and the shaded part indicates                  coverage of F-MAJ in detail, we focus on one conﬁguration
+the 95% conﬁdence interval. From Fig. 9, we can draw several                   and examine each individual input combination. Using group
+conclusions:                                                                   C with fractional values in R1 and an initial value of all
+
+
+
+
+                                                                         893
+
+
+
+===== Page 10 =====
+
+ones as an example, we show the result in Figure 10a.                       Due to the prevalence of DRAM memory across modern
+Green lines represent the input combinations that generate a             digital systems, a DRAM-based PUF is an attractive option.
+majority result of one, while blue lines represent the input             Moreover, the large address space in DRAMs naturally
+combinations that generate a result of zero. The red line                provides plenty of challenge-response pairs. Speciﬁcally, the
+represents the combined F-MAJ success ratio, which is                    address and size can be construed as the challenge, and the
+essentially the top line in Figure 9b. Without Frac, all ones            data read out will be the response. Previous DRAM-based
+are stored in R1 , thus more charge will be injected to the              PUFs have tried to leverage the variations in DRAM start-up
+bit-line from R1 , and it is more likely to generate a result            values [34], DRAM cell retention failures [35], [36], [37],
+of one. We can verify this by the fact that the green lines              [38], and read-out data with reduced write duty-cycle [39] or
+in Figure 10a reach 100% without Frac, but the blue lines                other timing parameters like tRCD [38] and tRP [40]. However,
+are pretty low under the same condition. As we issue more                past DRAM-based PUFs have several drawbacks such as
+Frac operations, the voltage level in R1 is reduced, and the             long evaluation time, sensitivity to environmental changes
+majority result is more likely to be zero than one, which is             (temperature or supply voltage), and requirement for a ﬁlter
+conﬁrmed by the fact that the blue lines are rising and green            or error correction.
+ones are declining. This is additional evidence showing the                 CODIC-based PUF [41] solved these issues using a
+relationship between Frac and the voltage level in the cell.             modiﬁed DRAM substrate. Orosa et al. [41] proposed
+   At last, we test the stability of F-MAJ among group B                 modifying control circuits inside the DRAM array to provide
+and C. For each module, we randomly selected 500 different               a new CODIC-sig command, which could drive the cell to
+sub-arrays across all the banks, and perform F-MAJ 10000                 Vdd /2. A subsequent read would enable the sense ampliﬁer
+times at each sub-array with random inputs. Within the sub-              and thus “amplify” the cell voltage to either Vdd or 0,
+array, we use the same rows mentioned before and apply                   dependent on manufacturing variations. The read out data
+the best conﬁguration that we found in the last experiment.              are both random and unique; thus they can be used as a
+The stability for a bit-line is the percent representing how             PUF response. In addition, whether Vdd /2 is regarded as
+many times it generated the correct majority result out of               a zero or one is determined by the sense ampliﬁer circuit,
+10000 trials. The cumulative distributive function is plotted            which is essentially a comparator. Thus, it is independent
+in Fig. 10c and Fig. 10b. Each line stands for a module in               from the temperature and supply voltage. However, all of
+that DRAM group. Across the modules in group C, 33.0%                    these beneﬁts require hardware modiﬁcations to the existing
+to 85.2% of the columns can always generate the correct                  DRAM circuits, which raises two hindrances to the realization
+result. As for the modules in group B, at least 95.4% of the             of the technique with commercial DRAMs. First, DRAM
+columns can reliably perform F-MAJ, beating the original                 manufacturers are reluctant to modify their designs due
+MAJ3 operation which uses three-row-activation. The average              to the competitive and low-margin nature of the DRAM
+error rate of in-memory majority thus can be reduced from                industry. Second, the introduction of a DRAM command
+9.1% to 2.2%.                                                            requires modiﬁcations to the JEDEC speciﬁcation. The
+   We conclude that F-MAJ not only expands in-memory                     CODIC authors did mention an alternative approach that
+majority operations to more modules – including potentially              works with off-the-shelf DRAMs. Speciﬁcally, they disabled
+DDR4 modules, but also provides a better stability compared              DRAM refresh and waited for 48 hours to let the DRAM cell
+to the existing MAJ3 operation.                                          voltage leak towards Vdd /2 to emulate the effect of CODIC-
+                                                                         sig. While this is an alternative that works with commercial
+B. Physical Unclonable Function (PUF)                                    DRAMs, it is too time-consuming to be considered for
+   1) Proposal of Frac-based PUF: A Physical Unclonable                  practical use.
+Function (PUF) [27] is an intrinsic function attached to a                  With FracDRAM, we can use multiple Frac operations to
+physical object, which can be used for device authentication             achieve an effect similar to the CODIC-sig command, as the
+[28], [29], [30]. It takes a “challenge” as the input, and gives         more Frac operations issued, the closer the cell voltage is
+out a “response” based on the unique physical characteristics            to Vdd /2. According to our experiment results across nine
+of the device. The uniqueness usually comes from manu-                   memory groups from four major DRAM vendors, ten Frac
+facturing variations in its physical micro-structure, thus it is         operations are enough to generate a voltage close to Vdd /2
+unpredictable and almost impossible to duplicate. An ideal               for PUF. A Frac-based PUF maintains all the merits of a
+PUF consistently generates the same response to the same                 CODIC-based PUF and can be implemented in off-the-shelf
+challenge on the same device, while the responses to the                 DRAMs without any hardware modiﬁcation.
+same challenge generated by difference devices are distinct                 2) Evaluation of Frac-based PUF: In this section, we
+and random. This feature makes PUF a perfect candidate                   want to demonstrate that the proposed Frac-based PUF can
+for generating ﬁngerprints or signatures of digital devices.             generate a unique and reliable response to a challenge with
+In addition, PUFs can be utilized to generate cryptographic              real DRAM modules. We take the normalized Hamming
+keys [31], [32], and hardware obfuscation [33].                          Distance, which is commonly used in PUF research [31],
+
+
+
+
+                                                                   894
+
+
+
+===== Page 11 =====
+
+                                                                             Figure 12: The distribution of Intra-HD and Inter-HD between
+                                                                             responses with (a) different DRAM supply voltages and (b)
+                                                                             different temperatures. The maximum intra-HD and minimum
+Figure 11: The distribution of Intra-HD and Inter-HD in                      inter-HD are marked by the vertical dotted lines.
+group A to I, as well as cross-group. The number under
+group ID is the average Hamming Weight of the responses
+in that group.                                                               Weight (i.e. the portion of the bits that hold one) away from
+                                                                             0.5. For example, in group A, only 21% of bits are one,
+                                                                             which means most of the bits are zero, and that reduces the
+[34], [39], [40], [42], [43], [44], [45], [46], [47], [48], [49], as         Inter-HD. Hamming Weight basically tells how many sense
+the metric to represent the difference between two responses.                ampliﬁers regard Vdd /2 as one, which depends on the detailed
+Speciﬁcally, that is the number of different bits in two                     circuit implementation of the bit-line and sense ampliﬁer.
+responses divided by the total number of bits.                               Thus different DRAM groups produce different Hamming
+   We use the notation of Intra-HD to indicate the Hamming                   Weight. Although the randomness of the response is harmed,
+Distance between two responses from the same DRAM                            the uniqueness is still guaranteed: the minimum Inter-HD is
+module to the same challenge. Ideally, Intra-HD should                       0.27, which is still way larger than the maximum Intra-HD.
+be zero, meaning the PUF can reliably produce the same                       Notice that the Hamming Weight result is not aligned with the
+signature for the device. The notation of Inter-HD represents                result in Figure 6. That’s because we use different randomly
+the Hamming Distance between two responses to the same                       selected rows in both tests.
+challenge from different modules. Ideally, Inter-HD should                      Ten days from when we collected the ﬁrst set of data, we
+be around 0.5 which is the distance between two independent                  generated the second set of responses to the same challenges
+random strings, meaning the PUF can produce unique                           again, but with a DRAM supply voltage of 1.4V (nominal
+responses.                                                                   supply voltage is 1.5V). We plot the Intra-HD and Inter-HD
+   In Frac-based PUF, the address and the size of the memory                 across these two data set in Figure 12(a). For the Inter-HD, we
+segment is used as a challenge, and the read out data from                   consider both within the same and between different DRAM
+that segment is the response. We ﬁxed the memory segment                     groups. The highest Intra-HD is 0.07 and the lowest Inter-HD
+length to 8KB, which can ﬁt in a single DRAM row. To get                     is 0.30. After an additional 3 months, we collected the third
+a challenge-response pair, we ﬁrst choose an address (bank                   set of responses under different temperatures, and plot the
+and row), and store all ones to that row as the initial value.               intra-HD and inter-HD between those and the ﬁrst data set
+Next we issue ten Frac operations to the target row to make                  collected three months ago under room temperature(20°C)
+the voltage close to Vdd /2. Finally, we read the entire row                 in Figure 12(b). Although the average intra-HD increases as
+out. We tested at least two modules from each DRAM group,                    the temperature goes up, it does not change much, and most
+and all the groups capable of performing Frac are covered.                   importantly, the maximum intra-HD remains far away from
+For each module we collected 120 challenge-response pairs,                   the minimum inter-HD. These results show that Frac-based
+and we send the same set of challenges to all the modules.                   PUF is robust againt environmental changes.
+   The distribution of Intra-HD and Inter-HD is shown in                        Other than the reliability and uniqueness, we also examined
+Figure 11. First, we found all the Intra-HDs exhibit an                      the randomness of the generated response with the random
+excellent property: they have a very narrow distribution and                 number test suite from NIST [50]. There are in total 15
+only concentrate around zero. The maximum Intra-HD ever                      different tests in the suite that check multiple characteristics
+seen is 0.051 from group G. Second, the Inter-HDs exhibit                    including frequency, longest run, estimated entropy, template
+different patterns across different groups. For some groups                  matching, etc. Because the raw response from the PUF is bi-
+like A, B, and E, the Inter-HD is clustered around 0.3 or 0.4,               ased (the Hamming Weight is not 0.5), we use a modiﬁed Von
+which shows some extent of similarity between the responses                  Neumann randomness extractor to whitening the responses
+from different modules in the same group. The real cause                     ﬁrst and guarantee that the stream is balanced [41], [51].
+of that is the responses from these groups have a Hamming                    Then, we concatenate the responses from different addresses
+
+
+
+
+                                                                       895
+
+
+
+===== Page 12 =====
+
+together. We use one million bits per module and feed that                 storage and processing units. FracDRAM expands this area
+into the test suite. All 15 tests passed, which veriﬁes the                by identifying two novel techniques for storing fractional
+randomness of Frac-based PUF.                                              values in unmodiﬁed DRAM modules and evaluating two
+   The total evaluation time for the Frac-based PUF will                   use cases for the new operations.
+be: a preparation of 88 memory cycles (an initialization of                   One of the key concepts in FracDRAM is the violation of
+all ones followed by 10 Frac operations) in addition to the                timing speciﬁcations, which has been employed in previous
+readout time of the 8KB segment. In total, the evaluation                  works. The authors of [15], [16], [17], [53], [54] proposed
+time would be 1.5us (assuming a 2.5ns memory cycle), with                  pushing the limits of excessive process-margin in DRAM to
+the major time cost being the reading process. The evaluation              enhance it’s performance.
+time can be further reduced to 0.7us if an optimized memory                   Moving a step further, recent work presented techniques
+controller is used so that the PUF response is read out at                 that advance the concept of reducing the timing of DRAM
+full speed.                                                                commands outside of speciﬁcation values. Speciﬁcally, tim-
+                                                                           ing is violated in such a way that new functionality is
+C. Others                                                                  implemented by pushing the DRAM to undeﬁned states.
+   In addition to the cases we described above, the availability           ComputeDRAM [14] was the ﬁrst work that identiﬁed
+of a fractional value in DRAM can be utilized in other ways.               specially timed DRAM command sequencies that can perform
+   A possible use is to expand the storage capability of                   with-memory computation in unmodiﬁed DRAM. Compute-
+DRAM modules. Using the Half-m operation, we can store                     DRAM utilized reduced tRAS and tRP to open three rows
+fractional value, one, or zero in arbitrary DRAM columns,                  at the same time, and perform majority operation with the
+which enables the cell to store three different states. Therefore,         charge sharing among three rows. ComputeDRAM found that
+each cell represents a ternary bit. The overhead is that with              different number of rows can be opened with the proposed
+Half-m, we need to write normal binary bits in four rows and               command sequence, however, only three-row-activation is
+issue a four-row-activation to generate one row of ternary bits.           leveraged to build majority operation on the only DRAM
+In addition, based on our evaluation the reading mechanism                 conﬁguration that support it. FracDRAM expands the ideas
+is not mature yet, since the way we have proposed to read                  of ComputeDRAM to enable fractional DRAM storage. The
+out the fractional value requires four copies of the data (the             new capabilities extend ComputeDRAM-style, in-memory,
+MAJ3 method mentioned in Section IV-B), and the fractional                 majority operation to a larger set of DRAM module. We show
+value is destroyed after readout. We leave the readout and                 how fractional DRAM storage can enhance the reliability of
+data recovery issue to future work; a possible solution would              existing ComputeDRAM-style majority operation, reducing
+be a different sense ampliﬁer design. Previous work [52] has               the error rate from 9.1% to 2.2%.
+proposed multi-level DRAM cells with “quantum dot gate”                       Operating outside of timing speciﬁcations means that
+transistor. But only the layout of the multi-level DRAM cell               correctness of reads and writes is not guaranteed. Previ-
+is provided, and that’s not fabricated yet.                                ous works [38], [39], [40] leveraged the randomness and
+   Another use for fractional values is to assist the charac-              uniqueness of the erroneous readout data to build DRAM-
+terization of DRAM retention time. For example, focusing                   based Physical Uncloneable Function (PUF). Orosa et al. [41]
+on a single cell, we can store different levels of fractional              compared past DRAM-based PUFs and proved that CODIC-
+value and measure the retention time of each, thereby roughly              based PUF provides the state-of-the-art throughput and is
+tracing the voltage change during leakage. Different voltage               more robust to environmental changes. Our proposed Frac-
+levels can be generated in multiple ways: using a different                based PUF maintains all the merits of a CODIC-based PUF
+number of Frac operations, changing the initial value in                   and is implementable with unmodiﬁed DRAM.
+Half-m, and interrupting multiple-row-activation similar to                   Kim et al. [55] proposed reducing the row activation
+Half-m.                                                                    latency to generate random numbers with high throughput
+   Finally, it can be used in reverse-engineering DRAM                     and low latency. QUACTRNG [23] leveraged the command
+designs and parameters, such as the sense ampliﬁer threshold.              sequence in ComputeDRAM to open four rows simultane-
+                                                                           ously and explored different combinations of initial values in
+                    VII. R ELATED W ORK                                    these four rows to generate random numbers using the charge
+   To the best of our knowledge, this is the ﬁrst work that                sharing among them. Although we did not evaluate DDR4
+demonstrates fractional values being stored in off-the-shelf               modules due to the limitation of our experiment platform,
+DRAMs. In this section, we present related work and identify               the result of QUACTRNG proves four-row-activation can
+its similarities and difference from FracDRAM.                             be performed in off-the-shelf DDR4 chips, which shows the
+   Near-memory [1], [2], [3], in-memory [4], [5], [6], [7], [8],           potential of supporting F-MAJ and Half-m in DDR4 DRAMs.
+and with-memory-computing [9], [10], [11], [12] techniques                    Previous works [15], [16], [17], [18] have shown that
+are experiencing a “Renaissance” due to their potential to                 voltage levels other than Vdd and 0 can be stored in DRAM
+reduce the energy consumption from data transfer between                   cells. However, the concept of a “fractional value”, which
+
+
+
+
+                                                                     896
+
+
+
+===== Page 13 =====
+
+is a new logical state, is ﬁrst introduced in FracDRAM. For                [2] J. Ahn, S. Yoo, O. Mutlu, and K. Choi, “Pim-enabled
+example, past work regards a 0.8Vdd voltage as a “weak”                        instructions: a low-overhead, locality-aware processing-in-
+                                                                               memory architecture,” in Computer Architecture (ISCA), 2015
+logical one, rather than a separate state of fractional value. In
+                                                                               ACM/IEEE 42nd Annual International Symposium on. IEEE,
+addition, the goal for which such voltage level was generated                  2015, pp. 336–348.
+is different as well. Previous works aimed at reducing the
+DRAM access latency, whereas FracDRAM explicitly aims                      [3] A. Gutierrez, M. Cieslak, B. Giridhar, R. G. Dreslinski,
+                                                                               L. Ceze, and T. Mudge, “Integrated 3d-stacked server designs
+to generate a new logical state.
+                                                                               for increasing physical density of key-value stores,” in ACM
+   Finally, previous work has suggested modiﬁcations in                        SIGPLAN Notices, vol. 49, no. 4. ACM, 2014, pp. 485–498.
+hardware or operational values to store Vdd /2 in DRAM cells.
+DTRNG [56] proposed to use a lower supply voltage on word-                 [4] P. M. Kogge, “Execube - a new architecture for scaleable mpps,”
+                                                                               in 1994 International Conference on Parallel Processing Vol.
+line to store Vdd /2 in DRAM cell and issue a subsequent read
+                                                                               1, vol. 1, Aug 1994, pp. 77–84.
+to generate random numbers. CODIC [41] proposed exposing
+detailed DRAM control signals to users. One of the new                     [5] D. Patterson, T. Anderson, N. Cardwell, R. Fromm, K. Keeton,
+operations they suggested is to set the cell voltage to Vdd /2,                C. Kozyrakis, R. Thomas, and K. Yelick, “A case for intelligent
+                                                                               ram,” IEEE Micro, vol. 17, no. 2, pp. 34–44, March 1997.
+based on which they built a CODIC-based PUF. The rationale
+of the Frac-based PUF is also generating Vdd /2 in DRAM                    [6] H. S. Stone, “A logic-in-memory computer,” IEEE Transac-
+cells. However, their methodology of generating Vdd /2 is                      tions on Computers, vol. C-19, no. 1, pp. 73–78, Jan 1970.
+different from FracDRAM. Both of previous works are only
+                                                                           [7] Q. Guo, X. Guo, R. Patel, E. Ipek, and E. G. Friedman, “AC-
+veriﬁed in simulation, and can not work on unmodiﬁed                           DIMM: associative computing with STT-MRAM,” SIGARCH
+DRAMs.                                                                         Comput. Archit. News, vol. 41, no. 3, pp. 189–200, Jun. 2013.
+                    VIII. C ONCLUSIONS                                     [8] S. Li, C. Xu, Q. Zou, J. Zhao, Y. Lu, and Y. Xie, “Pinatubo: a
+                                                                               processing-in-memory architecture for bulk bitwise operations
+  We have proposed and evaluated two novel primitive                           in emerging non-volatile memories,” in Proceedings of the
+operations that store fractional values to the entire DRAM                     53rd Annual Design Automation Conference. ACM, 2016, p.
+row, or to masked bits in a row. With these operations, we                     173.
+demonstrate for the ﬁrst time the storing and destructive
+                                                                           [9] S. Li, D. Niu, K. T. Malladi, H. Zheng, B. Brennan, and Y. Xie,
+readout of fractional values in off-the-shelf, unmodiﬁed,                      “DRISA: A DRAM-based reconﬁgurable in-situ accelerator,”
+DRAM chips. We show that with fractional value storage, in-                    in Proceedings of the 50th Annual IEEE/ACM International
+memory majority operations can be expanded to more DRAM                        Symposium on Microarchitecture. ACM, 2017, pp. 288–301.
+modules, and the error rate of the existing in-memory majority
+                                                                          [10] A. Agrawal, A. Jaiswal, C. Lee, and K. Roy, “X-SRAM:
+operations can be reduced from 9.1% to 2.2%. Furthermore,                      enabling in-memory boolean computations in CMOS static
+we presented a PUF based on fractional value storage, which                    random access memories,” IEEE Transactions on Circuits and
+has state-of-the-art throughput and can be implemented in                      Systems I: Regular Papers, no. 99, pp. 1–14, 2018.
+commercial DRAM.
+                                                                          [11] S. Aga, S. Jeloka, A. Subramaniyan, S. Narayanasamy,
+                    ACKNOWLEDGMENTS                                            D. Blaauw, and R. Das, “Compute caches,” in High Per-
+                                                                               formance Computer Architecture (HPCA), 2017 IEEE Inter-
+   This material is based on research sponsored by the Air                     national Symposium on. IEEE, 2017, pp. 481–492.
+Force Research Laboratory (AFRL) and the Defense Ad-
+vanced Research Projects Agency (DARPA) under agreement                   [12] V. Seshadri, D. Lee, T. Mullins, H. Hassan, A. Boroumand,
+                                                                               J. Kim, M. A. Kozuch, O. Mutlu, P. B. Gibbons, and T. C.
+No. FA8650-18-2-7862. The U.S. Government is autho-                            Mowry, “Ambit: in-memory accelerator for bulk bitwise
+rized to reproduce and distribute reprints for Governmental                    operations using commodity dram technology,” in Proceedings
+purposes notwithstanding any copyright notation thereon.                       of the 50th Annual IEEE/ACM International Symposium on
+The views and conclusions contained herein are those of                        Microarchitecture. ACM, 2017, pp. 273–287.
+the authors and should not be interpreted as necessarily                  [13] V. Seshadri, Y. Kim, C. Fallin, D. Lee, R. Ausavarungnirun,
+representing the ofﬁcial policies or endorsements, either                      G. Pekhimenko, Y. Luo, O. Mutlu, P. B. Gibbons, M. A.
+expressed or implied, of the Air Force Research Laboratory                     Kozuch, and T. C. Mowry, “Rowclone: fast and energy-
+(AFRL), the Defense Advanced Research Projects Agency                          efﬁcient in-dram bulk data copy and initialization,” in 2013
+(DARPA), or the U.S. Government.                                               46th Annual IEEE/ACM International Symposium on Microar-
+                                                                               chitecture (MICRO), Dec 2013, pp. 185–197.
+                        R EFERENCES
+                                                                          [14] F. Gao, G. Tziantzioulis, and D. Wentzlaff, “Computedram: In-
+ [1] D. Kim, J. Kung, S. Chai, S. Yalamanchili, and S. Mukhopad-               memory compute using off-the-shelf drams,” in Proceedings
+     hyay, “Neurocube: a programmable digital neuromorphic                     of the 52nd Annual IEEE/ACM International Symposium on
+     architecture with high-density 3d memory,” in Computer Ar-                Microarchitecture, ser. MICRO ’52. New York, NY, USA:
+     chitecture (ISCA), 2016 ACM/IEEE 43rd Annual International                Association for Computing Machinery, 2019, p. 100–113.
+     Symposium on. IEEE, 2016, pp. 380–392.                                    [Online]. Available: https://doi.org/10.1145/3352460.3358260
+
+
+
+
+                                                                    897
+
+
+
+===== Page 14 =====
+
+[15] D. Lee, Y. Kim, G. Pekhimenko, S. Khan, V. Seshadri,                   [26] M. K. Qureshi, D.-H. Kim, S. Khan, P. J. Nair, and O. Mutlu,
+     K. Chang, and O. Mutlu, “Adaptive-latency dram: Optimizing                  “Avatar: A variable-retention-time (vrt) aware refresh for
+     dram timing for the common-case,” in 2015 IEEE 21st                         dram systems,” in 2015 45th Annual IEEE/IFIP International
+     International Symposium on High Performance Computer                        Conference on Dependable Systems and Networks. IEEE,
+     Architecture (HPCA). IEEE, 2015, pp. 489–501.                               2015, pp. 427–437.
+
+[16] H. Hassan, G. Pekhimenko, N. Vijaykumar, V. Seshadri,                  [27] B. Gassend, D. Clarke, M. Van Dijk, and S. Devadas, “Silicon
+     D. Lee, O. Ergin, and O. Mutlu, “Chargecache: Reducing                      physical random functions,” in Proceedings of the 9th ACM
+     dram latency by exploiting row access locality,” in 2016 IEEE               Conference on Computer and Communications Security, 2002,
+     International Symposium on High Performance Computer                        pp. 148–160.
+     Architecture (HPCA). IEEE, 2016, pp. 581–593.
+                                                                            [28] W. Che, F. Saqib, and J. Plusquellic, “Puf-based authentication,”
+                                                                                 in 2015 IEEE/ACM International Conference on Computer-
+[17] Y. Wang, A. Tavakkol, L. Orosa, S. Ghose, N. M. Ghiasi,                     Aided Design (ICCAD). IEEE, 2015, pp. 337–344.
+     M. Patel, J. S. Kim, H. Hassan, M. Sadrosadati, and O. Mutlu,
+     “Reducing dram latency via charge-level-aware look-ahead par-          [29] M. Majzoobi, M. Rostami, F. Koushanfar, D. S. Wallach, and
+     tial restoration,” in 2018 51st Annual IEEE/ACM International               S. Devadas, “Slender puf protocol: A lightweight, robust, and
+     Symposium on Microarchitecture (MICRO). IEEE, 2018, pp.                     secure authentication by substring matching,” in 2012 IEEE
+     298–311.                                                                    Symposium on Security and Privacy Workshops. IEEE, 2012,
+                                                                                 pp. 33–44.
+[18] X. Zhang, Y. Zhang, B. R. Childers, and J. Yang, “Restore
+     truncation for performance improvement in future dram                  [30] M. Rostami, M. Majzoobi, F. Koushanfar, D. S. Wallach,
+     systems,” in 2016 IEEE International Symposium on High                      and S. Devadas, “Robust and reverse-engineering resilient
+     Performance Computer Architecture (HPCA). IEEE, 2016,                       puf authentication and key-exchange by substring matching,”
+     pp. 543–554.                                                                IEEE Transactions on Emerging Topics in Computing, vol. 2,
+                                                                                 no. 1, pp. 37–49, 2014.
+[19] B. Jacob, S. Ng, and D. Wang, Memory systems: cache, DRAM,
+     disk. San Francisco, CA, USA: Morgan Kaufmann Publishers               [31] R. Maes, A. Van Herrewege, and I. Verbauwhede, “Pufky:
+     Inc., 2007.                                                                 A fully functional puf-based cryptographic key generator,”
+                                                                                 in International Workshop on Cryptographic Hardware and
+                                                                                 Embedded Systems. Springer, 2012, pp. 302–319.
+[20] B. Keeth, R. J. Baker, B. Johnson, and F. Lin, DRAM Circuit
+     Design: Fundamental and High-Speed Topics, 2007.
+                                                                            [32] Z. Paral and S. Devadas, “Reliable and efﬁcient puf-based key
+                                                                                 generation using pattern matching,” in 2011 IEEE international
+[21] JEDEC, “Standard no 79-3f,” DDR3 SDRAM Speciﬁcation,                        symposium on hardware-oriented security and trust. IEEE,
+     2012.                                                                       2011, pp. 128–133.
+
+[22] J. Liu, B. Jaiyen, Y. Kim, C. Wilkerson, and O. Mutlu, “An             [33] J. B. Wendt and M. Potkonjak, “Hardware obfuscation using
+     experimental study of data retention behavior in modern dram                puf-based logic,” in 2014 IEEE/ACM International Conference
+     devices: Implications for retention time proﬁling mechanisms,”              on Computer-Aided Design (ICCAD). IEEE, 2014, pp. 270–
+     ACM SIGARCH Computer Architecture News, vol. 41, no. 3,                     271.
+     pp. 60–71, 2013.
+                                                                            [34] F. Tehranipoor, N. Karimian, W. Yan, and J. A. Chandy, “Dram-
+[23] A. Olgun, M. Patel, A. G. Yağlıkçı, H. Luo, J. S. Kim,                    based intrinsic physically unclonable functions for system-level
+     F. N. Bostancı, N. Vijaykumar, O. Ergin, and O. Mutlu,                      security and authentication,” IEEE Transactions on Very Large
+     “Quac-trng: High-throughput true random number generation                   Scale Integration (VLSI) Systems, vol. 25, no. 3, pp. 1085–
+     using quadruple row activation in commodity dram chips,”                    1097, 2016.
+     in 2021 ACM/IEEE 48th Annual International Symposium
+     on Computer Architecture (ISCA). Los Alamitos, CA,                     [35] C. Keller, F. Gürkaynak, H. Kaeslin, and N. Felber, “Dynamic
+     USA: IEEE Computer Society, jun 2021, pp. 944–957.                          memory-based physically unclonable function for the gen-
+     [Online]. Available: https://doi.ieeecomputersociety.org/10.                eration of unique identiﬁers and true random numbers,” in
+     1109/ISCA52012.2021.00078                                                   2014 IEEE international symposium on circuits and systems
+                                                                                 (ISCAS). IEEE, 2014, pp. 2740–2743.
+[24] H. Hassan, N. Vijaykumar, S. Khan, S. Ghose, K. Chang,                 [36] S. Sutar, A. Raha, D. Kulkarni, R. Shorey, J. Tew, and
+     G. Pekhimenko, D. Lee, O. Ergin, and O. Mutlu, “Softmc: A                   V. Raghunathan, “D-puf: An intrinsically reconﬁgurable dram
+     ﬂexible and practical open-source infrastructure for enabling               puf for device authentication and random number generation,”
+     experimental dram studies,” in 2017 IEEE International                      ACM Transactions on Embedded Computing Systems (TECS),
+     Symposium on High Performance Computer Architecture                         vol. 17, no. 1, pp. 1–31, 2017.
+     (HPCA). IEEE, 2017, pp. 241–252.
+                                                                            [37] W. Xiong, A. Schaller, N. A. Anagnostopoulos, M. U. Saleem,
+[25] D. S. Yaney, C.-Y. Lu, R. A. Kohler, M. J. Kelly, and J. T.                 S. Gabmeyer, S. Katzenbeisser, and J. Szefer, “Run-time
+     Nelson, “A meta-stable leakage phenomenon in dram charge                    accessible dram pufs in commodity devices,” in International
+     storage-variable hold time,” in 1987 International Electron                 Conference on Cryptographic Hardware and Embedded Sys-
+     Devices Meeting. IEEE, 1987, pp. 336–339.                                   tems. Springer, 2016, pp. 432–453.
+
+
+
+
+                                                                      898
+
+
+
+===== Page 15 =====
+
+[38] J. S. Kim, M. Patel, H. Hassan, and O. Mutlu, “The dram                       aging effects,” in 2017 IEEE International Symposium on
+     latency puf: Quickly evaluating physical unclonable functions                 Circuits and Systems (ISCAS). IEEE, 2017, pp. 1–4.
+     by exploiting the latency-reliability tradeoff in modern com-
+     modity dram devices,” in 2018 IEEE International Symposium               [47] W. Liu, Z. Zhang, M. Li, and Z. Liu, “A trustworthy key
+     on High Performance Computer Architecture (HPCA). IEEE,                       generation prototype based on ddr3 puf for wireless sensor
+     2018, pp. 194–207.                                                            networks,” Sensors, vol. 14, no. 7, pp. 11 542–11 556, 2014.
+[39] M. S. Hashemian, B. Singh, F. Wolff, D. Weyer, S. Clay,
+     and C. Papachristou, “A robust authentication methodology                [48] A. Maiti, J. Casarona, L. McHale, and P. Schaumont, “A large
+     using physically unclonable functions in dram arrays,” in 2015                scale characterization of ro-puf,” in 2010 IEEE International
+     Design, Automation & Test in Europe Conference & Exhibition                   Symposium on Hardware-Oriented Security and Trust (HOST).
+     (DATE). IEEE, 2015, pp. 647–652.                                              IEEE, 2010, pp. 94–99.
+                                                                              [50] A. Rukhin, J. Soto, J. Nechvatal, M. Smid, and E. Barker, “A
+[40] B. B. Talukder, B. Ray, D. Forte, and M. T. Rahman, “Prelatpuf:               statistical test suite for random and pseudorandom number
+     Exploiting dram latency variations for generating robust device               generators for cryptographic applications,” Booz-allen and
+     signatures,” IEEE Access, vol. 7, pp. 81 106–81 120, 2019.                    hamilton inc mclean va, Tech. Rep., 2001.
+
+[41] L. Orosa, Y. Wang, M. Sadrosadati, J. S. Kim, M. Patel,                  [51] R. Shaltiel, “An introduction to randomness extractors,” in
+     I. Puddu, H. Luo, K. Razavi, J. Gómez-Luna, H. Hassan,                       International colloquium on automata, languages, and pro-
+     N. Mansouri-Ghiasi, S. Ghose, and O. Mutlu, “Codic: A low-                    gramming. Springer, 2011, pp. 21–41.
+     cost substrate for enabling custom in-dram functionalities and
+     optimizations,” in 2021 ACM/IEEE 48th Annual International               [52] S. Karmakar, “Design of multi-state dram using quantum dot
+     Symposium on Computer Architecture (ISCA), 2021, pp. 484–                     gate non-volatile memory (qdnvm),” Silicon, vol. 11, no. 2,
+     497.                                                                          pp. 869–877, 2019.
+[42] S. S. Kumar, J. Guajardo, R. Maes, G.-J. Schrijen, and P. Tuyls,
+     “The butterﬂy puf protecting ip on every fpga,” in 2008 IEEE             [53] K. Chandrasekar, S. Goossens, C. Weis, M. Koedam,
+     International Workshop on Hardware-Oriented Security and                      B. Akesson, N. Wehn, and K. Goossens, “Exploiting
+     Trust. IEEE, 2008, pp. 67–70.                                                 expendable process-margins in drams for run-time performance
+                                                                                   optimization,” in Proceedings of the Conference on Design,
+[43] S. Sutar, A. Raha, and V. Raghunathan, “D-puf: An intrin-                     Automation & Test in Europe, ser. DATE ’14. European
+     sically reconﬁgurable dram puf for device authentication in                   Design and Automation Association, 2014, pp. 173:1–173:6.
+     embedded systems,” in 2016 International Conference on                        [Online]. Available: http://dl.acm.org/citation.cfm?id=2616606.
+     Compliers, Architectures, and Sythesis of Embedded Systems                    2616820
+     (CASES). IEEE, 2016, pp. 1–10.
+                                                                              [54] K. K. Chang, A. Kashyap, H. Hassan, S. Ghose, K. Hsieh,
+[44] I. Kumari, M.-K. Oh, Y. Kang, and D. Choi, “Rapid run-time                    D. Lee, T. Li, G. Pekhimenko, S. Khan, and O. Mutlu, “Under-
+     dram puf based on bit-ﬂip position for secure iot devices,” in                standing latency variation in modern dram chips: Experimental
+     2018 IEEE SENSORS. IEEE, 2018, pp. 1–4.                                       characterization, analysis, and optimization,” in Proceedings
+                                                                                   of the 2016 ACM SIGMETRICS International Conference on
+[45] Q. Tang, C. Zhou, W. Choi, G. Kang, J. Park, K. K. Parhi,                     Measurement and Modeling of Computer Science, 2016, pp.
+     and C. H. Kim, “A dram based physical unclonable function                     323–336.
+     capable of generating¿ 10 32 challenge response pairs per
+     1kbit array for secure chip authentication,” in 2017 IEEE
+                                                                              [55] J. S. Kim, M. Patel, H. Hassan, L. Orosa, and O. Mutlu,
+     Custom Integrated Circuits Conference (CICC). IEEE, 2017,
+                                                                                   “D-range: Using commodity dram devices to generate true
+     pp. 1–4.
+                                                                                   random numbers with low latency and high throughput,” in
+                                                                                   2019 IEEE International Symposium on High Performance
+[46] F. Tehranipoor, N. Karimian, W. Yan, and J. A. Chandy,
+                                                                                   Computer Architecture (HPCA). IEEE, 2019, pp. 582–595.
+     “Investigation of dram pufs reliability under device accelerated
+[49] S. Devadas, E. Suh, S. Paral, R. Sowell, T. Ziola, and V. Khan-
+     delwal, “Design and implementation of puf-based” unclonable”             [56] K. Humood, B. Mohammad, and H. Abunahla, “Dtrng: Low
+     rﬁd ics for anti-counterfeiting and security applications,” in                cost and robust true random number generator using dram
+     2008 IEEE international conference on RFID. IEEE, 2008,                       weak write scheme,” in 2021 IEEE International Symposium
+     pp. 58–64.                                                                    on Circuits and Systems (ISCAS). IEEE, 2021, pp. 1–5.
+
+
+
+
+                                                                        899
+

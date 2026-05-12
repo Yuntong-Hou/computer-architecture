@@ -1,0 +1,14 @@
+# Key Points with Source Locations
+
+| 编号 | 重点内容 | 原文位置 | 支持证据 | 重要性 | 我的理解 |
+|---|---|---|---|---|---|
+| 1 | 如何把任意用户定义的 operation 转换成高效 MAJ/NOT-based in-DRAM implementation。 | Page 1-2 / Introduction | processing-using-DRAM 直接利用 DRAM cell/sense amplifier 行为，拥有高内部带宽和阵列并行性，但已有 Ambit 类方案主要支持 AND/OR/NOT 或少量固定操作，见 Page 1-2, Section 1。 | 高 | 先把问题理解为数据搬移、能耗或可编程性瓶颈，而不是单个算法优化。 |
+| 2 | 目标工作负载或平台中存在可被利用的 DRAM/PIM 内部并行性或数据并行性。 | Page 1-2 / Introduction | 复杂操作需要 shift、add、compare、multiply、bitcount、ReLU 等；SIMDRAM 选择 vertical data layout 与 MAJ/NOT 作为逻辑完备基础，见 Page 2, Section 1。 | 高 | 这是判断论文适用范围的关键。 |
+| 3 | Step 1 将 AND/OR/NOT logic 转为 optimized MAJ/NOT implementation；MAJ/NOT 是逻辑完备集合，常比先生成 AND/OR 再映射到 Ambit 更少 DRAM commands，见 Page 4-5 与 Page 19。 | 方法章节 / Page 2 及后续对应 section | Step 1 将 AND/OR/NOT logic 转为 optimized MAJ/NOT implementation；MAJ/NOT 是逻辑完备集合，常比先生成 AND/OR 再映射到 Ambit 更少 DRAM commands，见 Page 4-5 与 Page 19。 | 高 | 论文最值得回到原文精读的部分。 |
+| 4 | 系统层面处理 page faults、address translation、coherence、interrupts、limited subarray size、security 和 limitations，见 Page 10-11, Sections 5.3-5.6。 | 方法章节后半部分 | 系统层面处理 page faults、address translation、coherence、interrupts、limited subarray size、security 和 limitations，见 Page 10-11, Sections 5.3-5.6。 | 高 | 很多 PIM/PuM 方案难点不在 primitive，而在系统栈接入。 |
+| 5 | 单 DRAM bank 上，SIMDRAM 在 16 operations 上平均提供 Ambit 的 2.0x throughput 与 2.6x energy efficiency；在 7 个 kernels 上平均提供 Ambit 的 2.5x performance，见 Page 1-2 与 Page 12-13。 | Evaluation / Results | 单 DRAM bank 上，SIMDRAM 在 16 operations 上平均提供 Ambit 的 2.0x throughput 与 2.6x energy efficiency；在 7 个 kernels 上平均提供 Ambit 的 2.5x performance，见 Page 1-2 与 Page 12-13。 | 高 | 这是作者主张有效性的第一证据。 |
+| 6 | 16 banks 上，SIMDRAM 在 16 operations 上提供 CPU/GPU 的 88x/5.8x throughput，以及 257x/31x energy efficiency，见 Page 1-2 与 Page 12-13, Figures 9-10。 | Evaluation / Results | 16 banks 上，SIMDRAM 在 16 operations 上提供 CPU/GPU 的 88x/5.8x throughput，以及 257x/31x energy efficiency，见 Page 1-2 与 Page 12-13, Figures 9-10。 | 中 | 用于判断收益是否只体现在单一指标。 |
+| 7 | 论文显式与传统 CPU/DRAM、已有平台、已有细粒度 DRAM 或 hand-tuned implementation 对比。 | Evaluation / Related Work | 主要对比见实验图表和 related work comparison。 | 高 | 要看 baseline 是否公平、是否覆盖端到端成本。 |
+| 8 | 提出首个面向 processing-using-DRAM 的 flexible end-to-end framework，支持 wide range of operations，见 Page 1-3。 | Introduction / Contributions | 提出首个面向 processing-using-DRAM 的 flexible end-to-end framework，支持 wide range of operations，见 Page 1-3。 | 高 | 贡献通常对应论文的 novelty claim。 |
+| 9 | 当前框架只支持 integer/fixed-point operations；floating-point operations 因 mantissa alignment 和 per-bitline shift 等问题仍然困难，见 Page 11, Section 5.6。 | Limitations / Discussion / Future Work | 当前框架只支持 integer/fixed-point operations；floating-point operations 因 mantissa alignment 和 per-bitline shift 等问题仍然困难，见 Page 11, Section 5.6。 | 高 | 后续研究或读论文时要警惕的边界。 |
+| 10 | SIMDRAM 如何高效支持 floating-point、shuffle 和 cross-bitline reduction？ | 由全文内容推断 | 该问题未被论文完全解决。 | 中 | 可作为后续阅读或讨论问题。 |
