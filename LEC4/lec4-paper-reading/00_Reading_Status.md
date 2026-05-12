@@ -2,11 +2,11 @@
 
 | 编号 | 输入形式 | 标题 | 是否找到全文 | 是否完成摘要 | 是否完成翻译 | 是否完成定位 | 问题 | 需要我补充 |
 |---|---|---|---|---|---|---|---|---|
-| 1 | GitHub PDF | In-DRAM Bulk Bitwise Execution Engine | Yes | Yes | Yes | Yes | 双栏抽取局部行交错；图像未单独裁剪 | 如需逐图截图或逐字全文翻译，请指定优先论文 |
-| 2 | GitHub PDF | PiDRAM: A Holistic End-to-end FPGA-based Framework for Processing-in-DRAM | Yes | Yes | Yes | Yes | 双栏抽取局部行交错；图像未单独裁剪 | 如需逐图截图或逐字全文翻译，请指定优先论文 |
-| 3 | GitHub PDF | Sectored DRAM: A Practical Energy-Efficient and High-Performance Fine-Grained DRAM Architecture | Yes | Yes | Yes | Yes | 双栏抽取局部行交错；图像未单独裁剪 | 如需逐图截图或逐字全文翻译，请指定优先论文 |
-| 4 | GitHub PDF | DRAM Bender: An Extensible and Versatile FPGA-based Infrastructure to Easily Test State-of-the-art DRAM Chips | Yes | Yes | Yes | Yes | 双栏抽取局部行交错；图像未单独裁剪 | 如需逐图截图或逐字全文翻译，请指定优先论文 |
-| 5 | GitHub PDF | DaPPA: A Data-Parallel Programming Framework for Processing-in-Memory Architectures | Yes | Yes | Yes | Yes | 双栏抽取局部行交错；图像未单独裁剪 | 如需逐图截图或逐字全文翻译，请指定优先论文 |
+| 1 | GitHub PDF | In-DRAM Bulk Bitwise Execution Engine | Yes | Yes | Yes（2026-05-12 已按高完整度学习译文扩写） | Yes | 双栏抽取局部行交错；图像未单独裁剪 | 如需逐图截图或逐段对照校订，请指定优先章节 |
+| 2 | GitHub PDF | PiDRAM: A Holistic End-to-end FPGA-based Framework for Processing-in-DRAM | Yes | Yes | Yes（2026-05-12 已按高完整度学习译文扩写） | Yes | 双栏抽取局部行交错；图像未单独裁剪 | 如需逐图截图或逐段对照校订，请指定优先章节 |
+| 3 | GitHub PDF | Sectored DRAM: A Practical Energy-Efficient and High-Performance Fine-Grained DRAM Architecture | Yes | Yes | Yes（2026-05-12 已按高完整度学习译文扩写） | Yes | 双栏抽取局部行交错；图像未单独裁剪 | 如需逐图截图或逐段对照校订，请指定优先章节 |
+| 4 | GitHub PDF | DRAM Bender: An Extensible and Versatile FPGA-based Infrastructure to Easily Test State-of-the-art DRAM Chips | Yes | Yes | Yes（2026-05-12 已按高完整度学习译文扩写） | Yes | 双栏抽取局部行交错；图像未单独裁剪 | 如需逐图截图或逐段对照校订，请指定优先章节 |
+| 5 | GitHub PDF | DaPPA: A Data-Parallel Programming Framework for Processing-in-Memory Architectures | Yes | Yes | Yes（2026-05-12 已按高完整度学习译文扩写） | Yes | 双栏抽取局部行交错；图像未单独裁剪 | 如需逐图截图或逐段对照校订，请指定优先章节 |
 | 6 | GitHub PDF | Functionally-Complete Boolean Logic in Real DRAM Chips: Experimental Characterization and Analysis | Yes | Yes | Yes | Yes | 双栏抽取局部行交错；图像未单独裁剪 | 如需逐图截图或逐字全文翻译，请指定优先论文 |
 | 7 | GitHub PDF | MIMDRAM: An End-to-End Processing-Using-DRAM System for High-Throughput, Energy-Efficient and Programmer-Transparent Multiple-Instruction Multiple-Data Processing | Yes | Yes | Yes | Yes | 双栏抽取局部行交错；图像未单独裁剪 | 如需逐图截图或逐字全文翻译，请指定优先论文 |
 | 8 | GitHub PDF | Simultaneous Many-Row Activation in Off-the-Shelf DRAM Chips: Experimental Characterization and Analysis | Yes | Yes | Yes | Yes | 双栏抽取局部行交错；图像未单独裁剪 | 如需逐图截图或逐字全文翻译，请指定优先论文 |

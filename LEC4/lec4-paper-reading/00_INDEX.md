@@ -4,11 +4,11 @@
 
 | 编号 | 标题 | 年份 | 状态 | 主题 | 文件夹 | 备注 |
 |---|---|---|---|---|---|---|
-| 1 | In-DRAM Bulk Bitwise Execution Engine | 2020 | 第一轮 5 篇深度阅读完成 | Processing using Memory; in-DRAM bulk bitwise operations; Ambit | papers/1905.09822v3 | 第一轮 |
-| 2 | PiDRAM: A Holistic End-to-end FPGA-based Framework for Processing-in-DRAM | 2023 | 第一轮 5 篇深度阅读完成 | FPGA prototype; commodity DRAM based PuM; RowClone; D-RaNGe | papers/2111.00082v6 | 第一轮 |
-| 3 | Sectored DRAM: A Practical Energy-Efficient and High-Performance Fine-Grained DRAM Architecture | 2024 | 第一轮 5 篇深度阅读完成 | Fine-grained DRAM; energy-efficient memory; variable burst length; sectored activation | papers/2207.13795v4 | 第一轮 |
-| 4 | DRAM Bender: An Extensible and Versatile FPGA-based Infrastructure to Easily Test State-of-the-art DRAM Chips | 2025 | 第一轮 5 篇深度阅读完成 | DRAM testing infrastructure; FPGA; RowHammer; DDR4; in-DRAM bitwise operations | papers/2211.05838v6 | 第一轮 |
-| 5 | DaPPA: A Data-Parallel Programming Framework for Processing-in-Memory Architectures | 2025 | 第一轮 5 篇深度阅读完成 | PIM programming framework; UPMEM; data-parallel patterns; code generation | papers/2310.10168v2 | 第一轮 |
+| 1 | In-DRAM Bulk Bitwise Execution Engine | 2020 | 第一轮 5 篇深度阅读完成；full_translation 已按高完整度学习译文扩写 | Processing using Memory; in-DRAM bulk bitwise operations; Ambit | papers/1905.09822v3 | 第一轮；2026-05-12 翻译增强 |
+| 2 | PiDRAM: A Holistic End-to-end FPGA-based Framework for Processing-in-DRAM | 2023 | 第一轮 5 篇深度阅读完成；full_translation 已按高完整度学习译文扩写 | FPGA prototype; commodity DRAM based PuM; RowClone; D-RaNGe | papers/2111.00082v6 | 第一轮；2026-05-12 翻译增强 |
+| 3 | Sectored DRAM: A Practical Energy-Efficient and High-Performance Fine-Grained DRAM Architecture | 2024 | 第一轮 5 篇深度阅读完成；full_translation 已按高完整度学习译文扩写 | Fine-grained DRAM; energy-efficient memory; variable burst length; sectored activation | papers/2207.13795v4 | 第一轮；2026-05-12 翻译增强 |
+| 4 | DRAM Bender: An Extensible and Versatile FPGA-based Infrastructure to Easily Test State-of-the-art DRAM Chips | 2025 | 第一轮 5 篇深度阅读完成；full_translation 已按高完整度学习译文扩写 | DRAM testing infrastructure; FPGA; RowHammer; DDR4; in-DRAM bitwise operations | papers/2211.05838v6 | 第一轮；2026-05-12 翻译增强 |
+| 5 | DaPPA: A Data-Parallel Programming Framework for Processing-in-Memory Architectures | 2025 | 第一轮 5 篇深度阅读完成；full_translation 已按高完整度学习译文扩写 | PIM programming framework; UPMEM; data-parallel patterns; code generation | papers/2310.10168v2 | 第一轮；2026-05-12 翻译增强 |
 | 6 | Functionally-Complete Boolean Logic in Real DRAM Chips: Experimental Characterization and Analysis | 2024 | 第二轮 5 篇深度阅读完成 | Processing-using-DRAM; functionally-complete Boolean logic; COTS DDR4 characterization | papers/2402.18736v2 | 第二轮 |
 | 7 | MIMDRAM: An End-to-End Processing-Using-DRAM System for High-Throughput, Energy-Efficient and Programmer-Transparent Multiple-Instruction Multiple-Data Processing | 2024 | 第二轮 5 篇深度阅读完成 | End-to-end PUD architecture; MIMD in DRAM; fine-grained DRAM mats; compiler support | papers/2402.19080v2 | 第二轮 |
 | 8 | Simultaneous Many-Row Activation in Off-the-Shelf DRAM Chips: Experimental Characterization and Analysis | 2024 | 第二轮 5 篇深度阅读完成 | Simultaneous many-row activation; MAJX; Multi-RowCopy; COTS DDR4 characterization | papers/2405.06081v1 | 第二轮 |
@@ -70,7 +70,7 @@
 
 - 24 篇 PDF 全文均已从 `LEC4/original-paper` 下载并提取文本。
 - 双栏 PDF 的文本抽取存在少量行交错；关键结论已用页码、章节、图号/表号定位，建议查看核心图表时回到 PDF 原图。
-- `full_translation.zh.md` 为逐节中文详译/学习译文，覆盖正文结构、方法、实验、结果、讨论与局限；不是版权意义上的逐字复制全文。
+- `full_translation.zh.md` 为逐节中文详译/学习译文，覆盖正文结构、方法、实验、结果、讨论与局限；第 1-5 篇已按“完整度优先 + 硬件工程师视角”标准扩写；不是版权意义上的逐字复制全文。
 
 ## 文件结构说明
 
