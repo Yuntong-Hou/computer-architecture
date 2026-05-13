@@ -27,3 +27,11 @@
 - [x] 已整理图表/公式笔记
 - [x] 已整理术语表
 - [x] 已标注无法确认或需人工复核内容
+
+## 2026-05-12 High-Completeness Translation Expansion
+
+- Updated File: full_translation.zh.md
+- Expansion Scope: 追加高完整度扩写版，覆盖 motivation、DRAM background、FPM、PSM、bulk initialization、ISA/microarchitecture/OS support、applications、methodology、raw latency/energy、forkbench、多应用、多核、DMA comparison、related work、conclusion。
+- Hardware Engineer Perspective Added: Yes，重点补充整行对齐、same-subarray 约束、coherence、OS allocator、RowClone-ZI、FPM/PSM 适用边界。
+- Current Translation File Length: 252 lines
+- Remaining Manual Check: Page 4 Figure 4、Page 5 Figure 5 和 Page 9 Table 3 建议回 PDF 原图核对。

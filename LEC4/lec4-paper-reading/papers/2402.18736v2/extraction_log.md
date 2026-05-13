@@ -27,3 +27,11 @@
 - [x] 已整理图表/公式笔记
 - [x] 已整理术语表
 - [x] 已标注无法确认或需人工复核内容
+
+## 2026-05-12 High-Completeness Translation Expansion
+
+- Updated File: full_translation.zh.md
+- Expansion Scope: 追加高完整度扩写版，覆盖 functionally-complete Boolean logic、open-bitline NOT、reference-side voltage、实验平台、success rate、robustness、vendor 差异、局限。
+- Hardware Engineer Perspective Added: Yes，重点补充 COTS DDR4 vendor-specific 行为、模拟 sense margin、错误率不可直接产品化、ECC/refresh/RowHammer 风险。
+- Current Translation File Length: 218 lines
+- Remaining Manual Check: Page 2 Figure 1 和 Page 12-14 关键图建议回 PDF 原图核对。

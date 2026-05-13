@@ -27,3 +27,11 @@
 - [x] 已整理图表/公式笔记
 - [x] 已整理术语表
 - [x] 已标注无法确认或需人工复核内容
+
+## 2026-05-12 High-Completeness Translation Expansion
+
+- Updated File: full_translation.zh.md
+- Expansion Scope: 追加高完整度扩写版，覆盖 microelectronics motivation、cache-organized logic-in-memory computer、sector operations、program control、bit-slice mode、high-level language 问题、现代对照。
+- Hardware Engineer Perspective Added: Yes，重点补充 pin/bandwidth wall、cache 层逻辑增强、sector-level parallelism、data layout、编译器/语言支持。
+- Current Translation File Length: 225 lines
+- Remaining Manual Check: 原文为概念性 short note，缺少现代 benchmark；性能主张需按历史背景理解。

@@ -27,3 +27,11 @@
 - [x] 已整理图表/公式笔记
 - [x] 已整理术语表
 - [x] 已标注无法确认或需人工复核内容
+
+## 2026-05-12 High-Completeness Translation Expansion
+
+- Updated File: full_translation.zh.md
+- Expansion Scope: 追加高完整度扩写版，覆盖 GPU memory bottleneck、compiler offload selection、transparent data mapping、runtime offloading control、hardware structures、evaluation、limitations。
+- Hardware Engineer Perspective Added: Yes，重点补充 code-data co-location、offload aggressiveness、HBM/logic-layer NDP 的映射和调度边界。
+- Current Translation File Length: 202 lines
+- Remaining Manual Check: Page 3 Equations 1-4 和 Page 9-12 评估图建议回 PDF 原图核对。

@@ -111,3 +111,114 @@ Conclusion
 
 ### 中文翻译
 论文最终强调：PuDHammer 首次系统表征 multiple-row activation-based PuD operations 对 DRAM read disturbance 的影响，发现 CoMRA/SiMRA 可显著放大类似 RowHammer 的安全与可靠性风险。 对这组 LEC4 文献而言，这篇文章提供了一个重要视角：DRAM/PIM 研究不仅包含底层电路 primitive，也包含系统集成、编程模型、实验平台和 workload 适配。建议结合 `reading_summary.zh.md` 和 `figures_tables_equations_notes.zh.md` 复习。
+
+---
+
+# 2026-05-12 高完整度扩写版
+
+说明：以下按 PuDHammer 论文结构扩写，覆盖 motivation、CoMRA/SiMRA 定义、HCfirst metric、真实 DDR4 表征、RowHammer/RowPress 对比、data pattern/temperature/voltage/timing/row-on time、组合攻击、TRR bypass、PRAC countermeasures、limitations。本文是 PuD 安全可靠性补充论文，建议和 FCDRAM/Many-Row Activation 一起读。
+
+## Abstract / 摘要
+
+### 原文位置
+Page 1 / Abstract
+
+### 中文翻译
+PuDHammer 研究 multiple-row activation-based PuD operations 是否会加剧 DRAM read disturbance。现代 DRAM 已知存在 RowHammer：反复激活 aggressor rows 会在相邻 victim rows 中诱发 bitflips。PuD 操作为了实现 row copy 或 bitwise logic，常常需要 consecutive 或 simultaneous multiple-row activation。这些访问模式可能比传统 RowHammer 更强烈扰动相邻 cells。
+
+作者将用于 in-DRAM copy 的连续多行激活称为 CoMRA，将用于 bitwise operations 的同时多行激活称为 SiMRA。论文在 316 个 DDR4 chips、40 个 modules、4 个制造商上系统测试，发现 CoMRA 与 SiMRA 可显著降低诱发首个 bitflip 所需 hammer cycles (HCfirst)，其中 SiMRA 风险尤其高。
+
+论文还测试 data pattern、temperature、timing delay、row-on time、voltage、spatial variation，并分析 RowHammer 与 PuDHammer 组合的效果。最后，作者评估 TRR/PRAC 类 mitigation，发现现有 in-DRAM TRR 可能被绕过，而扩展 PRAC 虽可防护但性能开销很高。
+
+### 硬件工程师思考
+PuDHammer 是对 PuD 能力论文的必要反面。前面很多论文证明“多行激活能算”；这篇提醒“多行激活也可能更危险”。任何将 PuD 放入产品的计划，都必须把 read disturbance 作为一等设计约束，而不是事后补丁。
+
+## 1. Background and Definitions / 背景与定义
+
+### 原文位置
+Page 1-4
+
+### 中文翻译
+RowHammer 是反复激活 aggressor rows 导致邻近 victim rows bitflips 的现象。RowPress 则强调 row-on time，即行保持打开时间过长也可能加剧扰动。现代 DRAM 使用 TRR 等 mitigation，但实际防护能力有限且 vendor-specific。
+
+PuDHammer 定义两类 PuD-triggered disturbance。CoMRA (consecutive multiple-row activation) 来自 in-DRAM copy 类操作，例如连续打开 source/destination rows。SiMRA (simultaneous multiple-row activation) 来自 bitwise/majority operations，同时打开多行进行 charge sharing。
+
+主要指标是 HCfirst：诱发第一个 bitflip 所需 hammer cycles。HCfirst 越低，表示 vulnerability 越高。作者用 bisection-method algorithm 搜索 victim row 的 HCfirst，并对每行重复 5 次取最小值，以捕获最脆弱情况。
+
+### 硬件工程师思考
+HCfirst 是比“总 bitflips”更保守的安全指标，因为攻击者只需要第一次错误就可能利用。做硬件安全评估时，tail vulnerability 比平均值更重要。
+
+## 2. CoMRA Characterization / CoMRA 表征
+
+### 原文位置
+Page 5-8
+
+### 中文翻译
+CoMRA 实验反复执行 in-DRAM copy 风格的 source/destination 连续激活，并观察 victim rows 的 bitflips。作者比较 single-sided 和 double-sided 模式、data pattern、temperature、RowPress、timing delay、copy direction 和 spatial variation。
+
+结果显示，CoMRA 的最低 HCfirst 相比传统 RowHammer 低 13.98x。Double-sided CoMRA 中，99% DRAM rows 相比 RowHammer 用更少 activation counts 发生首个 bitflip。这说明 PuD copy primitive 的访问模式比普通 RowHammer 更容易触发 disturbance。
+
+Data pattern 和温度会影响 CoMRA，但不是唯一因素。Physical location/spatial variation 也重要，说明某些 rows/subarrays 天然更脆弱。
+
+### 硬件工程师思考
+RowClone 类机制如果被频繁用于 copy/zeroing，不能只看性能。它们可能改变 row activation pattern，使原本安全的 refresh/TRR 假设失效。OS 或 controller 需要限制同一区域连续 PuD copy 的频率。
+
+## 3. SiMRA Characterization / SiMRA 表征
+
+### 原文位置
+Page 8-10
+
+### 中文翻译
+SiMRA 实验同时激活 2/4/8/16/32 行，测试 victim rows。结果比 CoMRA 更严重：最低 HCfirst 相比 RowHammer 低 158.58x。SiMRA 的 data pattern 和 row-on time 影响极大，平均 HCfirst 可分别变化最高 57.80x 和 270.27x。
+
+SiMRA 同时打开多个 rows，使 bitline 和相邻 cells 经历更复杂、更强的电气扰动。随着 activated row count 和 row-on time 增加，victim rows 更容易产生 bitflips。Voltage/temperature 也有影响，但在论文报告中不如 row-on time 和 pattern 显著。
+
+### 硬件工程师思考
+SiMRA 是 Ambit/MAJX/FCDRAM 类 bitwise PuD 的核心操作，因此这部分直接影响所有基于 simultaneous activation 的方案。若没有专门 mitigation，高性能 PuD logic 可能同时成为高强度 RowHammer primitive。
+
+## 4. Combination Patterns and TRR Bypass / 组合模式与 TRR 绕过
+
+### 原文位置
+Page 11-12
+
+### 中文翻译
+作者测试 RowHammer、CoMRA、SiMRA 组合 access pattern。结果显示，组合比单独 RowHammer 更有效；三者组合使 average HCfirst 降低 1.66x。这说明攻击者可能把传统 hammering 和 PuD operations 组合，形成更强 disturbance pattern。
+
+在开启 TRR 的测试模块中，SiMRA 和 CoMRA 分别比 RowHammer 平均诱发 11340x 和 1.10x 更多 bitflips。尤其 SiMRA 能显著绕过某些 in-DRAM TRR mitigation，因为 TRR 可能只跟踪传统 row activation pattern，而不理解 PuD 多行激活的真实扰动强度。
+
+### 硬件工程师思考
+这是安全影响最强的结果。Mitigation 不能只数标准 ACTIVATE；必须理解 PuD command 语义，按实际同时受扰 rows 更新 counters。否则新功能会绕过旧防护。
+
+## 5. Countermeasures / 防护
+
+### 原文位置
+Page 13-14
+
+### 中文翻译
+作者提出三类 countermeasure，并重点改造 PRAC。Naive 方案可对每个被激活/受影响 row 都计数，但多行同时更新会带来大量 counter accesses 和 incrementers，性能开销高。
+
+优化方案包括 area-optimized、performance-optimized 和 weighted counting。Weighted counting 根据不同 PuD operation 的扰动强度给不同权重，而不是简单把每行激活视为相同事件。PRAC-PO-WC 在 4us period 下性能开销为 19.26%，比 naive 69.15% 低很多；但平均/最大开销仍可达 48.26%/98.83%，说明防护代价很高。
+
+### 硬件工程师思考
+PuD mitigation 的难点是计数规模。SiMRA 一次操作可能影响多行和邻近 victim rows，如果每个都更新 counter，带宽和面积都会爆炸。实际方案需要在安全性、性能、面积和误报之间折中。
+
+## 6. Limitations and Conclusion / 局限与结论
+
+### 原文位置
+Page 14-15
+
+### 中文翻译
+论文表征的是当前 COTS DRAM 中非标准 PuD 操作。未来如果 DRAM 正式支持 PuD，电路和 mitigation 可能不同。但这不削弱结论：多行激活本身会改变 read disturbance 风险，必须被设计者考虑。
+
+作者承认 countermeasure 仍是 sketch，详细面积/能耗评估、device-level physical causes、transient error 影响等需要后续研究。结论强调，PuD 能力与可靠性/安全风险必须一起评估。
+
+### 硬件工程师复习重点
+
+- Page 1-2：CoMRA/SiMRA 定义。
+- Page 5 Figure 4：CoMRA 相比 RowHammer 的 HCfirst 风险。
+- Page 9 Figures 13-14：SiMRA/data pattern 风险。
+- Page 12 Figure 24：TRR bypass 是最关键安全证据。
+- Page 13-14 Figure 25：mitigation 性能代价很高。
+
+### 对未来工作的启发
+PuDHammer 给所有 PuD 设计一个硬性要求：任何利用 multiple-row activation 的机制，都必须在论文和产品设计中同时给出 disturbance model 与 mitigation。性能收益不能脱离可靠性和安全成本单独评估。

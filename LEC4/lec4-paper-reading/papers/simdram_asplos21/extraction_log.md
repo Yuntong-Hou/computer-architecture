@@ -27,3 +27,11 @@
 - [x] 已整理图表/公式笔记
 - [x] 已整理术语表
 - [x] 已标注无法确认或需人工复核内容
+
+## 2026-05-12 High-Completeness Translation Expansion
+
+- Updated File: full_translation.zh.md
+- Expansion Scope: 追加高完整度扩写版，覆盖 motivation、DRAM/Ambit background、SIMDRAM subarray organization、MAJ/NOT synthesis、row allocation、µOps/µProgram、system integration、programming interface、transposition、evaluation、reliability、data movement、limitations、conclusion。
+- Hardware Engineer Perspective Added: Yes，重点补充 vertical layout、destructive MAJ row allocation、coherence/pinning、RowHammer/security、transposition overhead、适用 workload 边界。
+- Current Translation File Length: 257 lines
+- Remaining Manual Check: Appendix 的 MIG transformation rules 和 Page 12-15 的评估图建议回 PDF 原图核对。

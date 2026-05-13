@@ -27,3 +27,11 @@
 - [x] 已整理图表/公式笔记
 - [x] 已整理术语表
 - [x] 已标注无法确认或需人工复核内容
+
+## 2026-05-12 High-Completeness Translation Expansion
+
+- Updated File: full_translation.zh.md
+- Expansion Scope: 追加高完整度扩写版，覆盖 bulk bitwise workloads、TRA majority、DCC NOT、designated rows、AAP primitive、system interface、coherence/ECC/scrambling、SPICE reliability、throughput/energy、applications、limitations。
+- Hardware Engineer Perspective Added: Yes，重点补充 sense amplifier 计算、designated-row 工程折中、subarray placement、ECC/scrambling/coherence、bitcount/reduction 边界。
+- Current Translation File Length: 213 lines
+- Remaining Manual Check: Page 4-6 TRA/DCC 图和 Page 10-12 性能图建议回 PDF 原图核对。

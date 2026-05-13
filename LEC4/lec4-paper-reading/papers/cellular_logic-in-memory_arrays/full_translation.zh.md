@@ -108,3 +108,86 @@ Conclusion
 
 ### 中文翻译
 论文最终强调：这篇 1969 年论文提出 cellular logic-in-memory (CLIM) arrays，把二维规则存储阵列中的每个 cell 增强为含逻辑与存储的小单元，用于排序、关联存储、pushdown memory 和可编程逻辑。 对这组 LEC4 文献而言，这篇文章提供了一个重要视角：DRAM/PIM 研究不仅包含底层电路 primitive，也包含系统集成、编程模型、实验平台和 workload 适配。建议结合 `reading_summary.zh.md` 和 `figures_tables_equations_notes.zh.md` 复习。
+
+---
+
+# 2026-05-12 高完整度扩写版
+
+说明：这是一篇 1969 年概念/工程设计论文，没有现代 benchmark。以下按原文扩写，覆盖 LSI 背景、CLIM array 设计原则、优势、Sorting Array I、CAM/pushdown/buffer/switching uses、Sorting Array II、fault/testability、结论与现代对照。
+
+## Abstract / 摘要
+
+### 原文位置
+Page 1 / Abstract
+
+### 中文翻译
+论文提出 cellular logic-in-memory (CLIM) arrays：一种二维规则阵列，每个 cell 同时包含少量 logic 和 storage，并主要与邻近 cells 相连。作者认为，在 LSI 时代，与其设计大量定制逻辑模块，不如设计少数规则、可重复、可测试、可容错的 logic-in-memory arrays，用相同 cell 结构通过局部连接实现多种功能。
+
+作者用 sorting array 作为主要例子。Sorting Array I 是一种 single-address multiple-word memory，可保持内部 words 有序；它还可被配置成 content-addressed memory、pushdown memory、buffer memory 和 programmable switching array。论文并非给出现代实验数据，而是通过结构设计和用途分析论证 CLIM 的灵活性。
+
+### 硬件工程师思考
+这篇文章的历史价值在于它把“规则阵列 + 局部互连 + cell-level storage/programming”作为 LSI 设计原则。今天的 SRAM compute、PIM arrays、systolic arrays、NoC tiles 都能看到类似思想：规则结构比任意定制逻辑更易制造、测试和扩展。
+
+## I-II. CLIM Motivation and Design Principles / 动机与设计原则
+
+### 原文位置
+Page 1-3, Sections I-II
+
+### 中文翻译
+作者面对的是 LSI 早期问题：芯片端子数有限、芯片内部 gates 越来越便宜、制造后不可修复、系统希望用少数模块类型构建多种功能。因此，一个有用的大网络应具备规则性、可测试性、可容错性和功能灵活性。
+
+CLIM array 的基本形式是二维矩形 identical cells。每个 cell 包含简单 logic-and-storage circuit，主要连接邻近 cells。Cell 内的 flip-flop storage 可作为 programming state，使 cell 在不同模式下扮演 adder、switch、register stage、memory bit 等角色。
+
+作者列出 CLIM 的多类优势：functional flexibility、testability、fault accommodation、subarray interconnectability、logical performance、design ease、low power/high speed、functional decomposition。核心思想是，同一种规则阵列可通过 programming 和局部互连承担多种 memory/logic 功能。
+
+### 硬件工程师思考
+CLIM 强调 local neighbor connections，这与现代物理设计一致：全局互连昂贵且难时序收敛，规则局部互连更可扩展。做硬件架构时，数据流和物理互连距离同样重要。
+
+## III-V. Sorting Array I / 排序阵列 I
+
+### 原文位置
+Page 3-7
+
+### 中文翻译
+Sorting Array I 是论文的主要设计实例。它是一种 single-address multiple-word memory，每行存储一个 n-bit word，并通过 cell 间比较和移动保持 words 有序。写入新 word 时，阵列可在局部逻辑控制下找到合适位置并移动数据；读出时可得到最大或最小 word。
+
+这个结构展示了 memory 和 logic 的融合：阵列不仅存储 words，还在存储位置附近执行比较、移动和排序维护。由于每个 cell 结构相同，阵列可扩展到更多 words/bits；由于操作在阵列内并行进行，可避免把所有 words 读出到中央处理器排序。
+
+作者还说明 Sorting Array I 可作为 content-addressed memory (CAM)：通过比较输入 key 与阵列中的 words 设置 match/tag；可作为 pushdown memory 或 queue/buffer memory：利用有序移动和局部控制实现栈/队列行为；也可作为 programmable switching function array。
+
+### 硬件工程师思考
+Sorting Array I 是早期“把数据结构操作放进存储阵列”的例子。现代数据库/网络/AI 加速器也常做类似事情：把比较、筛选、排序、匹配靠近数据。差别在于今天我们会用 SRAM/TCAM/HBM/near-memory logic 实现，而 CLIM 用抽象 cell array 表达。
+
+## VI. Sorting Array II and Tradeoffs / 排序阵列 II 与权衡
+
+### 原文位置
+Page 8-9
+
+### 中文翻译
+Sorting Array II 使用 brick-wall pattern 和 serial comparison/row interchange 实现排序。它与 Sorting Array I cell complexity 类似，但缺少 Sorting Array I 的多功能性；速度更慢，clocking 要求更精确，灵活性更差。
+
+通过这个比较，作者强调 CLIM 设计不只是追求某个功能可实现，还要看 array 的通用性、clocking 难度、fault accommodation 和可重用性。一个稍微复杂但多功能的 array 可能比一个专用但不灵活的 array 更有价值。
+
+### 硬件工程师思考
+这是很典型的架构权衡：专用结构可能在单点任务上简单，但通用性和可复用性差。硬件项目中，选择专用加速器还是可编程阵列，要看目标 workload 生命周期和软件生态。
+
+## Testability, Faults, and Conclusion / 可测试性、故障与结论
+
+### 原文位置
+Page 2-3 and Page 9
+
+### 中文翻译
+作者认为规则 identical-cell array 更易测试。测试可利用阵列结构和局部重复性进行，而不是为每个定制模块设计完全不同测试。Fault accommodation 方面，isolated faulty cells 有时可通过重编程、禁用行/列或重新组织 subarray 绕过。但作者也承认，这种容错能力有限，不适用于所有 array 类型或 fault 类型。
+
+结论认为 CLIM arrays 至少适用于 conventional/associative memories 和具有自然迭代结构的计算电路。随着 per-gate cost 下降，在 memory arrays 中增加 logic 的吸引力会增强。作者的判断与后来的 PIM、logic-in-memory、near-data processing 思想一脉相承。
+
+### 硬件工程师复习重点
+
+- Page 1-3：CLIM 的八类优势和设计原则。
+- Page 3-7：Sorting Array I 如何把排序/匹配/缓冲融合到阵列。
+- Page 6-8：CAM、pushdown memory、buffer、switching array 的多功能性。
+- Page 8-9：Sorting Array II 对比展示灵活性与时序权衡。
+- Page 9：结论中的 “natural iterative structure” 对现代 PIM 仍重要。
+
+### 对未来工作的启发
+CLIM 的长期启发是：把逻辑放进存储不是单一技术，而是一种设计哲学。最适合的目标通常是规则、局部、可并行、数据结构明确的任务。若任务需要大量全局通信或不规则控制，logic-in-memory 的优势会迅速下降。

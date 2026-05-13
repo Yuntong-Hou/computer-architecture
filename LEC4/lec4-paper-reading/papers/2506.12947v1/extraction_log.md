@@ -27,3 +27,11 @@
 - [x] 已整理图表/公式笔记
 - [x] 已整理术语表
 - [x] 已标注无法确认或需人工复核内容
+
+## 2026-05-12 High-Completeness Translation Expansion
+
+- Updated File: full_translation.zh.md
+- Expansion Scope: 追加高完整度扩写版，覆盖 CoMRA/SiMRA、HCfirst、真实 DDR4 表征、RowHammer/TRR bypass、PRAC countermeasures、limitations。
+- Hardware Engineer Perspective Added: Yes，重点补充 PuD 多行激活的 read disturbance 风险、tail vulnerability、mitigation counter 成本、安全产品化边界。
+- Current Translation File Length: 224 lines
+- Remaining Manual Check: Page 5、Page 9、Page 12、Page 14 的关键图建议回 PDF 原图核对。

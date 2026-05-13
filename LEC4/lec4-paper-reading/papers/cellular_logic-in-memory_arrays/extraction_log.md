@@ -27,3 +27,11 @@
 - [x] 已整理图表/公式笔记
 - [x] 已整理术语表
 - [x] 已标注无法确认或需人工复核内容
+
+## 2026-05-12 High-Completeness Translation Expansion
+
+- Updated File: full_translation.zh.md
+- Expansion Scope: 追加高完整度扩写版，覆盖 LSI 背景、CLIM array 设计原则、优势、Sorting Array I、CAM/pushdown/buffer/switching uses、Sorting Array II、fault/testability、结论与现代对照。
+- Hardware Engineer Perspective Added: Yes，重点补充规则阵列、局部互连、可测试/可容错、数据结构操作靠近存储的现代意义。
+- Current Translation File Length: 193 lines
+- Remaining Manual Check: 原文为 1969 年概念论文，缺少现代 benchmark；应按历史思想价值阅读。

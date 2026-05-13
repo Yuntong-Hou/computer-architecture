@@ -117,3 +117,141 @@ Conclusion
 
 ### 中文翻译
 论文最终强调：SIMDRAM 把 Ambit 式 MAJ/NOT DRAM primitive 组织成端到端框架，通过自动合成 MAJ/NOT 表示、分配计算行并生成 DRAM µProgram，让用户可在 DRAM 内执行灵活的 bit-serial SIMD operations。 对这组 LEC4 文献而言，这篇文章提供了一个重要视角：DRAM/PIM 研究不仅包含底层电路 primitive，也包含系统集成、编程模型、实验平台和 workload 适配。建议结合 `reading_summary.zh.md` 和 `figures_tables_equations_notes.zh.md` 复习。
+
+---
+
+# 2026-05-12 高完整度扩写版
+
+说明：以下按 ASPLOS 2021 论文结构扩写，覆盖 motivation、DRAM/Ambit background、SIMDRAM subarray organization、MAJ/NOT synthesis、row allocation、µOps/µProgram、system integration、programming interface、transposition、evaluation、reliability、data movement、limitations 和 conclusion。SIMDRAM 原文较长，附录包含重要算法和转换规则；本文件保留学习译文形式，重点覆盖技术主体。
+
+## Abstract / 摘要
+
+### 原文位置
+Page 1 / Abstract
+
+### 中文翻译
+SIMDRAM 关注 Processing-using-DRAM (PuD)：直接利用 DRAM cell、bitline、sense amplifier 的模拟行为，在 DRAM array 内执行计算。Ambit 已证明 triple-row activation (TRA) 可执行 MAJ/AND/OR，dual-contact cell 可执行 NOT，但 Ambit 主要展示有限 bitwise operations。SIMDRAM 的目标是把这些 primitive 组织成一个 flexible end-to-end framework，使用户能在 DRAM 中执行更广泛的 bit-serial SIMD operations。
+
+SIMDRAM 的核心流程有三步。第一，把目标 operation 转换成 optimized MAJ/NOT representation。MAJ/NOT 是 functionally complete set，且直接匹配 Ambit-style DRAM primitives。第二，把 operands 和 intermediate values 分配到 DRAM subarray 的可用 computation rows 中，并生成 µProgram。第三，SIMDRAM control unit 执行 µProgram，向 DRAM 发出 AP/AAP 等低层 commands。
+
+论文评估 16 类 operations 和 7 个 real-world kernels。结果显示，单 bank SIMDRAM 相比 Ambit 有更高 throughput 和 energy efficiency；16 banks 并行时，SIMDRAM 相比 CPU/GPU 在目标 bit-serial workloads 上有大幅 throughput/energy 优势。论文还讨论 data transposition、coherence、security、RowHammer 和 area overhead。
+
+### 硬件工程师思考
+SIMDRAM 是从 primitive 到系统框架的一步。Ambit 说明“DRAM 能算”；SIMDRAM 说明“如何把用户操作编译成 DRAM µProgram”。对硬件工程师来说，它的价值在于 synthesis、row allocation、controller support 和 data layout，而不只是 TRA 本身。
+
+## 1. Introduction / 引言
+
+### 原文位置
+Page 1-2, Section 1
+
+### 中文翻译
+作者指出，很多 data-intensive workloads 受限于数据移动而非算术单元。Processing-using-DRAM 可以利用每个 subarray 中成千上万 bitlines 的并行性，在数据所在位置执行 SIMD-like operations。已有 Ambit 等机制展示了 bulk bitwise AND/OR/NOT 的潜力，但缺乏灵活性。现实应用需要 addition、subtraction、comparison、bitcount、ReLU、multiplication、selection、predicate 等更复杂操作。
+
+SIMDRAM 采用 vertical data layout：一个 vector 中不同元素的同一 bit 位沿 DRAM row/column 组织，使一条 bitline 成为一个 SIMD lane。这样一次 MAJ/NOT 操作可在所有 columns 上并行执行同一 bit-level operation。多 bit operation 通过 bit-serial 方式逐位完成。
+
+论文贡献包括：提出端到端 PuD framework；用 Majority-Inverter Graph (MIG) 优化 MAJ/NOT 表达；为 DRAM rows 分配 operands/intermediates；生成 µProgram；提供 ISA/programming/hardware support；系统评估性能、能耗、可靠性、data movement 和 area。
+
+### 硬件工程师思考
+SIMDRAM 的设计本质是“把 DRAM 当成超宽 bit-serial SIMD array”。这非常适合 bit-level data parallel workloads，但不适合需要大量跨 bitline communication、random shuffle 或 floating-point alignment 的任务。判断适用性时要看 operation 是否能分解成独立 bitline 上的 bit-serial logic。
+
+## 2. Background / 背景
+
+### 原文位置
+Page 2-4, Section 2
+
+### 中文翻译
+背景先回顾 DRAM basics：subarray、row buffer、ACTIVATE、PRECHARGE 和 row activation。然后介绍 Ambit-style computation。Triple-row activation 同时激活三行，sense amplifier 输出三者多数值 MAJ(A,B,C)。若其中一行为 0，MAJ 等价 AND；若其中一行为 1，MAJ 等价 OR。NOT 可通过 Ambit 的 dual-contact cell 或专门取反结构实现。
+
+MAJ/NOT 是逻辑完备集合，因此任何 Boolean logic 都可表示为 MAJ 和 NOT 的组合。SIMDRAM 不先生成 AND/OR/NOT 再映射到 MAJ，而是直接使用 MIG transformation rules 优化 MAJ/NOT graph，减少 DRAM commands。
+
+### 硬件工程师思考
+MAJ/NOT 与 NAND/NOR 一样是逻辑完备，但对 DRAM 更自然。硬件设计的一个原则是：编译器中间表示应匹配底层 primitive。如果底层是 MAJ，先生成 AND/OR 再映射会浪费机会；直接用 MIG 才能降低命令数。
+
+## 3. SIMDRAM Architecture / SIMDRAM 架构
+
+### 原文位置
+Page 4-5, Section 3; Figure 3
+
+### 中文翻译
+SIMDRAM subarray 被组织为若干 row groups。B-group rows 用于保存 operands，C-group rows 用于保存 intermediate computation values，D-group rows 可用于常量、控制或 dual-contact cell 相关功能。由于 TRA 会覆盖输入 rows，SIMDRAM 需要 careful row allocation，避免仍需使用的值被破坏。
+
+SIMDRAM framework 包含三步。Step 1，输入是用户 operation 的 Boolean expression 或 truth-level representation，工具生成 optimized MAJ/NOT graph。Step 2，根据 graph dependency 和 DRAM row constraints，分配 operands/intermediates 到 rows，并生成 SIMDRAM µOps。Step 3，SIMDRAM control unit 在 memory controller 中读取 µProgram，向 DRAM 发出命令。
+
+系统集成方面，SIMDRAM 提供 bbop instructions，用于指定 operation、operand addresses、element width 和 vector length。Memory controller 管理 µProgram scratchpad、SIMDRAM control unit、address translation、page faults、coherence 和 data transposition。
+
+### 硬件工程师思考
+SIMDRAM 的难点是 resource allocation。DRAM computation rows 很少，TRA 还会覆盖输入，因此 row allocation 类似 register allocation，但副作用更强。写 compiler/backend 时必须考虑 live range、destructive ops、temporary rows 和 copy cost。
+
+## 4. µOps, µProgram, and Synthesis / µOps 与合成
+
+### 原文位置
+Page 5-9, Section 4; Figure 5-6; Appendix Table 4/Figure 15
+
+### 中文翻译
+SIMDRAM 定义一组 µOps，用来表达 DRAM 内 primitive，例如 ACTIVATE-PRECHARGE sequence、TRA、NOT、row copy、constant initialization 等。µProgram 是这些 µOps 的序列，由 SIMDRAM control unit 执行。
+
+MAJ/NOT synthesis 使用 MIG transformation rules，例如 commutativity、associativity、distributivity、majority-specific simplification 等，以减少 graph nodes 和 depth。对 full adder 等操作，直接 MAJ/NOT 表示可减少 primitive 数量，提高 throughput。
+
+Row-to-operand allocation 根据 optimized MIG 的依赖关系，将输入 operands、constants、intermediates 和 outputs 放到合适 rows。若 intermediate 后续还要使用，不能让 destructive MAJ 覆盖它；若空间不足，需要额外 row copy 或分阶段执行。Appendix Algorithm 1 描述了自动分配和 µProgram generation 的过程。
+
+### 硬件工程师思考
+这里可以类比传统编译器：MIG optimization 类似逻辑综合，row allocation 类似寄存器分配，µProgram generation 类似 instruction scheduling。但 DRAM 版本有特殊约束：操作粒度是 row/bitline，写入副作用强，copy/shift 成本高，bank/subarray location 决定并行度。
+
+## 5. System Integration / 系统集成
+
+### 原文位置
+Page 9-11, Section 5; Figure 8
+
+### 中文翻译
+SIMDRAM 提供 programming interface，让用户声明 SIMDRAM objects，并用 bbop 指令调用 operations。系统需要保证输入数据位于 DRAM 中，且以 vertical layout 存放。若数据来自常规 horizontal layout，需要 transposition unit 在 memory controller 中转换布局。
+
+Coherence 方面，SIMDRAM 操作前需要 flush/pin 相关 cache lines，避免 CPU cache 中存在更新数据。SIMDRAM 执行期间，相关 pages 需要避免被 OS 移动或替换。Page faults、interrupts 和 context switch 也需要 controller/OS 协作处理。
+
+Security 方面，SIMDRAM 可能增加 RowHammer 风险，因为它会执行大量 ACTIVATE-like operations。作者讨论需要 RowHammer mitigation 或限制操作频率。Limited subarray size 也是约束：如果 operation 需要的 rows 超过 subarray 可用 computation rows，需要分块执行或搬移数据。
+
+Limitations 包括：主要支持 integer/fixed-point operations；floating-point 因 mantissa alignment、normalization、rounding 和跨 bitline shifting 成本高而困难；跨 bitline shuffle/reduction 也不容易，除非增加专门 shift/shuffle circuitry。
+
+### 硬件工程师思考
+SIMDRAM 的 system integration 很现实：data layout、coherence、pinning、page fault、security 都是 PIM 落地的核心问题。任何只讲阵列 primitive 不讲这些问题的 PuD 设计，都只能算半个系统方案。
+
+## 6-7. Evaluation / 评估
+
+### 原文位置
+Page 11-15, Sections 6-7; Figures 9-14; Table 2-3
+
+### 中文翻译
+评估使用 gem5 实现 SIMDRAM，并与 Intel Skylake CPU、NVIDIA Titan V GPU 和 Ambit 比较。CPU 使用 AVX-512，GPU 使用真实计时和 nvml energy。Synthetic evaluation 包含 16 operations，在 8/16/32/64-bit element sizes 和 1/4/16 DRAM banks 下测试 throughput 与 energy efficiency。
+
+单 bank 上，SIMDRAM 在 16 operations 上平均提供 Ambit 的 2.0x throughput 和 2.6x energy efficiency；在 7 个 real-world kernels 上平均提供 Ambit 的 2.5x performance。这说明直接 MAJ/NOT synthesis 和更通用 µProgram 不是只增加灵活性，也能减少命令数。
+
+16 banks 并行时，SIMDRAM 在 16 operations 上提供 CPU/GPU 的 88x/5.8x throughput，以及 257x/31x energy efficiency。真实 kernels 包括 BitWeaving、TPC-H Q1、kNN、LeNET、VGG-13、VGG-16、brightness。SIMDRAM:16 平均提供 CPU/GPU 的 21x/2.1x performance；BitWeaving 收益最高。
+
+与 DualityCache:Realistic 比较时，SIMDRAM:16 在 addition/subtraction/multiplication/division latency 上分别平均快 52.9x/52.4x/1.8x/2.1x，并平均能耗低 600x。原因是 SIMDRAM 利用 DRAM row-wide bitline parallelism，而 cache-based design 受 SRAM/cache organization 限制。
+
+可靠性评估用 SPICE/Monte-Carlo 分析 TRA、back-to-back TRA 和 QRA。在 ±5% process variation 下 TRA/TRAb2b 无错误；22nm 时 QRA 无法正确工作；TRA 在 ±10%/±20% variation 下失败率为 0.42%/4.50%。这说明更多行同时激活对 variation 更敏感，TRA 比 QRA 更可行。
+
+Data movement overhead 中，worst-case intra-bank movement 平均 0.39%，inter-bank 平均 17.5%。Data transposition overhead 在 SIMDRAM:1/SIMDRAM:16 中平均 7.1%/44.6%，说明当并行 banks 增多、计算本身更快时，layout transformation 可能成为显著开销。Area overhead 主要在 memory controller 的 control/transposition units，约为 high-end CPU die 的 0.2%，DRAM circuitry 不比 Ambit 增加。
+
+### 硬件工程师思考
+评估结果要带着两个问题读：第一，输入是否已经是 vertical layout？如果每次都要 transposition，收益会被吃掉。第二，operation 是否需要跨 bitline communication？如果需要大量 shuffle/reduction，SIMDRAM 的优势会下降。真实部署可能适合固定数据布局的 database columns、bitsets、低精度 DNN activation/weights，而不适合任意内存对象。
+
+## 8-10. Related Work and Conclusion / 相关工作与结论
+
+### 原文位置
+Page 15-18, Sections 8-10 and Appendix
+
+### 中文翻译
+相关工作包括 Ambit、RowClone、LISA、DualityCache、DRISA、Pinatubo、near-memory processing、bit-serial architectures、logic synthesis 等。SIMDRAM 的差异是同时提供 MAJ/NOT synthesis、µProgram generation、hardware control unit 和 programming interface。
+
+结论强调，SIMDRAM 将 DRAM 内 MAJ/NOT primitive 扩展为灵活、端到端 PuD framework，可自动合成多类 operations，并在目标 workloads 上显著提升 throughput 和 energy efficiency。它也明确指出 PuD 的限制：data layout、coherence、security、operation class 和 row resource 都会影响实际收益。
+
+### 硬件工程师复习重点
+
+- Page 2：vertical layout + bit-serial SIMD 是 SIMDRAM 的基本抽象。
+- Page 5 Figure 3：三步流程是全文结构。
+- Page 5-9：MIG/MAJ-NOT synthesis 和 row allocation 是工具链核心。
+- Page 10-11：coherence、pinning、RowHammer、limitations 决定落地边界。
+- Page 12-15：transposition overhead 和 reliability table 不能忽略。
+
+### 对未来工作的启发
+SIMDRAM 对硬件工程师的主要启发是：PIM primitive 需要编译器和 runtime 才能成为产品能力。真正的难点不只是“阵列能不能做 MAJ”，而是用户操作如何表达、数据如何布局、µProgram 如何生成、错误如何控制、OS 如何协作。

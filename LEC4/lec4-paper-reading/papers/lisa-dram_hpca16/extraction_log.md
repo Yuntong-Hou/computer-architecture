@@ -27,3 +27,11 @@
 - [x] 已整理图表/公式笔记
 - [x] 已整理术语表
 - [x] 已标注无法确认或需人工复核内容
+
+## 2026-05-12 High-Completeness Translation Expansion
+
+- Updated File: full_translation.zh.md
+- Expansion Scope: 追加高完整度扩写版，覆盖 Abstract、Introduction、DRAM subarray background、LISA substrate、RBM、LISA-RISC、LISA-VILLA、LISA-LIP、hardware cost、methodology、evaluation、other applications、related work、conclusion。
+- Hardware Engineer Perspective Added: Yes，重点补充 bitline link、row-buffer halves、PREE、queueing latency、repaired rows/SPD、cache fill cost、linked precharge 的 PVT/噪声风险。
+- Current Translation File Length: 290 lines
+- Remaining Manual Check: Page 4-8 的 RBM/RISC/LIP 时序图建议回 PDF 原图核对。

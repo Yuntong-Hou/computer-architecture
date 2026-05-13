@@ -27,3 +27,11 @@
 - [x] 已整理图表/公式笔记
 - [x] 已整理术语表
 - [x] 已标注无法确认或需人工复核内容
+
+## 2026-05-12 High-Completeness Translation Expansion
+
+- Updated File: full_translation.zh.md
+- Expansion Scope: 追加高完整度扩写版，覆盖 simultaneous many-row activation、MAJX、Multi-RowCopy、input replication、robustness factors、microbenchmarks、limitations。
+- Hardware Engineer Perspective Added: Yes，重点补充 many-row activation 的 analog margin、input replication 校准、data pattern 敏感性、PuDHammer 安全关联。
+- Current Translation File Length: 213 lines
+- Remaining Manual Check: Page 10 input replication 与 Page 11-12 case study 图建议回 PDF 原图核对。

@@ -27,3 +27,11 @@
 - [x] 已整理图表/公式笔记
 - [x] 已整理术语表
 - [x] 已标注无法确认或需人工复核内容
+
+## 2026-05-12 High-Completeness Translation Expansion
+
+- Updated File: full_translation.zh.md
+- Expansion Scope: 追加高完整度扩写版，覆盖 motivation、3D-stacked DRAM/PIM background、PageRank locality example、PEI abstraction、memory model、PCU/PMU、locality monitor、workloads、evaluation、balanced dispatch、energy/area、related work、conclusion。
+- Hardware Engineer Perspective Added: Yes，重点补充 PIM locality 风险、single-cache-block restriction、PMU/coherence/atomicity、动态执行位置选择。
+- Current Translation File Length: 255 lines
+- Remaining Manual Check: Page 3 Figure 2 和 Page 9-12 的评估图建议回 PDF 原图核对。

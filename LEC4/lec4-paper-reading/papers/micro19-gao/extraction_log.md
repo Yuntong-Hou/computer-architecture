@@ -27,3 +27,11 @@
 - [x] 已整理图表/公式笔记
 - [x] 已整理术语表
 - [x] 已标注无法确认或需人工复核内容
+
+## 2026-05-12 High-Completeness Translation Expansion
+
+- Updated File: full_translation.zh.md
+- Expansion Scope: 追加高完整度扩写版，覆盖 Abstract、Introduction、DRAM background、timing-violating row copy/AND/OR、operation reliability、bit-serial framework、SoftMC methodology、真实芯片评估、voltage/temperature、throughput/energy、related work、conclusion。
+- Hardware Engineer Perspective Added: Yes，重点补充 out-of-spec timing、vendor/binning、error table、row remapping、pairwise value format、runtime characterization、适用 workload 边界。
+- Current Translation File Length: 287 lines
+- Remaining Manual Check: Figure 3-7 的时序、truth table 和 Figure 10-13 的 heatmap/CDF 建议回 PDF 原图核对。

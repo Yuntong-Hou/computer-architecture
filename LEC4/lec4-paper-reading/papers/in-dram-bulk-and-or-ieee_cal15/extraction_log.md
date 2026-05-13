@@ -27,3 +27,11 @@
 - [x] 已整理图表/公式笔记
 - [x] 已整理术语表
 - [x] 已标注无法确认或需人工复核内容
+
+## 2026-05-12 High-Completeness Translation Expansion
+
+- Updated File: full_translation.zh.md
+- Expansion Scope: 追加高完整度扩写版，覆盖 Abstract、Introduction、DRAM background、triple-row activation、RowClone 临时行流程、latency/throughput/energy、FastBit case study、related work、conclusion。
+- Hardware Engineer Perspective Added: Yes，重点补充 destructive compute、subarray locality、临时行/常量行、cache coherence、ECC、timing guardband、应用筛选条件。
+- Current Translation File Length: 246 lines
+- Remaining Manual Check: Page 2 Figure 4 的 majority/triple-row activation 建议结合原图复核。

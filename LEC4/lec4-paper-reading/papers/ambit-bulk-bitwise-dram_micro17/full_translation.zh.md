@@ -111,3 +111,103 @@ Conclusion
 
 ### 中文翻译
 论文最终强调：Ambit 利用 triple-row activation 和 dual-contact cell，在 commodity DRAM 内直接执行 bulk AND/OR/NOT，从而让大型 bitvector 操作摆脱外部内存带宽瓶颈。 对这组 LEC4 文献而言，这篇文章提供了一个重要视角：DRAM/PIM 研究不仅包含底层电路 primitive，也包含系统集成、编程模型、实验平台和 workload 适配。建议结合 `reading_summary.zh.md` 和 `figures_tables_equations_notes.zh.md` 复习。
+
+---
+
+# 2026-05-12 高完整度扩写版
+
+说明：以下按 Ambit/MICRO 2017 论文结构扩写，覆盖 motivation、bulk bitwise workloads、TRA majority、DCC NOT、designated rows、AAP primitive、system interface、coherence/ECC/scrambling、SPICE reliability、throughput/energy、applications、limitations。Ambit 是 LEC4 PuD 主线核心论文。
+
+## Abstract / 摘要
+
+### 原文位置
+Page 1 / Abstract
+
+### 中文翻译
+Ambit 提出在 commodity DRAM 内执行 bulk bitwise operations。许多应用包含大量 bitvector operations，例如 bitmap indices、BitWeaving、BitFunnel、DNA sequence processing、encryption、graph processing 和 networking。传统 CPU/GPU 执行这些操作时受外部 memory bandwidth 限制，因为大量数据必须从 DRAM 读出、计算、再写回。
+
+Ambit 利用 DRAM 的 analog operation。Triple-row activation (TRA) 同时激活三行，让 sense amplifier 输出三输入 majority。将一行预置为 0 得到 AND，预置为 1 得到 OR。NOT 通过 dual-contact cell (DCC) 实现，利用 sense amplifier 两侧互补值产生反相。Ambit 通过少量 DRAM 修改和 memory controller 支持，将这些 primitive 暴露为 bulk bitwise operations。
+
+论文报告 Ambit 平均吞吐比 Skylake 高 44.9x、比 GTX 745 高 32.0x、比 HMC 2.0 高 2.4x；Ambit-3D 比 HMC 2.0 高 9.7x。应用中，bitmap index、BitWeaving 和 set operations 均有明显收益。
+
+### 硬件工程师思考
+Ambit 是“用 DRAM sense amplifier 做逻辑”的代表论文。它不是在 logic layer 放 ALU，而是复用每个 subarray 中已有的 sense amps，获得极高内部并行性。工程上要同时关注 primitive、row placement、temporary rows、ECC、data scrambling 和 coherence。
+
+## 1. Motivation / 动机
+
+### 原文位置
+Page 1-2
+
+### 中文翻译
+作者指出 bulk bitwise operations 的计算强度低、数据移动量大。CPU SIMD 或 GPU 可以快速执行 AND/OR/XOR，但前提是数据已在 cache/register 或 GPU memory 中。若数据在 main memory，外部 channel 带宽和能耗成为瓶颈。HMC logic layer 提供更高 bandwidth，但仍无法利用 DRAM subarray 内部 row-wide bandwidth。
+
+Ambit 目标是在 DRAM array 内部直接计算，避免数据离开 DRAM chip。由于一次 TRA 对整行 bitlines 并行工作，Ambit 天然适合大 bitvectors。
+
+### 硬件工程师思考
+Ambit 的适用场景非常明确：大规模 bitvectors、低算术强度、结果继续在 memory 中使用。若 workload 需要复杂 scalar control 或频繁 bitcount/reduction，Ambit 只能加速其中 bitwise 部分。
+
+## 3. Ambit-AND-OR and Ambit-NOT / AND/OR 与 NOT
+
+### 原文位置
+Page 4-6; Figure 4-5
+
+### 中文翻译
+TRA 同时激活三行。三颗 cells 与同一 bitline 共享电荷，sense amplifier 输出多数值。若控制行 C=0，则 MAJ(A,B,0)=A AND B；若 C=1，则 MAJ(A,B,1)=A OR B。由于 TRA 会覆盖三行，Ambit 需要先把源操作数复制到 designated rows，并用常量行提供 0/1。
+
+Ambit-NOT 使用 dual-contact cell。DCC 可连接到 sense amplifier 的两侧之一。由于 sense amplifier 两侧为互补电压，读取/写入另一侧即可得到反相值。DCC 数量很少，只用于 designated rows，不给所有 cells 加双接触，以控制面积。
+
+### 硬件工程师思考
+Ambit 的 NOT 比 AND/OR 更“硬件化”，需要 DCC。后来的 ComputeDRAM/软件 pairwise complement 选择不用硬件 NOT，而用数据表示弥补。两种路线的取舍是面积/标准化 vs 软件容量/操作开销。
+
+## 5. Low-Cost Implementation / 低成本实现
+
+### 原文位置
+Page 6-9
+
+### 中文翻译
+任意三行同时激活会需要宽地址总线和复杂 row decoder。Ambit 通过 designated rows 限制 TRA 只发生在预留行集合中。Memory controller 用 RowClone 将源数据复制到 designated rows，执行 TRA，再将结果复制回目标行。
+
+Ambit 使用 reserved row addresses 和 split row decoder。普通地址访问正常 rows；特殊地址触发 designated rows 的 simultaneous activation。AAP primitive 表示 ACTIVATE-ACTIVATE-PRECHARGE，用于快速执行 RowClone/TRA 类序列。
+
+系统接口提供 bbop instructions/API，让 CPU 请求 bulk bitwise operation。Controller 负责检查 alignment、源/目标是否同 subarray、复制到临时行、执行 operation、写回结果。
+
+Coherence 方面，若源数据在 cache 中 dirty，必须 write back；目标 cache lines 必须 invalidate。ECC 和 data scrambling 也必须处理。作者讨论 bitwise-homomorphic ECC 或控制器辅助重新生成 ECC；data scrambling 若影响 bitwise 语义，需要在 Ambit 操作前后处理或设计可兼容方案。
+
+### 硬件工程师思考
+Ambit 的低成本来自限制灵活性：只在 designated rows 做 TRA。工程上这很合理，因为任意三行激活的 decoder/verification 成本很高。但它把问题转移到数据移动和 row allocation：操作数必须搬到 designated rows，且最好位于同一 subarray。
+
+## 6-8. Reliability and Evaluation / 可靠性与评估
+
+### 原文位置
+Page 10-12; Table 2; Figure 9-12
+
+### 中文翻译
+SPICE 使用 55nm DDR3 model 和 Monte-Carlo process variation 评估 TRA。±5% variation 下 TRA 无错误；±10%/±15% variation 下错误比例为 0.29%/6.01%。这说明 TRA 有一定 margin，但 variation 增大时错误不可忽略。
+
+Raw throughput/energy 比较 Skylake、GTX 745、HMC 2.0、Ambit 和 Ambit-3D。Ambit 平均吞吐比 Skylake 高 44.9x、比 GTX 745 高 32.0x、比 HMC 2.0 高 2.4x；Ambit-3D 比 HMC 2.0 高 9.7x。DRAM/channel energy 降低 25.1x-59.5x。
+
+应用评估包括 bitmap index、BitWeaving 和 bitvector set operations。Bitmap index 查询平均降低 6x execution time。BitWeaving 加速 1.8x-11.8x，平均 7.0x。Set operations 中，当每个集合有 64 个或更多元素时，Ambit 平均比 RB-tree 快 3x。
+
+### 硬件工程师思考
+Ambit 的端到端收益受 bitcount/reduction 限制。Bitmap query 往往还需要 count 或进一步处理，如果 bitcount 仍在 CPU，Amdahl's Law 会限制收益。设计 PIM 系统时要看完整 query pipeline，而不只是 AND/OR kernel。
+
+## Limitations and Conclusion / 局限与结论
+
+### 原文位置
+Page 12-13
+
+### 中文翻译
+Ambit 需要操作数映射到同一 subarray，并通过 RowClone 搬到 designated rows。它加速的是 bulk bitwise operations，不直接解决复杂 arithmetic、cross-bitline shuffle 或 reduction。ECC、scrambling、coherence 和 OS allocation 都需要系统支持。SPICE 可靠性也不等于真实硅片全条件验证。
+
+结论强调，Ambit 用低成本 DRAM 改动实现大规模 AND/OR/NOT，显著提升 bitvector workloads 的 throughput/energy efficiency。它也开辟了后续 DRAM Bender、FCDRAM、SIMDRAM、PuDHammer 等一系列研究。
+
+### 硬件工程师复习重点
+
+- Page 4-6：TRA majority 与 DCC NOT。
+- Page 6-9：designated rows/split decoder/AAP 是实现关键。
+- Page 9：ECC、scrambling、coherence 不可忽略。
+- Page 10 Table 2：variation 影响可靠性。
+- Page 11-12：应用收益要看完整 pipeline。
+
+### 对未来工作的启发
+Ambit 的最大启发是，存储器外围模拟电路可被重新解释为计算资源。但所有此类设计都必须回答：如何限制操作范围降低硬件成本，如何用数据移动补偿限制，以及如何让系统软件正确使用。

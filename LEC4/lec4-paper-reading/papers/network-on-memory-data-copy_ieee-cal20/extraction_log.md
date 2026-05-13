@@ -27,3 +27,11 @@
 - [x] 已整理图表/公式笔记
 - [x] 已整理术语表
 - [x] 已标注无法确认或需人工复核内容
+
+## 2026-05-12 High-Completeness Translation Expansion
+
+- Updated File: full_translation.zh.md
+- Expansion Scope: 追加高完整度扩写版，覆盖 Abstract、Introduction、NoM architecture、TDM slot allocation、data transfer flow、NoM-Light、correctness、evaluation、energy/area/frequency、conclusion。
+- Hardware Engineer Perspective Added: Yes，重点补充 inter-bank copy traffic、circuit switching、slot allocation、copy/coherence interface、TSV/NoM-Light 工程折中。
+- Current Translation File Length: 254 lines
+- Remaining Manual Check: Page 2-3 的 Figure 1/2 建议回 PDF 原图核对。

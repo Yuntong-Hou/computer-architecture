@@ -27,3 +27,11 @@
 - [x] 已整理图表/公式笔记
 - [x] 已整理术语表
 - [x] 已标注无法确认或需人工复核内容
+
+## 2026-05-12 High-Completeness Translation Expansion
+
+- Updated File: full_translation.zh.md
+- Expansion Scope: 追加高完整度扩写版，覆盖 Abstract、Introduction、Background、Frac/Half-m primitives、verification methodology、Frac/Half-m evaluation、F-MAJ、Frac-based PUF、other uses、related work、conclusion。
+- Hardware Engineer Perspective Added: Yes，重点补充 fractional value 的 destructive readout、refresh/ECC 风险、F-MAJ 校准意义、PUF enrollment/environment/aging、ternary storage 未成熟边界。
+- Current Translation File Length: 288 lines
+- Remaining Manual Check: Page 5-8 的 retention/MAJ3 验证图和 Page 10-12 的 PUF 分布图建议回 PDF 原图核对。

@@ -27,3 +27,11 @@
 - [x] 已整理图表/公式笔记
 - [x] 已整理术语表
 - [x] 已标注无法确认或需人工复核内容
+
+## 2026-05-12 High-Completeness Translation Expansion
+
+- Updated File: full_translation.zh.md
+- Expansion Scope: 此前已按高完整度学习译文标准扩写，覆盖正文技术主线、实验结果、局限和硬件工程师视角。
+- Hardware Engineer Perspective Added: Yes
+- Current Translation File Length: 284 lines
+- Remaining Manual Check: 双栏 PDF 图表细节仍建议回 PDF 原图核对。

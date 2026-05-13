@@ -111,3 +111,92 @@ Conclusion
 
 ### 中文翻译
 论文最终强调：TOM 通过编译器选择可 offload 的 memory-intensive code blocks，并用软硬件协同数据映射把 offloaded code 与数据共置，从而无需程序员修改 GPU 程序即可利用 3D-stacked memory logic layer。 对这组 LEC4 文献而言，这篇文章提供了一个重要视角：DRAM/PIM 研究不仅包含底层电路 primitive，也包含系统集成、编程模型、实验平台和 workload 适配。建议结合 `reading_summary.zh.md` 和 `figures_tables_equations_notes.zh.md` 复习。
+
+---
+
+# 2026-05-12 高完整度扩写版
+
+说明：以下按 TOM/ISCA 2016 论文结构扩写，覆盖 GPU memory bottleneck、3D-stacked memory logic layer、compiler offload candidate selection、data mapping learning/prediction、runtime offloading control、hardware structures、evaluation、traffic/energy/sensitivity、limitations。TOM 是 near-data processing，不是 DRAM-array PuD。
+
+## Abstract / 摘要
+
+### 原文位置
+Page 1 / Abstract
+
+### 中文翻译
+TOM 研究如何在不要求程序员修改 GPU 程序的情况下利用 3D-stacked memory logic layer。GPU 应用常受 off-chip memory bandwidth 限制，而 3D-stacked memory 内部 TSV 带宽很高。如果在 memory stack logic layer 中放置简化 SMs，将 memory-intensive code blocks offload 到数据附近执行，就能减少 main GPU 与 memory stacks 之间的数据流量。
+
+TOM 面临两个问题：哪些代码应该 offload？数据应映射到哪个 memory stack？如果 offloaded code 和数据不共置，cross-stack traffic 仍会很高；如果过度 offload，memory stack SMs 资源不足，会成为瓶颈。TOM 用编译器选择候选 block，用 learning/prediction 进行 data mapping，并用 runtime offloading control 动态控制实际 offload。
+
+评估显示，在 10 个 memory-intensive GPGPU workloads 上，TOM 平均提升 30%、最高 76%，平均降低 off-chip memory traffic 38%，平均降低 energy 11%。
+
+### 硬件工程师思考
+TOM 的核心不是“把更多 SM 放进内存”，而是 code-data co-location。Near-data processing 成败取决于 offloaded work 是否真的主要访问本地 stack 数据，以及 offload overhead 是否小于节省的 bandwidth。
+
+## 1. Introduction / 引言
+
+### 原文位置
+Page 1-2
+
+### 中文翻译
+GPU 提供大量并行计算，但许多 GPGPU workloads 受限于 memory bandwidth。3D-stacked memory 提供高内部带宽和 logic layer，可在每个 memory stack 中放置少量 SMs。这样，部分 memory-intensive code 可在 stack 内执行，减少跨 package/channel 的 traffic。
+
+但手动 offload 对程序员负担很重。程序员必须知道哪些 basic blocks memory-intensive、哪些数据在哪个 stack、offload 后 live-in/live-out registers 如何传输。TOM 的目标是 programmer-transparent，由编译器和硬件自动选择。
+
+### 硬件工程师思考
+TOM 属于系统级 NDP，挑战更像 GPU compiler/runtime 和 memory mapping，而不是 DRAM 电路。它对现代 HBM GPU、chiplet GPU、CXL-attached memory accelerator 都有启发：计算靠近数据前，必须先决定数据放哪里。
+
+## 3. TOM Design / TOM 设计
+
+### 原文位置
+Page 3-7
+
+### 中文翻译
+Offload candidate selection 由编译器完成。编译器估计将一个 code block 放到 memory stack SM 执行后，TX/RX bandwidth 如何变化。若节省的 memory traffic 大于 live-in/live-out register transfer 和控制开销，则标记为 candidate。Page 3 Equations 1-4 给出 cost-benefit 模型。
+
+Data mapping 是 TOM 的第二核心。TOM 在 learning phase 评估简单 address mapping options，观察 offloaded blocks 的访问模式，并预测哪些 pages 会被哪个 memory stack 的 offloaded code 频繁访问。随后将这些 pages 映射到最接近对应 offloaded execution 的 stack。这个机制对访问模式可重复的 workload 有效。
+
+Runtime offloading control 负责防止过度 offload。如果 memory stack SMs pending requests 过多或资源压力高，候选 block 可继续在 main GPU 执行。这样避免 memory-side compute resources 成为瓶颈。
+
+实现上，TOM 增加 offloading metadata table、memory allocation table、memory map analyzer 等结构。编译器和 runtime 共同管理候选 blocks、数据 mapping 和实际 offload decisions。
+
+### 硬件工程师思考
+TOM 同时处理三个映射：code block -> execution site，page -> memory stack，runtime pressure -> offload decision。这三者必须闭环。如果只做编译器 offload，不做 data mapping，可能把计算放到错误 stack；如果只做 data mapping，不控制 offload，stack SM 会被压垮。
+
+## 4-5. Evaluation / 评估
+
+### 原文位置
+Page 8-12; Table 2; Figures 8-13
+
+### 中文翻译
+评估使用 Rodinia、GPGPU-Sim workloads 和 CUDA SDK 中 10 个 memory-intensive GPU applications。Baseline 是不能 offload 到 3D-stacked memories 的 GPU 系统。指标包括 IPC speedup、off-chip traffic、energy、warp capacity sensitivity、internal/cross-stack bandwidth sensitivity 和 area。
+
+TOM 在启用 NDP-Controlled 和 tmap 后，平均性能提升 30%，最高 76%，所有 workload 均有 speedup。Transparent data mapping 相比 baseline memory mapping 平均额外提升 10%。例如 KM 从 3% 提升到 39%，RD 从 51% 提升到 76%，说明 mapping 对 code-data co-location 很关键。
+
+如果没有 offloading control，系统平均变慢 3%/7%。Controlled offloading 将 offloaded instructions 从 46.4% 降到 15.7%，避免 memory stack SMs 成为瓶颈。这个结果说明不是 offload 越多越好。
+
+Traffic/energy 方面，TOM 平均降低 off-chip memory traffic 38%、最高 99%，平均降低 energy 11%、最高 37%。当 memory stack SM warp capacity 提高到 4x 时，可维持约 29% speedup 并额外节省 20% memory traffic。即使 internal bandwidth 等于 external link bandwidth，TOM 平均仍有 28% speedup。
+
+### 硬件工程师思考
+TOM 的敏感性分析很有价值：internal bandwidth 不是唯一因素，warp capacity、offload aggressiveness 和 mapping accuracy 同样重要。真实硬件项目不能只宣传 HBM 内部带宽，还要给出 logic layer compute capacity 和调度策略。
+
+## Limitations and Conclusion / 局限与结论
+
+### 原文位置
+Page 11-13
+
+### 中文翻译
+TOM 主要面向 memory-intensive GPU workloads。Compute-intensive code 通常不会被选为 candidate。Data mapping 假设 offloaded blocks 的访问模式有可重复性；BFS 等 irregular workload 可能被错误预测拖慢。编译器分析基于 PTX 和保守估计，真实 GPU ISA/driver 中实现更复杂。
+
+结论强调，TOM 通过编译器、runtime 和硬件 mapping 协同，使 GPU 程序可透明利用 3D-stacked memory logic layer。它展示 NDP 系统的关键不只是有 near-data SM，而是自动选择代码、放置数据和控制 offload。
+
+### 硬件工程师复习重点
+
+- Page 1：两个 challenge，offload selection 和 data mapping。
+- Page 3 Equations 1-4：candidate cost model。
+- Page 4-6：mapping learning/prediction。
+- Page 9：无 control 会变慢，说明 offload 不是越多越好。
+- Page 10-12：traffic/energy/sensitivity 反映工程边界。
+
+### 对未来工作的启发
+TOM 对现代 GPU/HBM 设计的启发是：near-data compute 需要 compiler + page mapping + runtime throttling。只在 memory stack 放 compute units 不够，数据和代码必须动态共置。

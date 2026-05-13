@@ -27,3 +27,11 @@
 - [x] 已整理图表/公式笔记
 - [x] 已整理术语表
 - [x] 已标注无法确认或需人工复核内容
+
+## 2026-05-12 High-Completeness Translation Expansion
+
+- Updated File: full_translation.zh.md
+- Expansion Scope: 追加高完整度扩写版，覆盖 Abstract、Introduction、Background、existing in-DRAM caches、FIGARO substrate、FIGCache design、other use cases、evaluation、hardware overhead、sensitivity studies、related work、conclusion。
+- Hardware Engineer Perspective Added: Yes，重点补充粒度匹配、global/local row buffer 数据路径、FTS/controller metadata、验证复杂度、ECC/coherence/refresh/address-remapping 等工程注意点。
+- Current Translation File Length: 336 lines
+- Remaining Manual Check: 双栏 PDF 行交错和图像细节仍建议回 PDF 原图核对。

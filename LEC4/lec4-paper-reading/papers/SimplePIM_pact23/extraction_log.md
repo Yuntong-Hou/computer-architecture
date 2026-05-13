@@ -27,3 +27,11 @@
 - [x] 已整理图表/公式笔记
 - [x] 已整理术语表
 - [x] 已标注无法确认或需人工复核内容
+
+## 2026-05-12 High-Completeness Translation Expansion
+
+- Updated File: full_translation.zh.md
+- Expansion Scope: 追加高完整度扩写版，覆盖 UPMEM 背景、management/communication/processing interfaces、implementation optimizations、evaluation、LoC/performance/scaling、limitations。
+- Hardware Engineer Perspective Added: Yes，重点补充真实 PIM 软件栈、host 编排、DPU 通信、runtime/library 对产品化的重要性。
+- Current Translation File Length: 202 lines
+- Remaining Manual Check: Page 7-9 生产率与性能图表建议回 PDF 原图核对。

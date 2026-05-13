@@ -111,3 +111,106 @@ Conclusion
 
 ### 中文翻译
 论文最终强调：Proteus 是一个 data-aware PUD runtime，它根据数据实际位宽动态选择 bit-precision、data representation 和 arithmetic µProgram，以降低 bit-serial PUD 的高延迟和高能耗。 对这组 LEC4 文献而言，这篇文章提供了一个重要视角：DRAM/PIM 研究不仅包含底层电路 primitive，也包含系统集成、编程模型、实验平台和 workload 适配。建议结合 `reading_summary.zh.md` 和 `figures_tables_equations_notes.zh.md` 复习。
+
+---
+
+# 2026-05-12 高完整度扩写版
+
+说明：以下按 Proteus 论文结构扩写，覆盖 bit-serial PUD 短板、dynamic bit precision、SALP-based bit parallelism、redundant binary representation、Dynamic Bit-Precision Engine、Parallelism-Aware µProgram Library、µProgram Select Unit、evaluation、floating-point synthetic analysis、tensor core comparison、area/limitations。
+
+## Abstract / 摘要
+
+### 原文位置
+Page 1 / Abstract
+
+### 中文翻译
+Proteus 解决 bulk bitwise PUD 的数据不敏感问题。传统 SIMDRAM/Ambit-style PUD 通常使用固定 two's complement representation 和固定 bit-width 对整行数据执行 bit-serial operations。若实际数据值很窄，例如高位只是 leading zeros 或 leading ones，系统仍会对所有 bits 执行同样长的 computation，浪费 latency 和 energy。
+
+Proteus 提出 data-aware hardware runtime framework。它在数据转置到 PUD vertical layout 时检测每个对象实际需要的 bit precision；在执行 PUD operation 时，根据 bit precision、data representation 和 cost model 选择最低延迟或最低能耗的 µProgram。它还使用 SALP 将一个 data word 的不同 bits 分布到多个 subarrays，从而并行执行部分 bit-level primitives。
+
+为支持高精度 arithmetic，Proteus 引入 redundant binary representation (RBR)，减少 carry propagation 带来的串行依赖。它通过 Parallelism-Aware µProgram Library 保存不同 bit-width、representation 和算法实现，并由 µProgram Select Unit 动态选择。
+
+### 硬件工程师思考
+Proteus 的核心不是新的 DRAM primitive，而是 runtime adaptation。它说明 PUD 的性能瓶颈已经从“能不能在 DRAM 中算”转向“能不能按数据特征选择合适算法”。这和 CPU/GPU 上的 mixed precision、sparsity、dynamic quantization 思路一致。
+
+## 1. Motivation / 动机
+
+### 原文位置
+Page 1-2
+
+### 中文翻译
+Bit-serial PUD 的延迟随 bit-width 增长，某些操作甚至随 bit-width 二次增长。固定 32-bit 或 64-bit precision 会让许多低有效位宽数据承担不必要成本。数据中常见 narrow values，例如 small integers、quantized ML tensors、indices、counters、sparse metadata 等。
+
+另一个问题是单操作 latency。PUD 通常依靠 massive throughput 摊薄延迟，但当并行度不足或操作链有依赖时，bit-serial latency 会变成瓶颈。Proteus 因此尝试在 operation 内部并行执行独立 primitives，并根据 bit-width 选择更适合的 representation。
+
+### 硬件工程师思考
+动态位宽优化在硬件中常见，但在 PUD 中更重要，因为每多一位都可能意味着多轮 DRAM commands。对 memory-side arithmetic，避免无用高位计算往往比提升单个 primitive 速度更有效。
+
+## 2-4. Proteus Mechanisms / 机制
+
+### 原文位置
+Page 4-10
+
+### 中文翻译
+Dynamic Bit-Precision Engine 在 LLC evicted cache lines 被转置为 PUD vertical layout 时扫描对象，记录实际所需 bit precision。它可识别 leading zeros/ones，记录对象元数据，供后续 PUD operation 查询。这样 runtime 不必每次 operation 重新扫描数据。
+
+SALP-based bit parallelism 将一个 data word 的不同 bits 分布到多个 subarrays。某些 bit-level primitives 彼此独立，可在不同 subarrays 并行执行，从而降低单 operation latency。但这要求数据 mapping 与 subarray organization 协调，也依赖 SALP 允许多个 subarrays 并发激活。
+
+Redundant Binary Representation (RBR) 用冗余位表示数值，减少 carry propagation。传统 two's complement addition/multiplication 中，carry 依赖会造成串行链；RBR 可将部分 carry 延迟或局部化，使高精度 arithmetic 更适合 PUD。
+
+Parallelism-Aware µProgram Library 保存不同 bit-precision、representation 和算法版本的 µPrograms，并为每个版本维护 latency/energy cost model LUT。µProgram Select Unit 在发出 PUD operation 时查询 bit precision 和 cost LUT，选择 Proteus-LT（最低延迟）或 Proteus-EN（最低能耗）策略下的最优 µProgram。
+
+### 硬件工程师思考
+Proteus 的硬件复杂度主要在元数据和选择逻辑，而不在 DRAM array。工程上要关注 bit-precision metadata 的生命周期、对象粒度、cache eviction/transposition 时机、metadata consistency，以及错误时如何 fallback 到保守 precision。
+
+## 5. System Substrate / 系统基础
+
+### 原文位置
+Page 10-12
+
+### 中文翻译
+Proteus 建立在 Ambit、LISA、SALP 等底层机制之上。Ambit 提供 MAJ/NOT 或 bulk bitwise primitive，LISA 支持数据移动，SALP 提供 subarray-level parallelism。Proteus control unit 和 data transposition unit 负责在这些机制之上执行动态 µProgram。
+
+软件侧需要标记 PUD-friendly loops 和 fixed-point data arrays。论文尚未提供完全自动编译器，因此真实应用需要手动修改。Proteus 也主要支持 fixed-point/integer；floating-point 评估以 synthetic analysis 为主。
+
+### 硬件工程师思考
+Proteus 的收益依赖底层 PuD substrate 全部可靠可用。若 Ambit/LISA/SALP 任一机制在真实芯片中不可用或可靠性不足，Proteus 的 runtime 再聪明也无法落地。这类 layered architecture 要逐层验证。
+
+## 6-7. Evaluation / 评估
+
+### 原文位置
+Page 12-15; Figures 11-14
+
+### 中文翻译
+评估使用 12 个真实应用，来自 Phoenix、Polybench、Rodinia、SPEC2017。比较对象包括 CPU、A100 GPU、SIMDRAM-SP、SIMDRAM-DP、Proteus LT/EN with static/dynamic precision。
+
+Proteus LT-DP 相对 CPU、GPU、SIMDRAM 平均提供 17x、7.3x、10.2x performance per mm²；Proteus EN-DP 分别提供 11.2x、4.8x、6.8x。SIMDRAM 加上 Dynamic Bit-Precision Engine 后达到 SIMDRAM-SP 的 6.3x performance per mm²；Proteus 的 µProgram adaptation 又在 SIMDRAM-DP 上提升 1.6x。
+
+Dynamic Bit-Precision Engine 相比 static precision 提升性能 46%，降低 energy 58%。整体上，Proteus 平均比 CPU/GPU/SIMDRAM 分别降低 90.3x、21x、8.1x energy consumption。
+
+在 int8/int4 GEMM-heavy workloads 上，Proteus 相对 A100 tensor cores 提供 20x/43x performance per mm² 和 484x/767x performance per Watt。需要注意，这是特定低精度、data movement dominated 场景下的 per-area/per-watt 对比，不代表 Proteus 在所有 ML workload 中胜过 tensor cores。
+
+面积开销低：DRAM chip 约 1.6%，CPU die 约 0.03%。这主要因为 Proteus 重用既有 PuD substrate，新增的是 runtime metadata/control structures。
+
+### 硬件工程师思考
+Proteus 的评估要看 metric。performance per mm²/per Watt 很亮眼，但绝对 latency、数据准备、转置、metadata 和应用修改成本也要看。对行业应用，Proteus 更适合低精度、内存驻留、批量 bit-serial 运算，而不是 GPU tensor cores 擅长的 dense compute pipeline 全场景替代。
+
+## Limitations and Conclusion / 局限与结论
+
+### 原文位置
+Page 14-15
+
+### 中文翻译
+局限包括：真实应用需要手动标记 PUD-friendly loops；floating-point 支持不是完整真实应用评估；动态 bit precision 需要对象追踪和元数据；短任务或频繁变化对象上的 metadata overhead 需要进一步验证；底层 Ambit/LISA/SALP 必须可靠。
+
+结论强调，Proteus 用 data-aware runtime 降低 PUD arithmetic 的 latency/energy。它根据数据实际位宽、representation 和 parallelism 选择 µProgram，使 PUD 不再固定执行一种 bit-serial 算法。
+
+### 硬件工程师复习重点
+
+- Page 1-2：inconsequential bits 是核心浪费来源。
+- Page 4-5：哪些 primitive 可并行，哪些受 carry 依赖限制。
+- Page 6-10：Dynamic Bit-Precision Engine 和 µProgram Library 是方法核心。
+- Page 12-14：注意 performance per area/watt 的适用场景。
+
+### 对未来工作的启发
+Proteus 说明 PuD 未来需要 runtime specialization。硬件工程师可以把它看作 DRAM 内计算的“动态编译/调度层”：根据数据值、精度和目标优化指标选择执行方案，而不是静态绑定算法。

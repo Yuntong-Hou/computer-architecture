@@ -27,3 +27,11 @@
 - [x] 已整理图表/公式笔记
 - [x] 已整理术语表
 - [x] 已标注无法确认或需人工复核内容
+
+## 2026-05-12 High-Completeness Translation Expansion
+
+- Updated File: full_translation.zh.md
+- Expansion Scope: 追加高完整度扩写版，覆盖 MIMD PuD motivation、mat-level execution、reduction interconnect、controller、compiler/ISA/OS support、evaluation、limitations。
+- Hardware Engineer Perspective Added: Yes，重点补充 SIMD utilization、mat 粒度、PVT/噪声验证、compiler/runtime 成本、规模化并行度边界。
+- Current Translation File Length: 216 lines
+- Remaining Manual Check: Page 4-7 硬件图和 Page 12-14 评估图建议回 PDF 原图核对。
