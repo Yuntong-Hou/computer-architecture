@@ -17,4 +17,6 @@
 - Uncertain Parts: 部分元数据 DOI/URL 若 PDF 未明确展示则标注未找到
 - Need User Action: 如需逐字全文翻译或图像级表格复核，请指定重点页并确认版权授权
 - Quality Check: 已覆盖全文结构、主要方法/论证、实验或引用结果、图表、术语、局限和原文位置；`full_translation.zh.md` 为逐节中文详译/译述，不是逐字全文翻译
-- Batch Status: 第三轮深度阅读完成
+- Batch Status: 第四批增强完成；2026-05-12 `full_translation.zh.md` 已按新标准扩写
+- Translation Enhancement: 增加更完整的逐节中文译文/译述、硬件工程师视角、行业影响、学习重点和工程实践启发。
+- Remaining Manual Check: 图表细节和公式排版建议回 PDF 复核；参考文献列表保留英文，未逐条翻译。

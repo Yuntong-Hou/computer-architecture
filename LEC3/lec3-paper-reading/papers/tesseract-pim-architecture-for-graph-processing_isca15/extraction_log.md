@@ -19,3 +19,11 @@
 - Need User Action: 无；如需逐字全文翻译，请确认版权授权范围后再处理
 - Quality Check: 已覆盖摘要、引言/背景、方法/系统设计、实验/结果、局限、图表、术语与复习 checklist
 - Batch Status: 第十一轮深度阅读完成
+
+## 2026-05-13 High-Completeness Translation Completion
+
+- Action: 将 `full_translation.zh.md` 从短版逐节译述扩写为高完整度学习译文。
+- Scope: 覆盖 Abstract、Introduction、Background/Motivation、Tesseract architecture、message passing、remote function calls、prefetching、programming interface、methodology、evaluation、related work、conclusion。
+- Hardware Engineer Perspective Added: Yes，重点补充 PIM 落地中的 data placement、message passing、software API、prefetch hint、off-chip communication、热/功耗和验证约束。
+- Remaining Manual Check: Figure 3/4 架构图细节、Figure 6-14 实验数值和输入图参数建议回 PDF 对照。
+- Status: 新标准补强完成。

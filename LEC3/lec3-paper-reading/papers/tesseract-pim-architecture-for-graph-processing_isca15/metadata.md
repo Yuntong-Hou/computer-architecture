@@ -13,6 +13,6 @@
 - Dataset: Five graph workloads; three real-world graphs: LiveJournal, English Wikipedia, Indochina domains
 - Main Topic: Processing-in-memory; 3D-stacked memory; graph processing; message passing
 - Keywords: Tesseract, PIM, graph processing, HMC, vault, message passing, list prefetcher, message-triggered prefetcher, PageRank
-- Reading Status: 第十一轮深度阅读完成
+- Reading Status: 第十一轮深度阅读完成；2026-05-13 full_translation 已按新标准补强
 - Full Text Available: Yes
-- Notes: 说明：本文件基于已下载 PDF 的抽取文本生成中文学习材料；`full_translation.zh.md` 采用逐节中文详译/译述方式，不提供逐字复刻式全文翻译。
+- Notes: 说明：本文件基于已下载 PDF 的抽取文本生成中文学习材料；`full_translation.zh.md` 已扩写为高完整度学习译文，加入硬件工程师视角，不提供逐字复刻式全文翻译。

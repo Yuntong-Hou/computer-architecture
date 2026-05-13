@@ -13,6 +13,6 @@
 - Dataset: 232 LPDDR4 devices with on-die ECC and 82 LPDDR4 devices without on-die ECC; retention errors across temperatures, refresh rates, and patterns
 - Main Topic: On-die ECC; DRAM error characterization; statistical inference; LPDDR4
 - Keywords: on-die ECC, EIN, EINSim, MAP estimation, Hamming code, pre-correction error, post-correction error, LPDDR4
-- Reading Status: 第十一轮深度阅读完成
+- Reading Status: 第十一轮深度阅读完成；2026-05-13 full_translation 已按新标准补强
 - Full Text Available: Yes
-- Notes: 说明：本文件基于已下载 PDF 的抽取文本生成中文学习材料；`full_translation.zh.md` 采用逐节中文详译/译述方式，不提供逐字复刻式全文翻译。
+- Notes: 说明：本文件基于已下载 PDF 的抽取文本生成中文学习材料；`full_translation.zh.md` 已扩写为高完整度学习译文，加入硬件工程师视角，不提供逐字复刻式全文翻译。

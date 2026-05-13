@@ -19,3 +19,11 @@
 - Need User Action: 无；如需逐字全文翻译，请确认版权授权范围后再处理
 - Quality Check: 已覆盖摘要、引言/背景、方法/系统设计、实验/结果、局限、图表、术语与复习 checklist
 - Batch Status: 第十一轮深度阅读完成
+
+## 2026-05-13 High-Completeness Translation Completion
+
+- Action: 将 `full_translation.zh.md` 从短版逐节译述扩写为高完整度学习译文。
+- Scope: 覆盖 Abstract、Introduction、Motivation/use cases、DRAM/ECC background、EIN MAP inference、EINSim、experimental setup、ECC inference results、EIN-enabled characterization、related work、conclusion。
+- Hardware Engineer Perspective Added: Yes，重点补充 on-die ECC 对 DRAM characterization 的遮蔽效应、codeword/error granularity、可靠性外推和故障调试中的观察层级。
+- Remaining Manual Check: Equations 3-10、Figure 8/Table 2 likelihood 数值和 Figure 11 曲线建议回 PDF 对照。
+- Status: 新标准补强完成。

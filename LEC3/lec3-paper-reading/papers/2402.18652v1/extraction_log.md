@@ -17,4 +17,6 @@
 - Uncertain Parts: profile 获取成本的具体实现依赖系统设计，论文中部分属于未来方向
 - Need User Action: 如需把 Figure 3-13 的数值逐项抄录，请人工指定图页或允许图像 OCR
 - Quality Check: 已覆盖全文、主要图表、方法、实验、结果和局限；逐节译述不是逐字全文翻译
-- Batch Status: 第二轮深度阅读完成
+- Batch Status: 第二批增强完成；2026-05-12 `full_translation.zh.md` 已按新标准扩写
+- Translation Enhancement: 增加更完整的逐节中文译文/译述、硬件工程师视角、行业影响、学习重点和工程实践启发。
+- Remaining Manual Check: 图表细节和公式排版建议回 PDF 复核；参考文献列表保留英文，未逐条翻译。

@@ -18,4 +18,6 @@
 - Uncertain Parts: DOI/venue 如 metadata 标注“未找到”则表示未在 PDF 抽取文本中确认
 - Need User Action: 无；如需逐字全文翻译，请确认版权授权范围后再处理
 - Quality Check: 已覆盖摘要、引言/背景、方法/系统设计、实验/结果或研究路线、局限、图表、术语与复习 checklist
-- Batch Status: 第九轮深度阅读完成
+- Batch Status: 第九批增强完成；full_translation 已按新标准扩写
+- Translation Enhancement: 2026-05-12 已补充更完整的分章节中文详译/译述，并加入硬件工程师视角的工程影响、设计取舍和学习提炼。
+- Remaining Manual Check: 图表细小标注、双栏抽取错位和参考文献条目未逐条翻译，关键图表仍建议回 PDF 核对。

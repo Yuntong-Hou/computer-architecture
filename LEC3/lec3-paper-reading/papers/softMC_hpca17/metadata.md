@@ -13,6 +13,6 @@
 - Dataset: SoftMC FPGA prototype; retention tests; 24 modern DRAM chips from three major manufacturers for latency-mechanism validation
 - Main Topic: Open-source DRAM testing infrastructure; FPGA memory controller; experimental DRAM characterization
 - Keywords: SoftMC, soft memory controller, FPGA, DDR commands, DRAM testing, retention time, latency, ChargeCache, NUAT
-- Reading Status: 第十轮深度阅读完成
+- Reading Status: 第十轮深度阅读完成；2026-05-13 full_translation 已按新标准补强
 - Full Text Available: Yes
-- Notes: 说明：本文件基于已下载 PDF 的抽取文本生成中文学习材料；`full_translation.zh.md` 采用逐节中文详译/译述方式，不提供逐字复刻式全文翻译。
+- Notes: 说明：本文件基于已下载 PDF 的抽取文本生成中文学习材料；`full_translation.zh.md` 已扩写为高完整度学习译文，加入硬件工程师视角，不提供逐字复刻式全文翻译。

@@ -13,6 +13,6 @@
 - Dataset: 100 multiprogrammed workloads; SPEC CPU applications; database workloads
 - Main Topic: Shared-resource interference; slowdown estimation; cache/memory QoS
 - Keywords: ASM, slowdown, cache access rate, auxiliary tag store, memory bandwidth partitioning, QoS
-- Reading Status: 第七轮深度阅读完成
+- Reading Status: 第七批增强完成；full_translation 已按新标准扩写
 - Full Text Available: Yes
-- Notes: 说明：本文件基于已下载 PDF 的抽取文本生成中文学习材料；`full_translation.zh.md` 采用逐节中文详译/译述方式，不提供逐字复刻式全文翻译。
+- Notes: 说明：本文件基于已下载 PDF 的抽取文本生成中文学习材料；2026-05-12 已按“更完整翻译 + 硬件工程师视角”标准增强 `full_translation.zh.md`。

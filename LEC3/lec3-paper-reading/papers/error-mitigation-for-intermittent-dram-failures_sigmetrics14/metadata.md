@@ -13,6 +13,6 @@
 - Dataset: 96 DRAM chips from three manufacturers; FPGA-based DRAM testing infrastructure
 - Main Topic: DRAM retention failures; VRT; online profiling; ECC; guardbanding
 - Keywords: DRAM, retention failure, VRT, guardband, ECC, VS-ECC, Hi-ECC, online profiling
-- Reading Status: 第八轮深度阅读完成
+- Reading Status: 第八批增强完成；full_translation 已按新标准扩写
 - Full Text Available: Yes
-- Notes: 说明：本文件基于已下载 PDF 的抽取文本生成中文学习材料；`full_translation.zh.md` 采用逐节中文详译/译述方式，不提供逐字复刻式全文翻译。
+- Notes: 说明：本文件基于已下载 PDF 的抽取文本生成中文学习材料；2026-05-12 已按“更完整翻译 + 硬件工程师视角”标准增强 `full_translation.zh.md`。
